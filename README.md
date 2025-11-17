@@ -1,50 +1,78 @@
-# Welcome to your Expo app 👋
+# 🏠 Casa Ideal - Aplicación Móvil
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicación móvil desarrollada con [Expo](https://expo.dev) y React Native para la gestión de propiedades inmobiliarias.
 
-## Get started
+## 📋 Descripción
 
-1. Install dependencies
+Este proyecto es una aplicación móvil creada con [`create-expo-app`](https://www.npmjs.com/package/create-expo-app) que utiliza Expo para el desarrollo multiplataforma. La aplicación utiliza Supabase como backend y base de datos.
+
+## 🚀 Inicio Rápido
+
+### Prerrequisitos
+
+- Node.js (versión recomendada según tu proyecto)
+- npm o bun
+- Expo CLI (se instala globalmente o se usa con npx)
+
+### Instalación
+
+1. Instala las dependencias:
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Inicia la aplicación:
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+### Ejecutar la aplicación
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+Una vez iniciado el servidor de desarrollo, tendrás opciones para abrir la app en:
+
+- [Development build](https://docs.expo.dev/develop/development-builds/introduction/)
 - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- [Expo Go](https://expo.dev/go) - Sandbox limitado para probar el desarrollo con Expo
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🛠️ Desarrollo
 
-## Get a fresh project
+### Estructura del Proyecto
 
-When you're ready, run:
+Este proyecto utiliza [file-based routing](https://docs.expo.dev/router/introduction). Puedes comenzar a desarrollar editando los archivos dentro del directorio **app**.
+
+### Generar Tipos de Supabase
+
+Para sincronizar los tipos de la base de datos con el cliente de TypeScript, ejecuta el siguiente comando desde la raíz del proyecto:
+
+```bash
+npx supabase gen types typescript > src/types/database.types.ts
+```
+
+Esto crea o actualiza el archivo `src/types/database.types.ts` con los tipos generados automáticamente desde tu base de datos de Supabase.
+
+### Resetear el Proyecto
+
+Si necesitas empezar desde cero, puedes ejecutar:
 
 ```bash
 npm run reset-project
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Este comando moverá el código inicial al directorio **app-example** y creará un directorio **app** en blanco donde puedes comenzar a desarrollar.
 
-## Learn more
+## 📚 Recursos y Documentación
 
-To learn more about developing your project with Expo, look at the following resources:
+### Aprende más sobre Expo
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- [Documentación de Expo](https://docs.expo.dev/): Aprende fundamentos o profundiza en temas avanzados con nuestras [guías](https://docs.expo.dev/guides).
+- [Tutorial de Expo](https://docs.expo.dev/tutorial/introduction/): Sigue un tutorial paso a paso donde crearás un proyecto que funciona en Android, iOS y web.
 
-## Join the community
+### Comunidad
 
-Join our community of developers creating universal apps.
+Únete a nuestra comunidad de desarrolladores creando aplicaciones universales:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo en GitHub](https://github.com/expo/expo): Ve nuestra plataforma de código abierto y contribuye.
+- [Comunidad de Discord](https://chat.expo.dev): Chatea con usuarios de Expo y haz preguntas.
