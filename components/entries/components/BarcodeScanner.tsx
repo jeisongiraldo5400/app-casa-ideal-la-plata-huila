@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
 
 interface BarcodeScannerProps {
@@ -56,7 +56,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     <View style={styles.container}>
       <CameraView
         style={StyleSheet.absoluteFillObject}
-        facing={CameraType.back}
+        facing="back"
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
         barcodeScannerSettings={{
           barcodeTypes: ['ean13', 'ean8', 'code128'],
