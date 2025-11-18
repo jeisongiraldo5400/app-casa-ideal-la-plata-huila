@@ -10,6 +10,7 @@ type Brand = Database['public']['Tables']['brands']['Row'];
 type PurchaseOrder = Database['public']['Tables']['purchase_orders']['Row'];
 type PurchaseOrderItem = Database['public']['Tables']['purchase_order_items']['Row'];
 type InventoryEntry = Database['public']['Tables']['inventory_entries']['Insert'];
+type InventoryEntryRow = Database['public']['Tables']['inventory_entries']['Row'];
 
 export type EntryType = 'PO_ENTRY' | 'ENTRY' | 'INITIAL_LOAD';
 
@@ -71,6 +72,7 @@ interface EntriesState {
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
+  loadPurchaseOrderProgress: (purchaseOrderId: string) => Promise<Map<string, number>>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -222,6 +224,33 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error: any) {
       console.error('Error loading purchase orders:', error);
       set({ purchaseOrders: [], loading: false });
+    }
+  },
+
+  loadPurchaseOrderProgress: async (purchaseOrderId: string): Promise<Map<string, number>> => {
+    try {
+      // Cargar todos los productos registrados en inventory_entries para esta orden de compra
+      const { data: entries, error } = await supabase
+        .from('inventory_entries')
+        .select('product_id, quantity')
+        .eq('purchase_order_id', purchaseOrderId);
+
+      if (error) {
+        console.error('Error loading purchase order progress:', error);
+        return new Map();
+      }
+
+      // Agrupar por product_id y sumar las cantidades
+      const progressMap = new Map<string, number>();
+      (entries || []).forEach((entry: { product_id: string; quantity: number }) => {
+        const currentQty = progressMap.get(entry.product_id) || 0;
+        progressMap.set(entry.product_id, currentQty + entry.quantity);
+      });
+
+      return progressMap;
+    } catch (error: any) {
+      console.error('Error loading purchase order progress:', error);
+      return new Map();
     }
   },
 

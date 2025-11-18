@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Card } from '@/components/ui/Card';
-import { PurchaseOrderWithItems } from '@/components/entries/infrastructure/store/entriesStore';
+import { PurchaseOrderWithItems, useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { Colors } from '@/constants/theme';
 
 interface PurchaseOrderSelectorProps {
@@ -15,6 +15,67 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
+  const { loadPurchaseOrderProgress } = useEntriesStore();
+  const [progressMap, setProgressMap] = useState<Map<string, number>>(new Map());
+  const [loadingProgress, setLoadingProgress] = useState(false);
+
+  // Cargar el progreso cuando se selecciona una orden
+  useEffect(() => {
+    if (selectedPurchaseOrderId) {
+      setLoadingProgress(true);
+      loadPurchaseOrderProgress(selectedPurchaseOrderId)
+        .then((map) => {
+          setProgressMap(map);
+          setLoadingProgress(false);
+        })
+        .catch(() => {
+          setLoadingProgress(false);
+        });
+    } else {
+      setProgressMap(new Map());
+    }
+  }, [selectedPurchaseOrderId, loadPurchaseOrderProgress]);
+
+  // Función para calcular el progreso de una orden de compra
+  const calculateOrderProgress = (order: PurchaseOrderWithItems) => {
+    const totalProducts = order.items.length;
+    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+    // Si no hay progreso cargado o la orden no está seleccionada, retornar valores iniciales
+    if (progressMap.size === 0 || selectedPurchaseOrderId !== order.id) {
+      return {
+        registeredProducts: 0,
+        registeredQuantity: 0,
+        totalProducts,
+        totalQuantity,
+        remainingProducts: totalProducts,
+        remainingQuantity: totalQuantity,
+      };
+    }
+
+    // Contar productos y cantidades registradas que están en la orden
+    let registeredProducts = 0;
+    let registeredQuantity = 0;
+
+    order.items.forEach((orderItem) => {
+      const registeredQty = progressMap.get(orderItem.product_id) || 0;
+      if (registeredQty > 0) {
+        registeredProducts++;
+        // La cantidad registrada puede ser mayor que la orden si se registró más de una vez
+        // Pero para el cálculo de "faltantes" usamos el mínimo
+        registeredQuantity += Math.min(registeredQty, orderItem.quantity);
+      }
+    });
+
+    return {
+      registeredProducts,
+      registeredQuantity,
+      totalProducts,
+      totalQuantity,
+      remainingProducts: totalProducts - registeredProducts,
+      remainingQuantity: totalQuantity - registeredQuantity,
+    };
+  };
   if (purchaseOrders.length === 0) {
     return (
       <Card style={styles.emptyCard}>
@@ -54,8 +115,10 @@ export function PurchaseOrderSelector({
     <ScrollView style={styles.container}>
       {purchaseOrders.map((order) => {
         const isSelected = selectedPurchaseOrderId === order.id;
-        const totalItems = order.items.length;
-        const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const progress = calculateOrderProgress(order);
+        const progressPercentage = progress.totalProducts > 0 
+          ? Math.round((progress.registeredProducts / progress.totalProducts) * 100) 
+          : 0;
 
         return (
           <TouchableOpacity
@@ -85,9 +148,51 @@ export function PurchaseOrderSelector({
 
               <View style={styles.orderSummary}>
                 <Text style={styles.summaryText}>
-                  {totalItems} producto{totalItems !== 1 ? 's' : ''} • {totalQuantity} unidad{totalQuantity !== 1 ? 'es' : ''}
+                  {progress.totalProducts} producto{progress.totalProducts !== 1 ? 's' : ''} • {progress.totalQuantity} unidad{progress.totalQuantity !== 1 ? 'es' : ''}
                 </Text>
               </View>
+
+              {/* Progreso de productos registrados */}
+              {isSelected && (
+                <View style={styles.progressContainer}>
+                  {loadingProgress ? (
+                    <Text style={styles.loadingProgressText}>Cargando progreso...</Text>
+                  ) : (
+                    <>
+                      <View style={styles.progressHeader}>
+                        <Text style={styles.progressTitle}>Progreso de registro:</Text>
+                        <Text style={styles.progressPercentage}>{progressPercentage}%</Text>
+                      </View>
+                      <View style={styles.progressBarContainer}>
+                        <View 
+                          style={[
+                            styles.progressBar, 
+                            { width: `${progressPercentage}%` }
+                          ]} 
+                        />
+                      </View>
+                      <View style={styles.progressDetails}>
+                        <Text style={styles.progressText}>
+                          <Text style={styles.progressBold}>{progress.registeredProducts}</Text> de <Text style={styles.progressBold}>{progress.totalProducts}</Text> productos registrados
+                        </Text>
+                        <Text style={styles.progressText}>
+                          <Text style={styles.progressBold}>{progress.registeredQuantity}</Text> de <Text style={styles.progressBold}>{progress.totalQuantity}</Text> unidades registradas
+                        </Text>
+                        {progress.remainingProducts > 0 && (
+                          <Text style={styles.remainingText}>
+                            Faltan: <Text style={styles.remainingBold}>{progress.remainingProducts}</Text> producto{progress.remainingProducts !== 1 ? 's' : ''} ({progress.remainingQuantity} unidad{progress.remainingQuantity !== 1 ? 'es' : ''})
+                          </Text>
+                        )}
+                        {progress.remainingProducts === 0 && progress.registeredProducts > 0 && (
+                          <Text style={styles.completeText}>
+                            ✓ Todos los productos de la orden han sido registrados
+                          </Text>
+                        )}
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
 
               <View style={styles.productsList}>
                 <Text style={styles.productsListTitle}>Productos incluidos:</Text>
@@ -238,6 +343,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.primary.main,
+  },
+  progressContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  progressPercentage: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.primary.main,
+  },
+  progressBarContainer: {
+    height: 8,
+    backgroundColor: Colors.background.default,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: Colors.primary.main,
+    borderRadius: 4,
+  },
+  progressDetails: {
+    gap: 4,
+  },
+  progressText: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+  },
+  progressBold: {
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  remainingText: {
+    fontSize: 13,
+    color: Colors.warning.main,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  remainingBold: {
+    fontWeight: '700',
+  },
+  completeText: {
+    fontSize: 13,
+    color: Colors.success.main,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  loadingProgressText: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 
