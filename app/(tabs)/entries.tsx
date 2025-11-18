@@ -4,28 +4,29 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { ProductFound } from '@/components/entries/components/ProductFound';
 import { QuantityInput } from '@/components/entries/components/QuantityInput';
-import { UnregisteredBarcodeAlert } from '@/components/entries/components/UnregisteredBarcodeAlert';
+import { SetupForm } from '@/components/entries/components/SetupForm';
+import { ProductForm } from '@/components/entries/components/ProductForm';
+import { EntryItemsList } from '@/components/entries/components/EntryItemsList';
 import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/theme';
 
 export default function EntriesScreen() {
   const {
+    step,
     currentProduct,
-    loading,
-    error,
-    scannedBarcode,
-    quantity,
+    currentScannedBarcode,
+    currentQuantity,
+    entryItems,
     scanBarcode,
-    registerEntry,
+    addProductToEntry,
     setQuantity,
-    reset,
+    resetCurrentScan,
     clearError,
   } = useEntries();
 
@@ -36,52 +37,45 @@ export default function EntriesScreen() {
     setShowScanner(false);
   };
 
-  const handleRegisterEntry = async () => {
-    if (!currentProduct || quantity <= 0) {
+  const handleAddProduct = () => {
+    if (!currentProduct || currentQuantity <= 0) {
       Alert.alert('Error', 'Por favor ingrese una cantidad válida');
       return;
     }
 
-    const { error: entryError } = await registerEntry(currentProduct.id, quantity);
-    
-    if (entryError) {
-      Alert.alert('Error', entryError.message || 'Error al registrar la entrada');
-    } else {
-      Alert.alert(
-        'Éxito',
-        `Se registraron ${quantity} unidades de ${currentProduct.name}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              reset();
-            },
-          },
-        ]
-      );
-    }
+    addProductToEntry(currentProduct, currentQuantity, currentScannedBarcode || '');
   };
 
-  const handleReset = () => {
-    reset();
+  const handleProductCreated = (productId: string) => {
+    resetCurrentScan();
+  };
+
+  const handleCancelProductForm = () => {
+    resetCurrentScan();
     clearError();
   };
+
+  if (showScanner) {
+    return (
+      <BarcodeScanner
+        onScan={handleScan}
+        onClose={() => setShowScanner(false)}
+      />
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Entradas de Productos</Text>
-        <Text style={styles.subtitle}>Escanea el código de barras para registrar entrada</Text>
+        <Text style={styles.subtitle}>Registre la entrada de mercancía a bodega</Text>
       </View>
 
-      {showScanner ? (
-        <BarcodeScanner
-          onScan={handleScan}
-          onClose={() => setShowScanner(false)}
-        />
-      ) : (
+      {step === 'setup' && <SetupForm />}
+
+      {step === 'scanning' && (
         <>
-          {!currentProduct && !error && (
+          {!currentProduct && !currentScannedBarcode && (
             <View style={styles.scanSection}>
               <Button
                 title="Escanear código de barras"
@@ -91,37 +85,41 @@ export default function EntriesScreen() {
             </View>
           )}
 
-          {error && scannedBarcode && (
-            <UnregisteredBarcodeAlert
-              barcode={scannedBarcode}
-              onDismiss={clearError}
-            />
-          )}
-
           {currentProduct && (
             <>
               <ProductFound product={currentProduct} />
               <QuantityInput
-                quantity={quantity}
+                quantity={currentQuantity}
                 onQuantityChange={setQuantity}
-                onSubmit={handleRegisterEntry}
-                loading={loading}
-                unitOfMeasure={currentProduct.unit_of_measure}
+                onSubmit={handleAddProduct}
+                loading={false}
               />
+              <View style={styles.actionsContainer}>
+                <Button
+                  title="Agregar a la entrada"
+                  onPress={handleAddProduct}
+                  style={styles.addButton}
+                />
+                <Button
+                  title="Cancelar"
+                  onPress={resetCurrentScan}
+                  variant="outline"
+                  style={styles.cancelButton}
+                />
+              </View>
             </>
           )}
 
-          {(currentProduct || error) && (
-            <View style={styles.actionsContainer}>
-              <Button
-                title="Nuevo escaneo"
-                onPress={handleReset}
-                variant="outline"
-                style={styles.resetButton}
-              />
-            </View>
-          )}
+          {entryItems.length > 0 && <EntryItemsList />}
         </>
+      )}
+
+      {step === 'product-form' && currentScannedBarcode && (
+        <ProductForm
+          barcode={currentScannedBarcode}
+          onProductCreated={handleProductCreated}
+          onCancel={handleCancelProductForm}
+        />
       )}
     </ScrollView>
   );
@@ -133,11 +131,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.default,
   },
   content: {
-    padding: 20,
+    paddingBottom: 20,
   },
   header: {
     marginBottom: 24,
     marginTop: 20,
+    paddingHorizontal: 20,
   },
   title: {
     fontSize: 32,
@@ -152,15 +151,20 @@ const styles = StyleSheet.create({
   scanSection: {
     marginTop: 32,
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   scanButton: {
     minWidth: 200,
   },
   actionsContainer: {
-    marginTop: 24,
+    paddingHorizontal: 20,
+    marginTop: 16,
+    gap: 12,
   },
-  resetButton: {
+  addButton: {
+    marginTop: 8,
+  },
+  cancelButton: {
     marginTop: 8,
   },
 });
-

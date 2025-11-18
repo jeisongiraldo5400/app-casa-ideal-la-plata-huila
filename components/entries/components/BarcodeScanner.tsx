@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
 
 interface BarcodeScannerProps {
@@ -9,17 +9,14 @@ interface BarcodeScannerProps {
 }
 
 export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
   useEffect(() => {
-    const getBarCodeScannerPermissions = async () => {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
-    };
-
-    getBarCodeScannerPermissions();
-  }, []);
+    if (permission && !permission.granted) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (!scanned) {
@@ -33,7 +30,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     }
   };
 
-  if (hasPermission === null) {
+  if (!permission) {
     return (
       <View style={styles.container}>
         <Text style={styles.text}>Solicitando permiso para la cámara...</Text>
@@ -41,11 +38,14 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     );
   }
 
-  if (hasPermission === false) {
+  if (!permission.granted) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>No se tiene acceso a la cámara</Text>
-        <TouchableOpacity style={styles.button} onPress={onClose}>
+        <TouchableOpacity style={styles.button} onPress={requestPermission}>
+          <Text style={styles.buttonText}>Solicitar permiso</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.button, styles.closeButtonStyle]} onPress={onClose}>
           <Text style={styles.buttonText}>Cerrar</Text>
         </TouchableOpacity>
       </View>
@@ -54,10 +54,13 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
   return (
     <View style={styles.container}>
-      <BarCodeScanner
+      <CameraView
         style={StyleSheet.absoluteFillObject}
-        onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-        barCodeTypes={[BarCodeScanner.Constants.BarCodeType.ean13, BarCodeScanner.Constants.BarCodeType.ean8, BarCodeScanner.Constants.BarCodeType.code128]}
+        facing={CameraType.back}
+        onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+        barcodeScannerSettings={{
+          barcodeTypes: ['ean13', 'ean8', 'code128'],
+        }}
       />
       <View style={styles.overlay}>
         <View style={styles.scanArea} />
@@ -76,6 +79,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   overlay: {
     flex: 1,
@@ -114,17 +119,24 @@ const styles = StyleSheet.create({
   text: {
     color: Colors.text.primary,
     fontSize: 16,
+    marginBottom: 20,
   },
   errorText: {
     color: Colors.error.main,
     fontSize: 16,
     marginBottom: 20,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   button: {
     backgroundColor: Colors.primary.main,
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
+    marginTop: 12,
+  },
+  closeButtonStyle: {
+    backgroundColor: Colors.error.main,
   },
   buttonText: {
     color: Colors.background.paper,
@@ -132,4 +144,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

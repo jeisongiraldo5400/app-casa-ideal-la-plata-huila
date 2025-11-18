@@ -9,7 +9,6 @@ interface QuantityInputProps {
   onQuantityChange: (quantity: number) => void;
   onSubmit: () => void;
   loading?: boolean;
-  unitOfMeasure?: string;
 }
 
 export function QuantityInput({
@@ -17,7 +16,6 @@ export function QuantityInput({
   onQuantityChange,
   onSubmit,
   loading = false,
-  unitOfMeasure,
 }: QuantityInputProps) {
   const handleIncrement = () => {
     onQuantityChange(quantity + 1);
@@ -31,7 +29,7 @@ export function QuantityInput({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Cantidad recibida {unitOfMeasure ? `(${unitOfMeasure})` : ''}</Text>
+      <Text style={styles.label}>Cantidad recibida</Text>
       
       <View style={styles.quantityContainer}>
         <TouchableOpacity

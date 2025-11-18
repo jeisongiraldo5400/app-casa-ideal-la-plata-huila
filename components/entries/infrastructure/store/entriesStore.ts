@@ -1,84 +1,194 @@
 import { supabase } from '@/lib/supabase';
 import { create } from 'zustand';
+import { Database } from '@/types/database.types';
 
-export interface Product {
-  id: string;
+type Product = Database['public']['Tables']['products']['Row'];
+type Supplier = Database['public']['Tables']['suppliers']['Row'];
+type Warehouse = Database['public']['Tables']['warehouses']['Row'];
+type Category = Database['public']['Tables']['category']['Row'];
+type Brand = Database['public']['Tables']['brands']['Row'];
+type InventoryEntry = Database['public']['Tables']['inventory_entries']['Insert'];
+
+export interface EntryItem {
+  product: Product;
+  quantity: number;
+  barcode: string;
+}
+
+export interface NewProductData {
   name: string;
   sku: string;
   barcode: string;
-  supplier_id?: string;
-  status: string;
+  category_id: string;
+  brand_id: string;
   description?: string;
-  unit_of_measure?: string;
-}
-
-export interface Movement {
-  id?: string;
-  movement_type: 'entrada' | 'salida';
-  product_id: string;
-  quantity: number;
-  registered_by: string;
-  timestamp?: string;
-  location?: string;
-  purchase_order_id?: string;
-}
-
-export interface UnregisteredBarcodeScan {
-  id?: string;
-  barcode: string;
-  scanned_at?: string;
-  scanned_by: string;
-  purchase_order_id?: string;
-  location?: string;
+  supplier_id?: string;
 }
 
 interface EntriesState {
+  // Sesión de entrada
+  supplierId: string | null;
+  warehouseId: string | null;
+  entryItems: EntryItem[];
+  
+  // Estado actual de escaneo
   currentProduct: Product | null;
+  currentScannedBarcode: string | null;
+  currentQuantity: number;
+  
+  // Estado de UI
   loading: boolean;
   error: string | null;
-  scannedBarcode: string | null;
-  quantity: number;
-  purchaseOrderId: string | null;
-  location: string | null;
+  step: 'setup' | 'scanning' | 'product-form'; // setup: seleccionar supplier/warehouse, scanning: escaneando, product-form: crear producto
   
-  // Actions
+  // Datos para formularios
+  suppliers: Supplier[];
+  warehouses: Warehouse[];
+  categories: Category[];
+  brands: Brand[];
+  
+  // Actions - Setup
+  setSupplier: (supplierId: string | null) => void;
+  setWarehouse: (warehouseId: string | null) => void;
+  loadSuppliers: () => Promise<void>;
+  loadWarehouses: () => Promise<void>;
+  loadCategories: () => Promise<void>;
+  loadBrands: () => Promise<void>;
+  startEntry: () => void;
+  
+  // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
   searchProductByBarcode: (barcode: string) => Promise<Product | null>;
-  registerUnregisteredScan: (barcode: string, userId: string) => Promise<void>;
-  registerEntry: (productId: string, quantity: number, userId: string) => Promise<{ error: any }>;
-  setQuantity: (quantity: number) => void;
-  setPurchaseOrderId: (orderId: string | null) => void;
-  setLocation: (location: string | null) => void;
+  addProductToEntry: (product: Product, quantity: number, barcode: string) => void;
+  removeProductFromEntry: (index: number) => void;
+  updateProductQuantity: (index: number, quantity: number) => void;
+  
+  // Actions - Product Creation
+  createProduct: (productData: NewProductData) => Promise<{ product: Product | null; error: any }>;
+  
+  // Actions - Finalize
+  finalizeEntry: (userId: string) => Promise<{ error: any }>;
+  
+  // Actions - Reset
   reset: () => void;
   clearError: () => void;
+  resetCurrentScan: () => void;
 }
 
 export const useEntriesStore = create<EntriesState>((set, get) => ({
+  // Initial state
+  supplierId: null,
+  warehouseId: null,
+  entryItems: [],
   currentProduct: null,
+  currentScannedBarcode: null,
+  currentQuantity: 1,
   loading: false,
   error: null,
-  scannedBarcode: null,
-  quantity: 0,
-  purchaseOrderId: null,
-  location: null,
+  step: 'setup',
+  suppliers: [],
+  warehouses: [],
+  categories: [],
+  brands: [],
 
+  // Setup actions
+  setSupplier: (supplierId) => {
+    set({ supplierId });
+  },
+
+  setWarehouse: (warehouseId) => {
+    set({ warehouseId });
+  },
+
+  loadSuppliers: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      set({ suppliers: data || [] });
+    } catch (error: any) {
+      console.error('Error loading suppliers:', error);
+    }
+  },
+
+  loadWarehouses: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('warehouses')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      set({ warehouses: data || [] });
+    } catch (error: any) {
+      console.error('Error loading warehouses:', error);
+    }
+  },
+
+  loadCategories: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('category')
+        .select('*')
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      set({ categories: data || [] });
+    } catch (error: any) {
+      console.error('Error loading categories:', error);
+    }
+  },
+
+  loadBrands: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('brands')
+        .select('*')
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      set({ brands: data || [] });
+    } catch (error: any) {
+      console.error('Error loading brands:', error);
+    }
+  },
+
+  startEntry: () => {
+    const { supplierId, warehouseId } = get();
+    if (!supplierId || !warehouseId) {
+      set({ error: 'Debe seleccionar proveedor y bodega antes de comenzar' });
+      return;
+    }
+    set({ step: 'scanning', error: null });
+  },
+
+  // Scanning actions
   scanBarcode: async (barcode: string) => {
-    set({ loading: true, error: null, scannedBarcode: barcode });
+    set({ loading: true, error: null, currentScannedBarcode: barcode, currentQuantity: 1 });
     try {
       const product = await get().searchProductByBarcode(barcode);
       if (product) {
-        set({ currentProduct: product, loading: false });
+        set({ currentProduct: product, loading: false, step: 'scanning' });
       } else {
         set({ 
           currentProduct: null, 
           loading: false,
-          error: 'Producto no encontrado. Este código de barras no está registrado en el sistema.'
+          step: 'product-form',
+          error: null, // No es error, es flujo normal
         });
       }
     } catch (error: any) {
       set({ 
         loading: false, 
-        error: error.message || 'Error al buscar el producto' 
+        error: error.message || 'Error al buscar el producto',
+        step: 'scanning',
       });
     }
   },
@@ -89,12 +199,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .from('products')
         .select('*')
         .eq('barcode', barcode)
-        .eq('status', 'active')
+        .is('deleted_at', null)
         .single();
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No se encontró el producto
           return null;
         }
         throw error;
@@ -107,62 +216,139 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  registerUnregisteredScan: async (barcode: string, userId: string) => {
+  addProductToEntry: (product, quantity, barcode) => {
+    const { entryItems } = get();
+    // Verificar si el producto ya está en la lista
+    const existingIndex = entryItems.findIndex(item => item.product.id === product.id);
+    
+    if (existingIndex >= 0) {
+      // Si existe, actualizar la cantidad
+      const updatedItems = [...entryItems];
+      updatedItems[existingIndex].quantity += quantity;
+      set({ entryItems: updatedItems });
+    } else {
+      // Si no existe, agregarlo
+      set({ entryItems: [...entryItems, { product, quantity, barcode }] });
+    }
+    
+    // Resetear el escaneo actual
+    get().resetCurrentScan();
+  },
+
+  removeProductFromEntry: (index) => {
+    const { entryItems } = get();
+    const updatedItems = entryItems.filter((_, i) => i !== index);
+    set({ entryItems: updatedItems });
+  },
+
+  updateProductQuantity: (index, quantity) => {
+    const { entryItems } = get();
+    const updatedItems = [...entryItems];
+    updatedItems[index].quantity = quantity;
+    set({ entryItems: updatedItems });
+  },
+
+  // Product creation
+  createProduct: async (productData): Promise<{ product: Product | null; error: any }> => {
     try {
-      const { purchaseOrderId, location } = get();
-      const { error } = await supabase
-        .from('unregistered_barcode_scans')
+      const { data, error } = await supabase
+        .from('products')
         .insert({
-          barcode,
-          scanned_by: userId,
-          scanned_at: new Date().toISOString(),
-          purchase_order_id: purchaseOrderId || null,
-          location: location || null,
-        });
+          name: productData.name,
+          sku: productData.sku,
+          barcode: productData.barcode,
+          category_id: productData.category_id,
+          brand_id: productData.brand_id,
+          description: productData.description || null,
+          status: true,
+        })
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error registering unregistered scan:', error);
+        return { product: null, error };
       }
-    } catch (error) {
-      console.error('Error registering unregistered scan:', error);
+
+      // Si hay supplier_id, crear relación en product_suppliers
+      if (productData.supplier_id) {
+        await supabase
+          .from('product_suppliers')
+          .insert({
+            product_id: data.id,
+            supplier_id: productData.supplier_id,
+          });
+      }
+
+      return { product: data as Product, error: null };
+    } catch (error: any) {
+      return { product: null, error };
     }
   },
 
-  registerEntry: async (productId: string, quantity: number, userId: string) => {
+  // Finalize entry
+  finalizeEntry: async (userId): Promise<{ error: any }> => {
+    const { entryItems, supplierId, warehouseId } = get();
+    
+    if (entryItems.length === 0) {
+      return { error: { message: 'No hay productos para registrar' } };
+    }
+
+    if (!warehouseId) {
+      return { error: { message: 'Debe seleccionar una bodega' } };
+    }
+
     try {
-      const { purchaseOrderId, location } = get();
-      
-      // Registrar el movimiento
-      const { error: movementError } = await supabase
-        .from('movements')
-        .insert({
-          movement_type: 'entrada',
-          product_id: productId,
-          quantity,
-          registered_by: userId,
-          timestamp: new Date().toISOString(),
-          purchase_order_id: purchaseOrderId || null,
-          location: location || null,
-        });
+      // Registrar cada producto en inventory_entries
+      const entries: InventoryEntry[] = entryItems.map(item => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        supplier_id: supplierId,
+        warehouse_id: warehouseId,
+        barcode_scanned: item.barcode,
+        created_by: userId,
+      }));
 
-      if (movementError) {
-        return { error: movementError };
+      const { error: entriesError } = await supabase
+        .from('inventory_entries')
+        .insert(entries);
+
+      if (entriesError) {
+        return { error: entriesError };
       }
 
-      // Actualizar el inventario (asumiendo que hay una tabla inventory)
-      // Esto puede variar según tu esquema de base de datos
-      const { error: inventoryError } = await supabase.rpc('increment_inventory', {
-        product_id: productId,
-        quantity: quantity,
-      });
+      // Actualizar warehouse_stock para cada producto
+      for (const item of entryItems) {
+        // Buscar si ya existe stock para este producto en esta bodega
+        const { data: existingStock } = await supabase
+          .from('warehouse_stock')
+          .select('*')
+          .eq('product_id', item.product.id)
+          .eq('warehouse_id', warehouseId)
+          .single();
 
-      if (inventoryError) {
-        // Si la función RPC no existe, intentamos actualizar directamente
-        // Esto es un fallback, ajusta según tu esquema
-        console.warn('RPC function not available, skipping inventory update');
+        if (existingStock) {
+          // Actualizar cantidad existente
+          await supabase
+            .from('warehouse_stock')
+            .update({
+              quantity: existingStock.quantity + item.quantity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingStock.id);
+        } else {
+          // Crear nuevo registro de stock
+          await supabase
+            .from('warehouse_stock')
+            .insert({
+              product_id: item.product.id,
+              warehouse_id: warehouseId,
+              quantity: item.quantity,
+              updated_at: new Date().toISOString(),
+            });
+        }
       }
 
-      // Resetear el estado después de registrar exitosamente
+      // Resetear todo después de finalizar
       get().reset();
       
       return { error: null };
@@ -171,24 +357,24 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  setQuantity: (quantity: number) => {
-    set({ quantity });
-  },
-
-  setPurchaseOrderId: (orderId: string | null) => {
-    set({ purchaseOrderId: orderId });
-  },
-
-  setLocation: (location: string | null) => {
-    set({ location });
-  },
-
+  // Reset actions
   reset: () => {
     set({
+      entryItems: [],
       currentProduct: null,
-      scannedBarcode: null,
-      quantity: 0,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
       error: null,
+      step: 'setup',
+    });
+  },
+
+  resetCurrentScan: () => {
+    set({
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      step: 'scanning',
     });
   },
 
@@ -196,4 +382,3 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     set({ error: null });
   },
 }));
-
