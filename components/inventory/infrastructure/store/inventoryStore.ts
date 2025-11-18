@@ -70,12 +70,13 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
+      // Consulta con joins usando foreign keys
       let query = supabase
         .from('warehouse_stock')
         .select(`
           *,
-          product:products(*),
-          warehouse:warehouses(*)
+          products(*),
+          warehouses(*)
         `)
         .order('updated_at', { ascending: false });
 
@@ -86,32 +87,46 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       const { data, error } = await query;
 
       if (error) {
-        // Solo loggear errores críticos, no errores de permisos o tablas vacías
-        if (error.code !== 'PGRST116' && error.code !== '42P01') {
-          console.warn('Error loading inventory:', error.message);
-        }
-        set({ inventory: [], loading: false, error: null });
+        console.error('Error loading inventory:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        set({ inventory: [], loading: false, error: error.message });
         return;
       }
 
-      // Validar que los datos tengan la estructura esperada
+      console.log('Datos recibidos de Supabase:', data?.length || 0, 'registros');
+
+      // Procesar datos - Supabase devuelve los joins con el nombre de la tabla
       const inventoryItems: InventoryItem[] = (data || [])
-        .filter((item: any) => item.product && item.warehouse) // Filtrar items con datos incompletos
+        .filter((item: any) => {
+          // Filtrar productos eliminados y validar que existan los datos
+          const product = item.products;
+          const warehouse = item.warehouses;
+          const isValid = product && !product.deleted_at && warehouse;
+          
+          if (!isValid && product) {
+            console.log('Item filtrado - producto eliminado o sin bodega:', {
+              productId: product.id,
+              productName: product.name,
+              deletedAt: product.deleted_at,
+              hasWarehouse: !!warehouse,
+            });
+          }
+          
+          return isValid;
+        })
         .map((item: any) => ({
           id: item.id,
-          product: item.product,
-          warehouse: item.warehouse,
+          product: item.products,
+          warehouse: item.warehouses,
           quantity: item.quantity || 0,
           updated_at: item.updated_at,
         }));
 
+      console.log(`Inventario procesado: ${inventoryItems.length} items válidos`);
       set({ inventory: inventoryItems, loading: false });
     } catch (error: any) {
-      // Solo loggear errores inesperados
-      if (error?.message && !error.message.includes('permission')) {
-        console.warn('Error loading inventory:', error.message);
-      }
-      set({ inventory: [], loading: false, error: null });
+      console.error('Error loading inventory (catch):', error);
+      set({ inventory: [], loading: false, error: error.message || 'Error al cargar el inventario' });
     }
   },
 
