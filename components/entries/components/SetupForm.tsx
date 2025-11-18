@@ -40,7 +40,8 @@ export function SetupForm() {
             <Picker
               selectedValue={supplierId}
               onValueChange={(value) => setSupplier(value)}
-              style={styles.picker}>
+              style={styles.picker}
+              itemStyle={styles.pickerItem}>
               <Picker.Item label="Seleccione un proveedor" value={null} />
               {suppliers.map((supplier) => (
                 <Picker.Item
@@ -59,7 +60,8 @@ export function SetupForm() {
             <Picker
               selectedValue={warehouseId}
               onValueChange={(value) => setWarehouse(value)}
-              style={styles.picker}>
+              style={styles.picker}
+              itemStyle={styles.pickerItem}>
               <Picker.Item label="Seleccione una bodega" value={null} />
               {warehouses.map((warehouse) => (
                 <Picker.Item
@@ -116,9 +118,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: Colors.background.paper,
     overflow: 'hidden',
+    minHeight: 56,
+    justifyContent: 'center',
   },
   picker: {
-    height: 48,
+    height: 56,
+  },
+  pickerItem: {
+    height: 56,
+    fontSize: 16,
+    color: Colors.text.primary,
   },
   button: {
     marginTop: 8,

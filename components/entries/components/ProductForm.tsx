@@ -150,7 +150,8 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                   <Picker
                     selectedValue={values.category_id}
                     onValueChange={handleChange('category_id')}
-                    style={styles.picker}>
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}>
                     <Picker.Item label="Seleccione una categoría" value="" />
                     {categories.map((category) => (
                       <Picker.Item
@@ -172,7 +173,8 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                   <Picker
                     selectedValue={values.brand_id}
                     onValueChange={handleChange('brand_id')}
-                    style={styles.picker}>
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}>
                     <Picker.Item label="Seleccione una marca" value="" />
                     {brands.map((brand) => (
                       <Picker.Item
@@ -256,9 +258,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: Colors.background.paper,
     overflow: 'hidden',
+    minHeight: 56,
+    justifyContent: 'center',
   },
   picker: {
-    height: 48,
+    height: 56,
+  },
+  pickerItem: {
+    height: 56,
+    fontSize: 16,
+    color: Colors.text.primary,
   },
   errorText: {
     fontSize: 12,
