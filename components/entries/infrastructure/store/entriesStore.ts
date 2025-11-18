@@ -90,6 +90,7 @@ interface EntriesState {
   reset: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
+  goBackToSetup: () => void;
 }
 
 export const useEntriesStore = create<EntriesState>((set, get) => ({
@@ -478,5 +479,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   clearError: () => {
     set({ error: null });
+  },
+
+  goBackToSetup: () => {
+    set({
+      step: 'setup',
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      error: null,
+    });
   },
 }));

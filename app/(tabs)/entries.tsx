@@ -28,6 +28,7 @@ export default function EntriesScreen() {
     setQuantity,
     resetCurrentScan,
     clearError,
+    goBackToSetup,
   } = useEntries();
 
   const [showScanner, setShowScanner] = useState(false);
@@ -81,6 +82,12 @@ export default function EntriesScreen() {
                 title="Escanear código de barras"
                 onPress={() => setShowScanner(true)}
                 style={styles.scanButton}
+              />
+              <Button
+                title="Cancelar"
+                onPress={goBackToSetup}
+                variant="outline"
+                style={styles.cancelScanButton}
               />
             </View>
           )}
@@ -155,6 +162,10 @@ const styles = StyleSheet.create({
   },
   scanButton: {
     minWidth: 200,
+  },
+  cancelScanButton: {
+    minWidth: 200,
+    marginTop: 12,
   },
   actionsContainer: {
     paddingHorizontal: 20,
