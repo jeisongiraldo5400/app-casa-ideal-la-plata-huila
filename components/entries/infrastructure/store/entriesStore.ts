@@ -7,6 +7,8 @@ type Supplier = Database['public']['Tables']['suppliers']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type Category = Database['public']['Tables']['category']['Row'];
 type Brand = Database['public']['Tables']['brands']['Row'];
+type PurchaseOrder = Database['public']['Tables']['purchase_orders']['Row'];
+type PurchaseOrderItem = Database['public']['Tables']['purchase_order_items']['Row'];
 type InventoryEntry = Database['public']['Tables']['inventory_entries']['Insert'];
 
 export interface EntryItem {
@@ -25,9 +27,14 @@ export interface NewProductData {
   supplier_id?: string;
 }
 
+export interface PurchaseOrderWithItems extends PurchaseOrder {
+  items: Array<PurchaseOrderItem & { product: Product }>;
+}
+
 interface EntriesState {
   // Sesión de entrada
   supplierId: string | null;
+  purchaseOrderId: string | null;
   warehouseId: string | null;
   entryItems: EntryItem[];
   
@@ -39,18 +46,27 @@ interface EntriesState {
   // Estado de UI
   loading: boolean;
   error: string | null;
-  step: 'setup' | 'scanning' | 'product-form'; // setup: seleccionar supplier/warehouse, scanning: escaneando, product-form: crear producto
+  step: 'setup' | 'scanning' | 'product-form'; // setup: seleccionar supplier/PO/warehouse, scanning: escaneando, product-form: crear producto
+  setupStep: 'supplier' | 'purchase-order' | 'warehouse'; // Paso actual en el setup
   
   // Datos para formularios
   suppliers: Supplier[];
+  purchaseOrders: PurchaseOrderWithItems[];
   warehouses: Warehouse[];
   categories: Category[];
   brands: Brand[];
   
+  // Filtros
+  supplierSearchQuery: string;
+  
   // Actions - Setup
   setSupplier: (supplierId: string | null) => void;
+  setPurchaseOrder: (purchaseOrderId: string | null) => void;
   setWarehouse: (warehouseId: string | null) => void;
+  setSetupStep: (step: 'supplier' | 'purchase-order' | 'warehouse') => void;
+  setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
+  loadPurchaseOrders: (supplierId: string) => Promise<void>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -79,6 +95,7 @@ interface EntriesState {
 export const useEntriesStore = create<EntriesState>((set, get) => ({
   // Initial state
   supplierId: null,
+  purchaseOrderId: null,
   warehouseId: null,
   entryItems: [],
   currentProduct: null,
@@ -87,18 +104,40 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   loading: false,
   error: null,
   step: 'setup',
+  setupStep: 'supplier',
   suppliers: [],
+  purchaseOrders: [],
   warehouses: [],
   categories: [],
   brands: [],
+  supplierSearchQuery: '',
 
   // Setup actions
   setSupplier: (supplierId) => {
-    set({ supplierId });
+    set({ supplierId, purchaseOrderId: null }); // Resetear PO cuando cambia el proveedor
+    if (supplierId) {
+      get().loadPurchaseOrders(supplierId);
+      // No avanzar automáticamente, el usuario decide si quiere ver las órdenes o saltarlas
+    }
+  },
+
+  setPurchaseOrder: (purchaseOrderId) => {
+    set({ purchaseOrderId });
+    if (purchaseOrderId) {
+      get().setSetupStep('warehouse');
+    }
   },
 
   setWarehouse: (warehouseId) => {
     set({ warehouseId });
+  },
+
+  setSetupStep: (step) => {
+    set({ setupStep: step });
+  },
+
+  setSupplierSearchQuery: (query) => {
+    set({ supplierSearchQuery: query });
   },
 
   loadSuppliers: async () => {
@@ -118,6 +157,56 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error: any) {
       console.error('Error loading suppliers:', error);
       set({ suppliers: [] });
+    }
+  },
+
+  loadPurchaseOrders: async (supplierId: string) => {
+    set({ loading: true });
+    try {
+      // Cargar órdenes de compra pendientes o en proceso para el proveedor
+      const { data: orders, error: ordersError } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .eq('supplier_id', supplierId)
+        .in('status', ['PENDIENTE', 'EN PROCESO'])
+        .order('created_at', { ascending: false });
+
+      if (ordersError) {
+        console.error('Error loading purchase orders:', ordersError);
+        set({ purchaseOrders: [], loading: false });
+        return;
+      }
+
+      // Para cada orden, cargar sus items con los productos
+      const ordersWithItems: PurchaseOrderWithItems[] = await Promise.all(
+        (orders || []).map(async (order) => {
+          const { data: items, error: itemsError } = await supabase
+            .from('purchase_order_items')
+            .select(`
+              *,
+              products(*)
+            `)
+            .eq('purchase_order_id', order.id);
+
+          if (itemsError) {
+            console.error('Error loading purchase order items:', itemsError);
+            return { ...order, items: [] };
+          }
+
+          return {
+            ...order,
+            items: (items || []).map((item: any) => ({
+              ...item,
+              product: item.products,
+            })) as Array<PurchaseOrderItem & { product: Product }>,
+          };
+        })
+      );
+
+      set({ purchaseOrders: ordersWithItems, loading: false });
+    } catch (error: any) {
+      console.error('Error loading purchase orders:', error);
+      set({ purchaseOrders: [], loading: false });
     }
   },
 
@@ -312,7 +401,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Finalize entry
   finalizeEntry: async (userId): Promise<{ error: any }> => {
-    const { entryItems, supplierId, warehouseId } = get();
+    const { entryItems, supplierId, purchaseOrderId, warehouseId } = get();
     
     if (entryItems.length === 0) {
       return { error: { message: 'No hay productos para registrar' } };
@@ -323,13 +412,18 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
 
     try {
+      // Determinar el entry_type: si hay purchase_order_id, es PO_ENTRY, sino es MANUAL_ENTRY
+      const entryType = purchaseOrderId ? 'PO_ENTRY' : 'MANUAL_ENTRY';
+      
       // Registrar cada producto en inventory_entries
       const entries: InventoryEntry[] = entryItems.map(item => ({
         product_id: item.product.id,
         quantity: item.quantity,
         supplier_id: supplierId,
+        purchase_order_id: purchaseOrderId,
         warehouse_id: warehouseId,
         barcode_scanned: item.barcode,
+        entry_type: entryType,
         created_by: userId,
       }));
 
@@ -364,6 +458,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentQuantity: 1,
       error: null,
       step: 'setup',
+      setupStep: 'supplier',
+      supplierId: null,
+      purchaseOrderId: null,
+      warehouseId: null,
+      purchaseOrders: [],
+      supplierSearchQuery: '',
     });
   },
 
