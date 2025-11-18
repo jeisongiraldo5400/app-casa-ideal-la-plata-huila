@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/theme';
 import React, { useState } from 'react';
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 export default function EntriesScreen() {
@@ -72,7 +72,7 @@ export default function EntriesScreen() {
         <Text style={styles.subtitle}>Registre la entrada de mercancía a bodega</Text>
       </View>
 
-      {step === 'setup' && <SetupForm />}
+      {(step === 'setup' || step === 'flow-selection') && <SetupForm />}
 
       {step === 'scanning' && (
         <>

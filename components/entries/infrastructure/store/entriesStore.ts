@@ -11,6 +11,8 @@ type PurchaseOrder = Database['public']['Tables']['purchase_orders']['Row'];
 type PurchaseOrderItem = Database['public']['Tables']['purchase_order_items']['Row'];
 type InventoryEntry = Database['public']['Tables']['inventory_entries']['Insert'];
 
+export type EntryType = 'PO_ENTRY' | 'ENTRY' | 'INITIAL_LOAD';
+
 export interface EntryItem {
   product: Product;
   quantity: number;
@@ -28,11 +30,12 @@ export interface NewProductData {
 }
 
 export interface PurchaseOrderWithItems extends PurchaseOrder {
-  items: Array<PurchaseOrderItem & { product: Product }>;
+  items: (PurchaseOrderItem & { product: Product })[];
 }
 
 interface EntriesState {
   // Sesión de entrada
+  entryType: EntryType | null;
   supplierId: string | null;
   purchaseOrderId: string | null;
   warehouseId: string | null;
@@ -46,7 +49,7 @@ interface EntriesState {
   // Estado de UI
   loading: boolean;
   error: string | null;
-  step: 'setup' | 'scanning' | 'product-form'; // setup: seleccionar supplier/PO/warehouse, scanning: escaneando, product-form: crear producto
+  step: 'flow-selection' | 'setup' | 'scanning' | 'product-form'; // flow-selection: elegir tipo, setup: seleccionar supplier/PO/warehouse, scanning: escaneando, product-form: crear producto
   setupStep: 'supplier' | 'purchase-order' | 'warehouse'; // Paso actual en el setup
   
   // Datos para formularios
@@ -60,6 +63,7 @@ interface EntriesState {
   supplierSearchQuery: string;
   
   // Actions - Setup
+  setEntryType: (type: EntryType) => void;
   setSupplier: (supplierId: string | null) => void;
   setPurchaseOrder: (purchaseOrderId: string | null) => void;
   setWarehouse: (warehouseId: string | null) => void;
@@ -95,6 +99,7 @@ interface EntriesState {
 
 export const useEntriesStore = create<EntriesState>((set, get) => ({
   // Initial state
+  entryType: null,
   supplierId: null,
   purchaseOrderId: null,
   warehouseId: null,
@@ -104,7 +109,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   currentQuantity: 1,
   loading: false,
   error: null,
-  step: 'setup',
+  step: 'flow-selection',
   setupStep: 'supplier',
   suppliers: [],
   purchaseOrders: [],
@@ -114,6 +119,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   supplierSearchQuery: '',
 
   // Setup actions
+  setEntryType: (type) => {
+    set({ 
+      entryType: type,
+      step: 'setup',
+      // Configurar el paso inicial del setup según el tipo
+      setupStep: type === 'INITIAL_LOAD' ? 'warehouse' : 'supplier'
+    });
+  },
+
   setSupplier: (supplierId) => {
     set({ supplierId, purchaseOrderId: null }); // Resetear PO cuando cambia el proveedor
     if (supplierId) {
@@ -199,7 +213,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             items: (items || []).map((item: any) => ({
               ...item,
               product: item.products,
-            })) as Array<PurchaseOrderItem & { product: Product }>,
+            })) as (PurchaseOrderItem & { product: Product })[],
           };
         })
       );
@@ -272,11 +286,18 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   startEntry: () => {
-    const { supplierId, warehouseId } = get();
-    if (!supplierId || !warehouseId) {
-      set({ error: 'Debe seleccionar proveedor y bodega antes de comenzar' });
+    const { supplierId, warehouseId, entryType } = get();
+    
+    if (!warehouseId) {
+      set({ error: 'Debe seleccionar una bodega' });
       return;
     }
+
+    if (entryType === 'PO_ENTRY' && !supplierId) {
+      set({ error: 'Debe seleccionar un proveedor para entrada con orden de compra' });
+      return;
+    }
+
     set({ step: 'scanning', error: null });
   },
 
@@ -402,7 +423,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Finalize entry
   finalizeEntry: async (userId): Promise<{ error: any }> => {
-    const { entryItems, supplierId, purchaseOrderId, warehouseId } = get();
+    const { entryItems, supplierId, purchaseOrderId, warehouseId, entryType } = get();
     
     if (entryItems.length === 0) {
       return { error: { message: 'No hay productos para registrar' } };
@@ -412,10 +433,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return { error: { message: 'Debe seleccionar una bodega' } };
     }
 
+    if (!entryType) {
+      return { error: { message: 'Tipo de entrada no definido' } };
+    }
+
     try {
-      // Determinar el entry_type: si hay purchase_order_id, es PO_ENTRY, sino es MANUAL_ENTRY
-      const entryType = purchaseOrderId ? 'PO_ENTRY' : 'MANUAL_ENTRY';
-      
       // Registrar cada producto en inventory_entries
       const entries: InventoryEntry[] = entryItems.map(item => ({
         product_id: item.product.id,
@@ -424,7 +446,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchase_order_id: purchaseOrderId,
         warehouse_id: warehouseId,
         barcode_scanned: item.barcode,
-        entry_type: entryType,
+        entry_type: entryType, // Usar el tipo seleccionado explícitamente
         created_by: userId,
       }));
 
@@ -458,8 +480,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       error: null,
-      step: 'setup',
+      step: 'flow-selection',
       setupStep: 'supplier',
+      entryType: null,
       supplierId: null,
       purchaseOrderId: null,
       warehouseId: null,
@@ -483,7 +506,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   goBackToSetup: () => {
     set({
-      step: 'setup',
+      step: 'setup', // Regresar al setup del flujo actual
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,

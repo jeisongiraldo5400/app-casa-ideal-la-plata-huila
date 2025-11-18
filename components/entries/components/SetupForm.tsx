@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import React, { useEffect, useMemo } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
 
 export function SetupForm() {
@@ -27,6 +27,8 @@ export function SetupForm() {
     setSetupStep,
     setSupplierSearchQuery,
     startEntry,
+    entryType,
+    setEntryType,
   } = useEntriesStore();
 
   useEffect(() => {
@@ -47,12 +49,48 @@ export function SetupForm() {
 
   const canStart = supplierId && warehouseId; // Orden de compra es opcional
 
+  const renderFlowSelectionStep = () => (
+    <View>
+      <Text style={styles.stepTitle}>¿Qué deseas registrar?</Text>
+      <Text style={styles.stepDescription}>
+        Seleccione el tipo de entrada de inventario que va a realizar
+      </Text>
+
+      <Button
+        title="Registrar entrada con Orden de Compra"
+        onPress={() => setEntryType('PO_ENTRY')}
+        style={styles.flowButton}
+      />
+      
+      <Button
+        title="Registrar entrada manual"
+        onPress={() => setEntryType('ENTRY')}
+        style={styles.flowButton}
+        variant="secondary"
+      />
+      
+      <Button
+        title="Realizar carga inicial"
+        onPress={() => setEntryType('INITIAL_LOAD')}
+        style={styles.flowButton}
+        variant="outline"
+      />
+    </View>
+  );
+
   const renderSupplierStep = () => (
     <View>
-      <Text style={styles.stepTitle}>Paso 1: Seleccionar Proveedor</Text>
-      <Text style={styles.stepDescription}>
-        Busque y seleccione el proveedor por nombre o NIT
-      </Text>
+      <View style={styles.stepHeader}>
+        <TouchableOpacity onPress={() => setEntryType(null as any)} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
+        </TouchableOpacity>
+        <View style={styles.stepHeaderText}>
+          <Text style={styles.stepTitle}>Paso 1: Seleccionar Proveedor</Text>
+          <Text style={styles.stepDescription}>
+            {entryType === 'ENTRY' ? 'Seleccione el proveedor (Opcional)' : 'Busque y seleccione el proveedor por nombre o NIT'}
+          </Text>
+        </View>
+      </View>
 
       <View style={styles.searchContainer}>
         <MaterialIcons name="search" size={20} color={Colors.text.secondary} style={styles.searchIcon} />
@@ -71,7 +109,7 @@ export function SetupForm() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Proveedor *</Text>
+        <Text style={styles.label}>Proveedor {entryType === 'PO_ENTRY' ? '*' : '(Opcional)'}</Text>
         <View style={styles.pickerContainer}>
           <Picker
             selectedValue={supplierId}
@@ -90,19 +128,23 @@ export function SetupForm() {
         </View>
       </View>
 
-      {supplierId && (
+      {(supplierId || entryType === 'ENTRY') && (
         <View style={styles.supplierActions}>
-          <Button
-            title="Continuar con orden de compra"
-            onPress={() => setSetupStep('purchase-order')}
-            style={styles.continueButton}
-          />
-          <Button
-            title="Omitir orden de compra"
-            onPress={() => setSetupStep('warehouse')}
-            variant="outline"
-            style={styles.skipButton}
-          />
+          {entryType === 'PO_ENTRY' && (
+            <Button
+              title="Continuar con orden de compra"
+              onPress={() => setSetupStep('purchase-order')}
+              style={styles.continueButton}
+            />
+          )}
+          
+          {entryType === 'ENTRY' && (
+            <Button
+              title="Continuar a bodega"
+              onPress={() => setSetupStep('warehouse')}
+              style={styles.continueButton}
+            />
+          )}
         </View>
       )}
     </View>
@@ -149,7 +191,15 @@ export function SetupForm() {
     <View>
       <View style={styles.stepHeader}>
         <TouchableOpacity 
-          onPress={() => setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier')} 
+          onPress={() => {
+            if (entryType === 'INITIAL_LOAD') {
+              setEntryType(null as any); // Volver a selección de flujo
+            } else if (entryType === 'ENTRY') {
+              setSetupStep('supplier');
+            } else {
+              setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
+            }
+          }} 
           style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
         </TouchableOpacity>
@@ -184,7 +234,7 @@ export function SetupForm() {
       <Button
         title="Comenzar Entrada"
         onPress={startEntry}
-        disabled={!canStart}
+        disabled={!warehouseId || (entryType === 'PO_ENTRY' && !supplierId)}
         style={styles.button}
       />
     </View>
@@ -198,9 +248,15 @@ export function SetupForm() {
           Complete los pasos para configurar la entrada de productos
         </Text>
 
-        {setupStep === 'supplier' && renderSupplierStep()}
-        {setupStep === 'purchase-order' && renderPurchaseOrderStep()}
-        {setupStep === 'warehouse' && renderWarehouseStep()}
+        {!entryType ? (
+          renderFlowSelectionStep()
+        ) : (
+          <>
+            {setupStep === 'supplier' && renderSupplierStep()}
+            {entryType === 'PO_ENTRY' && setupStep === 'purchase-order' && renderPurchaseOrderStep()}
+            {setupStep === 'warehouse' && renderWarehouseStep()}
+          </>
+        )}
       </Card>
     </ScrollView>
   );
@@ -321,6 +377,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: Colors.text.secondary,
+  },
+  flowButton: {
+    marginBottom: 16,
   },
 });
 
