@@ -62,6 +62,7 @@ interface EntriesState {
   addProductToEntry: (product: Product, quantity: number, barcode: string) => void;
   removeProductFromEntry: (index: number) => void;
   updateProductQuantity: (index: number, quantity: number) => void;
+  setQuantity: (quantity: number) => void;
   
   // Actions - Product Creation
   createProduct: (productData: NewProductData) => Promise<{ product: Product | null; error: any }>;
@@ -246,6 +247,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const updatedItems = [...entryItems];
     updatedItems[index].quantity = quantity;
     set({ entryItems: updatedItems });
+  },
+
+  setQuantity: (quantity) => {
+    set({ currentQuantity: quantity >= 0 ? quantity : 0 });
   },
 
   // Product creation

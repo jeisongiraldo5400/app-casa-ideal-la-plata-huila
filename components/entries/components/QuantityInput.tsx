@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Colors } from '@/constants/theme';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface QuantityInputProps {
   quantity: number;
@@ -42,11 +42,20 @@ export function QuantityInput({
         <Input
           value={quantity.toString()}
           onChangeText={(text) => {
+            // Si el texto está vacío, establecer a 0
+            if (text === '') {
+              if (onQuantityChange) {
+                onQuantityChange(0);
+              }
+              return;
+            }
+            
+            // Intentar parsear el número
             const num = parseInt(text, 10);
             if (!isNaN(num) && num >= 0) {
-              onQuantityChange(num);
-            } else if (text === '') {
-              onQuantityChange(0);
+              if (onQuantityChange) {
+                onQuantityChange(num);
+              }
             }
           }}
           keyboardType="numeric"
