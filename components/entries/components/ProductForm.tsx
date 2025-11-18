@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Formik, FormikHelpers } from 'formik';
-import * as Yup from 'yup';
-import { Input } from '@/components/ui/Input';
+import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Picker } from '@react-native-picker/picker';
-import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import { Input } from '@/components/ui/Input';
 import { Colors } from '@/constants/theme';
+import { Picker } from '@react-native-picker/picker';
+import { Formik, FormikHelpers } from 'formik';
+import React, { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Yup from 'yup';
 
 interface ProductFormValues {
   name: string;
