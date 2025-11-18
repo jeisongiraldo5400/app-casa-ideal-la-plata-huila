@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Colors } from '@/constants/theme';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function TabLayout() {
   return (
@@ -22,6 +23,19 @@ export default function TabLayout() {
         options={{
           title: 'Inicio',
           tabBarLabel: 'Inicio',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="house.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="entries"
+        options={{
+          title: 'Entradas',
+          tabBarLabel: 'Entradas',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="plus.circle.fill" color={color} />
+          ),
         }}
       />
     </Tabs>
