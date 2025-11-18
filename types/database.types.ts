@@ -76,8 +76,10 @@ export type Database = {
           barcode_scanned: string | null
           created_at: string
           created_by: string | null
+          entry_type: string
           id: string
           product_id: string
+          purchase_order_id: string | null
           quantity: number
           supplier_id: string | null
           warehouse_id: string
@@ -86,8 +88,10 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          entry_type?: string
           id?: string
           product_id: string
+          purchase_order_id?: string | null
           quantity: number
           supplier_id?: string | null
           warehouse_id: string
@@ -96,8 +100,10 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          entry_type?: string
           id?: string
           product_id?: string
+          purchase_order_id?: string | null
           quantity?: number
           supplier_id?: string | null
           warehouse_id?: string
@@ -108,6 +114,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
           {
