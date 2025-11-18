@@ -183,7 +183,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .from('purchase_orders')
         .select('*')
         .eq('supplier_id', supplierId)
-        .in('status', ['PENDIENTE', 'EN PROCESO'])
+        .in('status', ['pending'])
         .order('created_at', { ascending: false });
 
       if (ordersError) {
