@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { create } from 'zustand';
 import { Database } from '@/types/database.types';
+import { create } from 'zustand';
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Supplier = Database['public']['Tables']['suppliers']['Row'];
@@ -341,37 +341,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return { error: entriesError };
       }
 
-      // Actualizar warehouse_stock para cada producto
-      for (const item of entryItems) {
-        // Buscar si ya existe stock para este producto en esta bodega
-        const { data: existingStock } = await supabase
-          .from('warehouse_stock')
-          .select('*')
-          .eq('product_id', item.product.id)
-          .eq('warehouse_id', warehouseId)
-          .single();
-
-        if (existingStock) {
-          // Actualizar cantidad existente
-          await supabase
-            .from('warehouse_stock')
-            .update({
-              quantity: existingStock.quantity + item.quantity,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existingStock.id);
-        } else {
-          // Crear nuevo registro de stock
-          await supabase
-            .from('warehouse_stock')
-            .insert({
-              product_id: item.product.id,
-              warehouse_id: warehouseId,
-              quantity: item.quantity,
-              updated_at: new Date().toISOString(),
-            });
-        }
-      }
+      // NOTA: No actualizamos warehouse_stock manualmente aquí porque
+      // probablemente hay un trigger en la base de datos que lo hace automáticamente
+      // al insertar en inventory_entries. Si se actualiza manualmente aquí también,
+      // se duplicaría el incremento del stock.
 
       // Resetear todo después de finalizar
       get().reset();
