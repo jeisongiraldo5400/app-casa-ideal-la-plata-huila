@@ -1,29 +1,50 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Theme configuration for the app
  */
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
 export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+  primary: {
+    main: '#3b82f6', // Azul moderno
+    light: '#60a5fa',
+    dark: '#1d4ed8',
+    contrastText: '#ffffff',
   },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+  secondary: {
+    main: '#6366f1', // Índigo
+    light: '#818cf8',
+    dark: '#4f46e5',
+    contrastText: '#ffffff',
+  },
+  background: {
+    default: '#fafbfc', // Gris muy claro
+    paper: '#ffffff', // Blanco puro
+  },
+  text: {
+    primary: '#1f2937', // Gris oscuro
+    secondary: '#6b7280', // Gris medio
+  },
+  divider: '#e5e7eb', // Gris claro
+  success: {
+    main: '#22c55e', // Verde moderno
+    light: '#4ade80',
+    dark: '#16a34a',
+  },
+  warning: {
+    main: '#f59e0b', // Amarillo/naranja
+    light: '#fbbf24',
+    dark: '#d97706',
+  },
+  error: {
+    main: '#ef4444', // Rojo moderno
+    light: '#f87171',
+    dark: '#dc2626',
+  },
+  info: {
+    main: '#3b82f6', // Azul info
+    light: '#60a5fa',
+    dark: '#1d4ed8',
   },
 };
 
