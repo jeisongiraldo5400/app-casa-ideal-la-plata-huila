@@ -54,6 +54,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="inventory"
+        options={{
+          title: 'Inventario',
+          tabBarLabel: 'Inventario',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="inventory" size={28} color={color} />
+          ),
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
