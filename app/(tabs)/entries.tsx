@@ -1,20 +1,20 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Alert,
-} from 'react-native';
-import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { EntryItemsList } from '@/components/entries/components/EntryItemsList';
+import { ProductForm } from '@/components/entries/components/ProductForm';
 import { ProductFound } from '@/components/entries/components/ProductFound';
 import { QuantityInput } from '@/components/entries/components/QuantityInput';
 import { SetupForm } from '@/components/entries/components/SetupForm';
-import { ProductForm } from '@/components/entries/components/ProductForm';
-import { EntryItemsList } from '@/components/entries/components/EntryItemsList';
+import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
 import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/theme';
+import React, { useState } from 'react';
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 export default function EntriesScreen() {
   const {
