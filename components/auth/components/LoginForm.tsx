@@ -65,29 +65,38 @@ export function LoginForm() {
         isSubmitting,
       }) => (
         <Card style={styles.card}>
-          <Input
-            label="Correo electrónico"
-            placeholder="tu@correo.com"
-            value={values.email}
-            onChangeText={handleChange('email')}
-            onBlur={handleBlur('email')}
-            error={touched.email && errors.email ? errors.email : undefined}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-          />
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>Iniciar Sesión</Text>
+            <Text style={styles.formSubtitle}>
+              Ingresa tus credenciales para acceder
+            </Text>
+          </View>
 
-          <Input
-            label="Contraseña"
-            placeholder="••••••••"
-            value={values.password}
-            onChangeText={handleChange('password')}
-            onBlur={handleBlur('password')}
-            error={touched.password && errors.password ? errors.password : undefined}
-            secureTextEntry
-            autoCapitalize="none"
-            autoComplete="password"
-          />
+          <View style={styles.inputsContainer}>
+            <Input
+              label="Correo electrónico"
+              placeholder="tu@correo.com"
+              value={values.email}
+              onChangeText={handleChange('email')}
+              onBlur={handleBlur('email')}
+              error={touched.email && errors.email ? errors.email : undefined}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+            />
+
+            <Input
+              label="Contraseña"
+              placeholder="••••••••"
+              value={values.password}
+              onChangeText={handleChange('password')}
+              onBlur={handleBlur('password')}
+              error={touched.password && errors.password ? errors.password : undefined}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="password"
+            />
+          </View>
 
           <Button
             title="Iniciar sesión"
@@ -105,8 +114,26 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
   },
+  formHeader: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  formTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  formSubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+  },
+  inputsContainer: {
+    marginBottom: 8,
+  },
   button: {
-    marginTop: 8,
+    marginTop: 16,
   },
 });
 
