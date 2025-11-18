@@ -1,19 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { Colors } from '@/constants/theme';
+import { Card } from '@/components/ui/Card';
 
 export default function HomeScreen() {
-  const { user, signOut } = useAuth();
-  const router = useRouter();
-
-  const handleSignOut = async () => {
-    await signOut();
-    router.replace('/(auth)/login');
-  };
+  const { user } = useAuth();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -23,23 +15,25 @@ export default function HomeScreen() {
       </View>
 
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Información de sesión</Text>
+        <Text style={styles.cardTitle}>Resumen</Text>
         <Text style={styles.cardText}>
-          <Text style={styles.label}>Email: </Text>
-          {user?.email}
+          Bienvenido al sistema de gestión de inventario de Casa Ideal La Plata Huila.
         </Text>
         <Text style={styles.cardText}>
-          <Text style={styles.label}>ID: </Text>
-          {user?.id}
+          Desde aquí puedes gestionar las entradas de productos y mantener el control
+          de tu inventario en tiempo real.
         </Text>
       </Card>
 
-      <Button
-        title="Cerrar sesión"
-        onPress={handleSignOut}
-        variant="outline"
-        style={styles.button}
-      />
+      {user && (
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>Sesión activa</Text>
+          <Text style={styles.cardText}>
+            <Text style={styles.label}>Usuario: </Text>
+            {user.email}
+          </Text>
+        </Card>
+      )}
     </ScrollView>
   );
 }

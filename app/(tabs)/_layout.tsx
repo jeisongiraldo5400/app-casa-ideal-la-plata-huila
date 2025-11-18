@@ -1,6 +1,19 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { MaterialIcons } from '@expo/vector-icons';
+import { TouchableOpacity } from 'react-native';
+
+function ProfileHeaderButton() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      onPress={() => router.push('/(tabs)/profile')}
+      style={{ marginRight: 16 }}>
+      <MaterialIcons name="account-circle" size={28} color={Colors.text.primary} />
+    </TouchableOpacity>
+  );
+}
 
 export default function TabLayout() {
   return (
@@ -26,6 +39,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="house.fill" color={color} />
           ),
+          headerRight: () => <ProfileHeaderButton />,
         }}
       />
       <Tabs.Screen
@@ -36,6 +50,18 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="plus.circle.fill" color={color} />
           ),
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Perfil',
+          tabBarLabel: 'Perfil',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="account-circle" size={28} color={color} />
+          ),
+          headerShown: true,
         }}
       />
     </Tabs>
