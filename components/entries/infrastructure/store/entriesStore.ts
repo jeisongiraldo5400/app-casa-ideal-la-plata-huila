@@ -109,10 +109,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .is('deleted_at', null)
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading suppliers:', error);
+        set({ suppliers: [] });
+        return;
+      }
       set({ suppliers: data || [] });
     } catch (error: any) {
       console.error('Error loading suppliers:', error);
+      set({ suppliers: [] });
     }
   },
 
@@ -124,10 +129,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .eq('is_active', true)
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading warehouses:', error);
+        set({ warehouses: [] });
+        return;
+      }
       set({ warehouses: data || [] });
     } catch (error: any) {
       console.error('Error loading warehouses:', error);
+      set({ warehouses: [] });
     }
   },
 
@@ -139,10 +149,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .is('deleted_at', null)
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading categories:', error);
+        set({ categories: [] });
+        return;
+      }
       set({ categories: data || [] });
     } catch (error: any) {
       console.error('Error loading categories:', error);
+      set({ categories: [] });
     }
   },
 
@@ -154,10 +169,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .is('deleted_at', null)
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading brands:', error);
+        set({ brands: [] });
+        return;
+      }
       set({ brands: data || [] });
     } catch (error: any) {
       console.error('Error loading brands:', error);
+      set({ brands: [] });
     }
   },
 
