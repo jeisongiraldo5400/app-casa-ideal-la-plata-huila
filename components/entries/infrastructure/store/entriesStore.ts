@@ -45,6 +45,7 @@ interface EntriesState {
   supplierId: string | null;
   purchaseOrderId: string | null;
   warehouseId: string | null;
+  selectedOrderProductId: string | null; // Producto seleccionado de la orden
   entryItems: EntryItem[];
 
   // Estado actual de escaneo
@@ -80,6 +81,7 @@ interface EntriesState {
   setSupplier: (supplierId: string | null) => void;
   setPurchaseOrder: (purchaseOrderId: string | null) => void;
   setWarehouse: (warehouseId: string | null) => void;
+  setSelectedOrderProduct: (productId: string | null) => void;
   setSetupStep: (step: "supplier" | "purchase-order" | "warehouse") => void;
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
@@ -98,7 +100,7 @@ interface EntriesState {
     product: Product,
     quantity: number,
     barcode: string
-  ) => void;
+  ) => Promise<void>;
   removeProductFromEntry: (index: number) => void;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
@@ -124,6 +126,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   supplierId: null,
   purchaseOrderId: null,
   warehouseId: null,
+  selectedOrderProductId: null,
   entryItems: [],
   currentProduct: null,
   currentScannedBarcode: null,
@@ -159,7 +162,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   setPurchaseOrder: (purchaseOrderId) => {
-    set({ purchaseOrderId });
+    set({ purchaseOrderId, selectedOrderProductId: null }); // Resetear producto seleccionado
     if (purchaseOrderId) {
       get().setSetupStep("warehouse");
     }
@@ -167,6 +170,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   setWarehouse: (warehouseId) => {
     set({ warehouseId });
+  },
+
+  setSelectedOrderProduct: (productId) => {
+    set({ selectedOrderProductId: productId });
   },
 
   setSetupStep: (step) => {
@@ -467,8 +474,57 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  addProductToEntry: (product, quantity, barcode) => {
-    const { entryItems } = get();
+  addProductToEntry: async (product, quantity, barcode) => {
+    const { entryItems, purchaseOrderId, selectedOrderProductId, purchaseOrders, purchaseOrderValidations, entryType } = get();
+    
+    // Si hay una orden de compra, validar que el producto esté en la orden
+    if (purchaseOrderId && entryType === 'PO_ENTRY') {
+      const purchaseOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
+      
+      if (!purchaseOrder) {
+        set({ error: "Orden de compra no encontrada" });
+        return;
+      }
+
+      // Verificar que el producto esté en la orden
+      const orderItem = purchaseOrder.items.find(item => item.product_id === product.id);
+      if (!orderItem) {
+        set({ error: "Este producto no está en la orden de compra seleccionada" });
+        return;
+      }
+
+      // Obtener cantidad ya registrada para este producto
+      const { data: registeredEntries } = await supabase
+        .from("inventory_entries")
+        .select("quantity")
+        .eq("purchase_order_id", purchaseOrderId)
+        .eq("product_id", product.id);
+      
+      const totalRegistered = (registeredEntries || []).reduce((sum, entry) => sum + entry.quantity, 0);
+      
+      // Verificar cantidad actual en entryItems
+      const existingItem = entryItems.find(item => item.product.id === product.id);
+      const currentQuantityInSession = existingItem ? existingItem.quantity : 0;
+      
+      // Calcular cantidad total que se intenta registrar
+      const totalQuantityToRegister = totalRegistered + currentQuantityInSession + quantity;
+      
+      // Validar que no exceda la cantidad de la orden
+      if (totalQuantityToRegister > orderItem.quantity) {
+        const remaining = orderItem.quantity - totalRegistered - currentQuantityInSession;
+        set({ 
+          error: `La cantidad excede lo permitido. Cantidad en orden: ${orderItem.quantity}, ya registrado: ${totalRegistered}, en sesión: ${currentQuantityInSession}. Máximo permitido: ${remaining}` 
+        });
+        return;
+      }
+
+      // Validar que el producto escaneado sea el seleccionado de la orden
+      if (selectedOrderProductId && selectedOrderProductId !== product.id) {
+        set({ error: "Debe escanear el producto seleccionado de la orden" });
+        return;
+      }
+    }
+
     // Verificar si el producto ya está en la lista
     const existingIndex = entryItems.findIndex(
       (item) => item.product.id === product.id
@@ -478,10 +534,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // Si existe, actualizar la cantidad
       const updatedItems = [...entryItems];
       updatedItems[existingIndex].quantity += quantity;
-      set({ entryItems: updatedItems });
+      set({ entryItems: updatedItems, error: null });
     } else {
       // Si no existe, agregarlo
-      set({ entryItems: [...entryItems, { product, quantity, barcode }] });
+      set({ entryItems: [...entryItems, { product, quantity, barcode }], error: null });
     }
 
     // Resetear el escaneo actual
@@ -623,6 +679,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       supplierId: null,
       purchaseOrderId: null,
       warehouseId: null,
+      selectedOrderProductId: null,
       purchaseOrders: [],
       supplierSearchQuery: "",
       purchaseOrderValidations: {},

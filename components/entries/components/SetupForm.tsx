@@ -30,6 +30,8 @@ export function SetupForm() {
     entryType,
     setEntryType,
     purchaseOrderValidations,
+    selectedOrderProductId,
+    setSelectedOrderProduct,
   } = useEntriesStore();
 
   useEffect(() => {
@@ -188,69 +190,118 @@ export function SetupForm() {
     </View>
   );
 
-  const renderWarehouseStep = () => (
-    <View>
-      <View style={styles.stepHeader}>
-        <TouchableOpacity 
-          onPress={() => {
-            if (entryType === 'INITIAL_LOAD') {
-              setEntryType(null as any); // Volver a selección de flujo
-            } else if (entryType === 'ENTRY') {
-              setSetupStep('supplier');
-            } else {
-              setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
-            }
-          }} 
-          style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
-        </TouchableOpacity>
-        <View style={styles.stepHeaderText}>
-          <Text style={styles.stepTitle}>Paso 3: Seleccionar Bodega</Text>
-          <Text style={styles.stepDescription}>
-            Seleccione la bodega de destino para la entrada
-          </Text>
+  const renderWarehouseStep = () => {
+    // Obtener la orden seleccionada y sus productos
+    const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
+    const orderProducts = selectedOrder?.items || [];
+
+    // Obtener cantidades registradas por producto
+    const getProductRegisteredQuantity = (productId: string) => {
+      if (!purchaseOrderId) return 0;
+      const validation = purchaseOrderValidations[purchaseOrderId];
+      if (!validation) return 0;
+      
+      // Esto es una aproximación, necesitaríamos consultar por producto específico
+      // Por ahora usamos la validación general
+      return 0;
+    };
+
+    return (
+      <View>
+        <View style={styles.stepHeader}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (entryType === 'INITIAL_LOAD') {
+                setEntryType(null as any); // Volver a selección de flujo
+              } else if (entryType === 'ENTRY') {
+                setSetupStep('supplier');
+              } else {
+                setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
+              }
+            }} 
+            style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
+          </TouchableOpacity>
+          <View style={styles.stepHeaderText}>
+            <Text style={styles.stepTitle}>Paso 3: Seleccionar Bodega{entryType === 'PO_ENTRY' && purchaseOrderId ? ' y Producto' : ''}</Text>
+            <Text style={styles.stepDescription}>
+              {entryType === 'PO_ENTRY' && purchaseOrderId 
+                ? 'Seleccione la bodega y el producto de la orden a escanear'
+                : 'Seleccione la bodega de destino para la entrada'}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Bodega *</Text>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={warehouseId}
-            onValueChange={(value) => setWarehouse(value)}
-            style={styles.picker}
-            itemStyle={styles.pickerItem}>
-            <Picker.Item label="Seleccione una bodega" value={null} />
-            {warehouses.map((warehouse) => (
-              <Picker.Item
-                key={warehouse.id}
-                label={warehouse.name}
-                value={warehouse.id}
-              />
-            ))}
-          </Picker>
+        <View style={styles.field}>
+          <Text style={styles.label}>Bodega *</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={warehouseId}
+              onValueChange={(value) => setWarehouse(value)}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}>
+              <Picker.Item label="Seleccione una bodega" value={null} />
+              {warehouses.map((warehouse) => (
+                <Picker.Item
+                  key={warehouse.id}
+                  label={warehouse.name}
+                  value={warehouse.id}
+                />
+              ))}
+            </Picker>
+          </View>
         </View>
+
+        {entryType === 'PO_ENTRY' && purchaseOrderId && orderProducts.length > 0 && (
+          <View style={styles.field}>
+            <Text style={styles.label}>Producto de la Orden *</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={selectedOrderProductId}
+                onValueChange={(value) => setSelectedOrderProduct(value)}
+                style={styles.picker}
+                itemStyle={styles.pickerItem}>
+                <Picker.Item label="Seleccione un producto" value={null} />
+                {orderProducts.map((item) => {
+                  const product = item.product;
+                  const orderQuantity = item.quantity;
+                  return (
+                    <Picker.Item
+                      key={item.id}
+                      label={`${product?.name || 'Sin nombre'} - ${orderQuantity} unidad${orderQuantity !== 1 ? 'es' : ''} en orden`}
+                      value={product?.id || null}
+                    />
+                  );
+                })}
+              </Picker>
+            </View>
+          </View>
+        )}
+
+        {(() => {
+          // Verificar si la orden está completa
+          let isOrderComplete = false;
+          if (entryType === 'PO_ENTRY' && purchaseOrderId) {
+            const validation = purchaseOrderValidations[purchaseOrderId];
+            isOrderComplete = validation?.isComplete || false;
+          }
+
+          const canStart = warehouseId && 
+            (entryType !== 'PO_ENTRY' || !purchaseOrderId || selectedOrderProductId) &&
+            !isOrderComplete;
+
+          return (
+            <Button
+              title={isOrderComplete ? "Orden Completa - No se puede escanear" : "Comenzar Entrada"}
+              onPress={startEntry}
+              disabled={!canStart}
+              style={styles.button}
+            />
+          );
+        })()}
       </View>
-
-      {(() => {
-        // Verificar si la orden está completa
-        let isOrderComplete = false;
-        if (entryType === 'PO_ENTRY' && purchaseOrderId) {
-          const validation = purchaseOrderValidations[purchaseOrderId];
-          isOrderComplete = validation?.isComplete || false;
-        }
-
-        return (
-          <Button
-            title={isOrderComplete ? "Orden Completa - No se puede escanear" : "Comenzar Entrada"}
-            onPress={startEntry}
-            disabled={!warehouseId || (entryType === 'PO_ENTRY' && !supplierId) || isOrderComplete}
-            style={styles.button}
-          />
-        );
-      })()}
-    </View>
-  );
+    );
+  };
 
   return (
     <ScrollView style={styles.container}>

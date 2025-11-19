@@ -23,6 +23,7 @@ export default function EntriesScreen() {
     currentScannedBarcode,
     currentQuantity,
     entryItems,
+    error,
     scanBarcode,
     addProductToEntry,
     setQuantity,
@@ -38,13 +39,19 @@ export default function EntriesScreen() {
     setShowScanner(false);
   };
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!currentProduct || currentQuantity <= 0) {
       Alert.alert('Error', 'Por favor ingrese una cantidad válida');
       return;
     }
 
-    addProductToEntry(currentProduct, currentQuantity, currentScannedBarcode || '');
+    clearError(); // Limpiar errores previos
+    try {
+      await addProductToEntry(currentProduct, currentQuantity, currentScannedBarcode || '');
+      // Si hay error después de agregar, se mostrará en la UI
+    } catch (error: any) {
+      // El error ya está en el store, no necesitamos hacer nada aquí
+    }
   };
 
   const handleProductCreated = (productId: string) => {
@@ -73,6 +80,12 @@ export default function EntriesScreen() {
       </View>
 
       {(step === 'setup' || step === 'flow-selection') && <SetupForm />}
+
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
 
       {step === 'scanning' && (
         <>
@@ -177,5 +190,19 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     marginTop: 8,
+  },
+  errorContainer: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: Colors.error.light + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.error.main,
+  },
+  errorText: {
+    fontSize: 14,
+    color: Colors.error.main,
+    fontWeight: '500',
   },
 });
