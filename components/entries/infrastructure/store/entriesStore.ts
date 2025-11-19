@@ -67,6 +67,7 @@ interface EntriesState {
 
   // Filtros
   supplierSearchQuery: string;
+  isCompletePurchaseOrder: boolean;
 
   // Actions - Setup
   setEntryType: (type: EntryType) => void;
@@ -77,6 +78,7 @@ interface EntriesState {
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
+  validatePurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -129,6 +131,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   categories: [],
   brands: [],
   supplierSearchQuery: "",
+  isCompletePurchaseOrder: false,
 
   // Setup actions
   setEntryType: (type) => {
@@ -239,7 +242,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  validatePurchaseOrderProgress: async (purchaseOrderId: string) => {
+  validatePurchaseOrderProgress: async (
+    purchaseOrderId: string
+  ): Promise<void> => {
     try {
       const { data, error } = await supabase
         .from("inventory_entries")
@@ -248,27 +253,36 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (error) {
         console.error("Error validating purchase order progress:", error);
-        return false;
+        return;
       }
 
-      const totalQuantityOfInventoryEntries = data.reduce((acc, curr) => acc + curr.quantity, 0);
+      const totalQuantityOfInventoryEntries = data.reduce(
+        (acc, curr) => acc + curr.quantity,
+        0
+      );
 
-      const purchaseOrders = get().purchaseOrders.find((order) => order.id === purchaseOrderId);
+      const purchaseOrders = get().purchaseOrders.find(
+        (order) => order.id === purchaseOrderId
+      );
 
       if (!purchaseOrders) {
-        return false;
+        return;
       }
 
-      const totalItemsQuantity = purchaseOrders.items.reduce((acc, curr) => acc + curr.quantity, 0);
+      const totalItemsQuantity = purchaseOrders.items.reduce(
+        (acc, curr) => acc + curr.quantity,
+        0
+      );
+
       if (totalQuantityOfInventoryEntries !== totalItemsQuantity) {
-        return false;
+        set({ isCompletePurchaseOrder: false });
+        return;
       }
 
-      return true;
-    }
-    catch (error: any) {
+      set({ isCompletePurchaseOrder: true });
+    } catch (error: any) {
       console.error("Error validating purchase order progress:", error);
-      return false;
+      set({ isCompletePurchaseOrder: false });
     }
   },
 
