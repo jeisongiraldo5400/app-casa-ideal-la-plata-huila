@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/theme';
 import React, { useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 export default function EntriesScreen() {
@@ -194,6 +194,7 @@ const styles = StyleSheet.create({
   errorContainer: {
     marginHorizontal: 20,
     marginTop: 16,
+    marginBottom: 16,
     padding: 12,
     backgroundColor: Colors.error.light + '20',
     borderRadius: 8,
