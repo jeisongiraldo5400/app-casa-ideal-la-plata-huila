@@ -67,7 +67,13 @@ interface EntriesState {
 
   // Filtros
   supplierSearchQuery: string;
-  isCompletePurchaseOrder: boolean;
+  
+  // Validación de órdenes de compra (por orden)
+  purchaseOrderValidations: Record<string, {
+    isComplete: boolean;
+    totalQuantityOfInventoryEntries: number;
+    totalItemsQuantity: number;
+  }>;
 
   // Actions - Setup
   setEntryType: (type: EntryType) => void;
@@ -79,12 +85,11 @@ interface EntriesState {
   loadSuppliers: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
   validatePurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
+  validateAllPurchaseOrders: () => Promise<void>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
   startEntry: () => void;
-  totalQuantityOfInventoryEntries: number;
-  totalItemsQuantity: number;
 
   // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
@@ -133,9 +138,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   categories: [],
   brands: [],
   supplierSearchQuery: "",
-  isCompletePurchaseOrder: false,
-  totalQuantityOfInventoryEntries: 0,
-  totalItemsQuantity: 0,
+  purchaseOrderValidations: {},
 
   // Setup actions
   setEntryType: (type) => {
@@ -240,6 +243,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       );
 
       set({ purchaseOrders: ordersWithItems, loading: false });
+      
+      // Validar todas las órdenes después de cargarlas
+      if (ordersWithItems.length > 0) {
+        get().validateAllPurchaseOrders();
+      }
     } catch (error: any) {
       console.error("Error loading purchase orders:", error);
       set({ purchaseOrders: [], loading: false });
@@ -257,11 +265,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (!purchaseOrder) {
         console.warn("Purchase order not found in store:", purchaseOrderId);
-        set({ 
-          isCompletePurchaseOrder: false,
-          totalQuantityOfInventoryEntries: 0,
-          totalItemsQuantity: 0,
-        });
         return;
       }
 
@@ -279,11 +282,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (error) {
         console.error("Error validating purchase order progress:", error);
-        set({ 
-          isCompletePurchaseOrder: false,
-          totalQuantityOfInventoryEntries: 0,
-          totalItemsQuantity,
-        });
         return;
       }
 
@@ -293,11 +291,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         0
       );
 
-      // Actualizar el estado
+      // Actualizar el estado de validación para esta orden específica
+      const validations = get().purchaseOrderValidations;
       set({ 
-        totalQuantityOfInventoryEntries, 
-        totalItemsQuantity,
-        isCompletePurchaseOrder: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+        purchaseOrderValidations: {
+          ...validations,
+          [purchaseOrderId]: {
+            isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+            totalQuantityOfInventoryEntries,
+            totalItemsQuantity,
+          },
+        },
       });
 
       console.log("Purchase order validation:", {
@@ -308,12 +312,18 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       });
     } catch (error: any) {
       console.error("Error validating purchase order progress:", error);
-      set({ 
-        isCompletePurchaseOrder: false,
-        totalQuantityOfInventoryEntries: 0,
-        totalItemsQuantity: 0,
-      });
     }
+  },
+
+  validateAllPurchaseOrders: async (): Promise<void> => {
+    const { purchaseOrders } = get();
+    
+    // Validar todas las órdenes en paralelo
+    await Promise.all(
+      purchaseOrders.map((order) => 
+        get().validatePurchaseOrderProgress(order.id)
+      )
+    );
   },
 
   loadWarehouses: async () => {
@@ -564,9 +574,24 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // al insertar en inventory_entries. Si se actualiza manualmente aquí también,
       // se duplicaría el incremento del stock.
 
-      // Resetear todo después de finalizar
-      get().reset();
+      // Guardar las órdenes antes de resetear
+      const currentPurchaseOrders = get().purchaseOrders;
 
+      // Revalidar todas las órdenes después de registrar la entrada
+      if (currentPurchaseOrders.length > 0) {
+        await get().validateAllPurchaseOrders();
+      }
+
+      // Resetear todo después de finalizar (excepto las validaciones que se actualizaron)
+      const updatedValidations = get().purchaseOrderValidations;
+      get().reset();
+      
+      // Restaurar las órdenes y validaciones actualizadas
+      set({ 
+        purchaseOrders: currentPurchaseOrders,
+        purchaseOrderValidations: updatedValidations,
+      });
+      
       return { error: null };
     } catch (error: any) {
       return { error };
@@ -589,6 +614,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       warehouseId: null,
       purchaseOrders: [],
       supplierSearchQuery: "",
+      purchaseOrderValidations: {},
     });
   },
 

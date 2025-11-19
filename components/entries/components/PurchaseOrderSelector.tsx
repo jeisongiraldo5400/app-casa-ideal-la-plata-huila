@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 
 import {
   PurchaseOrderWithItems,
@@ -27,27 +27,7 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
-  const {
-    isCompletePurchaseOrder,
-    totalQuantityOfInventoryEntries,
-    totalItemsQuantity,
-    validatePurchaseOrderProgress,
-    purchaseOrders: storePurchaseOrders,
-  } = useEntriesStore();
-
-  useEffect(() => {
-    if (!selectedPurchaseOrderId) return;
-
-    // Verificar que la orden esté cargada en el store antes de validar
-    const orderExists = storePurchaseOrders.some(
-      (order) => order.id === selectedPurchaseOrderId
-    );
-    
-    if (orderExists) {
-      validatePurchaseOrderProgress(selectedPurchaseOrderId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPurchaseOrderId, storePurchaseOrders.length]);
+  const { purchaseOrderValidations } = useEntriesStore();
 
   if (purchaseOrders.length === 0) {
     return (
@@ -94,6 +74,12 @@ export function PurchaseOrderSelector({
           0
         );
 
+        // Obtener los datos de validación para esta orden específica
+        const validation = purchaseOrderValidations[order.id];
+        const isComplete = validation?.isComplete || false;
+        const totalQuantityOfInventoryEntries = validation?.totalQuantityOfInventoryEntries || 0;
+        const totalItemsQuantity = validation?.totalItemsQuantity || totalQuantity;
+
         return (
           <TouchableOpacity
             key={order.id}
@@ -117,7 +103,7 @@ export function PurchaseOrderSelector({
                   >
                     <Text style={styles.statusText}>{order.status}</Text>
                   </View>
-                  {isCompletePurchaseOrder ? (
+                  {isComplete ? (
                     <View style={styles.completePurchaseOrderCard}>
                       <Text style={styles.completePurchaseOrderText}>✓</Text>
                     </View>
