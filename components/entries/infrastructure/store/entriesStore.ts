@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 // types
 import { Database } from "@/types/database.types";
 
-
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Supplier = Database["public"]["Tables"]["suppliers"]["Row"];
 type Warehouse = Database["public"]["Tables"]["warehouses"]["Row"];
@@ -237,6 +236,39 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error: any) {
       console.error("Error loading purchase orders:", error);
       set({ purchaseOrders: [], loading: false });
+    }
+  },
+
+  validatePurchaseOrderProgress: async (purchaseOrderId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("inventory_entries")
+        .select("product_id, quantity")
+        .eq("purchase_order_id", purchaseOrderId);
+
+      if (error) {
+        console.error("Error validating purchase order progress:", error);
+        return false;
+      }
+
+      const totalQuantityOfInventoryEntries = data.reduce((acc, curr) => acc + curr.quantity, 0);
+
+      const purchaseOrders = get().purchaseOrders.find((order) => order.id === purchaseOrderId);
+
+      if (!purchaseOrders) {
+        return false;
+      }
+
+      const totalItemsQuantity = purchaseOrders.items.reduce((acc, curr) => acc + curr.quantity, 0);
+      if (totalQuantityOfInventoryEntries !== totalItemsQuantity) {
+        return false;
+      }
+
+      return true;
+    }
+    catch (error: any) {
+      console.error("Error validating purchase order progress:", error);
+      return false;
     }
   },
 
