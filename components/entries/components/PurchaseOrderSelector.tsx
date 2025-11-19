@@ -1,8 +1,21 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Card } from '@/components/ui/Card';
-import { PurchaseOrderWithItems } from '@/components/entries/infrastructure/store/entriesStore';
-import { Colors } from '@/constants/theme';
+import React from "react";
+
+import {
+  PurchaseOrderWithItems,
+  useEntriesStore,
+} from "@/components/entries/infrastructure/store/entriesStore";
+
+import { Card } from "@/components/ui/Card";
+import { Colors } from "@/constants/theme";
+
+
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface PurchaseOrderSelectorProps {
   purchaseOrders: PurchaseOrderWithItems[];
@@ -15,6 +28,8 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
+  const { isCompletePurchaseOrder } = useEntriesStore();
+
   if (purchaseOrders.length === 0) {
     return (
       <Card style={styles.emptyCard}>
@@ -26,24 +41,24 @@ export function PurchaseOrderSelector({
   }
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Sin fecha';
+    if (!dateString) return "Sin fecha";
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
+      return date.toLocaleDateString("es-ES", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
       });
     } catch {
-      return 'Fecha inválida';
+      return "Fecha inválida";
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'PENDIENTE':
+      case "PENDIENTE":
         return Colors.warning.main;
-      case 'EN PROCESO':
+      case "EN PROCESO":
         return Colors.info.main;
       default:
         return Colors.text.secondary;
@@ -55,26 +70,48 @@ export function PurchaseOrderSelector({
       {purchaseOrders.map((order) => {
         const isSelected = selectedPurchaseOrderId === order.id;
         const totalProducts = order.items.length;
-        const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const totalQuantity = order.items.reduce(
+          (sum, item) => sum + item.quantity,
+          0
+        );
 
         return (
           <TouchableOpacity
             key={order.id}
             onPress={() => onSelect(order.id)}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+          >
             <Card
-              style={[
-                styles.orderCard,
-                isSelected && styles.selectedOrderCard,
-              ]}>
+              style={[styles.orderCard, isSelected && styles.selectedOrderCard]}
+            >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
                   <Text style={styles.orderId}>OC #{order.id.slice(0, 8)}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: getStatusColor(order.status) },
+                    ]}
+                  >
                     <Text style={styles.statusText}>{order.status}</Text>
+                    
                   </View>
+                  {
+                    isCompletePurchaseOrder ? (
+                      <View style={styles.completePurchaseOrderCard}>
+                        <Text style={styles.completePurchaseOrderText}>✓</Text>
+                      </View>
+                    ): 
+                    (
+                      <View style={styles.incompletePurchaseOrderCard}>
+                        <Text style={styles.incompletePurchaseOrderText}>✗</Text>
+                      </View>
+                    )
+                  }
                 </View>
-                <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+                <Text style={styles.orderDate}>
+                  {formatDate(order.created_at)}
+                </Text>
               </View>
 
               {order.notes && (
@@ -85,23 +122,29 @@ export function PurchaseOrderSelector({
 
               <View style={styles.orderSummary}>
                 <Text style={styles.summaryText}>
-                  {totalProducts} producto{totalProducts !== 1 ? 's' : ''} • {totalQuantity} unidad{totalQuantity !== 1 ? 'es' : ''}
+                  {totalProducts} producto{totalProducts !== 1 ? "s" : ""} •{" "}
+                  {totalQuantity} unidad{totalQuantity !== 1 ? "es" : ""}
                 </Text>
               </View>
 
               <View style={styles.productsList}>
-                <Text style={styles.productsListTitle}>Productos incluidos:</Text>
+                <Text style={styles.productsListTitle}>
+                  Productos incluidos:
+                </Text>
                 {order.items.slice(0, 3).map((item, index) => (
                   <View key={item.id} style={styles.productItem}>
                     <Text style={styles.productName} numberOfLines={1}>
-                      {item.product?.name || 'Producto sin nombre'}
+                      {item.product?.name || "Producto sin nombre"}
                     </Text>
-                    <Text style={styles.productQuantity}>Cantidad: {item.quantity}</Text>
+                    <Text style={styles.productQuantity}>
+                      Cantidad: {item.quantity}
+                    </Text>
                   </View>
                 ))}
                 {order.items.length > 3 && (
                   <Text style={styles.moreProducts}>
-                    +{order.items.length - 3} producto{order.items.length - 3 !== 1 ? 's' : ''} más
+                    +{order.items.length - 3} producto
+                    {order.items.length - 3 !== 1 ? "s" : ""} más
                   </Text>
                 )}
               </View>
@@ -125,13 +168,13 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyText: {
     fontSize: 14,
     color: Colors.text.secondary,
-    textAlign: 'center',
+    textAlign: "center",
   },
   orderCard: {
     marginBottom: 12,
@@ -144,20 +187,20 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary.light,
   },
   orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 8,
   },
   orderHeaderLeft: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   orderId: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.text.primary,
   },
   statusBadge: {
@@ -167,8 +210,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   orderDate: {
     fontSize: 12,
@@ -178,7 +221,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
     marginBottom: 8,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   orderSummary: {
     marginBottom: 12,
@@ -188,7 +231,7 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     color: Colors.text.primary,
   },
   productsList: {
@@ -196,14 +239,14 @@ const styles = StyleSheet.create({
   },
   productsListTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.text.primary,
     marginBottom: 8,
   },
   productItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 4,
     paddingHorizontal: 8,
     backgroundColor: Colors.background.default,
@@ -218,13 +261,13 @@ const styles = StyleSheet.create({
   },
   productQuantity: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
     color: Colors.text.secondary,
   },
   moreProducts: {
     fontSize: 12,
     color: Colors.text.secondary,
-    fontStyle: 'italic',
+    fontStyle: "italic",
     marginTop: 4,
   },
   selectedIndicator: {
@@ -232,12 +275,33 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: Colors.primary.main,
-    alignItems: 'center',
+    alignItems: "center",
   },
   selectedText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.primary.main,
   },
+  completePurchaseOrderCard: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: Colors.success.main,
+  },
+  completePurchaseOrderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  incompletePurchaseOrderCard: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: Colors.error.main,
+  },
+  incompletePurchaseOrderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
 });
-
