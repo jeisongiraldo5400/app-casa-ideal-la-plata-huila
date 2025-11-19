@@ -31,7 +31,7 @@ export interface NewProductData {
 }
 
 export interface PurchaseOrderWithItems extends PurchaseOrder {
-  items: (PurchaseOrderItem & { product: Product })[];
+  items: (PurchaseOrderItem & { product: Product; registered_quantity: number })[];
 }
 
 interface EntriesState {
@@ -215,12 +215,41 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             items: (items || []).map((item: any) => ({
               ...item,
               product: item.products,
-            })) as (PurchaseOrderItem & { product: Product })[],
+              registered_quantity: 0, // Inicializar
+            })) as (PurchaseOrderItem & { product: Product; registered_quantity: number })[],
           };
         })
       );
 
-      set({ purchaseOrders: ordersWithItems, loading: false });
+      // Cargar el inventario registrado basado en las órdenes de compra
+      const ordersIds = orders.map((order) => (order.id));
+
+      const { data: inventoryEntries, error: errorInventoryEntries } = await supabase
+        .from('inventory_entries')
+        .select('product_id, quantity, purchase_order_id')
+        .in('purchase_order_id', ordersIds);
+
+      if (errorInventoryEntries) {
+        console.error('Error loading inventory entries:', errorInventoryEntries);
+        set({ purchaseOrders: [], loading: false });
+        return;
+      }
+
+      // Calcular cantidades registradas
+      const finalOrders = ordersWithItems.map((order) => ({
+        ...order,
+        items: order.items.map((item) => {
+          const registered = inventoryEntries
+            ?.filter((e) => e.purchase_order_id === order.id && e.product_id === item.product.id)
+            .reduce((sum, e) => sum + e.quantity, 0) || 0;
+          return {
+            ...item,
+            registered_quantity: registered,
+          };
+        }),
+      }));
+
+      set({ purchaseOrders: finalOrders, loading: false });
     } catch (error: any) {
       console.error('Error loading purchase orders:', error);
       set({ purchaseOrders: [], loading: false });

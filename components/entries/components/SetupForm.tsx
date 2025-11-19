@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
 
@@ -29,16 +29,7 @@ export function SetupForm() {
     startEntry,
     entryType,
     setEntryType,
-    loadPurchaseOrderProgress,
   } = useEntriesStore();
-
-  const [poProgress, setPoProgress] = useState<Map<string, number>>(new Map());
-
-  useEffect(() => {
-    if (setupStep === 'warehouse' && purchaseOrderId && entryType === 'PO_ENTRY') {
-      loadPurchaseOrderProgress(purchaseOrderId).then(setPoProgress);
-    }
-  }, [setupStep, purchaseOrderId, entryType]);
 
   useEffect(() => {
     loadSuppliers();
@@ -259,7 +250,7 @@ export function SetupForm() {
           {purchaseOrders
             .find((p) => p.id === purchaseOrderId)
             ?.items.map((item) => {
-              const registered = poProgress.get(item.product.id) || 0;
+              const registered = item.registered_quantity || 0;
               const remaining = item.quantity - registered;
               const isComplete = remaining <= 0;
 
