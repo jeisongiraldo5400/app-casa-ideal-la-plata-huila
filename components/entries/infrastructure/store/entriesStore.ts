@@ -310,13 +310,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           },
         },
       });
-
-      console.log("Purchase order validation:", {
-        purchaseOrderId,
-        totalQuantityOfInventoryEntries,
-        totalItemsQuantity,
-        isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
-      });
     } catch (error: any) {
       console.error("Error validating purchase order progress:", error);
     }
