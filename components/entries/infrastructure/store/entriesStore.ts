@@ -31,7 +31,7 @@ export interface NewProductData {
 }
 
 export interface PurchaseOrderWithItems extends PurchaseOrder {
-  items: (PurchaseOrderItem & { product: Product; registered_quantity: number })[];
+  items: (PurchaseOrderItem & { product: Product; })[];
 }
 
 interface EntriesState {
@@ -72,7 +72,7 @@ interface EntriesState {
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
-  loadPurchaseOrderProgress: (purchaseOrderId: string) => Promise<Map<string, number>>;
+  loadPurchaseOrderProgress: (purchaseOrderId: string) => Promise<any>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -215,49 +215,21 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             items: (items || []).map((item: any) => ({
               ...item,
               product: item.products,
-              registered_quantity: 0, // Inicializar
-            })) as (PurchaseOrderItem & { product: Product; registered_quantity: number })[],
+            })) as (PurchaseOrderItem & { product: Product;})[],
           };
         })
       );
-
-      // Cargar el inventario registrado basado en las órdenes de compra
-      const ordersIds = orders.map((order) => (order.id));
-
-      const { data: inventoryEntries, error: errorInventoryEntries } = await supabase
-        .from('inventory_entries')
-        .select('product_id, quantity, purchase_order_id')
-        .in('purchase_order_id', ordersIds);
-
-      if (errorInventoryEntries) {
-        console.error('Error loading inventory entries:', errorInventoryEntries);
-        set({ purchaseOrders: [], loading: false });
-        return;
-      }
-
-      // Calcular cantidades registradas
-      const finalOrders = ordersWithItems.map((order) => ({
-        ...order,
-        items: order.items.map((item) => {
-          const registered = inventoryEntries
-            ?.filter((e) => e.purchase_order_id === order.id && e.product_id === item.product.id)
-            .reduce((sum, e) => sum + e.quantity, 0) || 0;
-          return {
-            ...item,
-            registered_quantity: registered,
-          };
-        }),
-      }));
-
-      set({ purchaseOrders: finalOrders, loading: false });
+    
+      set({ purchaseOrders: ordersWithItems, loading: false });
     } catch (error: any) {
       console.error('Error loading purchase orders:', error);
       set({ purchaseOrders: [], loading: false });
     }
   },
 
-  loadPurchaseOrderProgress: async (purchaseOrderId: string): Promise<Map<string, number>> => {
+  loadPurchaseOrderProgress: async (purchaseOrderId: string) => {
     try {
+
       // Cargar todos los productos registrados en inventory_entries para esta orden de compra
       const { data: entries, error } = await supabase
         .from('inventory_entries')
@@ -269,14 +241,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return new Map();
       }
 
-      // Agrupar por product_id y sumar las cantidades
-      const progressMap = new Map<string, number>();
-      (entries || []).forEach((entry: { product_id: string; quantity: number }) => {
-        const currentQty = progressMap.get(entry.product_id) || 0;
-        progressMap.set(entry.product_id, currentQty + entry.quantity);
-      });
-
-      return progressMap;
+      
     } catch (error: any) {
       console.error('Error loading purchase order progress:', error);
       return new Map();
