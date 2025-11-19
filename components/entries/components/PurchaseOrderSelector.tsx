@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 
 import {
   PurchaseOrderWithItems,
@@ -7,7 +7,6 @@ import {
 
 import { Card } from "@/components/ui/Card";
 import { Colors } from "@/constants/theme";
-
 
 import {
   ScrollView,
@@ -28,7 +27,27 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
-  const { isCompletePurchaseOrder } = useEntriesStore();
+  const {
+    isCompletePurchaseOrder,
+    totalQuantityOfInventoryEntries,
+    totalItemsQuantity,
+    validatePurchaseOrderProgress,
+    purchaseOrders: storePurchaseOrders,
+  } = useEntriesStore();
+
+  useEffect(() => {
+    if (!selectedPurchaseOrderId) return;
+
+    // Verificar que la orden esté cargada en el store antes de validar
+    const orderExists = storePurchaseOrders.some(
+      (order) => order.id === selectedPurchaseOrderId
+    );
+    
+    if (orderExists) {
+      validatePurchaseOrderProgress(selectedPurchaseOrderId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPurchaseOrderId, storePurchaseOrders.length]);
 
   if (purchaseOrders.length === 0) {
     return (
@@ -82,7 +101,10 @@ export function PurchaseOrderSelector({
             activeOpacity={0.7}
           >
             <Card
-              style={[styles.orderCard, ...(isSelected ? [styles.selectedOrderCard] : [])]}
+              style={[
+                styles.orderCard,
+                ...(isSelected ? [styles.selectedOrderCard] : []),
+              ]}
             >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
@@ -94,20 +116,16 @@ export function PurchaseOrderSelector({
                     ]}
                   >
                     <Text style={styles.statusText}>{order.status}</Text>
-                    
                   </View>
-                  {
-                    isCompletePurchaseOrder ? (
-                      <View style={styles.completePurchaseOrderCard}>
-                        <Text style={styles.completePurchaseOrderText}>✓</Text>
-                      </View>
-                    ): 
-                    (
-                      <View style={styles.incompletePurchaseOrderCard}>
-                        <Text style={styles.incompletePurchaseOrderText}>✗</Text>
-                      </View>
-                    )
-                  }
+                  {isCompletePurchaseOrder ? (
+                    <View style={styles.completePurchaseOrderCard}>
+                      <Text style={styles.completePurchaseOrderText}>✓</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.incompletePurchaseOrderCard}>
+                      <Text style={styles.incompletePurchaseOrderText}>✗</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.orderDate}>
                   {formatDate(order.created_at)}
@@ -124,6 +142,17 @@ export function PurchaseOrderSelector({
                 <Text style={styles.summaryText}>
                   {totalProducts} producto{totalProducts !== 1 ? "s" : ""} •{" "}
                   {totalQuantity} unidad{totalQuantity !== 1 ? "es" : ""}
+                </Text>
+              </View>
+
+              <View style={styles.orderSummary}>
+                <Text style={styles.summaryText}>
+                  {totalQuantityOfInventoryEntries} unidad
+                  {totalQuantityOfInventoryEntries !== 1 ? "es" : ""} escaneadas
+                </Text>
+                <Text style={styles.summaryText}>
+                  {totalItemsQuantity} unidad
+                  {totalItemsQuantity !== 1 ? "es" : ""} en la orden
                 </Text>
               </View>
 
