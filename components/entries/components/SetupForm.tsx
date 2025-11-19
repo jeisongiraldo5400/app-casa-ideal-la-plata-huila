@@ -6,7 +6,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { PurchaseOrderDetails } from './PurchaseOrderDetails';
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
 
 export function SetupForm() {
@@ -238,8 +237,6 @@ export function SetupForm() {
         disabled={!warehouseId || (entryType === 'PO_ENTRY' && !supplierId)}
         style={styles.button}
       />
-
-      {entryType === 'PO_ENTRY' && purchaseOrderId && <PurchaseOrderDetails  purchaseOrderId={purchaseOrderId}/>}
     </View>
   );
 
@@ -383,47 +380,6 @@ const styles = StyleSheet.create({
   },
   flowButton: {
     marginBottom: 16,
-  },
-  progressContainer: {
-    marginTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    paddingTop: 16,
-  },
-  progressTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 12,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-    marginBottom: 8,
-  },
-  progressHeaderCell: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.text.secondary,
-    textAlign: 'center',
-  },
-  progressRow: {
-    flexDirection: 'row',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  progressRowComplete: {
-    backgroundColor: Colors.success.light + '20',
-  },
-  progressCell: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.text.primary,
-    textAlign: 'center',
   },
 });
 

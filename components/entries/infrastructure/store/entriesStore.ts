@@ -6,8 +6,6 @@ import { supabase } from "@/lib/supabase";
 // types
 import { Database } from "@/types/database.types";
 
-// Interfaces
-import { PurchaseOrderProgress } from "../interfaces";
 
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Supplier = Database["public"]["Tables"]["suppliers"]["Row"];
@@ -71,9 +69,6 @@ interface EntriesState {
   // Filtros
   supplierSearchQuery: string;
 
-  // Progreso de la orden de compra
-  purchaseOrderProgress: PurchaseOrderProgress[];
-
   // Actions - Setup
   setEntryType: (type: EntryType) => void;
   setSupplier: (supplierId: string | null) => void;
@@ -83,7 +78,6 @@ interface EntriesState {
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
-  loadPurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -136,7 +130,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   categories: [],
   brands: [],
   supplierSearchQuery: "",
-  purchaseOrderProgress: [],
 
   // Setup actions
   setEntryType: (type) => {
@@ -244,60 +237,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error: any) {
       console.error("Error loading purchase orders:", error);
       set({ purchaseOrders: [], loading: false });
-    }
-  },
-
-  loadPurchaseOrderProgress: async (purchaseOrderId: string): Promise<void> => {
-    try {
-      // 1. obtener la orden de compra
-      const purchaseOrder = get().purchaseOrders.find(
-        (p) => p.id === purchaseOrderId
-      );
-
-      if (!purchaseOrder) {
-        console.error("Purchase order not found");
-        set({ purchaseOrderProgress: [] });
-        return;
-      }
-
-      // 2. obtener los registros de las entradas de la orden de compra
-      const { data: entries, error } = await supabase
-        .from("inventory_entries")
-        .select("product_id, quantity")
-        .eq("purchase_order_id", purchaseOrderId);
-
-      if (error) {
-        console.error("Error loading purchase order progress:", error);
-        set({ purchaseOrderProgress: [] });
-        return;
-      }
-
-      const itemsOrdered = purchaseOrder.items; // lista de items de la orden de compra
-
-      const details = entries.map((entry) => {
-        const quantity =
-          itemsOrdered.find((item) => item.product_id === entry.product_id)
-            ?.quantity || 0;
-
-        const totalRegistered = entries.reduce(
-          (acc, curr) => acc + curr.quantity,
-          0
-        );
-
-        return {
-          productId: entry.product_id,
-          productName: itemsOrdered.find(
-            (item) => item.product_id === entry.product_id
-          )?.product.name,
-          ordered: quantity,
-          registered: totalRegistered,
-          missing: quantity - totalRegistered,
-        };
-      });
-
-      set({ purchaseOrderProgress: details });
-    } catch (error: any) {
-      console.error("Error loading purchase order progress:", error);
     }
   },
 
