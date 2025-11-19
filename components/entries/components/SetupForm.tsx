@@ -6,6 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { PurchaseOrderDetails } from './PurchaseOrderDetails';
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
 
 export function SetupForm() {
@@ -238,37 +239,7 @@ export function SetupForm() {
         style={styles.button}
       />
 
-      {entryType === 'PO_ENTRY' && purchaseOrderId && (
-        <View style={styles.progressContainer}>
-          <Text style={styles.progressTitle}>Progreso de la Orden de Compra</Text>
-          <View style={styles.progressHeader}>
-            <Text style={[styles.progressHeaderCell, { flex: 2 }]}>Producto</Text>
-            <Text style={styles.progressHeaderCell}>Ord.</Text>
-            <Text style={styles.progressHeaderCell}>Reg.</Text>
-            <Text style={styles.progressHeaderCell}>Falt.</Text>
-          </View>
-          {purchaseOrders
-            .find((p) => p.id === purchaseOrderId)
-            ?.items.map((item) => {
-              const registered = item.registered_quantity || 0;
-              const remaining = item.quantity - registered;
-              const isComplete = remaining <= 0;
-
-              return (
-                <View key={item.id} style={[styles.progressRow, isComplete && styles.progressRowComplete]}>
-                  <Text style={[styles.progressCell, { flex: 2 }]} numberOfLines={1}>
-                    {item.product.name}
-                  </Text>
-                  <Text style={styles.progressCell}>{item.quantity}</Text>
-                  <Text style={styles.progressCell}>{registered}</Text>
-                  <Text style={[styles.progressCell, { fontWeight: 'bold', color: isComplete ? Colors.success.main : Colors.warning.main }]}>
-                    {remaining > 0 ? remaining : 0}
-                  </Text>
-                </View>
-              );
-            })}
-        </View>
-      )}
+      {entryType === 'PO_ENTRY' && purchaseOrderId && <PurchaseOrderDetails  purchaseOrderId={purchaseOrderId}/>}
     </View>
   );
 
