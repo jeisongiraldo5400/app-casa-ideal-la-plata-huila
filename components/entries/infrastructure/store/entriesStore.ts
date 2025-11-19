@@ -387,7 +387,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   startEntry: () => {
-    const { supplierId, warehouseId, entryType } = get();
+    const { supplierId, warehouseId, entryType, purchaseOrderId, purchaseOrderValidations } = get();
 
     if (!warehouseId) {
       set({ error: "Debe seleccionar una bodega" });
@@ -399,6 +399,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         error: "Debe seleccionar un proveedor para entrada con orden de compra",
       });
       return;
+    }
+
+    // Validar si hay una orden de compra seleccionada y si está completa
+    if (entryType === "PO_ENTRY" && purchaseOrderId) {
+      const validation = purchaseOrderValidations[purchaseOrderId];
+      if (validation?.isComplete) {
+        set({
+          error: "Esta orden de compra ya está completa. No se pueden escanear más productos.",
+        });
+        return;
+      }
     }
 
     set({ step: "scanning", error: null });

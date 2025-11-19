@@ -80,16 +80,25 @@ export function PurchaseOrderSelector({
         const totalQuantityOfInventoryEntries = validation?.totalQuantityOfInventoryEntries || 0;
         const totalItemsQuantity = validation?.totalItemsQuantity || totalQuantity;
 
+        // Determinar si la orden está completa y no se puede seleccionar
+        const isOrderComplete = isComplete && totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0;
+
         return (
           <TouchableOpacity
             key={order.id}
-            onPress={() => onSelect(order.id)}
-            activeOpacity={0.7}
+            onPress={() => {
+              if (!isOrderComplete) {
+                onSelect(order.id);
+              }
+            }}
+            activeOpacity={isOrderComplete ? 1 : 0.7}
+            disabled={isOrderComplete}
           >
             <Card
               style={[
                 styles.orderCard,
                 ...(isSelected ? [styles.selectedOrderCard] : []),
+                ...(isOrderComplete ? [styles.completeOrderCard] : []),
               ]}
             >
               <View style={styles.orderHeader}>
@@ -141,6 +150,14 @@ export function PurchaseOrderSelector({
                   {totalItemsQuantity !== 1 ? "es" : ""} en la orden
                 </Text>
               </View>
+
+              {isOrderComplete && (
+                <View style={styles.completeMessageContainer}>
+                  <Text style={styles.completeMessageText}>
+                    ✓ Orden completa - No se pueden escanear más productos
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.productsList}>
                 <Text style={styles.productsListTitle}>
@@ -318,5 +335,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  completeOrderCard: {
+    opacity: 0.7,
+    backgroundColor: Colors.success.light + "20",
+  },
+  completeMessageContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.success.light + "30",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.success.main,
+  },
+  completeMessageText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.success.main,
+    textAlign: "center",
   },
 });

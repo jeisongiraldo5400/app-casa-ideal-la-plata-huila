@@ -29,6 +29,7 @@ export function SetupForm() {
     startEntry,
     entryType,
     setEntryType,
+    purchaseOrderValidations,
   } = useEntriesStore();
 
   useEffect(() => {
@@ -231,12 +232,23 @@ export function SetupForm() {
         </View>
       </View>
 
-      <Button
-        title="Comenzar Entrada"
-        onPress={startEntry}
-        disabled={!warehouseId || (entryType === 'PO_ENTRY' && !supplierId)}
-        style={styles.button}
-      />
+      {(() => {
+        // Verificar si la orden está completa
+        let isOrderComplete = false;
+        if (entryType === 'PO_ENTRY' && purchaseOrderId) {
+          const validation = purchaseOrderValidations[purchaseOrderId];
+          isOrderComplete = validation?.isComplete || false;
+        }
+
+        return (
+          <Button
+            title={isOrderComplete ? "Orden Completa - No se puede escanear" : "Comenzar Entrada"}
+            onPress={startEntry}
+            disabled={!warehouseId || (entryType === 'PO_ENTRY' && !supplierId) || isOrderComplete}
+            style={styles.button}
+          />
+        );
+      })()}
     </View>
   );
 
