@@ -83,6 +83,8 @@ interface EntriesState {
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
   startEntry: () => void;
+  totalQuantityOfInventoryEntries: number;
+  totalItemsQuantity: number;
 
   // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
@@ -132,6 +134,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   brands: [],
   supplierSearchQuery: "",
   isCompletePurchaseOrder: false,
+  totalQuantityOfInventoryEntries: 0,
+  totalItemsQuantity: 0,
 
   // Setup actions
   setEntryType: (type) => {
@@ -246,6 +250,28 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     purchaseOrderId: string
   ): Promise<void> => {
     try {
+      // Primero verificar que la orden esté cargada
+      const purchaseOrder = get().purchaseOrders.find(
+        (order) => order.id === purchaseOrderId
+      );
+
+      if (!purchaseOrder) {
+        console.warn("Purchase order not found in store:", purchaseOrderId);
+        set({ 
+          isCompletePurchaseOrder: false,
+          totalQuantityOfInventoryEntries: 0,
+          totalItemsQuantity: 0,
+        });
+        return;
+      }
+
+      // Calcular la cantidad total de items en la orden
+      const totalItemsQuantity = purchaseOrder.items.reduce(
+        (acc, curr) => acc + curr.quantity,
+        0
+      );
+
+      // Obtener las entradas de inventario para esta orden
       const { data, error } = await supabase
         .from("inventory_entries")
         .select("product_id, quantity")
@@ -253,36 +279,40 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (error) {
         console.error("Error validating purchase order progress:", error);
+        set({ 
+          isCompletePurchaseOrder: false,
+          totalQuantityOfInventoryEntries: 0,
+          totalItemsQuantity,
+        });
         return;
       }
 
-      const totalQuantityOfInventoryEntries = data.reduce(
+      // Calcular la cantidad total registrada
+      const totalQuantityOfInventoryEntries = (data || []).reduce(
         (acc, curr) => acc + curr.quantity,
         0
       );
 
-      const purchaseOrders = get().purchaseOrders.find(
-        (order) => order.id === purchaseOrderId
-      );
+      // Actualizar el estado
+      set({ 
+        totalQuantityOfInventoryEntries, 
+        totalItemsQuantity,
+        isCompletePurchaseOrder: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+      });
 
-      if (!purchaseOrders) {
-        return;
-      }
-
-      const totalItemsQuantity = purchaseOrders.items.reduce(
-        (acc, curr) => acc + curr.quantity,
-        0
-      );
-
-      if (totalQuantityOfInventoryEntries !== totalItemsQuantity) {
-        set({ isCompletePurchaseOrder: false });
-        return;
-      }
-
-      set({ isCompletePurchaseOrder: true });
+      console.log("Purchase order validation:", {
+        purchaseOrderId,
+        totalQuantityOfInventoryEntries,
+        totalItemsQuantity,
+        isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+      });
     } catch (error: any) {
       console.error("Error validating purchase order progress:", error);
-      set({ isCompletePurchaseOrder: false });
+      set({ 
+        isCompletePurchaseOrder: false,
+        totalQuantityOfInventoryEntries: 0,
+        totalItemsQuantity: 0,
+      });
     }
   },
 
