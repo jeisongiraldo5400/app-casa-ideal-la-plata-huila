@@ -4,7 +4,7 @@ import { Colors } from '@/constants/theme';
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: ViewStyle | ViewStyle[];
 }
 
 export function Card({ children, style }: CardProps) {

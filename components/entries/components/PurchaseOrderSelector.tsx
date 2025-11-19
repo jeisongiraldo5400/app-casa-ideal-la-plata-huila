@@ -82,7 +82,7 @@ export function PurchaseOrderSelector({
             activeOpacity={0.7}
           >
             <Card
-              style={[styles.orderCard, isSelected && styles.selectedOrderCard]}
+              style={[styles.orderCard, ...(isSelected ? [styles.selectedOrderCard] : [])]}
             >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
