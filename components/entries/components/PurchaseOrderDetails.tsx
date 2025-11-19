@@ -12,7 +12,7 @@ interface PurchaseOrderDetailsProps {
 
 export function PurchaseOrderDetails({ purchaseOrderId }: PurchaseOrderDetailsProps) {
 
-  const { loadPurchaseOrderProgress } = useEntriesStore();
+  const { loadPurchaseOrderProgress, purchaseOrderProgress } = useEntriesStore();
 
   useEffect(() => {
     if (purchaseOrderId) {
@@ -29,36 +29,39 @@ export function PurchaseOrderDetails({ purchaseOrderId }: PurchaseOrderDetailsPr
         <Text style={styles.progressHeaderCell}>Reg.</Text>
         <Text style={styles.progressHeaderCell}>Falt.</Text>
       </View>
-    
-           { /*<View
-              key={item.id}
+    {purchaseOrderProgress.length > 0 && (
+      purchaseOrderProgress.map((item) => (
+           <View
+              key={item?.productId}
               style={[
                 styles.progressRow,
-                isComplete && styles.progressRowComplete,
+                item?.missing === 0 && styles.progressRowComplete,
               ]}
             >
               <Text
                 style={[styles.progressCell, { flex: 2 }]}
                 numberOfLines={1}
               >
-                {item.product.name}
+                {item?.productName}
               </Text>
-              <Text style={styles.progressCell}>{item.quantity}</Text>
-              <Text style={styles.progressCell}>{0}</Text>
+              <Text style={styles.progressCell}>{item?.ordered}</Text>
+              <Text style={styles.progressCell}>{item?.registered}</Text>
               <Text
                 style={[
                   styles.progressCell,
                   {
                     fontWeight: "bold",
-                    color: isComplete
+                    color: item?.missing === 0
                       ? Colors.success.main
                       : Colors.warning.main,
                   },
                 ]}
               >
-                10
+                {item?.missing}
               </Text>
-            </View> */}
+            </View>
+          ))
+    )}
     </View>
   );
 }
