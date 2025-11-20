@@ -60,6 +60,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="exits"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Salidas',
+        }}
+      />
+      <Tabs.Screen
         name="search"
         options={{
           title: 'Búsqueda Rápida',

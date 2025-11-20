@@ -15,8 +15,7 @@ export default function HomeScreen() {
   };
 
   const handleRegisterExits = () => {
-    // TODO: Implementar cuando se cree la pantalla de salidas
-    // router.push('/(tabs)/exits');
+    router.push('/(tabs)/exits');
   };
 
   return (
@@ -65,16 +64,15 @@ export default function HomeScreen() {
           style={styles.menuItem}
           onPress={handleRegisterExits}
           activeOpacity={0.7}
-          disabled={true}
         >
           <View style={styles.menuItemContent}>
             <MaterialIcons 
               name="exit-to-app" 
               size={24} 
-              color={Colors.text.secondary} 
+              color={Colors.primary.main} 
               style={styles.menuIcon}
             />
-            <Text style={[styles.menuItemText, styles.menuItemTextDisabled]}>
+            <Text style={styles.menuItemText}>
               Registrar salidas de artículos
             </Text>
             <MaterialIcons 
