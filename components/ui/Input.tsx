@@ -62,15 +62,15 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 8,
   },
   input: {
-    height: 48,
+    height: 52,
     borderWidth: 1.5,
     borderColor: Colors.divider,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
     color: Colors.text.primary,
@@ -78,14 +78,25 @@ const styles = StyleSheet.create({
   },
   inputFocused: {
     borderColor: Colors.primary.main,
+    borderWidth: 2,
+    shadowColor: Colors.primary.main,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputError: {
     borderColor: Colors.error.main,
+    borderWidth: 2,
   },
   errorText: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.error.main,
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: '500',
   },
 });
 

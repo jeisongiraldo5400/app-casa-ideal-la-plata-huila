@@ -154,11 +154,19 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     backgroundColor: Colors.background.paper,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.divider,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   menuItemContent: {
     flexDirection: 'row',

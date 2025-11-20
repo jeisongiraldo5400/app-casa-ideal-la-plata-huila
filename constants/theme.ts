@@ -6,45 +6,45 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   primary: {
-    main: '#3b82f6', // Azul moderno
-    light: '#60a5fa',
-    dark: '#1d4ed8',
-    contrastText: '#ffffff',
-  },
-  secondary: {
-    main: '#6366f1', // Índigo
+    main: '#6366f1', // Índigo vibrante y moderno
     light: '#818cf8',
     dark: '#4f46e5',
     contrastText: '#ffffff',
   },
+  secondary: {
+    main: '#8b5cf6', // Púrpura moderno
+    light: '#a78bfa',
+    dark: '#7c3aed',
+    contrastText: '#ffffff',
+  },
   background: {
-    default: '#fafbfc', // Gris muy claro
+    default: '#f8fafc', // Gris azulado muy suave
     paper: '#ffffff', // Blanco puro
   },
   text: {
-    primary: '#1f2937', // Gris oscuro
-    secondary: '#6b7280', // Gris medio
+    primary: '#0f172a', // Casi negro con tinte azul
+    secondary: '#64748b', // Gris azulado medio
   },
-  divider: '#e5e7eb', // Gris claro
+  divider: '#e2e8f0', // Gris azulado claro
   success: {
-    main: '#22c55e', // Verde moderno
-    light: '#4ade80',
-    dark: '#16a34a',
+    main: '#10b981', // Verde esmeralda moderno
+    light: '#34d399',
+    dark: '#059669',
   },
   warning: {
-    main: '#f59e0b', // Amarillo/naranja
+    main: '#f59e0b', // Ámbar moderno
     light: '#fbbf24',
     dark: '#d97706',
   },
   error: {
-    main: '#ef4444', // Rojo moderno
+    main: '#ef4444', // Rojo coral moderno
     light: '#f87171',
     dark: '#dc2626',
   },
   info: {
-    main: '#3b82f6', // Azul info
-    light: '#60a5fa',
-    dark: '#1d4ed8',
+    main: '#06b6d4', // Cyan moderno
+    light: '#22d3ee',
+    dark: '#0891b2',
   },
 };
 

@@ -81,25 +81,38 @@ const styles = StyleSheet.create({
   button: {
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
+    shadowColor: Colors.primary.main,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   buttonPrimary: {
     backgroundColor: Colors.primary.main,
   },
   buttonSecondary: {
     backgroundColor: Colors.secondary.main,
+    shadowColor: Colors.secondary.main,
   },
   buttonOutline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: Colors.primary.main,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonDisabled: {
     backgroundColor: Colors.divider,
-    opacity: 0.6,
+    opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   text: {
     fontSize: 16,
