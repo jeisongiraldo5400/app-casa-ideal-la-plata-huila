@@ -47,7 +47,7 @@ export default function HomeScreen() {
               title="Salidas Hoy"
               value={exitsToday}
               subtitle="Productos despachados"
-              icon="exit-to-app"
+              icon="local-shipping"
               iconColor={Colors.error.main}
               trend="down"
             />
@@ -86,7 +86,7 @@ export default function HomeScreen() {
         >
           <View style={styles.menuItemContent}>
             <MaterialIcons 
-              name="exit-to-app" 
+              name="local-shipping" 
               size={24} 
               color={Colors.primary.main} 
               style={styles.menuIcon}
