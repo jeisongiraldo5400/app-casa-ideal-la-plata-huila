@@ -89,6 +89,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="exits-list"
+        options={{
+          title: 'Salidas',
+          tabBarLabel: 'Salidas',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="local-shipping" size={28} color={color} />
+          ),
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
