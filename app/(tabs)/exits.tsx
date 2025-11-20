@@ -88,7 +88,10 @@ export default function ExitsScreen() {
             <View style={styles.scanSection}>
               <Button
                 title="Escanear código de barras"
-                onPress={() => setShowScanner(true)}
+                onPress={() => {
+                  clearError();
+                  setShowScanner(true);
+                }}
                 style={styles.scanButton}
               />
               <Button
@@ -96,6 +99,19 @@ export default function ExitsScreen() {
                 onPress={goBackToSetup}
                 variant="outline"
                 style={styles.cancelScanButton}
+              />
+            </View>
+          )}
+
+          {error && !currentProduct && !currentScannedBarcode && (
+            <View style={styles.scanSection}>
+              <Button
+                title="Intentar escanear de nuevo"
+                onPress={() => {
+                  clearError();
+                  setShowScanner(true);
+                }}
+                style={styles.scanButton}
               />
             </View>
           )}

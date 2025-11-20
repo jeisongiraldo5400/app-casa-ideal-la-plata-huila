@@ -118,6 +118,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           loading: false,
           error: "Producto no encontrado. Este código de barras no está registrado en el sistema.",
           currentProduct: null,
+          currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
         });
         return;
       }
@@ -129,6 +130,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           loading: false,
           error: "Debe seleccionar una bodega primero",
           currentProduct: null,
+          currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
         });
         return;
       }
@@ -147,6 +149,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           loading: false,
           error: `No hay stock disponible de este producto en la bodega seleccionada. Stock actual: ${availableStock}`,
           currentProduct: null,
+          currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
         });
         return;
       }
@@ -164,6 +167,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         loading: false,
         error: error.message || "Error al escanear el código de barras",
         currentProduct: null,
+        currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
       });
     }
   },
