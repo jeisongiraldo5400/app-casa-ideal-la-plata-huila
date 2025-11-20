@@ -53,17 +53,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="entries"
+        name="inventory"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
-          title: 'Entradas',
-        }}
-      />
-      <Tabs.Screen
-        name="exits"
-        options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
-          title: 'Salidas',
+          title: 'Inventario',
+          tabBarLabel: 'Inventario',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="inventory" size={28} color={color} />
+          ),
+          headerRight: () => <ProfileHeaderButton />,
         }}
       />
       <Tabs.Screen
@@ -75,17 +72,6 @@ export default function TabLayout() {
             <MaterialIcons name="qr-code-scanner" size={32} color={color} />
           ),
           headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="inventory"
-        options={{
-          title: 'Inventario',
-          tabBarLabel: 'Inventario',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="inventory" size={28} color={color} />
-          ),
-          headerRight: () => <ProfileHeaderButton />,
         }}
       />
       <Tabs.Screen
@@ -108,6 +94,20 @@ export default function TabLayout() {
             <MaterialIcons name="account-circle" size={28} color={color} />
           ),
           headerShown: true,
+        }}
+      />
+      <Tabs.Screen
+        name="entries"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Entradas',
+        }}
+      />
+      <Tabs.Screen
+        name="exits"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Salidas',
         }}
       />
     </Tabs>
