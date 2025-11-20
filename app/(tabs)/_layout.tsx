@@ -45,12 +45,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="entries"
         options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Entradas',
-          tabBarLabel: 'Entradas',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="plus.circle.fill" color={color} />
-          ),
-          headerRight: () => <ProfileHeaderButton />,
         }}
       />
       <Tabs.Screen
