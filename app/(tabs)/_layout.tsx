@@ -54,6 +54,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="search"
+        options={{
+          title: 'Búsqueda Rápida',
+          tabBarLabel: 'Buscar',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="qr-code-scanner" size={32} color={color} />
+          ),
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
         name="inventory"
         options={{
           title: 'Inventario',
