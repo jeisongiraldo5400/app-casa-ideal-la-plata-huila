@@ -27,8 +27,17 @@ export default function TabLayout() {
         },
         headerTintColor: Colors.text.primary,
         tabBarStyle: {
-          backgroundColor: Colors.background.paper,
-          borderTopColor: Colors.divider,
+          backgroundColor: '#ffffff',
+          borderTopColor: Colors.primary.main,
+          borderTopWidth: 2,
+          shadowColor: '#000',
+          shadowOffset: {
+            width: 0,
+            height: -1,
+          },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 5,
         },
       }}>
       <Tabs.Screen
