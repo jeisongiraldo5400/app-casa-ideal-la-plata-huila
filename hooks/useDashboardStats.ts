@@ -28,29 +28,35 @@ export function useDashboardStats() {
     try {
       const todayStart = getTodayStart();
 
-      // Contar entradas del día
-      const { count: entriesCount, error: entriesError } = await supabase
+      // Obtener entradas del día y sumar las cantidades
+      const { data: entriesData, error: entriesError } = await supabase
         .from('inventory_entries')
-        .select('*', { count: 'exact', head: true })
+        .select('quantity')
         .gte('created_at', todayStart);
 
-      // Contar salidas del día
-      const { count: exitsCount, error: exitsError } = await supabase
+      // Obtener salidas del día y sumar las cantidades
+      const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
-        .select('*', { count: 'exact', head: true })
+        .select('quantity')
         .gte('created_at', todayStart);
 
       if (entriesError) {
-        console.error('Error loading entries count:', entriesError);
+        console.error('Error loading entries:', entriesError);
       }
 
       if (exitsError) {
-        console.error('Error loading exits count:', exitsError);
+        console.error('Error loading exits:', exitsError);
       }
 
+      // Sumar las cantidades de entradas
+      const entriesTotal = (entriesData || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+
+      // Sumar las cantidades de salidas
+      const exitsTotal = (exitsData || []).reduce((sum, exit) => sum + (exit.quantity || 0), 0);
+
       setStats((prev) => ({
-        entriesToday: entriesCount || 0,
-        exitsToday: exitsCount || 0,
+        entriesToday: entriesTotal,
+        exitsToday: exitsTotal,
         loading: false,
       }));
     } catch (error) {
