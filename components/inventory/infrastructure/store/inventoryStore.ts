@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { create } from 'zustand';
+// eslint-disable-next-line import/namespace
 import { Database } from '@/types/database.types';
 
 type Product = Database['public']['Tables']['products']['Row'];
