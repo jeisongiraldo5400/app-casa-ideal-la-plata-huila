@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useCallback, useEffect, useState } from 'react';
 
 interface DashboardStats {
   entriesToday: number;
@@ -15,16 +15,16 @@ export function useDashboardStats() {
   });
 
   // Función para obtener el inicio del día en UTC
-  const getTodayStart = () => {
+  const getTodayStart = useCallback(() => {
     const now = new Date();
-    // Crear fecha al inicio del día en hora local
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Crear fecha al inicio del día en hora local (medianoche)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     // Convertir a UTC para la consulta
     return today.toISOString();
-  };
+  }, []);
 
   // Función para cargar las estadísticas
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const todayStart = getTodayStart();
 
@@ -48,76 +48,107 @@ export function useDashboardStats() {
         console.error('Error loading exits count:', exitsError);
       }
 
-      setStats({
+      setStats((prev) => ({
         entriesToday: entriesCount || 0,
         exitsToday: exitsCount || 0,
         loading: false,
-      });
+      }));
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
       setStats((prev) => ({ ...prev, loading: false }));
     }
-  };
+  }, [getTodayStart]);
 
   useEffect(() => {
+    let isMounted = true;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     // Cargar estadísticas iniciales
     loadStats();
 
+    // Función con debounce para recargar estadísticas
+    const debouncedLoadStats = () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        if (isMounted) {
+          loadStats();
+        }
+      }, 800); // Esperar 800ms después del último evento
+    };
+
     // Configurar suscripciones real-time para inventory_entries
     const entriesChannel = supabase
-      .channel('dashboard-entries')
+      .channel(`dashboard-entries-${Date.now()}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT', // Solo escuchar inserciones nuevas
+          event: 'INSERT',
           schema: 'public',
           table: 'inventory_entries',
         },
-        (payload: any) => {
-          // Verificar si el registro es del día de hoy
-          if (payload.new?.created_at) {
-            const recordDate = new Date(payload.new.created_at);
-            const todayStart = new Date(getTodayStart());
-            if (recordDate >= todayStart) {
-              // Recargar estadísticas cuando hay cambios del día
-              loadStats();
-            }
-          }
+        (payload) => {
+          console.log('Real-time entry received:', payload);
+          // Usar debounce para evitar múltiples recargas cuando se insertan varios registros
+          debouncedLoadStats();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Entries channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to inventory_entries changes');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Real-time subscription failed for entries');
+        }
+      });
 
     // Configurar suscripciones real-time para inventory_exits
     const exitsChannel = supabase
-      .channel('dashboard-exits')
+      .channel(`dashboard-exits-${Date.now()}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT', // Solo escuchar inserciones nuevas
+          event: 'INSERT',
           schema: 'public',
           table: 'inventory_exits',
         },
-        (payload: any) => {
-          // Verificar si el registro es del día de hoy
-          if (payload.new?.created_at) {
-            const recordDate = new Date(payload.new.created_at);
-            const todayStart = new Date(getTodayStart());
-            if (recordDate >= todayStart) {
-              // Recargar estadísticas cuando hay cambios del día
-              loadStats();
-            }
-          }
+        (payload) => {
+          console.log('Real-time exit received:', payload);
+          // Usar debounce para evitar múltiples recargas cuando se insertan varios registros
+          debouncedLoadStats();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Exits channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to inventory_exits changes');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Real-time subscription failed for exits');
+        }
+      });
+
+    // Polling periódico como respaldo (cada 15 segundos)
+    const backupPolling = setInterval(() => {
+      if (isMounted) {
+        loadStats();
+      }
+    }, 15000);
 
     // Limpiar suscripciones al desmontar
     return () => {
-      supabase.removeChannel(entriesChannel);
-      supabase.removeChannel(exitsChannel);
+      isMounted = false;
+      console.log('Cleaning up real-time subscriptions');
+      entriesChannel.unsubscribe();
+      exitsChannel.unsubscribe();
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      clearInterval(backupPolling);
     };
-  }, []);
+  }, [loadStats]);
 
   return stats;
 }
+
 
