@@ -10,7 +10,7 @@ function ProfileHeaderButton() {
     <TouchableOpacity
       onPress={() => router.push('/(tabs)/profile')}
       style={{ marginRight: 16 }}>
-      <MaterialIcons name="account-circle" size={28} color={Colors.text.primary} />
+      <MaterialIcons name="account-circle" size={28} color={Colors.primary.contrastText} />
     </TouchableOpacity>
   );
 }
@@ -23,9 +23,10 @@ export default function TabLayout() {
         tabBarInactiveTintColor: Colors.text.secondary,
         headerShown: true,
         headerStyle: {
-          backgroundColor: Colors.background.paper,
+          backgroundColor: Colors.primary.main,
         },
-        headerTintColor: Colors.text.primary,
+        headerTintColor: Colors.primary.contrastText,
+        headerShadowVisible: false,
         tabBarStyle: {
           backgroundColor: '#ffffff',
           borderTopColor: Colors.primary.main,
