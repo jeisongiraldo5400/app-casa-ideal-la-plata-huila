@@ -111,8 +111,6 @@ export default function EntriesScreen() {
               <QuantityInput
                 quantity={currentQuantity}
                 onQuantityChange={setQuantity}
-                onSubmit={handleAddProduct}
-                loading={false}
               />
               <View style={styles.actionsContainer}>
                 <Button

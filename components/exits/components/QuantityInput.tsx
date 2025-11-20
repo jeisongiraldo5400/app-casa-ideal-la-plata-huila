@@ -8,16 +8,12 @@ interface QuantityInputProps {
   quantity: number;
   maxQuantity: number;
   onQuantityChange: (quantity: number) => void;
-  onSubmit: () => void;
-  loading?: boolean;
 }
 
 export function QuantityInput({
   quantity,
   maxQuantity,
   onQuantityChange,
-  onSubmit,
-  loading = false,
 }: QuantityInputProps) {
   const handleIncrement = () => {
     if (quantity < maxQuantity) {
@@ -79,14 +75,6 @@ export function QuantityInput({
           La cantidad no puede exceder el stock disponible
         </Text>
       )}
-
-      <Button
-        title="Registrar salida"
-        onPress={onSubmit}
-        loading={loading}
-        disabled={quantity <= 0 || quantity > maxQuantity}
-        style={styles.submitButton}
-      />
     </View>
   );
 }
@@ -157,9 +145,6 @@ const styles = StyleSheet.create({
     color: Colors.error.main,
     marginBottom: 8,
     textAlign: 'center',
-  },
-  submitButton: {
-    marginTop: 8,
   },
 });
 

@@ -7,15 +7,11 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 interface QuantityInputProps {
   quantity: number;
   onQuantityChange: (quantity: number) => void;
-  onSubmit: () => void;
-  loading?: boolean;
 }
 
 export function QuantityInput({
   quantity,
   onQuantityChange,
-  onSubmit,
-  loading = false,
 }: QuantityInputProps) {
   const handleIncrement = () => {
     onQuantityChange(quantity + 1);
@@ -68,13 +64,6 @@ export function QuantityInput({
         </TouchableOpacity>
       </View>
 
-      <Button
-        title="Registrar entrada"
-        onPress={onSubmit}
-        loading={loading}
-        disabled={quantity <= 0}
-        style={styles.submitButton}
-      />
     </View>
   );
 }
@@ -120,9 +109,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 18,
     fontWeight: '600',
-  },
-  submitButton: {
-    marginTop: 8,
   },
 });
 

@@ -123,8 +123,6 @@ export default function ExitsScreen() {
                 quantity={currentQuantity}
                 maxQuantity={currentAvailableStock}
                 onQuantityChange={setQuantity}
-                onSubmit={handleAddProduct}
-                loading={false}
               />
               <View style={styles.actionsContainer}>
                 <Button
