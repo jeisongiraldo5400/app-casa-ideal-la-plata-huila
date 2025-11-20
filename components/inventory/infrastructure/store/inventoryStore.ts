@@ -2,10 +2,10 @@ import { supabase } from '@/lib/supabase';
 import { create } from 'zustand';
 // eslint-disable-next-line import/namespace
 import { Database } from '@/types/database.types';
+import { Alert } from 'react-native';
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
-type WarehouseStock = Database['public']['Tables']['warehouse_stock']['Row'];
 
 export interface InventoryItem {
   id: string;
@@ -24,7 +24,6 @@ interface InventoryState {
   searchQuery: string;
   loadWarehouses: () => Promise<void>;
   loadInventory: (warehouseId?: string) => Promise<void>;
-  updateStock: (productId: string, warehouseId: string, quantity: number) => Promise<{ error: any }>;
   setSelectedWarehouse: (warehouseId: string | null) => void;
   setSearchQuery: (query: string) => void;
   clearError: () => void;
@@ -94,8 +93,6 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         return;
       }
 
-      console.log('Datos recibidos de Supabase:', data?.length || 0, 'registros');
-
       // Procesar datos - Supabase devuelve los joins con el nombre de la tabla
       const inventoryItems: InventoryItem[] = (data || [])
         .filter((item: any) => {
@@ -105,12 +102,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           const isValid = product && !product.deleted_at && warehouse;
           
           if (!isValid && product) {
-            console.log('Item filtrado - producto eliminado o sin bodega:', {
-              productId: product.id,
-              productName: product.name,
-              deletedAt: product.deleted_at,
-              hasWarehouse: !!warehouse,
-            });
+            const message = product.deleted_at 
+              ? `El producto "${product.name || product.barcode || 'sin nombre'}" ha sido eliminado y no puede mostrarse en el inventario.`
+              : `El producto "${product.name || product.barcode || 'sin nombre'}" no tiene una bodega asociada válida.`;
+            
+            Alert.alert(
+              'Producto inválido',
+              message,
+              [{ text: 'OK' }]
+            );
           }
           
           return isValid;
@@ -123,72 +123,10 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           updated_at: item.updated_at,
         }));
 
-      console.log(`Inventario procesado: ${inventoryItems.length} items válidos`);
       set({ inventory: inventoryItems, loading: false });
     } catch (error: any) {
       console.error('Error loading inventory (catch):', error);
       set({ inventory: [], loading: false, error: error.message || 'Error al cargar el inventario' });
-    }
-  },
-
-  updateStock: async (productId: string, warehouseId: string, quantity: number) => {
-    set({ loading: true, error: null });
-
-    try {
-      // Verificar si ya existe un registro de stock para este producto y bodega
-      const { data: existingStock, error: checkError } = await supabase
-        .from('warehouse_stock')
-        .select('id, quantity')
-        .eq('product_id', productId)
-        .eq('warehouse_id', warehouseId)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        // PGRST116 es el código cuando no se encuentra ningún registro
-        set({ loading: false, error: checkError.message });
-        return { error: checkError };
-      }
-
-      if (existingStock) {
-        // Actualizar stock existente
-        const { error: updateError } = await supabase
-          .from('warehouse_stock')
-          .update({
-            quantity: quantity,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingStock.id);
-
-        if (updateError) {
-          set({ loading: false, error: updateError.message });
-          return { error: updateError };
-        }
-      } else {
-        // Crear nuevo registro de stock
-        const { error: insertError } = await supabase
-          .from('warehouse_stock')
-          .insert({
-            product_id: productId,
-            warehouse_id: warehouseId,
-            quantity: quantity,
-            updated_at: new Date().toISOString(),
-          });
-
-        if (insertError) {
-          set({ loading: false, error: insertError.message });
-          return { error: insertError };
-        }
-      }
-
-      // Recargar el inventario después de actualizar
-      await get().loadInventory();
-
-      set({ loading: false });
-      return { error: null };
-    } catch (error: any) {
-      console.error('Error updating stock:', error);
-      set({ loading: false, error: error.message || 'Error al actualizar el stock' });
-      return { error };
     }
   },
 
