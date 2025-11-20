@@ -1,16 +1,23 @@
-import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { supabase } from '@/lib/supabase';
-import { Alert } from 'react-native';
 import { Colors } from '@/constants/theme';
 
 export default function QuickSearchScreen() {
   const router = useRouter();
   const { setSearchQuery, loadInventory } = useInventoryStore();
   const [showScanner, setShowScanner] = useState(true);
+
+  // Resetear el scanner cuando la pantalla vuelve a tener foco
+  useFocusEffect(
+    useCallback(() => {
+      setShowScanner(true);
+    }, [])
+  );
 
   const handleScan = async (barcode: string) => {
     try {
