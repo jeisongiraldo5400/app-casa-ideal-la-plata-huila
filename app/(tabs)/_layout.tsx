@@ -1,7 +1,7 @@
-import { Tabs, useRouter } from 'expo-router';
-import { Colors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Tabs, useRouter } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 
 function ProfileHeaderButton() {
