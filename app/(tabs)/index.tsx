@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
@@ -12,6 +12,26 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const { entriesToday, exitsToday, loading } = useDashboardStats();
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 1000); // Actualizar cada segundo
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDateTime = (date: Date) => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  };
 
   const handleRegisterEntries = () => {
     router.push('/(tabs)/entries');
@@ -24,7 +44,10 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Casa Ideal</Text>
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>Casa Ideal</Text>
+          <Text style={styles.dateTime}>{formatDateTime(currentDateTime)}</Text>
+        </View>
         <Text style={styles.subtitle}>Bienvenido de vuelta</Text>
       </View>
 
@@ -128,11 +151,24 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     marginTop: 20,
   },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: Colors.text.primary,
-    marginBottom: 8,
+    flex: 1,
+  },
+  dateTime: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.text.secondary,
+    marginLeft: 12,
   },
   subtitle: {
     fontSize: 16,
