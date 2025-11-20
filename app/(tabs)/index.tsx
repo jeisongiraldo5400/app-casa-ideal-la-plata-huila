@@ -1,14 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { Colors } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
 import { MaterialIcons } from '@expo/vector-icons';
+import { DashboardCard } from '@/components/dashboard/DashboardCard';
+import { useDashboardStats } from '@/hooks/useDashboardStats';
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { entriesToday, exitsToday, loading } = useDashboardStats();
 
   const handleRegisterEntries = () => {
     router.push('/(tabs)/entries');
@@ -25,16 +28,32 @@ export default function HomeScreen() {
         <Text style={styles.subtitle}>Bienvenido de vuelta</Text>
       </View>
 
-      <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Resumen</Text>
-        <Text style={styles.cardText}>
-          Bienvenido al sistema de gestión de inventario de Casa Ideal La Plata Huila.
-        </Text>
-        <Text style={styles.cardText}>
-          Desde aquí puedes gestionar las entradas y salidas de productos y mantener el control
-          de tu inventario en tiempo real.
-        </Text>
-      </Card>
+      <View style={styles.dashboardContainer}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary.main} />
+          </View>
+        ) : (
+          <>
+            <DashboardCard
+              title="Entradas Hoy"
+              value={entriesToday}
+              subtitle="Productos recibidos"
+              icon="input"
+              iconColor={Colors.success.main}
+              trend="up"
+            />
+            <DashboardCard
+              title="Salidas Hoy"
+              value={exitsToday}
+              subtitle="Productos despachados"
+              icon="exit-to-app"
+              iconColor={Colors.error.main}
+              trend="down"
+            />
+          </>
+        )}
+      </View>
 
       <View style={styles.menuSection}>
         <Text style={styles.menuTitle}>Menú de Operaciones</Text>
@@ -183,5 +202,16 @@ const styles = StyleSheet.create({
   menuItemTextDisabled: {
     color: Colors.text.secondary,
     opacity: 0.6,
+  },
+  dashboardContainer: {
+    flexDirection: 'row',
+    marginBottom: 24,
+    gap: 12,
+  },
+  loadingContainer: {
+    flex: 1,
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
