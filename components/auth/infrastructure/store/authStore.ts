@@ -21,15 +21,35 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialize: async () => {
     try {
       // Get initial session
-      const { data: { session } } = await supabase.auth.getSession();
-      set({ session, user: session?.user ?? null, loading: false, initialized: true });
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      // If there's an error with refresh token, clear the session
+      if (error) {
+        console.log('Auth error during initialization:', error.message);
+        // Clear invalid session
+        await supabase.auth.signOut();
+        set({ session: null, user: null, loading: false, initialized: true });
+      } else {
+        set({ session, user: session?.user ?? null, loading: false, initialized: true });
+      }
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange((_event, session) => {
-        set({ session, user: session?.user ?? null, loading: false });
+      supabase.auth.onAuthStateChange((event, session) => {
+        // Handle token refresh errors
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          // If token refresh failed, clear the session
+          set({ session: null, user: null, loading: false });
+        } else {
+          set({ session, user: session?.user ?? null, loading: false });
+        }
       });
-    } catch {
-      set({ loading: false, initialized: true });
+    } catch (error: any) {
+      console.log('Error initializing auth:', error?.message || error);
+      // If there's an invalid refresh token error, clear the session
+      if (error?.message?.includes('Refresh Token') || error?.message?.includes('Invalid Refresh Token')) {
+        await supabase.auth.signOut();
+      }
+      set({ session: null, user: null, loading: false, initialized: true });
     }
   },
 
