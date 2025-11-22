@@ -1,10 +1,13 @@
 [?25l[?2004h
                                                                                                            
   >  1. eenfwcihrsxlhyzvchaz [name: casa_ideal_la_plata_huila, org: long-coffee-bo9s4lr, region: us-east-2]
+    2. rqcdpnmdxmzmqvqoltwy [name: TECNOBRAY, org: long-coffee-bo9s4lr, region: us-east-2]                 
+                                                                                                           
+                                                                                                           
                                                                                                            
                                                                                                            
     ↑/k up • ↓/j down • / filter • q quit • ? more                                                         
-                                                                                                           [6A [J[2K[?2004l[?25h[?1002l[?1003l[?1006lexport type Json =
+                                                                                                           [9A [J[2K[?2004l[?25h[?1002l[?1003l[?1006lexport type Json =
   | string
   | number
   | boolean
@@ -135,6 +138,76 @@ export type Database = {
             columns: ["warehouse_id"]
             isOneToOne: false
             referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_entry_cancellations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          inventory_entry_id: string
+          observations: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id: string
+          observations: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id?: string
+          observations?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_entry_cancellation_entry"
+            columns: ["inventory_entry_id"]
+            isOneToOne: true
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_exit_cancellations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          inventory_exit_id: string
+          observations: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_exit_id: string
+          observations: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_exit_id?: string
+          observations?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_exit_cancellation_exit"
+            columns: ["inventory_exit_id"]
+            isOneToOne: true
+            referencedRelation: "inventory_exits"
             referencedColumns: ["id"]
           },
         ]
@@ -607,7 +680,81 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_cancelled_entries: {
+        Row: {
+          cancellation_id: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          entry_created_at: string | null
+          entry_created_by: string | null
+          entry_type: string | null
+          inventory_entry_id: string | null
+          observations: string | null
+          product_id: string | null
+          quantity: number | null
+          warehouse_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_entry_cancellation_entry"
+            columns: ["inventory_entry_id"]
+            isOneToOne: true
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_cancelled_exits: {
+        Row: {
+          cancellation_id: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          exit_created_at: string | null
+          exit_created_by: string | null
+          inventory_exit_id: string | null
+          observations: string | null
+          product_id: string | null
+          quantity: number | null
+          warehouse_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_exit_cancellation_exit"
+            columns: ["inventory_exit_id"]
+            isOneToOne: true
+            referencedRelation: "inventory_exits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exits_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exits_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       [_ in never]: never
