@@ -6,45 +6,45 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   primary: {
-    main: '#6366f1', // Índigo vibrante y moderno
-    light: '#818cf8',
-    dark: '#4f46e5',
-    contrastText: '#ffffff',
+    main: '#1e3a8a', // Azul oscuro - Color principal (logo)
+    light: '#60a5fa', // Azul claro - Acentos
+    dark: '#3b82f6', // Azul medio - Secundario, hover
+    contrastText: '#ffffff', // Blanco
   },
   secondary: {
-    main: '#8b5cf6', // Púrpura moderno
-    light: '#a78bfa',
-    dark: '#7c3aed',
-    contrastText: '#ffffff',
+    main: '#3b82f6', // Azul medio - Secundario, hover
+    light: '#60a5fa', // Azul claro - Acentos
+    dark: '#1e3a8a', // Azul oscuro - Color principal
+    contrastText: '#ffffff', // Blanco
   },
   background: {
-    default: '#f8fafc', // Gris azulado muy suave
-    paper: '#ffffff', // Blanco puro
+    default: '#fafbfc', // Gris muy claro - Fondo default
+    paper: '#ffffff', // Blanco - Fondos, papel
   },
   text: {
-    primary: '#0f172a', // Casi negro con tinte azul
-    secondary: '#64748b', // Gris azulado medio
+    primary: '#1f2937', // Gris oscuro - Texto principal
+    secondary: '#6b7280', // Gris medio - Texto secundario
   },
-  divider: '#e2e8f0', // Gris azulado claro
+  divider: '#e5e7eb', // Gris claro - Divisores, bordes
   success: {
-    main: '#10b981', // Verde esmeralda moderno
-    light: '#34d399',
-    dark: '#059669',
+    main: '#22c55e', // Verde - Éxito
+    light: '#4ade80',
+    dark: '#16a34a',
   },
   warning: {
-    main: '#f59e0b', // Ámbar moderno
+    main: '#f59e0b', // Amarillo - Advertencia
     light: '#fbbf24',
     dark: '#d97706',
   },
   error: {
-    main: '#ef4444', // Rojo coral moderno
-    light: '#f87171',
-    dark: '#dc2626',
+    main: '#dc2626', // Rojo - Errores, logo
+    light: '#ef4444',
+    dark: '#b91c1c',
   },
   info: {
-    main: '#06b6d4', // Cyan moderno
-    light: '#22d3ee',
-    dark: '#0891b2',
+    main: '#3b82f6', // Azul medio - Info
+    light: '#60a5fa', // Azul claro
+    dark: '#1e3a8a', // Azul oscuro
   },
 };
 
