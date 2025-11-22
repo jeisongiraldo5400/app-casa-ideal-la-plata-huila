@@ -1,13 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Formik, FormikHelpers } from 'formik';
-import * as Yup from 'yup';
-import { Input } from '@/components/ui/Input';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { Input } from '@/components/ui/Input';
 import { Colors } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { Formik, FormikHelpers } from 'formik';
+import React from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
+import * as Yup from 'yup';
 
 interface LoginFormValues {
   email: string;
@@ -113,6 +113,8 @@ export function LoginForm() {
 const styles = StyleSheet.create({
   card: {
     width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   formHeader: {
     marginBottom: 24,
