@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.horustarot.appcasaideal"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +18,12 @@
         "foregroundImage": "./assets/logos/icono.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.horustarot.appcasaideal"
     },
     "web": {
       "output": "static",
@@ -28,8 +34,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/logos/icono.png",
-          "imageWidth": 200,
+          "image": "./assets/logos/logo_completo.png",
+          "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#1e3a8a",
           "dark": {
