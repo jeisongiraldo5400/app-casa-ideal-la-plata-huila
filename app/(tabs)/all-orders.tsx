@@ -1,28 +1,21 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { usePurchaseOrders } from '@/components/purchase-orders';
-import { ReceivedOrdersList } from '@/components/purchase-orders/components/ReceivedOrdersList';
-import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { usePurchaseOrders, AllOrdersList } from '@/components/purchase-orders';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 
-export default function ReceivedOrdersScreen() {
-  const { user } = useAuth();
+export default function AllOrdersScreen() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
   useEffect(() => {
-    if (user) {
-      // Cargar órdenes recibidas del usuario logueado
-      loadPurchaseOrders('received', user.id);
-    }
-  }, [user]);
+    // Cargar todas las órdenes sin filtrar por estado o usuario
+    loadPurchaseOrders();
+  }, [loadPurchaseOrders]);
 
   const handleRefresh = () => {
-    if (user) {
-      loadPurchaseOrders('received', user.id);
-    }
+    loadPurchaseOrders();
   };
 
   return (
@@ -33,13 +26,13 @@ export default function ReceivedOrdersScreen() {
         <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
       }>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Mis Órdenes Recibidas</Text>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Todas las Órdenes</Text>
         <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-          Órdenes de compra que has marcado como recibidas
+          Visualiza todas las órdenes de compra registradas en el sistema
         </Text>
       </View>
 
-      <ReceivedOrdersList />
+      <AllOrdersList />
     </ScrollView>
   );
 }

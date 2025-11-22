@@ -1,5 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { Colors } from '@/constants/theme';
+import { Colors, getColors } from '@/constants/theme';
+import { useTheme } from '@/components/theme';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -8,12 +9,15 @@ import 'react-native-reanimated';
 
 function RootLayoutNav() {
   const { session, loading, initialize } = useAuth();
+  const { initializeTheme, isDark } = useTheme();
   const segments = useSegments();
   const router = useRouter();
+  const colors = getColors(isDark);
 
   useEffect(() => {
     initialize();
-  }, [initialize]);
+    initializeTheme();
+  }, [initialize, initializeTheme]);
 
   useEffect(() => {
     if (loading) return;
@@ -29,8 +33,8 @@ function RootLayoutNav() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary.main} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background.default }]}>
+        <ActivityIndicator size="large" color={colors.primary.main} />
       </View>
     );
   }
@@ -44,10 +48,11 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const { isDark } = useTheme();
   return (
     <>
       <RootLayoutNav />
-      <StatusBar style="auto" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
     </>
   );
 }
@@ -57,6 +62,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background.default,
   },
 });

@@ -1,35 +1,41 @@
+import { useTheme } from '@/components/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 
 function ProfileHeaderButton() {
   const router = useRouter();
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   return (
     <TouchableOpacity
       onPress={() => router.push('/(tabs)/profile')}
       style={{ marginRight: 16 }}>
-      <MaterialIcons name="account-circle" size={28} color={Colors.primary.contrastText} />
+      <MaterialIcons name="account-circle" size={28} color={colors.primary.contrastText} />
     </TouchableOpacity>
   );
 }
 
 export default function TabLayout() {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.primary.main,
-        tabBarInactiveTintColor: Colors.text.secondary,
+        tabBarActiveTintColor: colors.primary.main,
+        tabBarInactiveTintColor: colors.text.secondary,
         headerShown: true,
         headerStyle: {
-          backgroundColor: Colors.primary.main,
+          backgroundColor: colors.primary.main,
         },
-        headerTintColor: Colors.primary.contrastText,
+        headerTintColor: colors.primary.contrastText,
         headerShadowVisible: false,
         tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopColor: Colors.primary.main,
+          backgroundColor: colors.background.paper,
+          borderTopColor: colors.primary.main,
           borderTopWidth: 2,
           shadowColor: '#000',
           shadowOffset: {
@@ -115,6 +121,13 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Mis Órdenes Recibidas',
+        }}
+      />
+      <Tabs.Screen
+        name="all-orders"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Todas las Órdenes',
         }}
       />
     </Tabs>

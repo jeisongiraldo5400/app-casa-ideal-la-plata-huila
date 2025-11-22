@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { Colors } from '@/constants/theme';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import { useTheme } from '@/components/theme';
+import { getColors } from '@/constants/theme';
 import { Card } from '@/components/ui/Card';
 import { MaterialIcons } from '@expo/vector-icons';
 import { DashboardCard } from '@/components/dashboard/DashboardCard';
@@ -10,6 +12,9 @@ import { useDashboardStats } from '@/hooks/useDashboardStats';
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { isAdmin } = useUserRoles();
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   const router = useRouter();
   const { entriesToday, exitsToday, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
@@ -45,20 +50,24 @@ export default function HomeScreen() {
     router.push('/(tabs)/received-orders');
   };
 
+  const handleViewAllOrders = () => {
+    router.push('/(tabs)/all-orders');
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title}>Casa Ideal</Text>
-          <Text style={styles.dateTime}>{formatDateTime(currentDateTime)}</Text>
+          <Text style={[styles.title, { color: colors.text.primary }]}>Casa Ideal</Text>
+          <Text style={[styles.dateTime, { color: colors.text.secondary }]}>{formatDateTime(currentDateTime)}</Text>
         </View>
-        <Text style={styles.subtitle}>Bienvenido de vuelta</Text>
+        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
       </View>
 
       <View style={styles.dashboardContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary.main} />
+            <ActivityIndicator size="large" color={colors.primary.main} />
           </View>
         ) : (
           <>
@@ -67,7 +76,7 @@ export default function HomeScreen() {
               value={entriesToday}
               subtitle="Productos recibidos"
               icon="input"
-              iconColor={Colors.success.main}
+              iconColor={colors.success.main}
               trend="up"
             />
             <DashboardCard
@@ -75,7 +84,7 @@ export default function HomeScreen() {
               value={exitsToday}
               subtitle="Productos despachados"
               icon="local-shipping"
-              iconColor={Colors.error.main}
+              iconColor={colors.error.main}
               trend="down"
             />
           </>
@@ -83,10 +92,10 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.menuSection}>
-        <Text style={styles.menuTitle}>Menú de Operaciones</Text>
+        <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
         
         <TouchableOpacity 
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
           onPress={handleRegisterEntries}
           activeOpacity={0.7}
         >
@@ -94,20 +103,20 @@ export default function HomeScreen() {
             <MaterialIcons 
               name="input" 
               size={24} 
-              color={Colors.primary.main} 
+              color={colors.primary.main} 
               style={styles.menuIcon}
             />
-            <Text style={styles.menuItemText}>Registrar entradas de artículos</Text>
+            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>Registrar entradas de artículos</Text>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
-              color={Colors.text.secondary} 
+              color={colors.text.secondary} 
             />
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
           onPress={handleRegisterExits}
           activeOpacity={0.7}
         >
@@ -115,22 +124,22 @@ export default function HomeScreen() {
             <MaterialIcons 
               name="local-shipping" 
               size={24} 
-              color={Colors.primary.main} 
+              color={colors.primary.main} 
               style={styles.menuIcon}
             />
-            <Text style={styles.menuItemText}>
+            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
               Registrar salidas de artículos
             </Text>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
-              color={Colors.text.secondary} 
+              color={colors.text.secondary} 
             />
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
           onPress={handleViewReceivedOrders}
           activeOpacity={0.7}
         >
@@ -138,26 +147,51 @@ export default function HomeScreen() {
             <MaterialIcons 
               name="receipt-long" 
               size={24} 
-              color={Colors.primary.main} 
+              color={colors.primary.main} 
               style={styles.menuIcon}
             />
-            <Text style={styles.menuItemText}>
+            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
               Mis órdenes recibidas
             </Text>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
-              color={Colors.text.secondary} 
+              color={colors.text.secondary} 
             />
           </View>
         </TouchableOpacity>
+
+        {isAdmin() && (
+          <TouchableOpacity 
+            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewAllOrders}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemContent}>
+              <MaterialIcons 
+                name="list-alt" 
+                size={24} 
+                color={colors.primary.main} 
+                style={styles.menuIcon}
+              />
+              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                Todas las órdenes
+              </Text>
+              <MaterialIcons 
+                name="chevron-right" 
+                size={24} 
+                color={colors.text.secondary} 
+              />
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
       {user && (
-        <Card style={styles.card}>
-          <Text style={styles.cardTitle}>Sesión activa</Text>
-          <Text style={styles.cardText}>
-            <Text style={styles.label}>Usuario: </Text>
+        <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+          <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Sesión activa</Text>
+          <Text style={[styles.cardText, { color: colors.text.secondary }]}>
+            <Text style={[styles.label, { color: colors.text.primary }]}>Usuario: </Text>
             {user.email}
           </Text>
         </Card>
@@ -169,7 +203,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.default,
   },
   content: {
     padding: 20,
@@ -188,18 +221,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: Colors.text.primary,
     flex: 1,
   },
   dateTime: {
     fontSize: 14,
     fontWeight: '500',
-    color: Colors.text.secondary,
     marginLeft: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.text.secondary,
   },
   card: {
     marginBottom: 24,
@@ -207,17 +237,14 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.text.primary,
     marginBottom: 16,
   },
   cardText: {
     fontSize: 14,
-    color: Colors.text.secondary,
     marginBottom: 8,
   },
   label: {
     fontWeight: '600',
-    color: Colors.text.primary,
   },
   button: {
     marginTop: 8,
@@ -228,16 +255,13 @@ const styles = StyleSheet.create({
   menuTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: Colors.text.primary,
     marginBottom: 16,
     paddingHorizontal: 4,
   },
   menuItem: {
-    backgroundColor: Colors.background.paper,
     borderRadius: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: Colors.divider,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {
@@ -260,10 +284,8 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
-    color: Colors.text.primary,
   },
   menuItemTextDisabled: {
-    color: Colors.text.secondary,
     opacity: 0.6,
   },
   dashboardContainer: {

@@ -12,7 +12,7 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { usePurchaseOrders } from '../infrastructure/hooks/usePurchaseOrders';
 
-export function ReceivedOrdersList() {
+export function AllOrdersList() {
   const { purchaseOrders, loading, error } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -33,11 +33,39 @@ export function ReceivedOrdersList() {
     }
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received':
+        return colors.success.main;
+      case 'approved':
+        return colors.info.main;
+      case 'pending':
+        return colors.warning.main;
+      default:
+        return colors.text.secondary;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'received':
+        return 'Recibida';
+      case 'approved':
+        return 'Aprobada';
+      case 'pending':
+        return 'Pendiente';
+      default:
+        return status;
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary.main} />
-        <Text style={[styles.loadingText, { color: colors.text.secondary }]}>Cargando órdenes recibidas...</Text>
+        <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
+          Cargando órdenes...
+        </Text>
       </View>
     );
   }
@@ -55,9 +83,11 @@ export function ReceivedOrdersList() {
     return (
       <View style={styles.emptyContainer}>
         <MaterialIcons name="receipt-long" size={64} color={colors.text.secondary} />
-        <Text style={[styles.emptyText, { color: colors.text.primary }]}>No hay órdenes recibidas</Text>
+        <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+          No hay órdenes registradas
+        </Text>
         <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          Las órdenes que marques como recibidas aparecerán aquí
+          Las órdenes de compra aparecerán aquí
         </Text>
       </View>
     );
@@ -68,17 +98,24 @@ export function ReceivedOrdersList() {
       {purchaseOrders.map((order) => {
         const totalItems = order.items?.length || 0;
         const totalQuantity = order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+        const statusColor = getStatusColor(order.status);
 
         return (
           <Card key={order.id} style={[styles.orderCard, { backgroundColor: colors.background.paper }]}>
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderLeft}>
-                <Text style={[styles.orderId, { color: colors.text.primary }]}>OC #{order.id.slice(0, 8)}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: colors.success.main }]}>
-                  <Text style={styles.statusText}>Recibida</Text>
+                <Text style={[styles.orderId, { color: colors.text.primary }]}>
+                  OC #{order.id.slice(0, 8)}
+                </Text>
+                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.statusText, { color: statusColor }]}>
+                    {getStatusLabel(order.status)}
+                  </Text>
                 </View>
               </View>
-              <Text style={[styles.orderDate, { color: colors.text.secondary }]}>{formatDate(order.updated_at || order.created_at)}</Text>
+              <Text style={[styles.orderDate, { color: colors.text.secondary }]}>
+                {formatDate(order.created_at)}
+              </Text>
             </View>
 
             {order.supplier && (
@@ -86,6 +123,15 @@ export function ReceivedOrdersList() {
                 <MaterialIcons name="local-shipping" size={16} color={colors.text.secondary} />
                 <Text style={[styles.supplierText, { color: colors.text.secondary }]}>
                   {order.supplier.name || 'Proveedor sin nombre'}
+                </Text>
+              </View>
+            )}
+
+            {order.created_by_profile && (
+              <View style={styles.creatorInfo}>
+                <MaterialIcons name="person" size={16} color={colors.text.secondary} />
+                <Text style={[styles.creatorText, { color: colors.text.secondary }]}>
+                  Creada por: {order.created_by_profile.full_name || order.created_by_profile.email}
                 </Text>
               </View>
             )}
@@ -105,7 +151,7 @@ export function ReceivedOrdersList() {
             {order.items && order.items.length > 0 && (
               <View style={styles.productsList}>
                 <Text style={[styles.productsListTitle, { color: colors.text.primary }]}>Productos:</Text>
-                {order.items.slice(0, 5).map((item) => (
+                {order.items.slice(0, 3).map((item) => (
                   <View key={item.id} style={[styles.productItem, { backgroundColor: colors.background.default }]}>
                     <Text style={[styles.productName, { color: colors.text.primary }]} numberOfLines={1}>
                       {item.product?.name || 'Producto sin nombre'}
@@ -115,20 +161,13 @@ export function ReceivedOrdersList() {
                     </Text>
                   </View>
                 ))}
-                {order.items.length > 5 && (
+                {order.items.length > 3 && (
                   <Text style={[styles.moreProducts, { color: colors.text.secondary }]}>
-                    +{order.items.length - 5} producto{order.items.length - 5 !== 1 ? 's' : ''} más
+                    +{order.items.length - 3} producto{order.items.length - 3 !== 1 ? 's' : ''} más
                   </Text>
                 )}
               </View>
             )}
-
-            <View style={[styles.receivedBadge, { backgroundColor: colors.success.main + '15' }]}>
-              <MaterialIcons name="check-circle" size={20} color={colors.success.main} />
-              <Text style={[styles.receivedText, { color: colors.success.main }]}>
-                Recibida el {formatDate(order.updated_at || order.created_at)}
-              </Text>
-            </View>
           </Card>
         );
       })}
@@ -206,7 +245,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ffffff',
   },
   orderDate: {
     fontSize: 12,
@@ -220,14 +258,24 @@ const styles = StyleSheet.create({
   supplierText: {
     fontSize: 14,
   },
+  creatorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  creatorText: {
+    fontSize: 14,
+  },
   orderNotes: {
     fontSize: 14,
     marginBottom: 8,
     fontStyle: 'italic',
   },
   orderSummary: {
+    marginTop: 8,
     marginBottom: 12,
-    paddingTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
   },
   summaryText: {
@@ -264,20 +312,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     marginTop: 4,
-  },
-  receivedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  receivedText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
 
