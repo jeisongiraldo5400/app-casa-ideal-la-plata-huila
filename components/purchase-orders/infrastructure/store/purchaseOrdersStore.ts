@@ -36,7 +36,7 @@ interface PurchaseOrdersState {
   purchaseOrders: PurchaseOrderWithSupplier[];
   loading: boolean;
   error: string | null;
-  loadPurchaseOrders: (status?: 'pending' | 'approved' | 'received') => Promise<void>;
+  loadPurchaseOrders: (status?: 'pending' | 'approved' | 'received', userId?: string) => Promise<void>;
   updatePurchaseOrderStatus: (
     orderId: string,
     status: 'pending' | 'approved' | 'received'
@@ -64,7 +64,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
   loading: false,
   error: null,
 
-  loadPurchaseOrders: async (status?: 'pending' | 'approved' | 'received') => {
+  loadPurchaseOrders: async (status?: 'pending' | 'approved' | 'received', userId?: string) => {
     set({ loading: true, error: null });
     try {
       let query = supabase
@@ -75,17 +75,16 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
             id,
             name,
             nit
-          ),
-          profiles:created_by (
-            id,
-            full_name,
-            email
           )
         `)
         .order('created_at', { ascending: false });
 
       if (status) {
         query = query.eq('status', status);
+      }
+
+      if (userId) {
+        query = query.eq('created_by', userId);
       }
 
       const { data, error } = await query;
@@ -95,6 +94,19 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
         set({ error: error.message, loading: false });
         return;
       }
+
+      // Obtener todos los user IDs únicos para cargar los perfiles
+      const userIds = [...new Set((data || []).map((order: any) => order.created_by))];
+      
+      // Cargar perfiles de todos los usuarios
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', userIds);
+
+      const profilesMap = new Map(
+        (profilesData || []).map((profile) => [profile.id, profile])
+      );
 
       // Para cada orden, cargar sus items con los productos
       const ordersWithItems: PurchaseOrderWithSupplier[] = await Promise.all(
@@ -122,7 +134,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
           return {
             ...order,
             supplier: Array.isArray(order.suppliers) ? order.suppliers[0] : order.suppliers,
-            created_by_profile: Array.isArray(order.profiles) ? order.profiles[0] : order.profiles,
+            created_by_profile: profilesMap.get(order.created_by) || null,
             items: orderItems,
           };
         })

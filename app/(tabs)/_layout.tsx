@@ -110,6 +110,13 @@ export default function TabLayout() {
           title: 'Salidas',
         }}
       />
+      <Tabs.Screen
+        name="received-orders"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Mis Órdenes Recibidas',
+        }}
+      />
     </Tabs>
   );
 }

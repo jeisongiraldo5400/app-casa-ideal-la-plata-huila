@@ -41,6 +41,10 @@ export default function HomeScreen() {
     router.push('/(tabs)/exits');
   };
 
+  const handleViewReceivedOrders = () => {
+    router.push('/(tabs)/received-orders');
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -116,6 +120,29 @@ export default function HomeScreen() {
             />
             <Text style={styles.menuItemText}>
               Registrar salidas de artículos
+            </Text>
+            <MaterialIcons 
+              name="chevron-right" 
+              size={24} 
+              color={Colors.text.secondary} 
+            />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={handleViewReceivedOrders}
+          activeOpacity={0.7}
+        >
+          <View style={styles.menuItemContent}>
+            <MaterialIcons 
+              name="receipt-long" 
+              size={24} 
+              color={Colors.primary.main} 
+              style={styles.menuIcon}
+            />
+            <Text style={styles.menuItemText}>
+              Mis órdenes recibidas
             </Text>
             <MaterialIcons 
               name="chevron-right" 
