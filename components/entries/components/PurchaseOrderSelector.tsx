@@ -7,6 +7,10 @@ import {
 
 import { Card } from "@/components/ui/Card";
 import { Colors } from "@/constants/theme";
+import { usePurchaseOrders } from "@/components/purchase-orders";
+import { useUserRoles } from "@/hooks/useUserRoles";
+import { MaterialIcons } from "@expo/vector-icons";
+import { Alert } from "react-native";
 
 import {
   ScrollView,
@@ -27,7 +31,9 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
-  const { purchaseOrderValidations } = useEntriesStore();
+  const { purchaseOrderValidations, loadPurchaseOrders: loadEntriesPurchaseOrders } = useEntriesStore();
+  const { markOrderAsReceived, validateOrderIsComplete } = usePurchaseOrders();
+  const { canMarkOrderAsReceived } = useUserRoles();
 
   if (purchaseOrders.length === 0) {
     return (
@@ -55,13 +61,80 @@ export function PurchaseOrderSelector({
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "PENDIENTE":
+      case "pending":
         return Colors.warning.main;
-      case "EN PROCESO":
+      case "approved":
         return Colors.info.main;
+      case "received":
+        return Colors.success.main;
       default:
         return Colors.text.secondary;
     }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "Pendiente";
+      case "approved":
+        return "Aprobada";
+      case "received":
+        return "Recibida";
+      default:
+        return status;
+    }
+  };
+
+  const handleMarkAsReceived = async (orderId: string) => {
+    if (!canMarkOrderAsReceived()) {
+      Alert.alert(
+        'Sin permisos',
+        'Solo los usuarios con rol de administrador o bodeguero pueden marcar órdenes como recibidas.'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Confirmar',
+      '¿Está seguro de que desea marcar esta orden como recibida? Se validará que todas las unidades estén registradas.',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            const validation = await validateOrderIsComplete(orderId);
+            
+            if (!validation.isComplete) {
+              let message = validation.error || 'La orden no está completa.\n\n';
+              if (validation.details?.missingItems && validation.details.missingItems.length > 0) {
+                message += 'Productos faltantes:\n';
+                validation.details.missingItems.forEach((item) => {
+                  message += `- Faltan ${item.missing} unidades del producto ${item.product_id.slice(0, 8)}\n`;
+                });
+              }
+              Alert.alert('Orden incompleta', message);
+              return;
+            }
+
+            const result = await markOrderAsReceived(orderId);
+            
+            if (result.success) {
+              Alert.alert('Éxito', 'La orden ha sido marcada como recibida.');
+              // Recargar las órdenes del proveedor actual
+              const currentSupplierId = purchaseOrders[0]?.supplier_id;
+              if (currentSupplierId) {
+                loadEntriesPurchaseOrders(currentSupplierId);
+              }
+            } else {
+              Alert.alert('Error', result.error || 'No se pudo marcar la orden como recibida.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -110,7 +183,7 @@ export function PurchaseOrderSelector({
                       { backgroundColor: getStatusColor(order.status) },
                     ]}
                   >
-                    <Text style={styles.statusText}>{order.status}</Text>
+                    <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
                   </View>
                   {isComplete ? (
                     <View style={styles.completePurchaseOrderCard}>
@@ -151,11 +224,28 @@ export function PurchaseOrderSelector({
                 </Text>
               </View>
 
-              {isOrderComplete && (
+              {isOrderComplete && order.status !== 'received' && (
                 <View style={styles.completeMessageContainer}>
                   <Text style={styles.completeMessageText}>
                     ✓ Orden completa - No se pueden escanear más productos
                   </Text>
+                  {canMarkOrderAsReceived() && (
+                    <TouchableOpacity
+                      style={styles.markReceivedButton}
+                      onPress={() => handleMarkAsReceived(order.id)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
+                      <Text style={styles.markReceivedButtonText}>Marcar como recibida</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {order.status === 'received' && (
+                <View style={styles.receivedBadge}>
+                  <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
+                  <Text style={styles.receivedText}>Orden recibida</Text>
                 </View>
               )}
 
@@ -353,5 +443,38 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.success.main,
     textAlign: "center",
+    marginBottom: 12,
+  },
+  markReceivedButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.success.main + "15",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
+    gap: 8,
+  },
+  markReceivedButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.success.main,
+  },
+  receivedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.success.main + "15",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  receivedText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.success.main,
   },
 });
