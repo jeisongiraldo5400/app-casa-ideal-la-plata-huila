@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { Colors } from '@/constants/theme';
@@ -12,7 +11,6 @@ export function EntryItemsList() {
   const {
     entryItems,
     removeProductFromEntry,
-    updateProductQuantity,
     finalizeEntry,
     loading,
     purchaseOrderId,
@@ -117,20 +115,10 @@ export function EntryItemsList() {
 
                 <View style={styles.quantityRow}>
                   <Text style={styles.quantityLabel}>Cantidad:</Text>
-                  <Input
-                    value={item.quantity.toString()}
-                    onChangeText={(text) => {
-                      const num = parseInt(text, 10);
-                      if (!isNaN(num) && num > 0) {
-                        updateProductQuantity(index, num);
-                      } else if (text === '') {
-                        updateProductQuantity(index, 1);
-                      }
-                    }}
-                    keyboardType="numeric"
-                    style={styles.quantityInput}
-                    containerStyle={styles.quantityInputContainer}
-                  />
+                  <View style={styles.quantityDisplay}>
+                    <Text style={styles.quantityValue}>{item.quantity}</Text>
+                    <Text style={styles.quantityUnit}>unidad{item.quantity !== 1 ? 'es' : ''}</Text>
+                  </View>
                 </View>
 
                 {purchaseOrderId && (
@@ -235,12 +223,26 @@ const styles = StyleSheet.create({
     marginRight: 12,
     minWidth: 80,
   },
-  quantityInputContainer: {
+  quantityDisplay: {
     flex: 1,
-    marginBottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background.paper,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.divider,
   },
-  quantityInput: {
-    textAlign: 'center',
+  quantityValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginRight: 4,
+  },
+  quantityUnit: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
   totalRow: {
     flexDirection: 'row',
