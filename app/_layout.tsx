@@ -4,6 +4,7 @@ import { useTheme } from '@/components/theme';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
@@ -11,11 +12,19 @@ import 'react-native-reanimated';
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
 
-// Configurar las opciones de animación del splash screen
-SplashScreen.setOptions({
-  duration: 2000, // Duración mínima de 2 segundos
-  fade: true,
-});
+// Configurar las opciones de animación del splash screen solo si no estamos en Expo Go
+// setOptions no funciona en Expo Go, solo en development builds y production
+if (!Constants.executionEnvironment || Constants.executionEnvironment === 'standalone') {
+  try {
+    SplashScreen.setOptions({
+      duration: 2000, // Duración mínima de 2 segundos
+      fade: true,
+    });
+  } catch (error) {
+    // Ignorar error si setOptions no está disponible (Expo Go)
+    console.log('SplashScreen.setOptions no disponible en este entorno');
+  }
+}
 
 function RootLayoutNav() {
   const { session, loading, initialize } = useAuth();
