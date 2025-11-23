@@ -1,31 +1,32 @@
 {
   "expo": {
-    "name": "Casa Ideal La Plata Huila",
+    "name": "Casa Ideal",
     "slug": "app-casa-ideal",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logos/icono.png",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icono.png",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/logos/logo_completo.png",
+      "image": "./assets/images/SplashScreenLogo.png",
       "resizeMode": "contain",
       "backgroundColor": "#1e3a8a",
-      "imageWidth": 300,
       "dark": {
-        "image": "./assets/logos/logo_completo.png",
+        "image": "./assets/images/SplashScreenLogo.png",
         "backgroundColor": "#1e3a8a"
       }
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.casaideal.laplatahuila"
+      "bundleIdentifier": "com.casaideal.laplatahuila",
+      "icon": "./assets/images/icono.png"
     },
     "android": {
+      "icon": "./assets/images/icono.png",
       "adaptiveIcon": {
         "backgroundColor": "#1e3a8a",
-        "foregroundImage": "./assets/logos/icono.png"
+        "foregroundImage": "./assets/images/icono.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -37,19 +38,18 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/logos/icono.png"
+      "favicon": "./assets/images/icono.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/logos/logo_completo.png",
-          "imageWidth": 300,
+          "image": "./assets/images/SplashScreenLogo.png",
           "resizeMode": "contain",
           "backgroundColor": "#1e3a8a",
-          "hideAsyncOnLaunch": false,
           "dark": {
+            "image": "./assets/images/SplashScreenLogo.png",
             "backgroundColor": "#1e3a8a"
           }
         }

@@ -21,7 +21,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
           <Image
-            source={require('@/assets/logos/logo_completo.png')}
+            source={require('@/assets/images/logo_completo.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
