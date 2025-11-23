@@ -24,6 +24,7 @@ function RootLayoutNav() {
   const router = useRouter();
   const colors = getColors(isDark);
   const [appIsReady, setAppIsReady] = useState(false);
+  const [navigationReady, setNavigationReady] = useState(false);
 
   useEffect(() => {
     async function prepare() {
@@ -48,23 +49,32 @@ function RootLayoutNav() {
   }, [initialize, initializeTheme]);
 
   useEffect(() => {
-    if (!appIsReady || loading) return;
-
-    // Ocultar el splash screen solo cuando la app esté completamente lista
-    SplashScreen.hideAsync();
-  }, [appIsReady, loading]);
-
-  useEffect(() => {
     if (loading || !appIsReady) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
+    // Realizar la navegación
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)');
     }
+    
+    // Esperar un momento para que la navegación se complete antes de ocultar el splash
+    setTimeout(() => {
+      setNavigationReady(true);
+    }, 500);
   }, [session, loading, segments, router, appIsReady]);
+
+  useEffect(() => {
+    // Solo ocultar el splash screen cuando todo esté listo: inicialización, navegación y carga completa
+    if (appIsReady && navigationReady && !loading) {
+      // Pequeño delay adicional para asegurar que la pantalla esté renderizada
+      setTimeout(async () => {
+        await SplashScreen.hideAsync();
+      }, 200);
+    }
+  }, [appIsReady, navigationReady, loading]);
 
   // No mostrar loading container mientras se carga, dejar que el splash screen se muestre
   // El splash screen se ocultará automáticamente cuando termine la inicialización
