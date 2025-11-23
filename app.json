@@ -8,6 +8,15 @@
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/logos/logo_completo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1e3a8a",
+      "dark": {
+        "image": "./assets/logos/logo_completo.png",
+        "backgroundColor": "#1e3a8a"
+      }
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.casaideal.laplatahuila"
