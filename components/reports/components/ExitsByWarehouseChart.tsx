@@ -27,20 +27,31 @@ export function ExitsByWarehouseChart({ data }: ExitsByWarehouseChartProps) {
     );
   }
 
-  // Preparar datos para el gráfico
-  const chartData = data.map((item, index) => ({
-    value: item.quantity,
-    label: item.warehouseName.length > 10 ? item.warehouseName.substring(0, 10) + '...' : item.warehouseName,
-    labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
-    frontColor: colors.error.main,
-    topLabelComponent: () => (
-      <Text style={{ color: colors.text.primary, fontSize: 10, fontWeight: '600' }}>
-        {item.quantity}
-      </Text>
-    ),
-  }));
+  // Preparar datos para el gráfico con validación
+  const chartData = data
+    .filter((item) => item && item.warehouseId && item.warehouseName)
+    .map((item, index) => ({
+      value: Number(item.quantity) || 0,
+      label: (item.warehouseName || '').length > 10 ? (item.warehouseName || '').substring(0, 10) + '...' : (item.warehouseName || ''),
+      labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
+      frontColor: colors.error.main,
+      topLabelComponent: () => (
+        <Text style={{ color: colors.text.primary, fontSize: 10, fontWeight: '600' }}>
+          {Number(item.quantity) || 0}
+        </Text>
+      ),
+    }));
 
-  const maxValue = Math.max(...data.map((d) => d.quantity), 1);
+  if (chartData.length === 0) {
+    return (
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Salidas por Bodega</Text>
+        <Text style={[styles.emptyText, { color: colors.text.secondary }]}>No hay datos disponibles</Text>
+      </Card>
+    );
+  }
+
+  const maxValue = Math.max(...chartData.map((d) => d.value), 1);
 
   return (
     <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
@@ -67,12 +78,19 @@ export function ExitsByWarehouseChart({ data }: ExitsByWarehouseChartProps) {
         />
       </View>
       <View style={styles.detailsContainer}>
-        {data.map((item, index) => (
-          <View key={item.warehouseId} style={styles.detailItem}>
-            <Text style={[styles.detailName, { color: colors.text.primary }]}>{item.warehouseName}</Text>
-            <Text style={[styles.detailValue, { color: colors.error.main }]}>{item.quantity} unidades</Text>
-          </View>
-        ))}
+        {chartData.map((item, index) => {
+          const originalItem = data.find((d) => d.warehouseId && d.warehouseName === item.label.replace('...', ''));
+          return (
+            <View key={originalItem?.warehouseId || index} style={styles.detailItem}>
+              <Text style={[styles.detailName, { color: colors.text.primary }]}>
+                {originalItem?.warehouseName || item.label}
+              </Text>
+              <Text style={[styles.detailValue, { color: colors.error.main }]}>
+                {item.value} unidades
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </Card>
   );

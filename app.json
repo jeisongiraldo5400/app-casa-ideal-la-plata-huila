@@ -11,11 +11,7 @@
     "splash": {
       "image": "./assets/images/SplashScreenLogo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1e3a8a",
-      "dark": {
-        "image": "./assets/images/SplashScreenLogo.png",
-        "backgroundColor": "#1e3a8a"
-      }
+      "backgroundColor": "#1e3a8a"
     },
     "ios": {
       "supportsTablet": true,
@@ -47,11 +43,7 @@
         {
           "image": "./assets/images/SplashScreenLogo.png",
           "resizeMode": "contain",
-          "backgroundColor": "#1e3a8a",
-          "dark": {
-            "image": "./assets/images/SplashScreenLogo.png",
-            "backgroundColor": "#1e3a8a"
-          }
+          "backgroundColor": "#1e3a8a"
         }
       ],
       [

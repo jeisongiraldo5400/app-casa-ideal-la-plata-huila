@@ -37,10 +37,21 @@ export function EntriesByTypeChart({ data }: EntriesByTypeChartProps) {
     );
   }
 
-  const totalQuantity = data.reduce((sum, item) => sum + item.quantity, 0);
+  const validData = data.filter((item) => item && item.type && Number(item.quantity) > 0);
+  
+  if (validData.length === 0) {
+    return (
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Entradas por Tipo</Text>
+        <Text style={[styles.emptyText, { color: colors.text.secondary }]}>No hay datos disponibles</Text>
+      </Card>
+    );
+  }
 
-  const pieData = data.map((item) => ({
-    value: item.quantity,
+  const totalQuantity = validData.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  const pieData = validData.map((item) => ({
+    value: Number(item.quantity) || 0,
     color: TYPE_COLORS[item.type] || colors.primary.main,
     gradientCenterColor: TYPE_COLORS[item.type] || colors.primary.main,
     focused: false,
@@ -67,10 +78,11 @@ export function EntriesByTypeChart({ data }: EntriesByTypeChartProps) {
         />
       </View>
       <View style={styles.legend}>
-        {data.map((item, index) => {
-          const percentage = ((item.quantity / totalQuantity) * 100).toFixed(1);
+        {validData.map((item, index) => {
+          const quantity = Number(item.quantity) || 0;
+          const percentage = totalQuantity > 0 ? ((quantity / totalQuantity) * 100).toFixed(1) : '0.0';
           return (
-            <View key={item.type} style={styles.legendItem}>
+            <View key={item.type || index} style={styles.legendItem}>
               <View
                 style={[
                   styles.legendColor,
@@ -79,10 +91,10 @@ export function EntriesByTypeChart({ data }: EntriesByTypeChartProps) {
               />
               <View style={styles.legendTextContainer}>
                 <Text style={[styles.legendText, { color: colors.text.primary }]}>
-                  {TYPE_LABELS[item.type] || item.type}
+                  {TYPE_LABELS[item.type] || item.type || 'Desconocido'}
                 </Text>
                 <Text style={[styles.legendSubtext, { color: colors.text.secondary }]}>
-                  {item.quantity} unidades ({percentage}%)
+                  {quantity} unidades ({percentage}%)
                 </Text>
               </View>
             </View>

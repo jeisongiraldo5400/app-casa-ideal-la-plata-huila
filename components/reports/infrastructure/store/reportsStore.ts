@@ -65,6 +65,16 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
 
     try {
       const { startDate, endDate } = get().dateRange;
+      
+      // Validar fechas
+      if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        throw new Error('Fechas inválidas');
+      }
+
+      if (startDate > endDate) {
+        throw new Error('La fecha de inicio debe ser anterior a la fecha de fin');
+      }
+
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
 
@@ -92,15 +102,29 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
       const exitsByDay = new Map<string, number>();
 
       (entriesData || []).forEach((entry) => {
-        const date = new Date(entry.created_at).toISOString().split('T')[0];
-        const current = entriesByDay.get(date) || 0;
-        entriesByDay.set(date, current + (entry.quantity || 0));
+        try {
+          if (!entry.created_at) return;
+          const date = new Date(entry.created_at);
+          if (isNaN(date.getTime())) return;
+          const dateStr = date.toISOString().split('T')[0];
+          const current = entriesByDay.get(dateStr) || 0;
+          entriesByDay.set(dateStr, current + (Number(entry.quantity) || 0));
+        } catch (error) {
+          console.warn('Error processing entry date:', error);
+        }
       });
 
       (exitsData || []).forEach((exit) => {
-        const date = new Date(exit.created_at).toISOString().split('T')[0];
-        const current = exitsByDay.get(date) || 0;
-        exitsByDay.set(date, current + (exit.quantity || 0));
+        try {
+          if (!exit.created_at) return;
+          const date = new Date(exit.created_at);
+          if (isNaN(date.getTime())) return;
+          const dateStr = date.toISOString().split('T')[0];
+          const current = exitsByDay.get(dateStr) || 0;
+          exitsByDay.set(dateStr, current + (Number(exit.quantity) || 0));
+        } catch (error) {
+          console.warn('Error processing exit date:', error);
+        }
       });
 
       // Combinar todas las fechas

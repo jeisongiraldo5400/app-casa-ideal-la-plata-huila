@@ -29,12 +29,23 @@ export function EntriesBySupplierChart({ data }: EntriesBySupplierChartProps) {
     );
   }
 
-  // Preparar datos para el gráfico (top 8)
-  const topSuppliers = data.slice(0, 8);
-  const totalQuantity = topSuppliers.reduce((sum, item) => sum + item.quantity, 0);
+  // Preparar datos para el gráfico (top 8) con validación
+  const topSuppliers = data
+    .filter((item) => item && item.supplierId && item.supplierName)
+    .slice(0, 8);
+  const totalQuantity = topSuppliers.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  if (totalQuantity === 0) {
+    return (
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Entradas por Proveedor</Text>
+        <Text style={[styles.emptyText, { color: colors.text.secondary }]}>No hay datos disponibles</Text>
+      </Card>
+    );
+  }
 
   const pieData = topSuppliers.map((item, index) => ({
-    value: item.quantity,
+    value: Number(item.quantity) || 0,
     color: CHART_COLORS[index % CHART_COLORS.length],
     gradientCenterColor: CHART_COLORS[index % CHART_COLORS.length],
     focused: index === 0,
@@ -62,9 +73,10 @@ export function EntriesBySupplierChart({ data }: EntriesBySupplierChartProps) {
       </View>
       <View style={styles.legend}>
         {topSuppliers.map((item, index) => {
-          const percentage = ((item.quantity / totalQuantity) * 100).toFixed(1);
+          const quantity = Number(item.quantity) || 0;
+          const percentage = totalQuantity > 0 ? ((quantity / totalQuantity) * 100).toFixed(1) : '0.0';
           return (
-            <View key={item.supplierId} style={styles.legendItem}>
+            <View key={item.supplierId || index} style={styles.legendItem}>
               <View
                 style={[
                   styles.legendColor,
@@ -73,10 +85,10 @@ export function EntriesBySupplierChart({ data }: EntriesBySupplierChartProps) {
               />
               <View style={styles.legendTextContainer}>
                 <Text style={[styles.legendText, { color: colors.text.primary }]} numberOfLines={1}>
-                  {item.supplierName}
+                  {item.supplierName || 'Proveedor desconocido'}
                 </Text>
                 <Text style={[styles.legendSubtext, { color: colors.text.secondary }]}>
-                  {item.quantity} unidades ({percentage}%)
+                  {quantity} unidades ({percentage}%)
                 </Text>
               </View>
             </View>

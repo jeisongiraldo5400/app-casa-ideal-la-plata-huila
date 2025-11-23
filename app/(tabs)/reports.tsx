@@ -28,8 +28,21 @@ export default function ReportsScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90' | 'custom'>('30');
 
   useEffect(() => {
-    loadReports();
-  }, [dateRange]);
+    let isMounted = true;
+    const loadData = async () => {
+      try {
+        await loadReports();
+      } catch (error) {
+        console.error('Error loading reports:', error);
+      }
+    };
+    if (isMounted) {
+      loadData();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime()]);
 
   const handlePeriodChange = (period: '7' | '30' | '90' | 'custom') => {
     setSelectedPeriod(period);

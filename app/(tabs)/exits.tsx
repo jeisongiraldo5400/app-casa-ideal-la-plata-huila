@@ -35,8 +35,31 @@ export default function ExitsScreen() {
   const [showScanner, setShowScanner] = useState(false);
 
   const handleScan = async (barcode: string) => {
-    await scanBarcode(barcode);
-    setShowScanner(false);
+    try {
+      if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+        console.warn('Barcode vacío o inválido:', barcode);
+        return;
+      }
+
+      const trimmedBarcode = barcode.trim();
+      
+      // Cerrar el scanner primero para evitar problemas
+      setShowScanner(false);
+      
+      // Pequeño delay para asegurar que el scanner se cerró
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Procesar el escaneo
+      await scanBarcode(trimmedBarcode);
+    } catch (error: any) {
+      console.error('Error al escanear código:', error);
+      // Asegurar que el scanner esté cerrado incluso si hay error
+      setShowScanner(false);
+      // Mostrar el error en el store si es necesario
+      if (error?.message) {
+        // El error será manejado por el store
+      }
+    }
   };
 
   const handleAddProduct = async () => {

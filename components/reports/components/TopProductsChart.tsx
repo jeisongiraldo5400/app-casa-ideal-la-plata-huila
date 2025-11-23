@@ -29,20 +29,22 @@ export function TopProductsChart({ data }: TopProductsChartProps) {
     );
   }
 
-  // Preparar datos para el gráfico
-  const chartData = data.map((item, index) => ({
-    value: item.total,
-    label: item.productName.length > 15 ? item.productName.substring(0, 15) + '...' : item.productName,
-    labelTextStyle: { color: colors.text.secondary, fontSize: 9 },
-    frontColor: colors.primary.main,
-    topLabelComponent: () => (
-      <Text style={{ color: colors.text.primary, fontSize: 10, fontWeight: '600' }}>
-        {item.total}
-      </Text>
-    ),
-  }));
+  // Preparar datos para el gráfico con validación
+  const chartData = data
+    .filter((item) => item && item.productId && item.productName)
+    .map((item, index) => ({
+      value: Number(item.total) || 0,
+      label: (item.productName || '').length > 15 ? (item.productName || '').substring(0, 15) + '...' : (item.productName || ''),
+      labelTextStyle: { color: colors.text.secondary, fontSize: 9 },
+      frontColor: colors.primary.main,
+      topLabelComponent: () => (
+        <Text style={{ color: colors.text.primary, fontSize: 10, fontWeight: '600' }}>
+          {Number(item.total) || 0}
+        </Text>
+      ),
+    }));
 
-  const maxValue = Math.max(...data.map((d) => d.total), 1);
+  const maxValue = Math.max(...chartData.map((d) => d.value), 1);
 
   return (
     <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>

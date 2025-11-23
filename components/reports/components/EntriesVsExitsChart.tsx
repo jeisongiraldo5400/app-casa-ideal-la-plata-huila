@@ -28,18 +28,30 @@ export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
   }
 
   // Preparar datos para el gráfico
-  const chartData = data.map((item, index) => ({
-    value: item.entries,
-    label: new Date(item.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
-    labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
-  }));
+  const chartData = data.map((item, index) => {
+    try {
+      const date = item.date ? new Date(item.date) : new Date();
+      return {
+        value: Number(item.entries) || 0,
+        label: date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
+        labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
+      };
+    } catch (error) {
+      console.error('Error parsing date:', error);
+      return {
+        value: Number(item.entries) || 0,
+        label: '',
+        labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
+      };
+    }
+  });
 
   const chartDataExits = data.map((item) => ({
-    value: item.exits,
+    value: Number(item.exits) || 0,
   }));
 
   const maxValue = Math.max(
-    ...data.map((d) => Math.max(d.entries, d.exits)),
+    ...data.map((d) => Math.max(Number(d.entries) || 0, Number(d.exits) || 0)),
     1
   );
 

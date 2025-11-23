@@ -35,8 +35,28 @@ export default function EntriesScreen() {
   const [showScanner, setShowScanner] = useState(false);
 
   const handleScan = async (barcode: string) => {
-    await scanBarcode(barcode);
-    setShowScanner(false);
+    try {
+      if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+        console.warn('Barcode vacío o inválido:', barcode);
+        return;
+      }
+
+      const trimmedBarcode = barcode.trim();
+      
+      // Cerrar el scanner primero para evitar problemas
+      setShowScanner(false);
+      
+      // Pequeño delay para asegurar que el scanner se cerró
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Procesar el escaneo
+      await scanBarcode(trimmedBarcode);
+    } catch (err: any) {
+      console.error('Error al escanear código:', err);
+      // Asegurar que el scanner esté cerrado incluso si hay error
+      setShowScanner(false);
+      // El error será manejado por el store
+    }
   };
 
   const handleAddProduct = async () => {
@@ -49,7 +69,7 @@ export default function EntriesScreen() {
     try {
       await addProductToEntry(currentProduct, currentQuantity, currentScannedBarcode || '');
       // Si hay error después de agregar, se mostrará en la UI
-    } catch (error: any) {
+    } catch {
       // El error ya está en el store, no necesitamos hacer nada aquí
     }
   };

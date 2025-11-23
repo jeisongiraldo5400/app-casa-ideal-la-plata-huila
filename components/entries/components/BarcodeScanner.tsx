@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
@@ -11,6 +11,16 @@ interface BarcodeScannerProps {
 export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isProcessingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (permission && !permission.granted) {
@@ -18,14 +28,47 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     }
   }, [permission, requestPermission]);
 
-  const handleBarCodeScanned = ({ data }: { data: string }) => {
-    if (!scanned) {
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    // Prevenir múltiples escaneos simultáneos
+    if (isProcessingRef.current || scanned || !data || !mountedRef.current) {
+      return;
+    }
+
+    try {
+      isProcessingRef.current = true;
       setScanned(true);
-      onScan(data);
-      
-      // Resetear después de 2 segundos para permitir otro escaneo
+      setError(null);
+
+      // Validar que el barcode tenga contenido
+      const trimmedBarcode = data.trim();
+      if (!trimmedBarcode) {
+        throw new Error('Código de barras vacío');
+      }
+
+      // Llamar a onScan de forma segura
+      if (typeof onScan === 'function') {
+        await Promise.resolve(onScan(trimmedBarcode));
+      }
+
+      // Cerrar el scanner después de un breve delay para asegurar que el estado se actualizó
       setTimeout(() => {
-        setScanned(false);
+        if (mountedRef.current) {
+          setScanned(false);
+          isProcessingRef.current = false;
+        }
+      }, 500);
+    } catch (error: any) {
+      console.error('Error processing barcode:', error);
+      setError(error?.message || 'Error al procesar el código de barras');
+      setScanned(false);
+      isProcessingRef.current = false;
+      
+      // Permitir reintentar después de 2 segundos
+      setTimeout(() => {
+        if (mountedRef.current) {
+          setScanned(false);
+          isProcessingRef.current = false;
+        }
       }, 2000);
     }
   };
@@ -54,21 +97,42 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
   return (
     <View style={styles.container}>
-      <CameraView
-        style={StyleSheet.absoluteFillObject}
-        facing="back"
-        onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-        barcodeScannerSettings={{
-          barcodeTypes: ['ean13', 'ean8', 'code128'],
-        }}
-      />
+      {permission?.granted && (
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          onBarcodeScanned={scanned || isProcessingRef.current ? undefined : handleBarCodeScanned}
+          barcodeScannerSettings={{
+            barcodeTypes: ['ean13', 'ean8', 'code128'],
+          }}
+        />
+      )}
       <View style={styles.overlay}>
         <View style={styles.scanArea} />
-        <Text style={styles.instructionText}>
-          Escanea el código de barras del producto
-        </Text>
+        {scanned ? (
+          <Text style={styles.processingText}>Procesando código...</Text>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.instructionText}>
+              Intenta escanear de nuevo
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.instructionText}>
+            Escanea el código de barras del producto
+          </Text>
+        )}
       </View>
-      <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+      <TouchableOpacity 
+        style={styles.closeButton} 
+        onPress={() => {
+          isProcessingRef.current = false;
+          setScanned(false);
+          onClose();
+        }}
+        disabled={isProcessingRef.current}
+      >
         <Text style={styles.closeButtonText}>Cerrar</Text>
       </TouchableOpacity>
     </View>
@@ -101,6 +165,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+  processingText: {
+    marginTop: 20,
+    color: Colors.success.main,
+    fontSize: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    fontWeight: '600',
+  },
+  errorContainer: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    alignItems: 'center',
   },
   closeButton: {
     position: 'absolute',
