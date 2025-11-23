@@ -130,6 +130,13 @@ export default function TabLayout() {
           title: 'Todas las Órdenes',
         }}
       />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          title: 'Reportes',
+        }}
+      />
     </Tabs>
   );
 }

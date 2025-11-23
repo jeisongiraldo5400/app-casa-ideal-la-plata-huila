@@ -54,6 +54,10 @@ export default function HomeScreen() {
     router.push('/(tabs)/all-orders');
   };
 
+  const handleViewReports = () => {
+    router.push('/(tabs)/reports');
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -94,6 +98,31 @@ export default function HomeScreen() {
       <View style={styles.menuSection}>
         <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
         
+        {isAdmin() && (
+          <TouchableOpacity 
+            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewReports}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemContent}>
+              <MaterialIcons 
+                name="assessment" 
+                size={24} 
+                color={colors.primary.main} 
+                style={styles.menuIcon}
+              />
+              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                Reportes
+              </Text>
+              <MaterialIcons 
+                name="chevron-right" 
+                size={24} 
+                color={colors.text.secondary} 
+              />
+            </View>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity 
           style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
           onPress={handleRegisterEntries}
