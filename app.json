@@ -12,6 +12,7 @@
       "image": "./assets/logos/logo_completo.png",
       "resizeMode": "contain",
       "backgroundColor": "#1e3a8a",
+      "imageWidth": 300,
       "dark": {
         "image": "./assets/logos/logo_completo.png",
         "backgroundColor": "#1e3a8a"
@@ -47,6 +48,7 @@
           "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#1e3a8a",
+          "hideAsyncOnLaunch": false,
           "dark": {
             "backgroundColor": "#1e3a8a"
           }
