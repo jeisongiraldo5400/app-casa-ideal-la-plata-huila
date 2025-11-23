@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.horustarot.appcasaideal"
+      "bundleIdentifier": "com.casaideal.laplatahuila"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.horustarot.appcasaideal"
+      "package": "com.casaideal.laplatahuila"
     },
     "web": {
       "output": "static",
