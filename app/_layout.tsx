@@ -4,12 +4,18 @@ import { useTheme } from '@/components/theme';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
+
+// Configurar las opciones de animación del splash screen
+SplashScreen.setOptions({
+  duration: 2000, // Duración mínima de 2 segundos
+  fade: true,
+});
 
 function RootLayoutNav() {
   const { session, loading, initialize } = useAuth();
@@ -17,24 +23,39 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   const colors = getColors(isDark);
+  const [appIsReady, setAppIsReady] = useState(false);
 
   useEffect(() => {
     async function prepare() {
       try {
+        // Inicializar autenticación y tema
         await initialize();
         await initializeTheme();
+        
+        // Esperar un tiempo mínimo para que el splash screen se vea bien
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Marcar la app como lista
+        setAppIsReady(true);
       } catch (e) {
         console.warn(e);
-      } finally {
-        // Ocultar el splash screen cuando todo esté listo
-        await SplashScreen.hideAsync();
+        // Aún así marcar como lista después de un delay mínimo
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setAppIsReady(true);
       }
     }
     prepare();
   }, [initialize, initializeTheme]);
 
   useEffect(() => {
-    if (loading) return;
+    if (!appIsReady || loading) return;
+
+    // Ocultar el splash screen solo cuando la app esté completamente lista
+    SplashScreen.hideAsync();
+  }, [appIsReady, loading]);
+
+  useEffect(() => {
+    if (loading || !appIsReady) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
@@ -43,15 +64,10 @@ function RootLayoutNav() {
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [session, loading, segments, router]);
+  }, [session, loading, segments, router, appIsReady]);
 
-  if (loading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background.default }]}>
-        <ActivityIndicator size="large" color={colors.primary.main} />
-      </View>
-    );
-  }
+  // No mostrar loading container mientras se carga, dejar que el splash screen se muestre
+  // El splash screen se ocultará automáticamente cuando termine la inicialización
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
