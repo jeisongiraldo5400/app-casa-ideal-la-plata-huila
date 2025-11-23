@@ -100,20 +100,26 @@ export default function HomeScreen() {
         
         {isAdmin() && (
           <TouchableOpacity 
-            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.primary.main }]}
             onPress={handleViewReports}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <View style={styles.menuItemContent}>
-              <MaterialIcons 
-                name="assessment" 
-                size={24} 
-                color={colors.primary.main} 
-                style={styles.menuIcon}
-              />
-              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                Reportes
-              </Text>
+              <View style={[styles.iconContainer, { backgroundColor: colors.primary.main + '15' }]}>
+                <MaterialIcons 
+                  name="assessment" 
+                  size={28} 
+                  color={colors.primary.main}
+                />
+              </View>
+              <View style={styles.menuItemTextContainer}>
+                <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                  Reportes
+                </Text>
+                <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
+                  Análisis y estadísticas
+                </Text>
+              </View>
               <MaterialIcons 
                 name="chevron-right" 
                 size={24} 
@@ -124,18 +130,24 @@ export default function HomeScreen() {
         )}
 
         <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.success.main }]}
           onPress={handleRegisterEntries}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <View style={styles.menuItemContent}>
-            <MaterialIcons 
-              name="input" 
-              size={24} 
-              color={colors.primary.main} 
-              style={styles.menuIcon}
-            />
-            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>Registrar entradas de artículos</Text>
+            <View style={[styles.iconContainer, { backgroundColor: colors.success.main + '15' }]}>
+              <MaterialIcons 
+                name="input" 
+                size={28} 
+                color={colors.success.main}
+              />
+            </View>
+            <View style={styles.menuItemTextContainer}>
+              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>Registrar Entradas</Text>
+              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
+                Ingreso de productos
+              </Text>
+            </View>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
@@ -145,20 +157,26 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.error.main }]}
           onPress={handleRegisterExits}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <View style={styles.menuItemContent}>
-            <MaterialIcons 
-              name="local-shipping" 
-              size={24} 
-              color={colors.primary.main} 
-              style={styles.menuIcon}
-            />
-            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-              Registrar salidas de artículos
-            </Text>
+            <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
+              <MaterialIcons 
+                name="local-shipping" 
+                size={28} 
+                color={colors.error.main}
+              />
+            </View>
+            <View style={styles.menuItemTextContainer}>
+              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                Registrar Salidas
+              </Text>
+              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
+                Despacho de productos
+              </Text>
+            </View>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
@@ -168,20 +186,26 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.warning.main }]}
           onPress={handleViewReceivedOrders}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <View style={styles.menuItemContent}>
-            <MaterialIcons 
-              name="receipt-long" 
-              size={24} 
-              color={colors.primary.main} 
-              style={styles.menuIcon}
-            />
-            <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-              Mis órdenes recibidas
-            </Text>
+            <View style={[styles.iconContainer, { backgroundColor: colors.warning.main + '15' }]}>
+              <MaterialIcons 
+                name="receipt-long" 
+                size={28} 
+                color={colors.warning.main}
+              />
+            </View>
+            <View style={styles.menuItemTextContainer}>
+              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                Mis Órdenes Recibidas
+              </Text>
+              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
+                Historial de recepciones
+              </Text>
+            </View>
             <MaterialIcons 
               name="chevron-right" 
               size={24} 
@@ -192,20 +216,26 @@ export default function HomeScreen() {
 
         {isAdmin() && (
           <TouchableOpacity 
-            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.info.main }]}
             onPress={handleViewAllOrders}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <View style={styles.menuItemContent}>
-              <MaterialIcons 
-                name="list-alt" 
-                size={24} 
-                color={colors.primary.main} 
-                style={styles.menuIcon}
-              />
-              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                Todas las órdenes
-              </Text>
+              <View style={[styles.iconContainer, { backgroundColor: colors.info.main + '15' }]}>
+                <MaterialIcons 
+                  name="list-alt" 
+                  size={28} 
+                  color={colors.info.main}
+                />
+              </View>
+              <View style={styles.menuItemTextContainer}>
+                <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
+                  Todas las Órdenes
+                </Text>
+                <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
+                  Gestión completa
+                </Text>
+              </View>
               <MaterialIcons 
                 name="chevron-right" 
                 size={24} 
@@ -290,29 +320,42 @@ const styles = StyleSheet.create({
   menuItem: {
     borderRadius: 16,
     marginBottom: 12,
-    borderWidth: 1,
+    borderWidth: 0,
+    borderLeftWidth: 4,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   menuItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 18,
   },
-  menuIcon: {
-    marginRight: 12,
+  iconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuItemTextContainer: {
+    flex: 1,
   },
   menuItemText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 17,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  menuItemSubtext: {
+    fontSize: 13,
+    fontWeight: '400',
   },
   menuItemTextDisabled: {
     opacity: 0.6,
