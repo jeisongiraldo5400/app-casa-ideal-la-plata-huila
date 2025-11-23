@@ -1,12 +1,12 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { Colors, getColors } from '@/constants/theme';
 import { useTheme } from '@/components/theme';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import * as SplashScreen from 'expo-splash-screen';
+import { getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 // Mantener el splash screen visible hasta que la app esté lista
@@ -47,9 +47,16 @@ function RootLayoutNav() {
         
         // Marcar la app como lista
         setAppIsReady(true);
-      } catch (e) {
-        console.warn(e);
-        // Aún así marcar como lista después de un delay mínimo
+      } catch (e: any) {
+        console.error('Error durante la inicialización:', e);
+        // Log detallado del error para debugging
+        if (e?.message) {
+          console.error('Mensaje de error:', e.message);
+        }
+        if (e?.stack) {
+          console.error('Stack trace:', e.stack);
+        }
+        // Aún así marcar como lista después de un delay mínimo para que la app no se quede bloqueada
         await new Promise(resolve => setTimeout(resolve, 2000));
         setAppIsReady(true);
       }
