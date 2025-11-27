@@ -1,13 +1,4 @@
-[?25l[?2004h
-                                                                                                           
-  >  1. eenfwcihrsxlhyzvchaz [name: casa_ideal_la_plata_huila, org: long-coffee-bo9s4lr, region: us-east-2]
-    2. rqcdpnmdxmzmqvqoltwy [name: TECNOBRAY, org: long-coffee-bo9s4lr, region: us-east-2]                 
-                                                                                                           
-                                                                                                           
-                                                                                                           
-                                                                                                           
-    ↑/k up • ↓/j down • / filter • q quit • ? more                                                         
-                                                                                                           [9A [J[2K[?2004l[?25h[?1002l[?1003l[?1006lexport type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -757,7 +748,236 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      get_inventory_entries_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          barcode_scanned: string
+          cancellation_created_at: string
+          cancellation_id: string
+          cancellation_observations: string
+          created_at: string
+          created_by: string
+          created_by_name: string
+          entry_type: string
+          id: string
+          is_cancelled: boolean
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+          purchase_order_id: string
+          quantity: number
+          supplier_id: string
+          supplier_name: string
+          total_count: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_inventory_entries_stats: {
+        Args: never
+        Returns: {
+          active_entries: number
+          cancelled_entries: number
+          total_entries: number
+          total_quantity: number
+          unique_warehouses: number
+        }[]
+      }
+      get_inventory_exits_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          barcode_scanned: string
+          cancellation_created_at: string
+          cancellation_id: string
+          cancellation_observations: string
+          created_at: string
+          created_by: string
+          created_by_name: string
+          id: string
+          is_cancelled: boolean
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+          quantity: number
+          total_count: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_inventory_exits_stats: {
+        Args: never
+        Returns: {
+          active_exits: number
+          cancelled_exits: number
+          total_exits: number
+          total_quantity: number
+          unique_warehouses: number
+        }[]
+      }
+      get_movements_by_period: {
+        Args: { end_date: string; movement_limit?: number; start_date: string }
+        Returns: {
+          cancellation_observations: string
+          cancelled_at: string
+          cancelled_by: string
+          created_at: string
+          id: string
+          is_cancelled: boolean
+          movement_type: string
+          product_barcode: string
+          product_name: string
+          product_sku: string
+          purchase_order_id: string
+          quantity: number
+          supplier_name: string
+          user_name: string
+          warehouse_name: string
+        }[]
+      }
+      get_period_stats: {
+        Args: { end_date: string; period_type?: string; start_date: string }
+        Returns: {
+          cancellations_count: number
+          entries_count: number
+          entries_quantity: number
+          exits_count: number
+          exits_quantity: number
+          net_movement: number
+          period_date: string
+          period_label: string
+        }[]
+      }
+      get_product_traceability: {
+        Args: {
+          events_limit?: number
+          product_ids?: string[]
+          products_limit?: number
+          search_term?: string
+        }
+        Returns: {
+          events: Json
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+        }[]
+      }
+      get_products_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          barcode: string
+          brand_id: string
+          brand_name: string
+          category_id: string
+          category_name: string
+          created_at: string
+          id: string
+          name: string
+          sku: string
+          status: boolean
+          stock_by_warehouse: Json
+          total_count: number
+          total_stock: number
+        }[]
+      }
+      get_products_stats: {
+        Args: never
+        Returns: {
+          products_with_barcode: number
+          products_with_internal_barcode: number
+          total_products: number
+          unique_categories: number
+        }[]
+      }
+      get_purchase_orders_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          completion: Json
+          completion_detail: Json
+          created_at: string
+          id: string
+          notes: string
+          status: string
+          supplier_id: string
+          supplier_name: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_purchase_orders_stats: {
+        Args: never
+        Returns: {
+          approved: number
+          pending: number
+          received: number
+          total: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_reports_stats_today: {
+        Args: never
+        Returns: {
+          cancelled_entries_today: number
+          cancelled_exits_today: number
+          entries_quantity_today: number
+          entries_today: number
+          exits_quantity_today: number
+          exits_today: number
+          movements_today: number
+          total_stock: number
+        }[]
+      }
+      get_user_activities_today: {
+        Args: never
+        Returns: {
+          entries_count: number
+          exits_count: number
+          total_movements: number
+          user_email: string
+          user_id: string
+          user_name: string
+        }[]
+      }
+      get_users_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          avatar_url: string
+          created_at: string
+          deleted_at: string
+          email: string
+          full_name: string
+          id: string
+          roles: Json
+          total_count: number
+        }[]
+      }
+      get_users_stats: {
+        Args: never
+        Returns: {
+          active: number
+          admins: number
+          bodegueros: number
+          total: number
+          vendedores: number
+        }[]
+      }
+      get_warehouses_stats: {
+        Args: never
+        Returns: {
+          address: string
+          city: string
+          id: string
+          is_active: boolean
+          last_activity: string
+          name: string
+          total_products: number
+          total_units: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
