@@ -75,6 +75,9 @@ interface EntriesState {
     totalQuantityOfInventoryEntries: number;
     totalItemsQuantity: number;
   }>;
+  
+  // Cache de entradas registradas por orden y producto (para evitar consultas redundantes)
+  registeredEntriesCache: Record<string, Record<string, number>>; // orderId -> productId -> quantity
 
   // Actions - Setup
   setEntryType: (type: EntryType) => void;
@@ -142,6 +145,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   brands: [],
   supplierSearchQuery: "",
   purchaseOrderValidations: {},
+  registeredEntriesCache: {},
 
   // Setup actions
   setEntryType: (type) => {
@@ -221,33 +225,48 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return;
       }
 
-      // Para cada orden, cargar sus items con los productos
-      const ordersWithItems: PurchaseOrderWithItems[] = await Promise.all(
-        (orders || []).map(async (order) => {
-          const { data: items, error: itemsError } = await supabase
-            .from("purchase_order_items")
-            .select(
-              `
-              *,
-              products(*)
+      // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
+      // Esto reduce de N consultas a 1 consulta
+      const orderIds = (orders || []).map((order) => order.id);
+      
+      let allItems: any[] = [];
+      if (orderIds.length > 0) {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from("purchase_order_items")
+          .select(
             `
-            )
-            .eq("purchase_order_id", order.id);
+            *,
+            products(*),
+            purchase_order_id
+          `
+          )
+          .in("purchase_order_id", orderIds);
 
-          if (itemsError) {
-            console.error("Error loading purchase order items:", itemsError);
-            return { ...order, items: [] };
-          }
+        if (itemsError) {
+          console.error("Error loading purchase order items:", itemsError);
+        } else {
+          allItems = itemsData || [];
+        }
+      }
 
-          return {
-            ...order,
-            items: (items || []).map((item: any) => ({
-              ...item,
-              product: item.products,
-            })) as (PurchaseOrderItem & { product: Product })[],
-          };
-        })
-      );
+      // Agrupar items por purchase_order_id en memoria
+      const itemsByOrderId = new Map<string, any[]>();
+      allItems.forEach((item: any) => {
+        const orderId = item.purchase_order_id;
+        if (!itemsByOrderId.has(orderId)) {
+          itemsByOrderId.set(orderId, []);
+        }
+        itemsByOrderId.get(orderId)!.push(item);
+      });
+
+      // Asignar items a cada orden
+      const ordersWithItems: PurchaseOrderWithItems[] = (orders || []).map((order) => ({
+        ...order,
+        items: (itemsByOrderId.get(order.id) || []).map((item: any) => ({
+          ...item,
+          product: item.products,
+        })) as (PurchaseOrderItem & { product: Product })[],
+      }));
 
       set({ purchaseOrders: ordersWithItems, loading: false });
       
@@ -318,12 +337,74 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   validateAllPurchaseOrders: async (): Promise<void> => {
     const { purchaseOrders } = get();
     
-    // Validar todas las órdenes en paralelo
-    await Promise.all(
-      purchaseOrders.map((order) => 
-        get().validatePurchaseOrderProgress(order.id)
-      )
-    );
+    if (purchaseOrders.length === 0) {
+      return;
+    }
+
+    // OPTIMIZADO: Cargar todas las entradas de inventario de todas las órdenes en una sola consulta
+    // Esto reduce de N consultas a 1 consulta
+    const orderIds = purchaseOrders.map((order) => order.id);
+    
+    const { data: allEntries, error: entriesError } = await supabase
+      .from("inventory_entries")
+      .select("purchase_order_id, product_id, quantity")
+      .in("purchase_order_id", orderIds);
+
+    if (entriesError) {
+      console.error("Error loading inventory entries for validation:", entriesError);
+      return;
+    }
+
+    // Agrupar entradas por purchase_order_id en memoria
+    const entriesByOrderId = new Map<string, any[]>();
+    (allEntries || []).forEach((entry: any) => {
+      const orderId = entry.purchase_order_id;
+      if (!orderId) return;
+      if (!entriesByOrderId.has(orderId)) {
+        entriesByOrderId.set(orderId, []);
+      }
+      entriesByOrderId.get(orderId)!.push(entry);
+    });
+
+    // OPTIMIZADO: Construir cache de entradas registradas por orden y producto
+    const cache: Record<string, Record<string, number>> = {};
+    entriesByOrderId.forEach((entries, orderId) => {
+      cache[orderId] = {};
+      entries.forEach((entry: any) => {
+        const productId = entry.product_id;
+        if (productId) {
+          cache[orderId][productId] = (cache[orderId][productId] || 0) + (entry.quantity || 0);
+        }
+      });
+    });
+
+    // Validar todas las órdenes en memoria
+    const validations: Record<string, {
+      isComplete: boolean;
+      totalQuantityOfInventoryEntries: number;
+      totalItemsQuantity: number;
+    }> = {};
+
+    purchaseOrders.forEach((order) => {
+      const entries = entriesByOrderId.get(order.id) || [];
+      const totalItemsQuantity = order.items.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+      const totalQuantityOfInventoryEntries = entries.reduce(
+        (sum, entry) => sum + (entry.quantity || 0),
+        0
+      );
+      
+      validations[order.id] = {
+        isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+        totalQuantityOfInventoryEntries,
+        totalItemsQuantity,
+      };
+    });
+
+    // Actualizar todas las validaciones y el cache de una vez
+    set({ purchaseOrderValidations: validations, registeredEntriesCache: cache });
   },
 
   loadWarehouses: async () => {
@@ -486,14 +567,30 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return;
       }
 
-      // Obtener cantidad ya registrada para este producto
-      const { data: registeredEntries } = await supabase
-        .from("inventory_entries")
-        .select("quantity")
-        .eq("purchase_order_id", purchaseOrderId)
-        .eq("product_id", product.id);
+      // OPTIMIZADO: Usar cache de entradas registradas si está disponible
+      const { registeredEntriesCache } = get();
+      let totalRegistered = 0;
       
-      const totalRegistered = (registeredEntries || []).reduce((sum, entry) => sum + entry.quantity, 0);
+      if (registeredEntriesCache[purchaseOrderId]?.[product.id] !== undefined) {
+        // Usar valor del cache
+        totalRegistered = registeredEntriesCache[purchaseOrderId][product.id];
+      } else {
+        // Solo consultar si no está en el cache
+        const { data: registeredEntries } = await supabase
+          .from("inventory_entries")
+          .select("quantity")
+          .eq("purchase_order_id", purchaseOrderId)
+          .eq("product_id", product.id);
+        
+        totalRegistered = (registeredEntries || []).reduce((sum, entry) => sum + entry.quantity, 0);
+        
+        // Actualizar cache para futuras consultas
+        if (!registeredEntriesCache[purchaseOrderId]) {
+          registeredEntriesCache[purchaseOrderId] = {};
+        }
+        registeredEntriesCache[purchaseOrderId][product.id] = totalRegistered;
+        set({ registeredEntriesCache: { ...registeredEntriesCache } });
+      }
       
       // Verificar cantidad actual en entryItems
       const existingItem = entryItems.find(item => item.product.id === product.id);
@@ -638,18 +735,21 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const currentPurchaseOrders = get().purchaseOrders;
 
       // Revalidar todas las órdenes después de registrar la entrada
-      if (currentPurchaseOrders.length > 0) {
+      // Esto también actualiza el cache de entradas registradas
+      if (currentPurchaseOrders.length > 0 && purchaseOrderId) {
         await get().validateAllPurchaseOrders();
       }
 
-      // Resetear todo después de finalizar (excepto las validaciones que se actualizaron)
+      // Resetear todo después de finalizar (excepto las validaciones y cache que se actualizaron)
       const updatedValidations = get().purchaseOrderValidations;
+      const updatedCache = get().registeredEntriesCache;
       get().reset();
       
-      // Restaurar las órdenes y validaciones actualizadas
+      // Restaurar las órdenes, validaciones y cache actualizados
       set({ 
         purchaseOrders: currentPurchaseOrders,
         purchaseOrderValidations: updatedValidations,
+        registeredEntriesCache: updatedCache,
       });
       
       return { error: null };
@@ -676,6 +776,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       purchaseOrders: [],
       supplierSearchQuery: "",
       purchaseOrderValidations: {},
+      registeredEntriesCache: {},
     });
   },
 

@@ -108,37 +108,53 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
         (profilesData || []).map((profile) => [profile.id, profile])
       );
 
-      // Para cada orden, cargar sus items con los productos
-      const ordersWithItems: PurchaseOrderWithSupplier[] = await Promise.all(
-        (data || []).map(async (order: any) => {
-          // Cargar items de la orden
-          const { data: items, error: itemsError } = await supabase
-            .from('purchase_order_items')
-            .select(`
-              *,
-              products:product_id (
-                id,
-                name,
-                barcode
-              )
-            `)
-            .eq('purchase_order_id', order.id);
+      // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
+      // Esto reduce de N consultas a 1 consulta
+      const orderIds = (data || []).map((order: any) => order.id);
+      
+      let allItems: any[] = [];
+      if (orderIds.length > 0) {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from('purchase_order_items')
+          .select(`
+            *,
+            products:product_id (
+              id,
+              name,
+              barcode
+            ),
+            purchase_order_id
+          `)
+          .in('purchase_order_id', orderIds);
 
-          const orderItems: PurchaseOrderItem[] = items
-            ? items.map((item: any) => ({
-                ...item,
-                product: Array.isArray(item.products) ? item.products[0] : item.products,
-              }))
-            : [];
+        if (itemsError) {
+          console.error('Error loading purchase order items:', itemsError);
+        } else {
+          allItems = itemsData || [];
+        }
+      }
 
-          return {
-            ...order,
-            supplier: Array.isArray(order.suppliers) ? order.suppliers[0] : order.suppliers,
-            created_by_profile: profilesMap.get(order.created_by) || null,
-            items: orderItems,
-          };
-        })
-      );
+      // Agrupar items por purchase_order_id en memoria
+      const itemsByOrderId = new Map<string, PurchaseOrderItem[]>();
+      allItems.forEach((item: any) => {
+        const orderId = item.purchase_order_id;
+        if (!orderId) return;
+        if (!itemsByOrderId.has(orderId)) {
+          itemsByOrderId.set(orderId, []);
+        }
+        itemsByOrderId.get(orderId)!.push({
+          ...item,
+          product: Array.isArray(item.products) ? item.products[0] : item.products,
+        });
+      });
+
+      // Asignar items a cada orden
+      const ordersWithItems: PurchaseOrderWithSupplier[] = (data || []).map((order: any) => ({
+        ...order,
+        supplier: Array.isArray(order.suppliers) ? order.suppliers[0] : order.suppliers,
+        created_by_profile: profilesMap.get(order.created_by) || null,
+        items: itemsByOrderId.get(order.id) || [],
+      }));
 
       set({ purchaseOrders: ordersWithItems, loading: false });
     } catch (error: any) {

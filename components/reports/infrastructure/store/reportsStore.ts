@@ -78,20 +78,25 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
 
-      // 1. Entradas vs Salidas por día
-      const { data: entriesData, error: entriesError } = await supabase
-        .from('inventory_entries')
-        .select('created_at, quantity')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO)
-        .order('created_at', { ascending: true });
-
-      const { data: exitsData, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .select('created_at, quantity')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO)
-        .order('created_at', { ascending: true });
+      // OPTIMIZADO: Paralelizar consultas independientes para reducir tiempo total
+      // 1. Entradas vs Salidas por día (paralelizadas)
+      const [
+        { data: entriesData, error: entriesError },
+        { data: exitsData, error: exitsError },
+      ] = await Promise.all([
+        supabase
+          .from('inventory_entries')
+          .select('created_at, quantity')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('inventory_exits')
+          .select('created_at, quantity')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+          .order('created_at', { ascending: true }),
+      ]);
 
       if (entriesError || exitsError) {
         throw new Error(entriesError?.message || exitsError?.message || 'Error al cargar datos');
@@ -137,18 +142,22 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
           exits: exitsByDay.get(date) || 0,
         }));
 
-      // 2. Top productos más movidos
-      const { data: allEntries, error: entriesProductsError } = await supabase
-        .from('inventory_entries')
-        .select('product_id, quantity, products(name)')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
-
-      const { data: allExits, error: exitsProductsError } = await supabase
-        .from('inventory_exits')
-        .select('product_id, quantity, products(name)')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
+      // 2. Top productos más movidos (paralelizadas)
+      const [
+        { data: allEntries, error: entriesProductsError },
+        { data: allExits, error: exitsProductsError },
+      ] = await Promise.all([
+        supabase
+          .from('inventory_entries')
+          .select('product_id, quantity, products(name)')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+        supabase
+          .from('inventory_exits')
+          .select('product_id, quantity, products(name)')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+      ]);
 
       if (entriesProductsError || exitsProductsError) {
         throw new Error(entriesProductsError?.message || exitsProductsError?.message || 'Error al cargar productos');
@@ -188,25 +197,53 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         .sort((a, b) => b.total - a.total)
         .slice(0, 10); // Top 10
 
-      // 3. Entradas por proveedor
-      const { data: entriesBySupplierData, error: supplierError } = await supabase
-        .from('inventory_entries')
-        .select(`
-          supplier_id,
-          quantity,
-          suppliers:supplier_id (
-            id,
-            name
-          )
-        `)
-        .gte('created_at', startISO)
-        .lte('created_at', endISO)
-        .not('supplier_id', 'is', null);
+      // 3, 4, 5. Consultas independientes paralelizadas
+      const [
+        { data: entriesBySupplierData, error: supplierError },
+        { data: exitsByWarehouseData, error: warehouseError },
+        { data: entriesByTypeData, error: typeError },
+      ] = await Promise.all([
+        // 3. Entradas por proveedor
+        supabase
+          .from('inventory_entries')
+          .select(`
+            supplier_id,
+            quantity,
+            suppliers:supplier_id (
+              id,
+              name
+            )
+          `)
+          .gte('created_at', startISO)
+          .lte('created_at', endISO)
+          .not('supplier_id', 'is', null),
+        // 4. Salidas por bodega
+        supabase
+          .from('inventory_exits')
+          .select('warehouse_id, quantity, warehouses(name)')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+        // 5. Entradas por tipo
+        supabase
+          .from('inventory_entries')
+          .select('entry_type, quantity')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+      ]);
 
       if (supplierError) {
         throw new Error(supplierError.message || 'Error al cargar proveedores');
       }
 
+      if (warehouseError) {
+        throw new Error(warehouseError.message || 'Error al cargar bodegas');
+      }
+
+      if (typeError) {
+        throw new Error(typeError.message || 'Error al cargar tipos');
+      }
+
+      // Procesar datos de proveedores
       const supplierMap = new Map<string, { supplierId: string; supplierName: string; quantity: number }>();
 
       (entriesBySupplierData || []).forEach((entry: any) => {
@@ -223,17 +260,7 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
 
       const entriesBySupplier = Array.from(supplierMap.values()).sort((a, b) => b.quantity - a.quantity);
 
-      // 4. Salidas por bodega
-      const { data: exitsByWarehouseData, error: warehouseError } = await supabase
-        .from('inventory_exits')
-        .select('warehouse_id, quantity, warehouses(name)')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
-
-      if (warehouseError) {
-        throw new Error(warehouseError.message || 'Error al cargar bodegas');
-      }
-
+      // Procesar datos de bodegas
       const warehouseMap = new Map<string, { warehouseId: string; warehouseName: string; quantity: number }>();
 
       (exitsByWarehouseData || []).forEach((exit: any) => {
@@ -247,17 +274,6 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
       });
 
       const exitsByWarehouse = Array.from(warehouseMap.values()).sort((a, b) => b.quantity - a.quantity);
-
-      // 5. Entradas por tipo
-      const { data: entriesByTypeData, error: typeError } = await supabase
-        .from('inventory_entries')
-        .select('entry_type, quantity')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
-
-      if (typeError) {
-        throw new Error(typeError.message || 'Error al cargar tipos');
-      }
 
       const typeMap = new Map<string, number>();
 

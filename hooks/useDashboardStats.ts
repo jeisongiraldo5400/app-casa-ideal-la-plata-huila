@@ -26,44 +26,29 @@ export function useDashboardStats() {
   // Función para cargar las estadísticas
   const loadStats = useCallback(async () => {
     try {
-      const todayStart = getTodayStart();
+      // OPTIMIZADO: Usar función RPC para obtener estadísticas del día
+      // Esto reduce de 2 consultas a 1 y hace la agregación en el servidor
+      const { data, error } = await supabase.rpc('get_reports_stats_today');
 
-      // Obtener entradas del día y sumar las cantidades
-      const { data: entriesData, error: entriesError } = await supabase
-        .from('inventory_entries')
-        .select('quantity')
-        .gte('created_at', todayStart);
-
-      // Obtener salidas del día y sumar las cantidades
-      const { data: exitsData, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .select('quantity')
-        .gte('created_at', todayStart);
-
-      if (entriesError) {
-        console.error('Error loading entries:', entriesError);
+      if (error) {
+        console.error('Error loading dashboard stats:', error);
+        setStats((prev) => ({ ...prev, loading: false }));
+        return;
       }
 
-      if (exitsError) {
-        console.error('Error loading exits:', exitsError);
-      }
-
-      // Sumar las cantidades de entradas
-      const entriesTotal = (entriesData || []).reduce((sum, entry) => sum + (entry.quantity || 0), 0);
-
-      // Sumar las cantidades de salidas
-      const exitsTotal = (exitsData || []).reduce((sum, exit) => sum + (exit.quantity || 0), 0);
+      // La función RPC devuelve un array con un objeto que contiene las estadísticas
+      const statsData = data?.[0] || {};
 
       setStats((prev) => ({
-        entriesToday: entriesTotal,
-        exitsToday: exitsTotal,
+        entriesToday: statsData.entries_quantity_today || 0,
+        exitsToday: statsData.exits_quantity_today || 0,
         loading: false,
       }));
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
       setStats((prev) => ({ ...prev, loading: false }));
     }
-  }, [getTodayStart]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;

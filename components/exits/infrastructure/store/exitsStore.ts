@@ -196,7 +196,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   addProductToExit: async (product: Product, quantity: number, barcode: string) => {
-    const { exitItems, warehouseId } = get();
+    const { exitItems, warehouseId, currentProduct, currentAvailableStock } = get();
 
     if (!warehouseId) {
       set({ error: "Debe seleccionar una bodega" });
@@ -208,15 +208,28 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    // Verificar stock disponible
-    const { data: stock, error: stockError } = await supabase
-      .from("warehouse_stock")
-      .select("quantity")
-      .eq("product_id", product.id)
-      .eq("warehouse_id", warehouseId)
-      .single();
+    // OPTIMIZADO: Reutilizar stock cacheado si es el mismo producto recién escaneado
+    // Esto evita una consulta duplicada a la base de datos
+    let availableStock: number | null = null;
+    
+    if (currentProduct?.id === product.id && currentAvailableStock !== undefined) {
+      // Reutilizar stock cacheado del escaneo reciente
+      availableStock = currentAvailableStock;
+    } else {
+      // Solo consultar si no está cacheado
+      const { data: stock, error: stockError } = await supabase
+        .from("warehouse_stock")
+        .select("quantity")
+        .eq("product_id", product.id)
+        .eq("warehouse_id", warehouseId)
+        .single();
 
-    const availableStock = stock?.quantity || 0;
+      availableStock = stock?.quantity || 0;
+      
+      if (stockError) {
+        console.error("Error loading stock:", stockError);
+      }
+    }
 
     // Calcular cantidad total ya agregada en esta salida
     const existingItem = exitItems.find((item) => item.product.id === product.id);
