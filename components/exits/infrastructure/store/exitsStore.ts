@@ -201,7 +201,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   loadUsers: async () => {
     try {
-      const { data, error } = await supabase.rpc('get_users_for_selection');
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .is('deleted_at', null)
+        .order('full_name');
 
       if (error) {
         console.error("Error loading users:", error);
