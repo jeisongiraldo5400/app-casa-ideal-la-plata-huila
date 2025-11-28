@@ -1266,6 +1266,14 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      update_delivery_order_progress: {
+        Args: {
+          order_id_param: string
+          product_id_param: string
+          quantity_delivered_param: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
