@@ -2,6 +2,7 @@ import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { EntryItemsList } from '@/components/entries/components/EntryItemsList';
 import { ProductForm } from '@/components/entries/components/ProductForm';
 import { ProductFound } from '@/components/entries/components/ProductFound';
+import { PurchaseOrderProgress } from '@/components/entries/components/PurchaseOrderProgress';
 import { QuantityInput } from '@/components/entries/components/QuantityInput';
 import { SetupForm } from '@/components/entries/components/SetupForm';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
@@ -23,6 +24,7 @@ export default function EntriesScreen() {
     currentScannedBarcode,
     currentQuantity,
     entryItems,
+    purchaseOrderId,
     error,
     scanBarcode,
     addProductToEntry,
@@ -147,6 +149,9 @@ export default function EntriesScreen() {
               </View>
             </>
           )}
+
+          {/* Mostrar progreso de orden de compra si hay una orden seleccionada */}
+          {purchaseOrderId && <PurchaseOrderProgress />}
 
           {entryItems.length > 0 && <EntryItemsList />}
         </>

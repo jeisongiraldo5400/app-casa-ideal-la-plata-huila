@@ -35,8 +35,13 @@ export interface NewProductData {
   supplier_id?: string;
 }
 
+export interface PurchaseOrderItemWithProduct extends PurchaseOrderItem {
+  product: Product;
+}
+
 export interface PurchaseOrderWithItems extends PurchaseOrder {
-  items: (PurchaseOrderItem & { product: Product })[];
+  items: PurchaseOrderItemWithProduct[];
+  supplier?: Supplier;
 }
 
 interface EntriesState {
@@ -44,9 +49,13 @@ interface EntriesState {
   entryType: EntryType | null;
   supplierId: string | null;
   purchaseOrderId: string | null;
+  selectedPurchaseOrder: PurchaseOrderWithItems | null; // Orden completa seleccionada
   warehouseId: string | null;
   selectedOrderProductId: string | null; // Producto seleccionado de la orden
   entryItems: EntryItem[];
+  
+  // Progreso de escaneo para órdenes de compra
+  scannedItemsProgress: Map<string, number>; // product_id -> cantidad escaneada en sesión
 
   // Estado actual de escaneo
   currentProduct: Product | null;
@@ -82,7 +91,12 @@ interface EntriesState {
   // Actions - Setup
   setEntryType: (type: EntryType) => void;
   setSupplier: (supplierId: string | null) => void;
-  setPurchaseOrder: (purchaseOrderId: string | null) => void;
+  setPurchaseOrder: (purchaseOrderId: string | null) => Promise<void>;
+  selectPurchaseOrder: (purchaseOrderId: string) => Promise<void>;
+  validateProductAgainstOrder: (productId: string, quantity: number) => {
+    valid: boolean;
+    error?: string;
+  };
   setWarehouse: (warehouseId: string | null) => void;
   setSelectedOrderProduct: (productId: string | null) => void;
   setSetupStep: (step: "supplier" | "purchase-order" | "warehouse") => void;
@@ -128,9 +142,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   entryType: null,
   supplierId: null,
   purchaseOrderId: null,
+  selectedPurchaseOrder: null,
   warehouseId: null,
   selectedOrderProductId: null,
   entryItems: [],
+  scannedItemsProgress: new Map(),
   currentProduct: null,
   currentScannedBarcode: null,
   currentQuantity: 1,
@@ -165,11 +181,135 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  setPurchaseOrder: (purchaseOrderId) => {
-    set({ purchaseOrderId, selectedOrderProductId: null }); // Resetear producto seleccionado
+  setPurchaseOrder: async (purchaseOrderId) => {
+    set({ purchaseOrderId, selectedOrderProductId: null, scannedItemsProgress: new Map() }); // Resetear producto seleccionado y progreso
     if (purchaseOrderId) {
+      await get().selectPurchaseOrder(purchaseOrderId);
       get().setSetupStep("warehouse");
+    } else {
+      set({ selectedPurchaseOrder: null });
     }
+  },
+
+  selectPurchaseOrder: async (purchaseOrderId: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      // Buscar la orden en las órdenes ya cargadas
+      const { purchaseOrders } = get();
+      const existingOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
+
+      if (existingOrder && existingOrder.items) {
+        // Si ya tenemos la orden con items, usarla
+        set({
+          selectedPurchaseOrder: existingOrder,
+          purchaseOrderId,
+          scannedItemsProgress: new Map(),
+          loading: false
+        });
+        return;
+      }
+
+      // Si no está cargada, cargarla con todos los detalles
+      const { data: orderData, error: orderError } = await supabase
+        .from('purchase_orders')
+        .select(`
+          *,
+          supplier:suppliers(id, name, nit),
+          items:purchase_order_items(
+            id,
+            product_id,
+            purchase_order_id,
+            quantity,
+            product:products(id, name, barcode, sku)
+          )
+        `)
+        .eq('id', purchaseOrderId)
+        .single();
+
+      if (orderError) {
+        console.error("Error loading purchase order details:", orderError);
+        set({
+          selectedPurchaseOrder: null,
+          purchaseOrderId: null,
+          loading: false,
+          error: orderError.message
+        });
+        return;
+      }
+
+      if (!orderData) {
+        set({
+          selectedPurchaseOrder: null,
+          purchaseOrderId: null,
+          loading: false,
+          error: "Orden de compra no encontrada"
+        });
+        return;
+      }
+
+      // Transformar los datos al formato esperado
+      const purchaseOrder: PurchaseOrderWithItems = {
+        ...orderData,
+        supplier: orderData.supplier as Supplier,
+        items: (orderData.items || []).map((item: any) => ({
+          ...item,
+          product: item.product as Product,
+        })),
+      };
+
+      set({
+        selectedPurchaseOrder: purchaseOrder,
+        purchaseOrderId,
+        scannedItemsProgress: new Map(),
+        loading: false
+      });
+    } catch (error: any) {
+      console.error("Error loading purchase order details:", error);
+      set({
+        selectedPurchaseOrder: null,
+        purchaseOrderId: null,
+        loading: false,
+        error: error.message
+      });
+    }
+  },
+
+  validateProductAgainstOrder: (productId: string, quantity: number) => {
+    const { selectedPurchaseOrder, scannedItemsProgress, registeredEntriesCache, purchaseOrderId } = get();
+
+    if (!selectedPurchaseOrder || !purchaseOrderId) {
+      return { valid: false, error: "No hay orden de compra seleccionada" };
+    }
+
+    // Buscar el producto en los items de la orden
+    const orderItem = selectedPurchaseOrder.items.find(
+      (item) => item.product_id === productId
+    );
+
+    if (!orderItem) {
+      return {
+        valid: false,
+        error: "Este producto no está incluido en la orden de compra"
+      };
+    }
+
+    // Calcular cantidad ya registrada en BD
+    const registeredInBD = registeredEntriesCache[purchaseOrderId]?.[productId] || 0;
+    
+    // Calcular cantidad ya escaneada en esta sesión
+    const alreadyScanned = scannedItemsProgress.get(productId) || 0;
+    const totalScanned = alreadyScanned + quantity;
+    const pendingQuantity = orderItem.quantity - registeredInBD;
+
+    if (totalScanned > pendingQuantity) {
+      return {
+        valid: false,
+        error: `La cantidad excede lo pendiente. Pendiente: ${pendingQuantity}, Ya escaneado en sesión: ${alreadyScanned}, Ya registrado: ${registeredInBD}`
+      };
+    }
+
+    return { valid: true };
   },
 
   setWarehouse: (warehouseId) => {
@@ -507,6 +647,34 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     try {
       const product = await get().searchProductByBarcode(barcode);
       if (product) {
+        const { purchaseOrderId, entryType, selectedOrderProductId } = get();
+        
+        // Si hay una orden de compra seleccionada, validar contra ella
+        if (purchaseOrderId && entryType === 'PO_ENTRY') {
+          const validation = get().validateProductAgainstOrder(product.id, 1); // Validar con cantidad 1 inicialmente
+          
+          if (!validation.valid) {
+            set({
+              loading: false,
+              error: validation.error || "Producto no válido para esta orden",
+              currentProduct: null,
+              currentScannedBarcode: null,
+            });
+            return;
+          }
+
+          // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
+          if (selectedOrderProductId && selectedOrderProductId !== product.id) {
+            set({
+              loading: false,
+              error: "Debe escanear el producto seleccionado de la orden",
+              currentProduct: null,
+              currentScannedBarcode: null,
+            });
+            return;
+          }
+        }
+        
         set({ currentProduct: product, loading: false, step: "scanning" });
       } else {
         set({
@@ -549,70 +717,28 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   addProductToEntry: async (product, quantity, barcode) => {
-    const { entryItems, purchaseOrderId, selectedOrderProductId, purchaseOrders, purchaseOrderValidations, entryType } = get();
+    const { entryItems, purchaseOrderId, selectedOrderProductId, entryType, scannedItemsProgress } = get();
     
     // Si hay una orden de compra, validar que el producto esté en la orden
     if (purchaseOrderId && entryType === 'PO_ENTRY') {
-      const purchaseOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
-      
-      if (!purchaseOrder) {
-        set({ error: "Orden de compra no encontrada" });
+      // Validar contra la orden usando la nueva función
+      const validation = get().validateProductAgainstOrder(product.id, quantity);
+      if (!validation.valid) {
+        set({ error: validation.error });
         return;
       }
 
-      // Verificar que el producto esté en la orden
-      const orderItem = purchaseOrder.items.find(item => item.product_id === product.id);
-      if (!orderItem) {
-        set({ error: "Este producto no está en la orden de compra seleccionada" });
-        return;
-      }
-
-      // OPTIMIZADO: Usar cache de entradas registradas si está disponible
-      const { registeredEntriesCache } = get();
-      let totalRegistered = 0;
-      
-      if (registeredEntriesCache[purchaseOrderId]?.[product.id] !== undefined) {
-        // Usar valor del cache
-        totalRegistered = registeredEntriesCache[purchaseOrderId][product.id];
-      } else {
-        // Solo consultar si no está en el cache
-        const { data: registeredEntries } = await supabase
-          .from("inventory_entries")
-          .select("quantity")
-          .eq("purchase_order_id", purchaseOrderId)
-          .eq("product_id", product.id);
-        
-        totalRegistered = (registeredEntries || []).reduce((sum, entry) => sum + entry.quantity, 0);
-        
-        // Actualizar cache para futuras consultas
-        if (!registeredEntriesCache[purchaseOrderId]) {
-          registeredEntriesCache[purchaseOrderId] = {};
-        }
-        registeredEntriesCache[purchaseOrderId][product.id] = totalRegistered;
-        set({ registeredEntriesCache: { ...registeredEntriesCache } });
-      }
-      
-      // Verificar cantidad actual en entryItems
-      const existingItem = entryItems.find(item => item.product.id === product.id);
-      const currentQuantityInSession = existingItem ? existingItem.quantity : 0;
-      
-      // Calcular cantidad total que se intenta registrar
-      const totalQuantityToRegister = totalRegistered + currentQuantityInSession + quantity;
-      
-      // Validar que no exceda la cantidad de la orden
-      if (totalQuantityToRegister > orderItem.quantity) {
-        const remaining = orderItem.quantity - totalRegistered - currentQuantityInSession;
-        set({ 
-          error: `La cantidad excede lo permitido. Cantidad en orden: ${orderItem.quantity}, ya registrado: ${totalRegistered}, en sesión: ${currentQuantityInSession}. Máximo permitido: ${remaining}` 
-        });
-        return;
-      }
-
-      // Validar que el producto escaneado sea el seleccionado de la orden
+      // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
       if (selectedOrderProductId && selectedOrderProductId !== product.id) {
         set({ error: "Debe escanear el producto seleccionado de la orden" });
         return;
       }
+
+      // Actualizar progreso de escaneo
+      const currentProgress = scannedItemsProgress.get(product.id) || 0;
+      const newProgress = new Map(scannedItemsProgress);
+      newProgress.set(product.id, currentProgress + quantity);
+      set({ scannedItemsProgress: newProgress });
     }
 
     // Verificar si el producto ya está en la lista
@@ -771,12 +897,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       entryType: null,
       supplierId: null,
       purchaseOrderId: null,
+      selectedPurchaseOrder: null,
       warehouseId: null,
       selectedOrderProductId: null,
       purchaseOrders: [],
       supplierSearchQuery: "",
       purchaseOrderValidations: {},
       registeredEntriesCache: {},
+      scannedItemsProgress: new Map(),
     });
   },
 
@@ -800,6 +928,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       error: null,
+      // No limpiar scannedItemsProgress para mantener el progreso visible
     });
   },
 }));
