@@ -1,16 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { useReports } from '@/components/reports';
+import { EntriesVsExitsChart, useReports } from '@/components/reports';
 import { useTheme } from '@/components/theme';
+import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import {
-  EntriesVsExitsChart,
-  TopProductsChart,
-  EntriesBySupplierChart,
-  ExitsByWarehouseChart,
-  EntriesByTypeChart,
-} from '@/components/reports';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ReportsScreen() {
   const { isDark } = useTheme();
@@ -20,7 +14,9 @@ export default function ReportsScreen() {
     error,
     reportData,
     dateRange,
+    periodType,
     setDateRange,
+    setPeriodType,
     loadReports,
     clearError,
   } = useReports();
@@ -31,7 +27,7 @@ export default function ReportsScreen() {
     let isMounted = true;
     const loadData = async () => {
       try {
-        await loadReports();
+        await loadReports(false); // No cargar movimientos por defecto
       } catch (error) {
         console.error('Error loading reports:', error);
       }
@@ -42,7 +38,7 @@ export default function ReportsScreen() {
     return () => {
       isMounted = false;
     };
-  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime()]);
+  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime(), periodType]);
 
   const handlePeriodChange = (period: '7' | '30' | '90' | 'custom') => {
     setSelectedPeriod(period);
@@ -52,12 +48,15 @@ export default function ReportsScreen() {
     switch (period) {
       case '7':
         startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+        setPeriodType('day');
         break;
       case '30':
         startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+        setPeriodType('day');
         break;
       case '90':
         startDate = new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+        setPeriodType('week');
         break;
       default:
         return; // Custom date picker would go here
@@ -71,6 +70,21 @@ export default function ReportsScreen() {
     const end = dateRange.endDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
     return `${start} - ${end}`;
   };
+
+  // Transformar datos del RPC al formato esperado por los gráficos existentes
+  const chartData = useMemo(() => {
+    if (!reportData?.periodStats) {
+      return null;
+    }
+
+    return {
+      entriesVsExits: reportData.periodStats.map((period) => ({
+        date: period.period_date,
+        entries: period.entries_quantity,
+        exits: period.exits_quantity,
+      })),
+    };
+  }, [reportData]);
 
   if (error) {
     return (
@@ -99,7 +113,7 @@ export default function ReportsScreen() {
       refreshControl={
         <RefreshControl
           refreshing={loading && !!reportData}
-          onRefresh={loadReports}
+          onRefresh={() => loadReports(false)}
           tintColor={colors.primary.main}
           colors={[colors.primary.main]}
         />
@@ -158,13 +172,51 @@ export default function ReportsScreen() {
         </View>
       ) : (
         <>
-          {reportData && (
+          {reportData?.summary && (
+            <Card style={[styles.summaryCard, { backgroundColor: colors.background.paper }]}>
+              <Text style={[styles.summaryTitle, { color: colors.text.primary }]}>Resumen del Período</Text>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Entradas</Text>
+                  <Text style={[styles.summaryValue, { color: colors.success.main }]}>
+                    {reportData.summary.totalEntriesQuantity.toLocaleString()}
+                  </Text>
+                  <Text style={[styles.summaryCount, { color: colors.text.secondary }]}>
+                    ({reportData.summary.totalEntries} registros)
+                  </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Salidas</Text>
+                  <Text style={[styles.summaryValue, { color: colors.error.main }]}>
+                    {reportData.summary.totalExitsQuantity.toLocaleString()}
+                  </Text>
+                  <Text style={[styles.summaryCount, { color: colors.text.secondary }]}>
+                    ({reportData.summary.totalExits} registros)
+                  </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Movimiento Neto</Text>
+                  <Text style={[
+                    styles.summaryValue,
+                    { color: reportData.summary.netMovement >= 0 ? colors.success.main : colors.error.main }
+                  ]}>
+                    {reportData.summary.netMovement >= 0 ? '+' : ''}
+                    {reportData.summary.netMovement.toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Cancelaciones</Text>
+                  <Text style={[styles.summaryValue, { color: colors.warning.main }]}>
+                    {reportData.summary.totalCancellations}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          )}
+
+          {chartData && (
             <>
-              <EntriesVsExitsChart data={reportData.entriesVsExits} />
-              <TopProductsChart data={reportData.topProducts} />
-              <EntriesBySupplierChart data={reportData.entriesBySupplier} />
-              <ExitsByWarehouseChart data={reportData.exitsByWarehouse} />
-              <EntriesByTypeChart data={reportData.entriesByType} />
+              <EntriesVsExitsChart data={chartData.entriesVsExits} />
             </>
           )}
         </>
@@ -222,6 +274,39 @@ const styles = StyleSheet.create({
   dateRangeText: {
     fontSize: 12,
     marginTop: 4,
+  },
+  summaryCard: {
+    marginBottom: 16,
+    padding: 16,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  summaryItem: {
+    flex: 1,
+    minWidth: '45%',
+    alignItems: 'center',
+    padding: 12,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  summaryValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  summaryCount: {
+    fontSize: 10,
   },
   loadingContainer: {
     flex: 1,
