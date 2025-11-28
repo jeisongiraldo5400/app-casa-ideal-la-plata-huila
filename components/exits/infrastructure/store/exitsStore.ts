@@ -8,7 +8,7 @@ type Customer = Database["public"]["Tables"]["customers"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type InventoryExit = Database["public"]["Tables"]["inventory_exits"]["Insert"];
 
-export type ExitMode = 'direct_user' | 'direct_customer' | 'delivery_order';
+export type ExitMode = 'direct_user' | 'direct_customer';
 
 export interface ExitItem {
   product: Product;
@@ -436,16 +436,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    if (exitMode === 'delivery_order' && !selectedCustomerId) {
-      set({ error: "Debe seleccionar un cliente destinatario" });
-      return;
-    }
-
-    if (exitMode === 'delivery_order' && !selectedDeliveryOrderId) {
-      set({ error: "Debe seleccionar una orden de entrega" });
-      return;
-    }
-
     set({ step: "scanning", error: null });
   },
 
@@ -569,8 +559,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    // Si es modo delivery_order, validar contra la orden
-    if (exitMode === 'delivery_order') {
+    // Si hay una orden de entrega seleccionada, validar contra la orden (opcional para direct_customer)
+    if (selectedDeliveryOrderId) {
       const validation = get().validateProductAgainstOrder(product.id, quantity);
       if (!validation.valid) {
         set({ error: validation.error });
@@ -711,9 +701,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           baseExit.delivered_to_user_id = selectedUserId;
         } else if (exitMode === 'direct_customer') {
           baseExit.delivered_to_customer_id = selectedCustomerId;
-        } else if (exitMode === 'delivery_order' && selectedDeliveryOrderId) {
-          baseExit.delivered_to_customer_id = selectedDeliveryOrder?.customer_id;
-          baseExit.delivery_order_id = selectedDeliveryOrderId;
+          // Si hay una orden de entrega seleccionada, agregarla (opcional)
+          if (selectedDeliveryOrderId) {
+            baseExit.delivery_order_id = selectedDeliveryOrderId;
+          }
         }
 
         return baseExit;

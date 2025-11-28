@@ -53,8 +53,7 @@ export function SetupForm() {
     exitMode !== null &&
     (
       (exitMode === 'direct_user' && selectedUserId !== null) ||
-      (exitMode === 'direct_customer' && selectedCustomerId !== null) ||
-      (exitMode === 'delivery_order' && selectedCustomerId !== null && selectedDeliveryOrderId !== null)
+      (exitMode === 'direct_customer' && selectedCustomerId !== null)
     );
 
   return (
@@ -76,7 +75,6 @@ export function SetupForm() {
               <Picker.Item label="Seleccione el tipo de salida" value={null} />
               <Picker.Item label="Salida a Usuario Interno" value="direct_user" />
               <Picker.Item label="Salida a Cliente" value="direct_customer" />
-              <Picker.Item label="Orden de Entrega" value="delivery_order" />
             </Picker>
           </View>
         </View>
@@ -124,7 +122,7 @@ export function SetupForm() {
         )}
 
         {/* Campo condicional: Cliente */}
-        {(exitMode === 'direct_customer' || exitMode === 'delivery_order') && (
+        {exitMode === 'direct_customer' && (
           <View style={styles.formGroup}>
             <Text style={styles.label}>Cliente *</Text>
             <TextInput
@@ -167,8 +165,8 @@ export function SetupForm() {
           </View>
         )}
 
-        {/* Selector de Orden de Entrega (solo para modo delivery_order) */}
-        {exitMode === 'delivery_order' && selectedCustomerId && (
+        {/* Selector de Orden de Entrega (opcional para Salida a Cliente) */}
+        {exitMode === 'direct_customer' && selectedCustomerId && (
           <DeliveryOrderSelector />
         )}
 
