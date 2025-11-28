@@ -1,35 +1,87 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Card } from '@/components/ui/Card';
+import { useExitsStore, type ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
 import { Button } from '@/components/ui/Button';
-import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { Picker } from '@react-native-picker/picker';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 
 export function SetupForm() {
   const {
     warehouseId,
     warehouses,
+    exitMode,
+    selectedUserId,
+    selectedCustomerId,
+    selectedDeliveryOrderId,
+    users,
+    customers,
+    customerSearchTerm,
+    loading,
     loadWarehouses,
+    loadUsers,
+    searchCustomers,
     setWarehouse,
+    setExitMode,
+    setSelectedUser,
+    setSelectedCustomer,
     startExit,
     error,
   } = useExitsStore();
 
+  const [searchInput, setSearchInput] = useState('');
+
   useEffect(() => {
     loadWarehouses();
-  }, [loadWarehouses]);
+    loadUsers();
+  }, [loadWarehouses, loadUsers]);
 
-  const canStart = warehouseId !== null;
+  // Debounce customer search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput.length >= 2) {
+        searchCustomers(searchInput);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchInput, searchCustomers]);
+
+  const canStart =
+    warehouseId !== null &&
+    exitMode !== null &&
+    (
+      (exitMode === 'direct_user' && selectedUserId !== null) ||
+      (exitMode === 'direct_customer' && selectedCustomerId !== null) ||
+      (exitMode === 'delivery_order' && selectedCustomerId !== null && selectedDeliveryOrderId !== null)
+    );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Card style={styles.card}>
         <Text style={styles.title}>Configuración de Salida</Text>
         <Text style={styles.subtitle}>
-          Seleccione la bodega de la cual desea registrar la salida de productos
+          Configure el tipo de salida y seleccione los datos requeridos
         </Text>
 
+        {/* Modo de Salida */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Tipo de Salida *</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={exitMode}
+              onValueChange={(value) => setExitMode(value as ExitMode)}
+              style={styles.picker}>
+              <Picker.Item label="Seleccione el tipo de salida" value={null} />
+              <Picker.Item label="Salida a Usuario Interno" value="direct_user" />
+              <Picker.Item label="Salida a Cliente" value="direct_customer" />
+              <Picker.Item label="Orden de Entrega" value="delivery_order" />
+            </Picker>
+          </View>
+        </View>
+
+        {/* Bodega */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Bodega *</Text>
           <View style={styles.pickerContainer}>
@@ -48,6 +100,77 @@ export function SetupForm() {
             </Picker>
           </View>
         </View>
+
+        {/* Campo condicional: Usuario Interno */}
+        {exitMode === 'direct_user' && (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Usuario Destinatario *</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={selectedUserId}
+                onValueChange={(value) => setSelectedUser(value)}
+                style={styles.picker}>
+                <Picker.Item label="Seleccione un usuario" value={null} />
+                {users.map((user) => (
+                  <Picker.Item
+                    key={user.id}
+                    label={user.full_name || user.email || 'Usuario sin nombre'}
+                    value={user.id}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </View>
+        )}
+
+        {/* Campo condicional: Cliente */}
+        {(exitMode === 'direct_customer' || exitMode === 'delivery_order') && (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Cliente *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Buscar por nombre o número de identificación"
+              value={searchInput}
+              onChangeText={setSearchInput}
+            />
+
+            {loading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={Colors.primary.main} />
+                <Text style={styles.loadingText}>Buscando clientes...</Text>
+              </View>
+            )}
+
+            {!loading && searchInput.length >= 2 && customers.length > 0 && (
+              <View style={styles.customersList}>
+                {customers.slice(0, 5).map((customer) => (
+                  <TouchableOpacity
+                    key={customer.id}
+                    style={[
+                      styles.customerItem,
+                      selectedCustomerId === customer.id && styles.customerItemSelected
+                    ]}
+                    onPress={() => {
+                      setSelectedCustomer(customer.id);
+                      setSearchInput(customer.name);
+                    }}>
+                    <Text style={styles.customerName}>{customer.name}</Text>
+                    <Text style={styles.customerIdNumber}>ID: {customer.id_number}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {!loading && searchInput.length >= 2 && customers.length === 0 && (
+              <Text style={styles.noResults}>No se encontraron clientes</Text>
+            )}
+          </View>
+        )}
+
+        {/* Selector de Orden de Entrega (solo para modo delivery_order) */}
+        {exitMode === 'delivery_order' && selectedCustomerId && (
+          <DeliveryOrderSelector />
+        )}
 
         {error && (
           <View style={styles.errorContainer}>
@@ -105,6 +228,63 @@ const styles = StyleSheet.create({
   },
   picker: {
     height: 52,
+  },
+  input: {
+    borderWidth: 1.5,
+    borderColor: Colors.divider,
+    borderRadius: 12,
+    backgroundColor: Colors.background.paper,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.background.default,
+    borderRadius: 8,
+  },
+  loadingText: {
+    marginLeft: 12,
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  customersList: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: Colors.divider,
+    borderRadius: 12,
+    backgroundColor: Colors.background.paper,
+    maxHeight: 250,
+  },
+  customerItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  customerItemSelected: {
+    backgroundColor: Colors.primary.light + '20',
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  customerIdNumber: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  noResults: {
+    marginTop: 12,
+    padding: 16,
+    textAlign: 'center',
+    fontSize: 14,
+    color: Colors.text.secondary,
+    fontStyle: 'italic',
   },
   errorContainer: {
     marginTop: 16,

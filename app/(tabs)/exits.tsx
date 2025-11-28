@@ -1,4 +1,5 @@
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { DeliveryOrderProgress } from '@/components/exits/components/DeliveryOrderProgress';
 import { ExitItemsList } from '@/components/exits/components/ExitItemsList';
 import { ProductFound } from '@/components/exits/components/ProductFound';
 import { QuantityInput } from '@/components/exits/components/QuantityInput';
@@ -18,6 +19,7 @@ import {
 export default function ExitsScreen() {
   const {
     step,
+    selectedDeliveryOrderId,
     currentProduct,
     currentScannedBarcode,
     currentQuantity,
@@ -42,13 +44,13 @@ export default function ExitsScreen() {
       }
 
       const trimmedBarcode = barcode.trim();
-      
+
       // Cerrar el scanner primero para evitar problemas
       setShowScanner(false);
-      
+
       // Pequeño delay para asegurar que el scanner se cerró
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Procesar el escaneo
       await scanBarcode(trimmedBarcode);
     } catch (error: any) {
@@ -162,6 +164,9 @@ export default function ExitsScreen() {
               </View>
             </>
           )}
+
+          {/* Mostrar progreso de orden de entrega si hay una orden seleccionada */}
+          {selectedDeliveryOrderId && <DeliveryOrderProgress />}
 
           {exitItems.length > 0 && <ExitItemsList />}
         </>
