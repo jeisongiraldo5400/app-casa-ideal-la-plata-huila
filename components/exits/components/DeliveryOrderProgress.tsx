@@ -85,7 +85,7 @@ export function DeliveryOrderProgress() {
                                     ) : hasScanned ? (
                                         <MaterialIcons name="pending" size={32} color={Colors.warning.main} />
                                     ) : (
-                                        <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.disabled} />
+                                        <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.secondary} />
                                     )}
                                 </View>
                             </View>
@@ -148,7 +148,7 @@ export function DeliveryOrderProgress() {
 
 const styles = StyleSheet.create({
     card: {
-        marginBottom: 20,
+        margin: 20,
     },
     header: {
         flexDirection: 'row',
