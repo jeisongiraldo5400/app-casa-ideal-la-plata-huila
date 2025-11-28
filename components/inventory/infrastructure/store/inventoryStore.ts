@@ -1,18 +1,25 @@
 import { supabase } from '@/lib/supabase';
 import { create } from 'zustand';
-// eslint-disable-next-line import/namespace
+
 import { Database } from '@/types/database.types';
-import { Alert } from 'react-native';
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 
+// Tipo para el resultado de get_products_dashboard RPC
+type ProductDashboardResult = Database['public']['Functions']['get_products_dashboard']['Returns'][0];
+
 export interface InventoryItem {
   id: string;
-  product: Product;
-  warehouse: Warehouse;
-  quantity: number;
-  updated_at: string;
+  name: string;
+  sku: string;
+  barcode: string;
+  brand_name: string;
+  category_name: string;
+  total_stock: number;
+  stock_by_warehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>;
+  status: boolean;
+  created_at: string;
 }
 
 interface InventoryState {
@@ -22,10 +29,18 @@ interface InventoryState {
   loading: boolean;
   error: string | null;
   searchQuery: string;
+  // Paginación
+  currentPage: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
   loadWarehouses: () => Promise<void>;
   loadInventory: (warehouseId?: string) => Promise<void>;
   setSelectedWarehouse: (warehouseId: string | null) => void;
   setSearchQuery: (query: string) => void;
+  setPage: (page: number) => void;
+  setPageSize: (size: number) => void;
+  loadNextPage: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -36,6 +51,10 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   loading: false,
   error: null,
   searchQuery: '',
+  currentPage: 1,
+  pageSize: 50,
+  totalCount: 0,
+  hasMore: false,
 
   loadWarehouses: async () => {
     try {
@@ -64,66 +83,80 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   loadInventory: async (warehouseId?: string) => {
-    const { selectedWarehouseId } = get();
-    const targetWarehouseId = warehouseId || selectedWarehouseId;
+    const { searchQuery, currentPage, pageSize } = get();
+    const targetWarehouseId = warehouseId || get().selectedWarehouseId;
 
     set({ loading: true, error: null });
 
     try {
-      // Consulta con joins usando foreign keys
-      let query = supabase
-        .from('warehouse_stock')
-        .select(`
-          *,
-          products(*),
-          warehouses(*)
-        `)
-        .order('updated_at', { ascending: false });
-
-      if (targetWarehouseId) {
-        query = query.eq('warehouse_id', targetWarehouseId);
-      }
-
-      const { data, error } = await query;
+      // OPTIMIZADO: Usar RPC get_products_dashboard con paginación y búsqueda del lado del servidor
+      const { data, error } = await supabase.rpc('get_products_dashboard', {
+        page: currentPage,
+        page_size: pageSize,
+        search_term: searchQuery || null,
+      });
 
       if (error) {
         console.error('Error loading inventory:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
         set({ inventory: [], loading: false, error: error.message });
         return;
       }
 
-      // Procesar datos - Supabase devuelve los joins con el nombre de la tabla
-      const inventoryItems: InventoryItem[] = (data || [])
-        .filter((item: any) => {
-          // Filtrar productos eliminados y validar que existan los datos
-          const product = item.products;
-          const warehouse = item.warehouses;
-          const isValid = product && !product.deleted_at && warehouse;
-          
-          if (!isValid && product) {
-            const message = product.deleted_at 
-              ? `El producto "${product.name || product.barcode || 'sin nombre'}" ha sido eliminado y no puede mostrarse en el inventario.`
-              : `El producto "${product.name || product.barcode || 'sin nombre'}" no tiene una bodega asociada válida.`;
-            
-            Alert.alert(
-              'Producto inválido',
-              message,
-              [{ text: 'OK' }]
-            );
-          }
-          
-          return isValid;
-        })
-        .map((item: any) => ({
-          id: item.id,
-          product: item.products,
-          warehouse: item.warehouses,
-          quantity: item.quantity || 0,
-          updated_at: item.updated_at,
-        }));
+      if (!data || data.length === 0) {
+        set({ inventory: [], loading: false, totalCount: 0, hasMore: false });
+        return;
+      }
 
-      set({ inventory: inventoryItems, loading: false });
+      // El primer resultado contiene total_count para paginación
+      const totalCount = data[0]?.total_count || 0;
+
+      // Transformar datos del RPC al formato de InventoryItem
+      const inventoryItems: InventoryItem[] = data.map((item: ProductDashboardResult) => {
+        // Parsear stock_by_warehouse (viene como JSON)
+        let stockByWarehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }> = {};
+
+        try {
+          if (item.stock_by_warehouse) {
+            const stockArray = item.stock_by_warehouse as any[];
+            stockArray.forEach((stock: any) => {
+              stockByWarehouse[stock.warehouse_id] = {
+                warehouse_id: stock.warehouse_id,
+                warehouse_name: stock.warehouse_name,
+                quantity: stock.quantity,
+              };
+            });
+          }
+        } catch (e) {
+          console.warn('Error parsing stock_by_warehouse:', e);
+        }
+
+        return {
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          barcode: item.barcode,
+          brand_name: item.brand_name,
+          category_name: item.category_name,
+          total_stock: item.total_stock,
+          stock_by_warehouse: stockByWarehouse,
+          status: item.status,
+          created_at: item.created_at,
+        };
+      });
+
+      // Filtrar por bodega si está seleccionada (filtro del lado del cliente para warehouse)
+      const filteredItems = targetWarehouseId
+        ? inventoryItems.filter(item => item.stock_by_warehouse[targetWarehouseId])
+        : inventoryItems;
+
+      const hasMore = totalCount > currentPage * pageSize;
+
+      set({
+        inventory: filteredItems,
+        loading: false,
+        totalCount,
+        hasMore,
+      });
     } catch (error: any) {
       console.error('Error loading inventory (catch):', error);
       set({ inventory: [], loading: false, error: error.message || 'Error al cargar el inventario' });
@@ -131,16 +164,35 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   setSelectedWarehouse: (warehouseId) => {
-    set({ selectedWarehouseId: warehouseId });
+    set({ selectedWarehouseId: warehouseId, currentPage: 1 });
+    // Recargar inventario con el nuevo filtro
+    get().loadInventory(warehouseId || undefined);
   },
 
   setSearchQuery: (query) => {
-    set({ searchQuery: query });
+    set({ searchQuery: query, currentPage: 1 });
+    // Debounce se maneja en el componente, aquí solo actualizamos el estado
+  },
+
+  setPage: (page) => {
+    set({ currentPage: page });
+    get().loadInventory();
+  },
+
+  setPageSize: (size) => {
+    set({ pageSize: size, currentPage: 1 });
+    get().loadInventory();
+  },
+
+  loadNextPage: async () => {
+    const { currentPage, hasMore, loading } = get();
+    if (!hasMore || loading) return;
+
+    set({ currentPage: currentPage + 1 });
+    await get().loadInventory();
   },
 
   clearError: () => {
     set({ error: null });
   },
 }));
-
-

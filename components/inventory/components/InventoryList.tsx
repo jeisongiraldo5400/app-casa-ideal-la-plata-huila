@@ -1,13 +1,26 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { Card } from '@/components/ui/Card';
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
+import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function InventoryList() {
-  const { inventory, loading, searchQuery } = useInventory();
+  const {
+    inventory,
+    loading,
+    searchQuery,
+    selectedWarehouseId,
+    hasMore,
+    loadNextPage,
+    loadInventory,
+  } = useInventory();
 
-  if (loading) {
+  // Recargar cuando cambia el searchQuery (con debounce manejado en el componente padre)
+  useEffect(() => {
+    loadInventory();
+  }, [searchQuery]);
+
+  if (loading && inventory.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary.main} />
@@ -16,19 +29,7 @@ export function InventoryList() {
     );
   }
 
-  // Filtrar inventario por búsqueda
-  const filteredInventory = inventory.filter((item) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      item.product?.name?.toLowerCase().includes(query) ||
-      item.product?.sku?.toLowerCase().includes(query) ||
-      item.product?.barcode?.toLowerCase().includes(query) ||
-      item.warehouse?.name?.toLowerCase().includes(query)
-    );
-  });
-
-  if (filteredInventory.length === 0) {
+  if (inventory.length === 0) {
     return (
       <Card style={styles.emptyCard}>
         <Text style={styles.emptyText}>
@@ -40,35 +41,54 @@ export function InventoryList() {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {filteredInventory.map((item) => {
-        // Validar que el item tenga los datos necesarios
-        if (!item.product || !item.warehouse) {
-          return null;
-        }
+      {inventory.map((item) => {
+        // Si hay bodega seleccionada, mostrar solo el stock de esa bodega
+        const warehouseStock = selectedWarehouseId
+          ? item.stock_by_warehouse[selectedWarehouseId]
+          : null;
+
+        const displayQuantity = warehouseStock?.quantity || item.total_stock;
+        const displayWarehouse = warehouseStock?.warehouse_name || 'Todas las bodegas';
 
         return (
           <Card key={item.id} style={styles.itemCard}>
             <View style={styles.itemHeader}>
               <View style={styles.itemInfo}>
-                <Text style={styles.productName}>{item.product.name || 'Sin nombre'}</Text>
-                <Text style={styles.productSku}>SKU: {item.product.sku || 'N/A'}</Text>
-                <Text style={styles.productBarcode}>Código: {item.product.barcode || 'N/A'}</Text>
+                <Text style={styles.productName}>{item.name || 'Sin nombre'}</Text>
+                <Text style={styles.productSku}>SKU: {item.sku || 'N/A'}</Text>
+                <Text style={styles.productBarcode}>Código: {item.barcode || 'N/A'}</Text>
+                <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
+                <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
               </View>
               <View style={styles.quantityContainer}>
                 <Text style={styles.quantityLabel}>Stock</Text>
-                <Text style={styles.quantityValue}>{item.quantity || 0}</Text>
+                <Text style={styles.quantityValue}>{displayQuantity}</Text>
               </View>
             </View>
             <View style={styles.warehouseInfo}>
               <Text style={styles.warehouseLabel}>Bodega:</Text>
-              <Text style={styles.warehouseName}>{item.warehouse.name || 'Sin bodega'}</Text>
+              <Text style={styles.warehouseName}>{displayWarehouse}</Text>
             </View>
-            {item.product.description && (
-              <Text style={styles.description}>{item.product.description}</Text>
-            )}
           </Card>
         );
       })}
+
+      {/* Botón para cargar más */}
+      {hasMore && (
+        <TouchableOpacity
+          style={styles.loadMoreButton}
+          onPress={loadNextPage}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={Colors.primary.main} />
+          ) : (
+            <Text style={styles.loadMoreText}>Cargar más productos</Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+      <View style={styles.bottomPadding} />
     </ScrollView>
   );
 }
@@ -125,6 +145,16 @@ const styles = StyleSheet.create({
   productBarcode: {
     fontSize: 12,
     color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  productBrand: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  productCategory: {
+    fontSize: 12,
+    color: Colors.text.secondary,
   },
   quantityContainer: {
     alignItems: 'flex-end',
@@ -156,11 +186,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.primary.main,
   },
-  description: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginTop: 8,
-    fontStyle: 'italic',
+  loadMoreButton: {
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 16,
+    backgroundColor: Colors.background.paper,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary.main,
+  },
+  loadMoreText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary.main,
+  },
+  bottomPadding: {
+    height: 20,
   },
 });
 
