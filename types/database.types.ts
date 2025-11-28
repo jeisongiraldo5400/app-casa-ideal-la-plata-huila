@@ -65,6 +65,152 @@ export type Database = {
         }
         Relationships: []
       }
+      customers: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          created_by: string | null
+          deleted_at: string | null
+          email: string | null
+          id: string
+          id_number: string
+          name: string
+          notes: string | null
+          phone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          id_number: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          id_number?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_order_items: {
+        Row: {
+          created_at: string
+          delivered_quantity: number
+          delivery_order_id: string
+          id: string
+          product_id: string
+          quantity: number
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_quantity?: number
+          delivery_order_id: string
+          id?: string
+          product_id: string
+          quantity: number
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          delivered_quantity?: number
+          delivery_order_id?: string
+          id?: string
+          product_id?: string
+          quantity?: number
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_delivery_order_item_order"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_delivery_order_item_product"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_delivery_order_item_warehouse"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_orders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          deleted_at: string | null
+          delivery_address: string | null
+          id: string
+          notes: string | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          deleted_at?: string | null
+          delivery_address?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          deleted_at?: string | null
+          delivery_address?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_delivery_order_customer"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_entries: {
         Row: {
           barcode_scanned: string | null
@@ -208,6 +354,9 @@ export type Database = {
           barcode_scanned: string | null
           created_at: string
           created_by: string | null
+          delivered_to_customer_id: string | null
+          delivered_to_user_id: string | null
+          delivery_order_id: string | null
           id: string
           product_id: string
           quantity: number
@@ -217,6 +366,9 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          delivered_to_customer_id?: string | null
+          delivered_to_user_id?: string | null
+          delivery_order_id?: string | null
           id?: string
           product_id: string
           quantity: number
@@ -226,12 +378,36 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          delivered_to_customer_id?: string | null
+          delivered_to_user_id?: string | null
+          delivery_order_id?: string | null
           id?: string
           product_id?: string
           quantity?: number
           warehouse_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_inventory_exit_delivery_order"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exits_delivered_to_customer_id_fkey"
+            columns: ["delivered_to_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exits_delivered_to_user_id_fkey"
+            columns: ["delivered_to_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inventory_exits_product_id_fkey"
             columns: ["product_id"]
@@ -748,6 +924,110 @@ export type Database = {
       }
     }
     Functions: {
+      get_customer_delivery_orders: {
+        Args: { customer_id_param: string; page?: number; page_size?: number }
+        Returns: {
+          created_at: string
+          created_by_name: string
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          is_complete: boolean
+          notes: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_customer_exit_history: {
+        Args: { customer_id_param: string; page?: number; page_size?: number }
+        Returns: {
+          created_at: string
+          created_by_name: string
+          id: string
+          is_cancelled: boolean
+          product_name: string
+          quantity: number
+          total_count: number
+          warehouse_name: string
+        }[]
+      }
+      get_customers: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          address: string
+          email: string
+          id: string
+          id_number: string
+          last_exit_date: string
+          name: string
+          phone: string
+          total_count: number
+          total_exits: number
+        }[]
+      }
+      get_customers_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          address: string
+          created_at: string
+          created_by: string
+          created_by_name: string
+          email: string
+          id: string
+          id_number: string
+          last_exit_date: string
+          name: string
+          notes: string
+          phone: string
+          total_count: number
+          total_exits: number
+        }[]
+      }
+      get_customers_stats: {
+        Args: never
+        Returns: {
+          customers_with_exits: number
+          customers_without_exits: number
+          total_customers: number
+          total_exits_to_customers: number
+        }[]
+      }
+      get_delivery_orders_dashboard: {
+        Args: { page?: number; page_size?: number; search_term?: string }
+        Returns: {
+          created_at: string
+          created_by: string
+          created_by_name: string
+          customer_id: string
+          customer_id_number: string
+          customer_name: string
+          delivered_items: number
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          items: Json
+          notes: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_delivery_orders_stats: {
+        Args: never
+        Returns: {
+          cancelled_orders: number
+          delivered_orders: number
+          pending_orders: number
+          preparing_orders: number
+          ready_orders: number
+          total_items_pending: number
+          total_orders: number
+          total_quantity_pending: number
+        }[]
+      }
       get_inventory_entries_dashboard: {
         Args: { page?: number; page_size?: number; search_term?: string }
         Returns: {
@@ -794,6 +1074,9 @@ export type Database = {
           created_at: string
           created_by: string
           created_by_name: string
+          delivered_to_id_number: string
+          delivered_to_name: string
+          delivered_to_type: string
           id: string
           is_cancelled: boolean
           product_barcode: string
@@ -823,6 +1106,9 @@ export type Database = {
           cancelled_at: string
           cancelled_by: string
           created_at: string
+          delivered_to_id_number: string
+          delivered_to_name: string
+          delivered_to_type: string
           id: string
           is_cancelled: boolean
           movement_type: string
@@ -978,6 +1264,8 @@ export type Database = {
           total_units: number
         }[]
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
