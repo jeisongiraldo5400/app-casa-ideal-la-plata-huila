@@ -15,6 +15,7 @@ export function SetupForm() {
     selectedUserId,
     selectedCustomerId,
     selectedDeliveryOrderId,
+    deliveryObservations,
     users,
     customers,
     customerSearchTerm,
@@ -26,6 +27,7 @@ export function SetupForm() {
     setExitMode,
     setSelectedUser,
     setSelectedCustomer,
+    setDeliveryObservations,
     startExit,
     error,
   } = useExitsStore();
@@ -170,6 +172,21 @@ export function SetupForm() {
           <DeliveryOrderSelector />
         )}
 
+        {/* Observaciones de entrega (opcional, cuando hay cliente y orden seleccionada) */}
+        {exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId && (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
+              value={deliveryObservations}
+              onChangeText={setDeliveryObservations}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+        )}
+
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
@@ -236,6 +253,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: Colors.text.primary,
+  },
+  textArea: {
+    height: 96,
+    textAlignVertical: 'top',
   },
   loadingContainer: {
     flexDirection: 'row',

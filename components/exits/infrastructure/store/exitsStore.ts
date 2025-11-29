@@ -71,6 +71,9 @@ interface ExitsState {
   customers: Customer[];
   customerSearchTerm: string;
 
+  // Observaciones de la entrega (opcional)
+  deliveryObservations: string;
+
   // Datos de orden de entrega
   deliveryOrders: DeliveryOrder[];
   selectedDeliveryOrder: DeliveryOrder | null;
@@ -81,6 +84,7 @@ interface ExitsState {
   setExitMode: (mode: ExitMode | null) => void;
   setSelectedUser: (userId: string | null) => void;
   setSelectedCustomer: (customerId: string | null) => void;
+  setDeliveryObservations: (observations: string) => void;
   loadWarehouses: () => Promise<void>;
   loadUsers: () => Promise<void>;
   searchCustomers: (searchTerm: string) => Promise<void>;
@@ -146,6 +150,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   deliveryOrders: [],
   selectedDeliveryOrder: null,
   scannedItemsProgress: new Map(),
+  deliveryObservations: "",
 
   // Setup actions
   setWarehouse: (warehouseId) => {
@@ -177,6 +182,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
     });
+  },
+
+  setDeliveryObservations: (observations) => {
+    set({ deliveryObservations: observations });
   },
 
   loadWarehouses: async () => {
@@ -670,7 +679,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedUserId,
       selectedCustomerId,
       selectedDeliveryOrderId,
-      selectedDeliveryOrder
+      selectedDeliveryOrder,
+      deliveryObservations,
     } = get();
 
     if (exitItems.length === 0) {
@@ -705,6 +715,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           if (selectedDeliveryOrderId) {
             baseExit.delivery_order_id = selectedDeliveryOrderId;
           }
+        }
+
+        // Observaciones de entrega opcionales (campo agregado en el schema)
+        if (deliveryObservations && deliveryObservations.trim()) {
+          (baseExit as any).delivery_observations = deliveryObservations.trim();
         }
 
         return baseExit;
@@ -762,6 +777,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       step: "setup",
       error: null,
+      exitMode: null,
+      selectedUserId: null,
+      selectedCustomerId: null,
+      selectedDeliveryOrderId: null,
+      selectedDeliveryOrder: null,
+      deliveryOrders: [],
+      scannedItemsProgress: new Map(),
+      customerSearchTerm: "",
+      deliveryObservations: "",
     });
   },
 
