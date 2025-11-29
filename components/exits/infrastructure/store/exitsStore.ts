@@ -43,6 +43,23 @@ export interface DeliveryOrder {
   items: DeliveryOrderItem[];
 }
 
+export interface SelectedDeliveryOrderProgressItem {
+  item: DeliveryOrderItem;
+  orderQuantity: number;
+  registered: number; // Ya entregado (desde BD)
+  sessionScanned: number; // Escaneado en esta sesión
+  pending: number;
+  isComplete: boolean;
+}
+
+export interface SelectedDeliveryOrderProgress {
+  items: SelectedDeliveryOrderProgressItem[];
+  totalRequired: number;
+  totalRegistered: number;
+  totalScanned: number;
+  totalCompleted: number;
+}
+
 interface ExitsState {
   // Sesión de salida
   warehouseId: string | null;
@@ -79,6 +96,9 @@ interface ExitsState {
   selectedDeliveryOrder: DeliveryOrder | null;
   scannedItemsProgress: Map<string, number>; // product_id -> cantidad escaneada
 
+  // Cache de salidas registradas por orden y producto (para evitar consultas redundantes)
+  registeredExitsCache: Record<string, Record<string, number>>; // orderId -> productId -> quantity
+
   // Actions - Setup
   setWarehouse: (warehouseId: string | null) => void;
   setExitMode: (mode: ExitMode | null) => void;
@@ -97,6 +117,7 @@ interface ExitsState {
     valid: boolean;
     error?: string;
   };
+  getSelectedDeliveryOrderProgress: () => SelectedDeliveryOrderProgress | null;
 
   // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
@@ -150,6 +171,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   deliveryOrders: [],
   selectedDeliveryOrder: null,
   scannedItemsProgress: new Map(),
+  registeredExitsCache: {},
   deliveryObservations: "",
 
   // Setup actions
@@ -158,16 +180,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   setExitMode: (mode) => {
-    set({
-      exitMode: mode,
-      // Reset related fields when mode changes
-      selectedUserId: null,
-      selectedCustomerId: null,
-      selectedDeliveryOrderId: null,
-      selectedDeliveryOrder: null,
-      deliveryOrders: [],
-      scannedItemsProgress: new Map(),
-    });
+      set({
+        exitMode: mode,
+        // Reset related fields when mode changes
+        selectedUserId: null,
+        selectedCustomerId: null,
+        selectedDeliveryOrderId: null,
+        selectedDeliveryOrder: null,
+        deliveryOrders: [],
+        scannedItemsProgress: new Map(),
+        registeredExitsCache: {},
+      });
   },
 
   setSelectedUser: (userId) => {
@@ -370,10 +393,24 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         })),
       };
 
+      // Actualizar el cache de salidas registradas desde los items de la orden
+      // REEMPLAZAR los valores para esta orden (no sumar) porque estamos cargando desde BD
+      const { registeredExitsCache } = get();
+      const updatedCache = { ...registeredExitsCache };
+
+      // Inicializar o REEMPLAZAR el objeto para esta orden
+      updatedCache[orderId] = {};
+
+      // Agrupar por product_id y usar delivered_quantity desde los items
+      (orderData.items || []).forEach((item: any) => {
+        updatedCache[orderId][item.product_id] = item.delivered_quantity || 0;
+      });
+
       set({
         selectedDeliveryOrder: deliveryOrder,
         selectedDeliveryOrderId: orderId,
         scannedItemsProgress: new Map(),
+        registeredExitsCache: updatedCache,
         loading: false
       });
     } catch (error: any) {
@@ -388,9 +425,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   validateProductAgainstOrder: (productId: string, quantity: number) => {
-    const { selectedDeliveryOrder, scannedItemsProgress } = get();
+    const {
+      selectedDeliveryOrder,
+      selectedDeliveryOrderId,
+      registeredExitsCache,
+      scannedItemsProgress,
+      exitItems,
+    } = get();
 
-    if (!selectedDeliveryOrder) {
+    if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
       return { valid: false, error: "No hay orden de entrega seleccionada" };
     }
 
@@ -406,20 +449,105 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       };
     }
 
-    // Calcular cantidad ya escaneada
-    const alreadyScanned = scannedItemsProgress.get(productId) || 0;
-    const totalScanned = alreadyScanned + quantity;
-    const pendingQuantity = orderItem.pending_quantity;
+    // Cantidad ya entregada en BD
+    const registeredInBD =
+      registeredExitsCache[selectedDeliveryOrderId]?.[productId] || 0;
 
-    if (totalScanned > pendingQuantity) {
+    // Cantidad ya agregada en esta sesión (en el carrito)
+    const sessionTotal = exitItems
+      .filter((item) => item.product.id === productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+
+    const newTotal = registeredInBD + sessionTotal + quantity;
+    const orderQuantity = orderItem.quantity;
+
+    if (newTotal > orderQuantity) {
+      const maxAllowable = Math.max(
+        orderQuantity - registeredInBD - sessionTotal,
+        0
+      );
       return {
         valid: false,
-        error: `La cantidad excede lo pendiente. Pendiente: ${pendingQuantity}, Ya escaneado: ${alreadyScanned}`
+        error: `La cantidad excede lo requerido. Requerido: ${orderQuantity}, Ya entregado: ${registeredInBD}, En esta sesión: ${sessionTotal}, Máximo permitido: ${maxAllowable}`,
       };
     }
 
     return { valid: true };
   },
+
+  getSelectedDeliveryOrderProgress:
+    (): SelectedDeliveryOrderProgress | null => {
+      const {
+        selectedDeliveryOrder,
+        selectedDeliveryOrderId,
+        registeredExitsCache,
+        scannedItemsProgress,
+      } = get();
+
+      if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
+        return null;
+      }
+
+      let items = selectedDeliveryOrder.items || [];
+
+      const normalizedItems: SelectedDeliveryOrderProgressItem[] = items.map(
+        (item) => {
+          const orderQuantity = item.quantity;
+          const rawRegistered =
+            registeredExitsCache[selectedDeliveryOrderId]?.[item.product_id] || 0;
+          const registered = Math.min(rawRegistered, orderQuantity);
+          const maxPendingAfterRegistered = Math.max(
+            orderQuantity - registered,
+            0
+          );
+          const sessionScannedRaw =
+            scannedItemsProgress.get(item.product_id) || 0;
+          const sessionScanned = Math.min(
+            sessionScannedRaw,
+            maxPendingAfterRegistered
+          );
+          const pending = Math.max(
+            orderQuantity - registered - sessionScanned,
+            0
+          );
+          const isComplete = pending === 0;
+
+          return {
+            item,
+            orderQuantity,
+            registered,
+            sessionScanned,
+            pending,
+            isComplete,
+          };
+        }
+      );
+
+      const totalRequired = normalizedItems.reduce(
+        (sum, x) => sum + x.orderQuantity,
+        0
+      );
+      const totalRegistered = normalizedItems.reduce(
+        (sum, x) => sum + x.registered,
+        0
+      );
+      const totalScanned = normalizedItems.reduce(
+        (sum, x) => sum + x.sessionScanned,
+        0
+      );
+      const totalCompleted = Math.min(
+        totalRegistered + totalScanned,
+        totalRequired
+      );
+
+      return {
+        items: normalizedItems,
+        totalRequired,
+        totalRegistered,
+        totalScanned,
+        totalCompleted,
+      };
+    },
 
   startExit: () => {
     const { warehouseId, exitMode, selectedUserId, selectedCustomerId, selectedDeliveryOrderId } = get();
@@ -636,13 +764,33 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   removeProductFromExit: (index: number) => {
-    const { exitItems } = get();
+    const { exitItems, selectedDeliveryOrderId, scannedItemsProgress } = get();
+    const itemToRemove = exitItems[index];
+    
+    if (!itemToRemove) return;
+
     const updatedItems = exitItems.filter((_, i) => i !== index);
-    set({ exitItems: updatedItems });
+
+    // Si hay una orden de entrega seleccionada, actualizar progreso
+    if (selectedDeliveryOrderId && itemToRemove.product.id) {
+      const currentProgress = scannedItemsProgress.get(itemToRemove.product.id) || 0;
+      const newProgress = new Map(scannedItemsProgress);
+      const newValue = Math.max(0, currentProgress - itemToRemove.quantity);
+      
+      if (newValue > 0) {
+        newProgress.set(itemToRemove.product.id, newValue);
+      } else {
+        newProgress.delete(itemToRemove.product.id);
+      }
+      
+      set({ exitItems: updatedItems, scannedItemsProgress: newProgress });
+    } else {
+      set({ exitItems: updatedItems });
+    }
   },
 
   updateProductQuantity: (index: number, quantity: number) => {
-    const { exitItems, warehouseId } = get();
+    const { exitItems, warehouseId, selectedDeliveryOrderId, scannedItemsProgress } = get();
 
     if (!warehouseId || quantity <= 0) {
       return;
@@ -662,7 +810,24 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const updatedItems = exitItems.map((item, i) =>
       i === index ? { ...item, quantity } : item
     );
-    set({ exitItems: updatedItems, error: null });
+
+    // Si hay una orden de entrega seleccionada, actualizar progreso
+    if (selectedDeliveryOrderId && item.product.id) {
+      const currentProgress = scannedItemsProgress.get(item.product.id) || 0;
+      const quantityDelta = quantity - item.quantity;
+      const newProgress = new Map(scannedItemsProgress);
+      const newValue = Math.max(0, currentProgress + quantityDelta);
+      
+      if (newValue > 0) {
+        newProgress.set(item.product.id, newValue);
+      } else {
+        newProgress.delete(item.product.id);
+      }
+      
+      set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
+    } else {
+      set({ exitItems: updatedItems, error: null });
+    }
   },
 
 
@@ -784,6 +949,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
+      registeredExitsCache: {},
       customerSearchTerm: "",
       deliveryObservations: "",
     });

@@ -2,25 +2,113 @@ import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStor
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export function DeliveryOrderProgress() {
-    const {
-        selectedDeliveryOrder,
-        scannedItemsProgress,
-    } = useExitsStore();
+    // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
+    // Esto asegura que el componente se re-renderice cuando cualquiera de estos valores cambie
+    const selectedDeliveryOrder = useExitsStore((state) => state.selectedDeliveryOrder);
+    const selectedDeliveryOrderId = useExitsStore((state) => state.selectedDeliveryOrderId);
+    const registeredExitsCache = useExitsStore((state) => state.registeredExitsCache);
+    
+    // Convertir Map a string JSON estable para evitar loops infinitos
+    // El string solo cambia cuando el contenido real del Map cambia
+    const scannedItemsProgressString = useExitsStore((state) => {
+        const map = state.scannedItemsProgress;
+        const entries = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+        return JSON.stringify(entries);
+    });
+    
+    const exitItems = useExitsStore((state) => state.exitItems);
 
-    if (!selectedDeliveryOrder) {
+    if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
         return null;
     }
 
-    const items = selectedDeliveryOrder.items || [];
+    // Recalcular el progreso cada vez que cambien los valores
+    const progress = useMemo(() => {
+        // Recrear el Map desde el string JSON
+        const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
+        const scannedItemsMap = new Map(scannedItemsEntries);
+        
+        let items = selectedDeliveryOrder.items || [];
 
-    // Calcular progreso total
-    const totalRequired = items.reduce((sum, item) => sum + item.pending_quantity, 0);
-    const totalScanned = Array.from(scannedItemsProgress.values()).reduce((sum, qty) => sum + qty, 0);
-    const overallProgress = totalRequired > 0 ? (totalScanned / totalRequired) * 100 : 0;
+        const normalizedItems = items.map((item) => {
+            const orderQuantity = item.quantity;
+            const rawRegistered =
+                registeredExitsCache[selectedDeliveryOrderId]?.[item.product_id] || 0;
+            const registered = Math.min(rawRegistered, orderQuantity);
+            const maxPendingAfterRegistered = Math.max(
+                orderQuantity - registered,
+                0
+            );
+            const sessionScannedRaw = scannedItemsMap.get(item.product_id) || 0;
+            const sessionScanned = Math.min(
+                sessionScannedRaw,
+                maxPendingAfterRegistered
+            );
+            const pending = Math.max(
+                orderQuantity - registered - sessionScanned,
+                0
+            );
+            const isComplete = pending === 0;
+
+            return {
+                item,
+                orderQuantity,
+                registered,
+                sessionScanned,
+                pending,
+                isComplete,
+            };
+        });
+
+        const totalRequired = normalizedItems.reduce(
+            (sum, x) => sum + x.orderQuantity,
+            0
+        );
+        const totalRegistered = normalizedItems.reduce(
+            (sum, x) => sum + x.registered,
+            0
+        );
+        const totalScanned = normalizedItems.reduce(
+            (sum, x) => sum + x.sessionScanned,
+            0
+        );
+        const totalCompleted = Math.min(
+            totalRegistered + totalScanned,
+            totalRequired
+        );
+
+        return {
+            items: normalizedItems,
+            totalRequired,
+            totalRegistered,
+            totalScanned,
+            totalCompleted,
+        };
+    }, [
+        selectedDeliveryOrder,
+        selectedDeliveryOrderId,
+        registeredExitsCache,
+        scannedItemsProgressString, // Usar el string en lugar del array
+        exitItems, // Incluir exitItems para forzar recálculo cuando se agregan productos
+    ]);
+
+    if (!progress) {
+        return null;
+    }
+
+    const { items, totalRequired, totalRegistered, totalScanned } = progress;
+
+    // Calcular cuánto faltaba al inicio de esta sesión
+    const pendingAtStart = Math.max(totalRequired - totalRegistered, 0);
+
+    // Progreso basado en lo escaneado en esta sesión vs lo que faltaba
+    const overallProgress = pendingAtStart > 0
+        ? Math.min((totalScanned / pendingAtStart) * 100, 100)
+        : 100; // Si no faltaba nada, progreso es 100%
 
     return (
         <Card style={styles.card}>
@@ -43,18 +131,25 @@ export function DeliveryOrderProgress() {
                     <View style={[styles.progressFill, { width: `${overallProgress}%` }]} />
                 </View>
                 <Text style={styles.progressText}>
-                    {totalScanned} / {totalRequired} unidades escaneadas
+                    {totalScanned} / {pendingAtStart} unidades escaneadas en esta sesión
+                </Text>
+                <Text style={styles.progressSubtext}>
+                    ({totalRegistered} ya entregadas previamente • {totalRequired} total en la orden)
                 </Text>
             </View>
 
             {/* Items List */}
             <ScrollView style={styles.itemsList} showsVerticalScrollIndicator={false}>
-                {items.map((item) => {
-                    const scanned = scannedItemsProgress.get(item.product_id) || 0;
-                    const pending = item.pending_quantity;
-                    const itemProgress = pending > 0 ? (scanned / pending) * 100 : 0;
-                    const isComplete = scanned >= pending;
-                    const hasScanned = scanned > 0;
+                {items.map(({ item, registered, pending, sessionScanned, isComplete }) => {
+                    const itemPending = Math.max(pending, 0);
+                    const pendingAtStartForItem = item.quantity - registered;
+
+                    // Progreso del item basado en lo escaneado en sesión vs lo que faltaba
+                    const itemProgress = pendingAtStartForItem > 0
+                        ? Math.min((sessionScanned / pendingAtStartForItem) * 100, 100)
+                        : 100;
+
+                    const hasScanned = sessionScanned > 0;
 
                     return (
                         <View
@@ -93,20 +188,20 @@ export function DeliveryOrderProgress() {
                             <View style={styles.itemQuantities}>
                                 <View style={styles.quantityBox}>
                                     <Text style={styles.quantityLabel}>Pendiente</Text>
-                                    <Text style={styles.quantityValue}>{pending}</Text>
+                                    <Text style={styles.quantityValue}>{itemPending}</Text>
                                 </View>
 
                                 <View style={[styles.quantityBox, styles.quantityBoxScanned]}>
                                     <Text style={styles.quantityLabel}>Escaneado</Text>
                                     <Text style={[styles.quantityValue, styles.quantityValueScanned]}>
-                                        {scanned}
+                                        {sessionScanned}
                                     </Text>
                                 </View>
 
-                                {item.delivered_quantity > 0 && (
+                                {registered > 0 && (
                                     <View style={styles.quantityBox}>
                                         <Text style={styles.quantityLabel}>Ya entregado</Text>
-                                        <Text style={styles.quantityValue}>{item.delivered_quantity}</Text>
+                                        <Text style={styles.quantityValue}>{registered}</Text>
                                     </View>
                                 )}
                             </View>
@@ -138,7 +233,7 @@ export function DeliveryOrderProgress() {
                 <View style={styles.summaryRow}>
                     <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
                     <Text style={styles.summaryText}>
-                        {items.filter(item => (scannedItemsProgress.get(item.product_id) || 0) >= item.pending_quantity).length} / {items.length} productos completos
+                        {items.filter(x => x.isComplete).length} / {items.length} productos completos
                     </Text>
                 </View>
             </View>
@@ -199,6 +294,12 @@ const styles = StyleSheet.create({
         color: Colors.text.secondary,
         textAlign: 'center',
         fontWeight: '600',
+    },
+    progressSubtext: {
+        fontSize: 12,
+        color: Colors.text.secondary,
+        textAlign: 'center',
+        marginTop: 4,
     },
     itemsList: {
         maxHeight: 400,
