@@ -783,16 +783,101 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   removeProductFromEntry: (index) => {
-    const { entryItems } = get();
+    const {
+      entryItems,
+      purchaseOrderId,
+      entryType,
+      scannedItemsProgress,
+    } = get();
+
+    const itemToRemove = entryItems[index];
+    if (!itemToRemove) {
+      return;
+    }
+
     const updatedItems = entryItems.filter((_, i) => i !== index);
     set({ entryItems: updatedItems });
+
+    // Ajustar progreso de escaneo si es entrada con orden de compra
+    if (purchaseOrderId && entryType === "PO_ENTRY") {
+      const productId = itemToRemove.product.id;
+      const currentProgress = scannedItemsProgress.get(productId) || 0;
+      const newProgressValue = Math.max(
+        0,
+        currentProgress - itemToRemove.quantity
+      );
+
+      const newProgress = new Map(scannedItemsProgress);
+      if (newProgressValue === 0) {
+        newProgress.delete(productId);
+      } else {
+        newProgress.set(productId, newProgressValue);
+      }
+      set({ scannedItemsProgress: newProgress });
+    }
   },
 
   updateProductQuantity: (index, quantity) => {
-    const { entryItems } = get();
+    const {
+      entryItems,
+      purchaseOrderId,
+      entryType,
+      scannedItemsProgress,
+    } = get();
+
+    const item = entryItems[index];
+    if (!item) return;
+
+    // Validar cantidad
+    if (quantity <= 0) {
+      set({
+        error:
+          "La cantidad debe ser mayor a 0. Si no desea el producto, elimínelo de la lista.",
+      });
+      return;
+    }
+
+    const MAX_QTY = 1_000_000;
+    if (quantity > MAX_QTY) {
+      set({
+        error: `La cantidad no puede exceder ${MAX_QTY} unidades para un solo producto.`,
+      });
+      return;
+    }
+
+    let delta = quantity - item.quantity;
+
+    // Si hay orden de compra y la cantidad aumenta, validar contra la orden
+    if (purchaseOrderId && entryType === "PO_ENTRY" && delta > 0) {
+      const validation = get().validateProductAgainstOrder(
+        item.product.id,
+        delta
+      );
+      if (!validation.valid) {
+        set({ error: validation.error });
+        return;
+      }
+    }
+
+    // Actualizar lista de items
     const updatedItems = [...entryItems];
-    updatedItems[index].quantity = quantity;
-    set({ entryItems: updatedItems });
+    updatedItems[index] = { ...item, quantity };
+    set({ entryItems: updatedItems, error: null });
+
+    // Ajustar progreso de escaneo si aplica
+    if (purchaseOrderId && entryType === "PO_ENTRY" && delta !== 0) {
+      const currentProgress = scannedItemsProgress.get(item.product.id) || 0;
+      const newProgressValue = Math.max(0, currentProgress + delta);
+      const newProgress = new Map(scannedItemsProgress);
+
+      if (newProgressValue === 0) {
+        newProgress.delete(item.product.id);
+      } else {
+        newProgress.set(item.product.id, newProgressValue);
+      }
+
+      set({ scannedItemsProgress: newProgress });
+    }
   },
 
   setQuantity: (quantity) => {
@@ -838,8 +923,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Finalize entry
   finalizeEntry: async (userId): Promise<{ error: any }> => {
-    const { entryItems, supplierId, purchaseOrderId, warehouseId, entryType } =
-      get();
+    const {
+      entryItems,
+      supplierId,
+      purchaseOrderId,
+      warehouseId,
+      entryType,
+      selectedPurchaseOrder,
+    } = get();
 
     if (entryItems.length === 0) {
       return { error: { message: "No hay productos para registrar" } };
@@ -851,6 +942,190 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     if (!entryType) {
       return { error: { message: "Tipo de entrada no definido" } };
+    }
+
+    if (!userId) {
+      return { error: { message: "Usuario no autenticado" } };
+    }
+
+    // Validación adicional para entradas con orden de compra
+    if (entryType === "PO_ENTRY" && !supplierId) {
+      return {
+        error: {
+          message:
+            "Debe seleccionar un proveedor para entrada con orden de compra",
+        },
+      };
+    }
+
+    // Helper de validación exhaustiva antes de insertar
+    const validateEntryDataBeforeInsert = async (): Promise<{
+      valid: boolean;
+      message?: string;
+    }> => {
+      // 1. Validar cantidades y duplicados en memoria
+      const MAX_QTY = 1_000_000;
+      const productIdSet = new Set<string>();
+
+      for (const item of entryItems) {
+        if (!item.product?.id) {
+          return { valid: false, message: "Producto inválido en la lista" };
+        }
+
+        if (productIdSet.has(item.product.id)) {
+          return {
+            valid: false,
+            message:
+              "Hay productos duplicados en la lista. Por favor revise las cantidades.",
+          };
+        }
+        productIdSet.add(item.product.id);
+
+        if (item.quantity <= 0) {
+          return {
+            valid: false,
+            message:
+              "Todas las cantidades deben ser mayores a 0. Revise los productos agregados.",
+          };
+        }
+
+        if (item.quantity > MAX_QTY) {
+          return {
+            valid: false,
+            message: `Las cantidades no pueden exceder ${MAX_QTY} unidades por producto.`,
+          };
+        }
+
+        // Validar formato básico de código de barras (si existe)
+        if (item.barcode) {
+          const trimmed = item.barcode.trim();
+          if (!trimmed || trimmed.length > 255) {
+            return {
+              valid: false,
+              message:
+                "Formato de código de barras inválido. Por favor intente escanear de nuevo.",
+            };
+          }
+        }
+      }
+
+      // 2. Validar bodega activa
+      if (!warehouseId) {
+        return { valid: false, message: "Debe seleccionar una bodega" };
+      }
+
+      const { data: warehouseData, error: warehouseError } = await supabase
+        .from("warehouses")
+        .select("id, is_active")
+        .eq("id", warehouseId)
+        .maybeSingle();
+
+      if (warehouseError) {
+        console.error("Error validating warehouse:", warehouseError);
+        return {
+          valid: false,
+          message: "Error al validar la bodega seleccionada.",
+        };
+      }
+
+      if (!warehouseData || !warehouseData.is_active) {
+        return {
+          valid: false,
+          message:
+            "La bodega seleccionada no está activa. Por favor seleccione otra bodega.",
+        };
+      }
+
+      // 3. Validar que los productos no estén eliminados
+      const productIds = entryItems.map((item) => item.product.id);
+      const { data: productsData, error: productsError } = await supabase
+        .from("products")
+        .select("id, deleted_at")
+        .in("id", productIds);
+
+      if (productsError) {
+        console.error("Error validating products:", productsError);
+        return {
+          valid: false,
+          message: "Error al validar los productos de la entrada.",
+        };
+      }
+
+      const deletedProducts =
+        productsData?.filter((p) => p.deleted_at !== null) || [];
+      if (deletedProducts.length > 0) {
+        return {
+          valid: false,
+          message:
+            "Uno o más productos de la entrada han sido eliminados. Por favor actualice la página y revise la orden.",
+        };
+      }
+
+      // 4. Validación específica de orden de compra si aplica
+      if (entryType === "PO_ENTRY" && purchaseOrderId) {
+        // Validar estado de la orden directamente en BD
+        const { data: orderData, error: orderError } = await supabase
+          .from("purchase_orders")
+          .select("status, deleted_at")
+          .eq("id", purchaseOrderId)
+          .maybeSingle();
+
+        if (orderError) {
+          console.error("Error validating purchase order:", orderError);
+          return {
+            valid: false,
+            message: "Error al validar el estado de la orden de compra.",
+          };
+        }
+
+        if (!orderData || orderData.deleted_at !== null) {
+          return {
+            valid: false,
+            message:
+              "La orden de compra seleccionada ya no está disponible. Por favor recargue la pantalla.",
+          };
+        }
+
+        if (orderData.status !== "pending") {
+          return {
+            valid: false,
+            message:
+              "La orden de compra no está en estado pendiente. No se pueden registrar más entradas.",
+          };
+        }
+
+        // Validar que las cantidades totales de la sesión no excedan lo pendiente
+        if (selectedPurchaseOrder) {
+          const quantitiesByProduct: Record<string, number> = {};
+          entryItems.forEach((item) => {
+            quantitiesByProduct[item.product.id] =
+              (quantitiesByProduct[item.product.id] || 0) + item.quantity;
+          });
+
+          for (const orderItem of selectedPurchaseOrder.items) {
+            const sessionQty = quantitiesByProduct[orderItem.product_id] || 0;
+            if (sessionQty > 0) {
+              const validation = get().validateProductAgainstOrder(
+                orderItem.product_id,
+                sessionQty
+              );
+              if (!validation.valid) {
+                return {
+                  valid: false,
+                  message: validation.error,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      return { valid: true };
+    };
+
+    const validationResult = await validateEntryDataBeforeInsert();
+    if (!validationResult.valid) {
+      return { error: { message: validationResult.message } };
     }
 
     try {

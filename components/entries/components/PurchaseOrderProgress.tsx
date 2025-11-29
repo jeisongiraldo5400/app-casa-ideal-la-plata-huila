@@ -20,13 +20,23 @@ export function PurchaseOrderProgress() {
     const items = selectedPurchaseOrder.items || [];
 
     // Calcular progreso total
-    const totalRequired = items.reduce((sum, item) => {
+    // Total requerido: suma de todas las cantidades de la orden
+    const totalRequired = items.reduce((sum, item) => sum + item.quantity, 0);
+    
+    // Total ya registrado en BD
+    const totalRegistered = items.reduce((sum, item) => {
         const registered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
-        return sum + (item.quantity - registered);
+        return sum + registered;
     }, 0);
     
-    const totalScanned = Array.from(scannedItemsProgress.values()).reduce((sum, qty) => sum + qty, 0);
-    const overallProgress = totalRequired > 0 ? (totalScanned / totalRequired) * 100 : 0;
+    // Total escaneado en esta sesión
+    const totalScannedInSession = Array.from(scannedItemsProgress.values()).reduce((sum, qty) => sum + qty, 0);
+    
+    // Total completado = ya registrado + escaneado en sesión
+    const totalCompleted = totalRegistered + totalScannedInSession;
+    
+    // Progreso basado en el total completado vs total requerido
+    const overallProgress = totalRequired > 0 ? (totalCompleted / totalRequired) * 100 : 0;
 
     return (
         <Card style={styles.card}>
@@ -49,7 +59,7 @@ export function PurchaseOrderProgress() {
                     <View style={[styles.progressFill, { width: `${overallProgress}%` }]} />
                 </View>
                 <Text style={styles.progressText}>
-                    {totalScanned} / {totalRequired} unidades escaneadas
+                    {totalCompleted} / {totalRequired} unidades recibidas
                 </Text>
             </View>
 
@@ -88,7 +98,7 @@ export function PurchaseOrderProgress() {
                                     ) : hasScanned ? (
                                         <MaterialIcons name="pending" size={32} color={Colors.warning.main} />
                                     ) : (
-                                        <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.disabled} />
+                                        <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.secondary} />
                                     )}
                                 </View>
                             </View>
