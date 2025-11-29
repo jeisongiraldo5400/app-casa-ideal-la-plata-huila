@@ -199,64 +199,86 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const { purchaseOrders } = get();
       const existingOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
 
+      let purchaseOrder: PurchaseOrderWithItems;
+
       if (existingOrder && existingOrder.items) {
         // Si ya tenemos la orden con items, usarla
-        set({
-          selectedPurchaseOrder: existingOrder,
-          purchaseOrderId,
-          scannedItemsProgress: new Map(),
-          loading: false
-        });
-        return;
+        purchaseOrder = existingOrder;
+      } else {
+        // Si no está cargada, cargarla con todos los detalles
+        const { data: orderData, error: orderError } = await supabase
+          .from('purchase_orders')
+          .select(`
+            *,
+            supplier:suppliers(id, name, nit),
+            items:purchase_order_items(
+              id,
+              product_id,
+              purchase_order_id,
+              quantity,
+              product:products(id, name, barcode, sku)
+            )
+          `)
+          .eq('id', purchaseOrderId)
+          .single();
+
+        if (orderError) {
+          console.error("Error loading purchase order details:", orderError);
+          set({
+            selectedPurchaseOrder: null,
+            purchaseOrderId: null,
+            loading: false,
+            error: orderError.message
+          });
+          return;
+        }
+
+        if (!orderData) {
+          set({
+            selectedPurchaseOrder: null,
+            purchaseOrderId: null,
+            loading: false,
+            error: "Orden de compra no encontrada"
+          });
+          return;
+        }
+
+        // Transformar los datos al formato esperado
+        purchaseOrder = {
+          ...orderData,
+          supplier: orderData.supplier as Supplier,
+          items: (orderData.items || []).map((item: any) => ({
+            ...item,
+            product: item.product as Product,
+          })),
+        };
       }
 
-      // Si no está cargada, cargarla con todos los detalles
-      const { data: orderData, error: orderError } = await supabase
-        .from('purchase_orders')
-        .select(`
-          *,
-          supplier:suppliers(id, name, nit),
-          items:purchase_order_items(
-            id,
-            product_id,
-            purchase_order_id,
-            quantity,
-            product:products(id, name, barcode, sku)
-          )
-        `)
-        .eq('id', purchaseOrderId)
-        .single();
+      // Cargar entradas registradas para esta orden y actualizar el cache
+      const { data: inventoryEntries, error: entriesError } = await supabase
+        .from('inventory_entries')
+        .select('product_id, quantity')
+        .eq('purchase_order_id', purchaseOrderId);
 
-      if (orderError) {
-        console.error("Error loading purchase order details:", orderError);
-        set({
-          selectedPurchaseOrder: null,
-          purchaseOrderId: null,
-          loading: false,
-          error: orderError.message
+      if (entriesError) {
+        console.error("Error loading inventory entries:", entriesError);
+      } else {
+        // Actualizar el cache de entradas registradas
+        const { registeredEntriesCache } = get();
+        const updatedCache = { ...registeredEntriesCache };
+        
+        if (!updatedCache[purchaseOrderId]) {
+          updatedCache[purchaseOrderId] = {};
+        }
+
+        // Agrupar por product_id y sumar las cantidades
+        (inventoryEntries || []).forEach((entry: { product_id: string; quantity: number }) => {
+          const currentQty = updatedCache[purchaseOrderId][entry.product_id] || 0;
+          updatedCache[purchaseOrderId][entry.product_id] = currentQty + entry.quantity;
         });
-        return;
-      }
 
-      if (!orderData) {
-        set({
-          selectedPurchaseOrder: null,
-          purchaseOrderId: null,
-          loading: false,
-          error: "Orden de compra no encontrada"
-        });
-        return;
+        set({ registeredEntriesCache: updatedCache });
       }
-
-      // Transformar los datos al formato esperado
-      const purchaseOrder: PurchaseOrderWithItems = {
-        ...orderData,
-        supplier: orderData.supplier as Supplier,
-        items: (orderData.items || []).map((item: any) => ({
-          ...item,
-          product: item.product as Product,
-        })),
-      };
 
       set({
         selectedPurchaseOrder: purchaseOrder,
@@ -857,11 +879,29 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // al insertar en inventory_entries. Si se actualiza manualmente aquí también,
       // se duplicaría el incremento del stock.
 
+      // Actualizar el cache de entradas registradas inmediatamente
+      if (purchaseOrderId) {
+        const { registeredEntriesCache } = get();
+        const updatedCache = { ...registeredEntriesCache };
+        
+        if (!updatedCache[purchaseOrderId]) {
+          updatedCache[purchaseOrderId] = {};
+        }
+
+        // Agregar las cantidades recién registradas al cache
+        entryItems.forEach((item) => {
+          const currentQty = updatedCache[purchaseOrderId][item.product.id] || 0;
+          updatedCache[purchaseOrderId][item.product.id] = currentQty + item.quantity;
+        });
+
+        set({ registeredEntriesCache: updatedCache });
+      }
+
       // Guardar las órdenes antes de resetear
       const currentPurchaseOrders = get().purchaseOrders;
 
       // Revalidar todas las órdenes después de registrar la entrada
-      // Esto también actualiza el cache de entradas registradas
+      // Esto también actualiza el cache de entradas registradas (pero ya lo actualizamos arriba)
       if (currentPurchaseOrders.length > 0 && purchaseOrderId) {
         await get().validateAllPurchaseOrders();
       }
