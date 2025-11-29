@@ -297,8 +297,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  validateProductAgainstOrder: (productId: string, quantity: number) => {
-    const { selectedPurchaseOrder, scannedItemsProgress, registeredEntriesCache, purchaseOrderId } = get();
+  validateProductAgainstOrder: (productId: string, deltaQuantity: number) => {
+    const {
+      selectedPurchaseOrder,
+      registeredEntriesCache,
+      purchaseOrderId,
+      entryItems,
+    } = get();
 
     if (!selectedPurchaseOrder || !purchaseOrderId) {
       return { valid: false, error: "No hay orden de compra seleccionada" };
@@ -316,18 +321,28 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       };
     }
 
-    // Calcular cantidad ya registrada en BD
-    const registeredInBD = registeredEntriesCache[purchaseOrderId]?.[productId] || 0;
-    
-    // Calcular cantidad ya escaneada en esta sesión
-    const alreadyScanned = scannedItemsProgress.get(productId) || 0;
-    const totalScanned = alreadyScanned + quantity;
-    const pendingQuantity = orderItem.quantity - registeredInBD;
+    // Cantidad ya registrada en BD
+    const registeredInBD =
+      registeredEntriesCache[purchaseOrderId]?.[productId] || 0;
 
-    if (totalScanned > pendingQuantity) {
+    // Cantidad ya agregada en esta sesión (en el carrito)
+    const sessionTotal = entryItems
+      .filter((item) => item.product.id === productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+
+    const newTotal = registeredInBD + sessionTotal + deltaQuantity;
+
+    if (newTotal > orderItem.quantity) {
+      const maxAllowable = orderItem.quantity - registeredInBD - sessionTotal;
       return {
         valid: false,
-        error: `La cantidad excede lo pendiente. Pendiente: ${pendingQuantity}, Ya escaneado en sesión: ${alreadyScanned}, Ya registrado: ${registeredInBD}`
+        error: `La cantidad excede lo permitido para este producto.\nCantidad en orden: ${
+          orderItem.quantity
+        }, ya registrado: ${registeredInBD}, ya agregado en esta sesión: ${sessionTotal}, intentando agregar ahora: ${deltaQuantity}${
+          maxAllowable > 0
+            ? `. Máximo adicional permitido: ${maxAllowable}.`
+            : ". Ya no hay unidades pendientes en la orden para este producto."
+        }`,
       };
     }
 
