@@ -1080,6 +1080,8 @@ export type Database = {
           delivered_to_id_number: string
           delivered_to_name: string
           delivered_to_type: string
+          delivery_observations: string
+          delivery_order_id: string
           id: string
           is_cancelled: boolean
           product_barcode: string
@@ -1112,6 +1114,8 @@ export type Database = {
           delivered_to_id_number: string
           delivered_to_name: string
           delivered_to_type: string
+          delivery_observations: string
+          delivery_order_id: string
           id: string
           is_cancelled: boolean
           movement_type: string
