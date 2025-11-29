@@ -1094,7 +1094,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           };
         }
 
-        // Validar que las cantidades totales de la sesión no excedan lo pendiente
+        // Validar que las cantidades totales de la sesión no excedan lo permitido en la orden
         if (selectedPurchaseOrder) {
           const quantitiesByProduct: Record<string, number> = {};
           entryItems.forEach((item) => {
@@ -1102,17 +1102,30 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
               (quantitiesByProduct[item.product.id] || 0) + item.quantity;
           });
 
+          const { registeredEntriesCache } = get();
+
           for (const orderItem of selectedPurchaseOrder.items) {
             const sessionQty = quantitiesByProduct[orderItem.product_id] || 0;
             if (sessionQty > 0) {
-              const validation = get().validateProductAgainstOrder(
-                orderItem.product_id,
-                sessionQty
-              );
-              if (!validation.valid) {
+              const registeredInBD =
+                registeredEntriesCache[purchaseOrderId]?.[
+                  orderItem.product_id
+                ] || 0;
+              const totalAfterSession = registeredInBD + sessionQty;
+
+              if (totalAfterSession > orderItem.quantity) {
+                const pending =
+                  orderItem.quantity - registeredInBD > 0
+                    ? orderItem.quantity - registeredInBD
+                    : 0;
+
                 return {
                   valid: false,
-                  message: validation.error,
+                  message: `La cantidad excede lo pendiente para el producto ${
+                    orderItem.product_id
+                  }. Cantidad en orden: ${
+                    orderItem.quantity
+                  }, ya registrado: ${registeredInBD}, pendiente: ${pending}, intentando registrar en esta sesión: ${sessionQty}.`,
                 };
               }
             }
