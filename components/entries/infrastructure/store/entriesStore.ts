@@ -1066,7 +1066,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         // Validar estado de la orden directamente en BD
         const { data: orderData, error: orderError } = await supabase
           .from("purchase_orders")
-          .select("status, deleted_at")
+          .select("status")
           .eq("id", purchaseOrderId)
           .maybeSingle();
 
@@ -1078,7 +1078,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           };
         }
 
-        if (!orderData || orderData.deleted_at !== null) {
+        if (!orderData) {
           return {
             valid: false,
             message:
