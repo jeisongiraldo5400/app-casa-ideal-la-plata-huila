@@ -8,7 +8,7 @@ import { SetupForm } from '@/components/entries/components/SetupForm';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
 import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/theme';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -32,9 +32,17 @@ export default function EntriesScreen() {
     resetCurrentScan,
     clearError,
     goBackToSetup,
+    reset,
   } = useEntries();
 
   const [showScanner, setShowScanner] = useState(false);
+
+  // Limpiar completamente el estado de entradas cuando se sale de la pantalla
+  useEffect(() => {
+    return () => {
+      reset();
+    };
+  }, [reset]);
 
   const handleScan = async (barcode: string) => {
     try {

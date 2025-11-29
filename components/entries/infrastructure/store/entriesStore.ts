@@ -333,16 +333,21 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const newTotal = registeredInBD + sessionTotal + deltaQuantity;
 
     if (newTotal > orderItem.quantity) {
-      const maxAllowable = orderItem.quantity - registeredInBD - sessionTotal;
+      const maxAllowable = Math.max(
+        orderItem.quantity - registeredInBD - sessionTotal,
+        0
+      );
       return {
         valid: false,
-        error: `La cantidad excede lo permitido para este producto.\nCantidad en orden: ${
-          orderItem.quantity
-        }, ya registrado: ${registeredInBD}, ya agregado en esta sesión: ${sessionTotal}, intentando agregar ahora: ${deltaQuantity}${
-          maxAllowable > 0
-            ? `. Máximo adicional permitido: ${maxAllowable}.`
-            : ". Ya no hay unidades pendientes en la orden para este producto."
-        }`,
+        error:
+          `La cantidad excede lo permitido para este producto.\n` +
+          `Cantidad en orden: ${orderItem.quantity}\n` +
+          `Ya registrado en el sistema: ${registeredInBD}\n` +
+          `Ya agregado en esta sesión: ${sessionTotal}\n` +
+          `Intentando agregar ahora: ${deltaQuantity}\n` +
+          (maxAllowable > 0
+            ? `Máximo adicional permitido en esta sesión: ${maxAllowable}.`
+            : `Ya no hay unidades pendientes en la orden para este producto.`),
       };
     }
 
@@ -488,22 +493,39 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return;
       }
 
-      // Calcular la cantidad total registrada
-      const totalQuantityOfInventoryEntries = (data || []).reduce(
-        (acc, curr) => acc + curr.quantity,
-        0
-      );
+      // Calcular cantidades registradas por producto
+      const registeredByProduct: Record<string, number> = {};
+      (data || []).forEach((entry) => {
+        if (!entry.product_id) return;
+        registeredByProduct[entry.product_id] =
+          (registeredByProduct[entry.product_id] || 0) + entry.quantity;
+      });
 
-      // Actualizar el estado de validación para esta orden específica
-      const validations = get().purchaseOrderValidations;
-      set({ 
+      // Truncar por producto al máximo definido en la orden
+      let totalQuantityOfInventoryEntries = 0;
+      purchaseOrder.items.forEach((item) => {
+        const rawRegistered = registeredByProduct[item.product_id] || 0;
+        const clampedRegistered = Math.min(rawRegistered, item.quantity);
+        registeredByProduct[item.product_id] = clampedRegistered;
+        totalQuantityOfInventoryEntries += clampedRegistered;
+      });
+
+      // Actualizar el estado de validación y el cache para esta orden específica
+      const { purchaseOrderValidations, registeredEntriesCache } = get();
+      set({
         purchaseOrderValidations: {
-          ...validations,
+          ...purchaseOrderValidations,
           [purchaseOrderId]: {
-            isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+            isComplete:
+              totalQuantityOfInventoryEntries >= totalItemsQuantity &&
+              totalItemsQuantity > 0,
             totalQuantityOfInventoryEntries,
             totalItemsQuantity,
           },
+        },
+        registeredEntriesCache: {
+          ...registeredEntriesCache,
+          [purchaseOrderId]: registeredByProduct,
         },
       });
     } catch (error: any) {
@@ -543,19 +565,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       entriesByOrderId.get(orderId)!.push(entry);
     });
 
-    // OPTIMIZADO: Construir cache de entradas registradas por orden y producto
+    // Construir cache truncado por producto y validaciones
     const cache: Record<string, Record<string, number>> = {};
-    entriesByOrderId.forEach((entries, orderId) => {
-      cache[orderId] = {};
-      entries.forEach((entry: any) => {
-        const productId = entry.product_id;
-        if (productId) {
-          cache[orderId][productId] = (cache[orderId][productId] || 0) + (entry.quantity || 0);
-        }
-      });
-    });
-
-    // Validar todas las órdenes en memoria
     const validations: Record<string, {
       isComplete: boolean;
       totalQuantityOfInventoryEntries: number;
@@ -564,14 +575,26 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     purchaseOrders.forEach((order) => {
       const entries = entriesByOrderId.get(order.id) || [];
-      const totalItemsQuantity = order.items.reduce(
-        (sum, item) => sum + item.quantity,
-        0
-      );
-      const totalQuantityOfInventoryEntries = entries.reduce(
-        (sum, entry) => sum + (entry.quantity || 0),
-        0
-      );
+
+      // Agrupar por producto
+      const registeredByProduct: Record<string, number> = {};
+      entries.forEach((entry: any) => {
+        const productId = entry.product_id;
+        if (!productId) return;
+        registeredByProduct[productId] =
+          (registeredByProduct[productId] || 0) + (entry.quantity || 0);
+      });
+
+      // Truncar cada producto al máximo definido en la orden
+      cache[order.id] = {};
+      let totalQuantityOfInventoryEntries = 0;
+      const totalItemsQuantity = order.items.reduce((sum, item) => {
+        const rawRegistered = registeredByProduct[item.product_id] || 0;
+        const clampedRegistered = Math.min(rawRegistered, item.quantity);
+        cache[order.id][item.product_id] = clampedRegistered;
+        totalQuantityOfInventoryEntries += clampedRegistered;
+        return sum + item.quantity;
+      }, 0);
       
       validations[order.id] = {
         isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
@@ -581,7 +604,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     });
 
     // Actualizar todas las validaciones y el cache de una vez
-    set({ purchaseOrderValidations: validations, registeredEntriesCache: cache });
+    set({
+      purchaseOrderValidations: validations,
+      registeredEntriesCache: cache,
+    });
   },
 
   loadWarehouses: async () => {
@@ -1246,7 +1272,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       purchaseOrders: [],
       supplierSearchQuery: "",
       purchaseOrderValidations: {},
-      registeredEntriesCache: {},
       scannedItemsProgress: new Map(),
     });
   },

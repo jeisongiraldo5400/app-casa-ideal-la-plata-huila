@@ -19,23 +19,21 @@ export function PurchaseOrderProgress() {
 
     const items = selectedPurchaseOrder.items || [];
 
+    // Calcular cantidades clamped por producto
+    const normalizedPerItem = items.map((item) => {
+        const rawRegistered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
+        const registered = Math.min(rawRegistered, item.quantity);
+        const pending = Math.max(item.quantity - registered, 0);
+        const scannedRaw = scannedItemsProgress.get(item.product_id) || 0;
+        const scanned = Math.min(scannedRaw, pending);
+        return { item, registered, pending, scanned };
+    });
+
     // Calcular progreso total
-    // Total requerido: suma de todas las cantidades de la orden
-    const totalRequired = items.reduce((sum, item) => sum + item.quantity, 0);
-    
-    // Total ya registrado en BD
-    const totalRegistered = items.reduce((sum, item) => {
-        const registered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
-        return sum + registered;
-    }, 0);
-    
-    // Total escaneado en esta sesión
-    const totalScannedInSession = Array.from(scannedItemsProgress.values()).reduce((sum, qty) => sum + qty, 0);
-    
-    // Total completado = ya registrado + escaneado en sesión
-    const totalCompleted = totalRegistered + totalScannedInSession;
-    
-    // Progreso basado en el total completado vs total requerido
+    const totalRequired = normalizedPerItem.reduce((sum, x) => sum + x.item.quantity, 0);
+    const totalRegistered = normalizedPerItem.reduce((sum, x) => sum + x.registered, 0);
+    const totalScannedInSession = normalizedPerItem.reduce((sum, x) => sum + x.scanned, 0);
+    const totalCompleted = Math.min(totalRegistered + totalScannedInSession, totalRequired);
     const overallProgress = totalRequired > 0 ? (totalCompleted / totalRequired) * 100 : 0;
 
     return (
@@ -65,12 +63,10 @@ export function PurchaseOrderProgress() {
 
             {/* Items List */}
             <ScrollView style={styles.itemsList} showsVerticalScrollIndicator={false}>
-                {items.map((item) => {
-                    const registered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
-                    const scanned = scannedItemsProgress.get(item.product_id) || 0;
-                    const pending = item.quantity - registered;
-                    const itemProgress = pending > 0 ? (scanned / pending) * 100 : 0;
-                    const isComplete = scanned >= pending && pending > 0;
+                {normalizedPerItem.map(({ item, registered, pending, scanned }) => {
+                    const itemPending = Math.max(pending, 0);
+                    const itemProgress = itemPending > 0 ? (scanned / itemPending) * 100 : 0;
+                    const isComplete = itemPending === 0;
                     const hasScanned = scanned > 0;
 
                     return (
@@ -106,7 +102,7 @@ export function PurchaseOrderProgress() {
                             <View style={styles.itemQuantities}>
                                 <View style={styles.quantityBox}>
                                     <Text style={styles.quantityLabel}>Pendiente</Text>
-                                    <Text style={styles.quantityValue}>{pending}</Text>
+                                    <Text style={styles.quantityValue}>{itemPending}</Text>
                                 </View>
 
                                 <View style={[styles.quantityBox, styles.quantityBoxScanned]}>
@@ -151,12 +147,7 @@ export function PurchaseOrderProgress() {
                 <View style={styles.summaryRow}>
                     <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
                     <Text style={styles.summaryText}>
-                        {items.filter(item => {
-                            const registered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
-                            const scanned = scannedItemsProgress.get(item.product_id) || 0;
-                            const pending = item.quantity - registered;
-                            return scanned >= pending && pending > 0;
-                        }).length} / {items.length} productos completos
+                        {normalizedPerItem.filter(x => x.pending === 0).length} / {items.length} productos completos
                     </Text>
                 </View>
             </View>
