@@ -2,22 +2,108 @@ import { useEntriesStore } from '@/components/entries/infrastructure/store/entri
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export function PurchaseOrderProgress() {
-    const {
-        selectedPurchaseOrder,
-        purchaseOrderId,
-        scannedItemsProgress, // eslint-disable-line @typescript-eslint/no-unused-vars
-        getSelectedPurchaseOrderProgress,
-    } = useEntriesStore();
+    // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
+    // Esto asegura que el componente se re-renderice cuando cualquiera de estos valores cambie
+    const selectedPurchaseOrder = useEntriesStore((state) => state.selectedPurchaseOrder);
+    const purchaseOrderId = useEntriesStore((state) => state.purchaseOrderId);
+    const registeredEntriesCache = useEntriesStore((state) => state.registeredEntriesCache);
+    
+    // Convertir Map a string JSON estable para evitar loops infinitos
+    // El string solo cambia cuando el contenido real del Map cambia
+    const scannedItemsProgressString = useEntriesStore((state) => {
+        const map = state.scannedItemsProgress;
+        const entries = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+        return JSON.stringify(entries);
+    });
+    
+    const selectedOrderProductId = useEntriesStore((state) => state.selectedOrderProductId);
+    const entryItems = useEntriesStore((state) => state.entryItems);
 
     if (!selectedPurchaseOrder || !purchaseOrderId) {
         return null;
     }
 
-    const progress = getSelectedPurchaseOrderProgress();
+    // Recalcular el progreso cada vez que cambien los valores
+    const progress = useMemo(() => {
+        // Recrear el Map desde el string JSON
+        const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
+        const scannedItemsMap = new Map(scannedItemsEntries);
+        
+        let items = selectedPurchaseOrder.items || [];
+
+        // Si hay un producto seleccionado, filtrar solo ese producto
+        if (selectedOrderProductId) {
+            items = items.filter(
+                (item) => item.product_id === selectedOrderProductId
+            );
+        }
+
+        const normalizedItems = items.map((item) => {
+            const orderQuantity = item.quantity;
+            const rawRegistered =
+                registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
+            const registered = Math.min(rawRegistered, orderQuantity);
+            const maxPendingAfterRegistered = Math.max(
+                orderQuantity - registered,
+                0
+            );
+            const sessionScannedRaw = scannedItemsMap.get(item.product_id) || 0;
+            const sessionScanned = Math.min(
+                sessionScannedRaw,
+                maxPendingAfterRegistered
+            );
+            const pending = Math.max(
+                orderQuantity - registered - sessionScanned,
+                0
+            );
+            const isComplete = pending === 0;
+
+            return {
+                item,
+                orderQuantity,
+                registered,
+                sessionScanned,
+                pending,
+                isComplete,
+            };
+        });
+
+        const totalRequired = normalizedItems.reduce(
+            (sum, x) => sum + x.orderQuantity,
+            0
+        );
+        const totalRegistered = normalizedItems.reduce(
+            (sum, x) => sum + x.registered,
+            0
+        );
+        const totalScanned = normalizedItems.reduce(
+            (sum, x) => sum + x.sessionScanned,
+            0
+        );
+        const totalCompleted = Math.min(
+            totalRegistered + totalScanned,
+            totalRequired
+        );
+
+        return {
+            items: normalizedItems,
+            totalRequired,
+            totalRegistered,
+            totalScanned,
+            totalCompleted,
+        };
+    }, [
+        selectedPurchaseOrder,
+        purchaseOrderId,
+        registeredEntriesCache,
+        scannedItemsProgressString, // Usar el string en lugar del array
+        selectedOrderProductId,
+        entryItems, // Incluir entryItems para forzar recálculo cuando se agregan productos
+    ]);
     if (!progress) {
         return null;
     }
