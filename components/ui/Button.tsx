@@ -69,6 +69,7 @@ export function Button({
       activeOpacity={0.8}>
       {loading ? (
         <ActivityIndicator
+          testID="activity-indicator"
           color={variant === 'outline' ? Colors.primary.main : Colors.primary.contrastText}
         />
       ) : (
