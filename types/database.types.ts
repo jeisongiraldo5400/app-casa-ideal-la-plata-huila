@@ -356,6 +356,7 @@ export type Database = {
           created_by: string | null
           delivered_to_customer_id: string | null
           delivered_to_user_id: string | null
+          delivery_observations: string | null
           delivery_order_id: string | null
           id: string
           product_id: string
@@ -368,6 +369,7 @@ export type Database = {
           created_by?: string | null
           delivered_to_customer_id?: string | null
           delivered_to_user_id?: string | null
+          delivery_observations?: string | null
           delivery_order_id?: string | null
           id?: string
           product_id: string
@@ -380,6 +382,7 @@ export type Database = {
           created_by?: string | null
           delivered_to_customer_id?: string | null
           delivered_to_user_id?: string | null
+          delivery_observations?: string | null
           delivery_order_id?: string | null
           id?: string
           product_id?: string
