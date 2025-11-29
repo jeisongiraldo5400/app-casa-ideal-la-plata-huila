@@ -1,24 +1,29 @@
 import React from "react";
 
 import {
-  PurchaseOrderWithItems,
-  useEntriesStore,
-} from "@/components/entries/infrastructure/store/entriesStore";
-
-import { usePurchaseOrders } from "@/components/purchase-orders";
-import { Card } from "@/components/ui/Card";
-import { Colors } from "@/constants/theme";
-import { useUserRoles } from "@/hooks/useUserRoles";
-import { MaterialIcons } from "@expo/vector-icons";
-import { Alert } from "react-native";
-
-import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
+
+import { MaterialIcons } from "@expo/vector-icons";
+
+// UI
+import { Card } from "@/components/ui/Card";
+import { Colors } from "@/constants/theme";
+
+// Hooks
+import { useUserRoles } from "@/hooks/useUserRoles";
+
+// Store
+import {
+  PurchaseOrderWithItems,
+  useEntriesStore,
+} from "@/components/entries/infrastructure/store/entriesStore";
+import { usePurchaseOrders } from "@/components/purchase-orders";
 
 interface PurchaseOrderSelectorProps {
   purchaseOrders: PurchaseOrderWithItems[];
@@ -31,8 +36,12 @@ export function PurchaseOrderSelector({
   selectedPurchaseOrderId,
   onSelect,
 }: PurchaseOrderSelectorProps) {
+
+  // Stores
   const { purchaseOrderValidations, loadPurchaseOrders: loadEntriesPurchaseOrders } = useEntriesStore();
   const { markOrderAsReceived, validateOrderIsComplete } = usePurchaseOrders();
+
+  // Hooks
   const { canMarkOrderAsReceived } = useUserRoles();
 
   if (purchaseOrders.length === 0) {
