@@ -212,7 +212,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         set({ users: [] });
         return;
       }
-      set({ users: data || [] });
+      set({ users: data as Profile[] || [] });
     } catch (error: any) {
       console.error("Error loading users:", error);
       set({ users: [] });
