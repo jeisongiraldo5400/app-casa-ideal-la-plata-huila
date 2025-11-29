@@ -9,6 +9,7 @@ export function PurchaseOrderProgress() {
     const {
         selectedPurchaseOrder,
         purchaseOrderId,
+        scannedItemsProgress, // eslint-disable-line @typescript-eslint/no-unused-vars
         getSelectedPurchaseOrderProgress,
     } = useEntriesStore();
 
