@@ -8,33 +8,28 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 export function PurchaseOrderProgress() {
     const {
         selectedPurchaseOrder,
-        scannedItemsProgress,
-        registeredEntriesCache,
         purchaseOrderId,
+        getSelectedPurchaseOrderProgress,
     } = useEntriesStore();
 
     if (!selectedPurchaseOrder || !purchaseOrderId) {
         return null;
     }
 
-    const items = selectedPurchaseOrder.items || [];
+    const progress = getSelectedPurchaseOrderProgress();
+    if (!progress) {
+        return null;
+    }
 
-    // Calcular cantidades clamped por producto
-    const normalizedPerItem = items.map((item) => {
-        const rawRegistered = registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
-        const registered = Math.min(rawRegistered, item.quantity);
-        const pending = Math.max(item.quantity - registered, 0);
-        const scannedRaw = scannedItemsProgress.get(item.product_id) || 0;
-        const scanned = Math.min(scannedRaw, pending);
-        return { item, registered, pending, scanned };
-    });
+    const { items, totalRequired, totalRegistered, totalScanned } = progress;
 
-    // Calcular progreso total
-    const totalRequired = normalizedPerItem.reduce((sum, x) => sum + x.item.quantity, 0);
-    const totalRegistered = normalizedPerItem.reduce((sum, x) => sum + x.registered, 0);
-    const totalScannedInSession = normalizedPerItem.reduce((sum, x) => sum + x.scanned, 0);
-    const totalCompleted = Math.min(totalRegistered + totalScannedInSession, totalRequired);
-    const overallProgress = totalRequired > 0 ? (totalCompleted / totalRequired) * 100 : 0;
+    // Calcular cuánto faltaba al inicio de esta sesión
+    const pendingAtStart = Math.max(totalRequired - totalRegistered, 0);
+
+    // Progreso basado en lo escaneado en esta sesión vs lo que faltaba
+    const overallProgress = pendingAtStart > 0
+        ? Math.min((totalScanned / pendingAtStart) * 100, 100)
+        : 100; // Si no faltaba nada, progreso es 100%
 
     return (
         <Card style={styles.card}>
@@ -57,17 +52,25 @@ export function PurchaseOrderProgress() {
                     <View style={[styles.progressFill, { width: `${overallProgress}%` }]} />
                 </View>
                 <Text style={styles.progressText}>
-                    {totalCompleted} / {totalRequired} unidades recibidas
+                    {totalScanned} / {pendingAtStart} unidades escaneadas en esta sesión
+                </Text>
+                <Text style={styles.progressSubtext}>
+                    ({totalRegistered} ya registradas previamente • {totalRequired} total en la orden)
                 </Text>
             </View>
 
             {/* Items List */}
             <ScrollView style={styles.itemsList} showsVerticalScrollIndicator={false}>
-                {normalizedPerItem.map(({ item, registered, pending, scanned }) => {
+                {items.map(({ item, registered, pending, sessionScanned, isComplete }) => {
                     const itemPending = Math.max(pending, 0);
-                    const itemProgress = itemPending > 0 ? (scanned / itemPending) * 100 : 0;
-                    const isComplete = itemPending === 0;
-                    const hasScanned = scanned > 0;
+                    const pendingAtStartForItem = item.quantity - registered;
+
+                    // Progreso del item basado en lo escaneado en sesión vs lo que faltaba
+                    const itemProgress = pendingAtStartForItem > 0
+                        ? Math.min((sessionScanned / pendingAtStartForItem) * 100, 100)
+                        : 100;
+
+                    const hasScanned = sessionScanned > 0;
 
                     return (
                         <View
@@ -84,7 +87,7 @@ export function PurchaseOrderProgress() {
                                         {item.product?.name || 'Producto sin nombre'}
                                     </Text>
                                     {item.product?.sku && (
-                                      <Text style={styles.itemSku}>SKU: {item.product.sku}</Text>
+                                        <Text style={styles.itemSku}>SKU: {item.product.sku}</Text>
                                     )}
                                 </View>
 
@@ -108,7 +111,7 @@ export function PurchaseOrderProgress() {
                                 <View style={[styles.quantityBox, styles.quantityBoxScanned]}>
                                     <Text style={styles.quantityLabel}>Escaneado</Text>
                                     <Text style={[styles.quantityValue, styles.quantityValueScanned]}>
-                                        {scanned}
+                                        {sessionScanned}
                                     </Text>
                                 </View>
 
@@ -147,7 +150,7 @@ export function PurchaseOrderProgress() {
                 <View style={styles.summaryRow}>
                     <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
                     <Text style={styles.summaryText}>
-                        {normalizedPerItem.filter(x => x.pending === 0).length} / {items.length} productos completos
+                        {items.filter(x => x.isComplete).length} / {items.length} productos completos
                     </Text>
                 </View>
             </View>
@@ -208,6 +211,12 @@ const styles = StyleSheet.create({
         color: Colors.text.secondary,
         textAlign: 'center',
         fontWeight: '600',
+    },
+    progressSubtext: {
+        fontSize: 12,
+        color: Colors.text.secondary,
+        textAlign: 'center',
+        marginTop: 4,
     },
     itemsList: {
         maxHeight: 400,

@@ -83,7 +83,8 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const { startDate, endDate, periodType } = get();
+      const { dateRange, periodType } = get();
+      const { startDate, endDate } = dateRange;
 
       // Validar fechas
       if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {

@@ -44,6 +44,23 @@ export interface PurchaseOrderWithItems extends PurchaseOrder {
   supplier?: Supplier;
 }
 
+export interface SelectedPurchaseOrderProgressItem {
+  item: PurchaseOrderItemWithProduct;
+  orderQuantity: number;
+  registered: number;
+  sessionScanned: number;
+  pending: number;
+  isComplete: boolean;
+}
+
+export interface SelectedPurchaseOrderProgress {
+  items: SelectedPurchaseOrderProgressItem[];
+  totalRequired: number;
+  totalRegistered: number;
+  totalScanned: number;
+  totalCompleted: number;
+}
+
 interface EntriesState {
   // Sesión de entrada
   entryType: EntryType | null;
@@ -53,7 +70,7 @@ interface EntriesState {
   warehouseId: string | null;
   selectedOrderProductId: string | null; // Producto seleccionado de la orden
   entryItems: EntryItem[];
-  
+
   // Progreso de escaneo para órdenes de compra
   scannedItemsProgress: Map<string, number>; // product_id -> cantidad escaneada en sesión
 
@@ -77,14 +94,14 @@ interface EntriesState {
 
   // Filtros
   supplierSearchQuery: string;
-  
+
   // Validación de órdenes de compra (por orden)
   purchaseOrderValidations: Record<string, {
     isComplete: boolean;
     totalQuantityOfInventoryEntries: number;
     totalItemsQuantity: number;
   }>;
-  
+
   // Cache de entradas registradas por orden y producto (para evitar consultas redundantes)
   registeredEntriesCache: Record<string, Record<string, number>>; // orderId -> productId -> quantity
 
@@ -105,6 +122,7 @@ interface EntriesState {
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
   validatePurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
   validateAllPurchaseOrders: () => Promise<void>;
+  getSelectedPurchaseOrderProgress: () => SelectedPurchaseOrderProgress | null;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
@@ -266,7 +284,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         // Actualizar el cache de entradas registradas
         const { registeredEntriesCache } = get();
         const updatedCache = { ...registeredEntriesCache };
-        
+
         if (!updatedCache[purchaseOrderId]) {
           updatedCache[purchaseOrderId] = {};
         }
@@ -410,7 +428,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
       // Esto reduce de N consultas a 1 consulta
       const orderIds = (orders || []).map((order) => order.id);
-      
+
       let allItems: any[] = [];
       if (orderIds.length > 0) {
         const { data: itemsData, error: itemsError } = await supabase
@@ -451,7 +469,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       }));
 
       set({ purchaseOrders: ordersWithItems, loading: false });
-      
+
       // Validar todas las órdenes después de cargarlas
       if (ordersWithItems.length > 0) {
         get().validateAllPurchaseOrders();
@@ -535,7 +553,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   validateAllPurchaseOrders: async (): Promise<void> => {
     const { purchaseOrders } = get();
-    
+
     if (purchaseOrders.length === 0) {
       return;
     }
@@ -543,7 +561,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     // OPTIMIZADO: Cargar todas las entradas de inventario de todas las órdenes en una sola consulta
     // Esto reduce de N consultas a 1 consulta
     const orderIds = purchaseOrders.map((order) => order.id);
-    
+
     const { data: allEntries, error: entriesError } = await supabase
       .from("inventory_entries")
       .select("purchase_order_id, product_id, quantity")
@@ -595,7 +613,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         totalQuantityOfInventoryEntries += clampedRegistered;
         return sum + item.quantity;
       }, 0);
-      
+
       validations[order.id] = {
         isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
         totalQuantityOfInventoryEntries,
@@ -608,6 +626,85 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       purchaseOrderValidations: validations,
       registeredEntriesCache: cache,
     });
+  },
+
+  getSelectedPurchaseOrderProgress: (): SelectedPurchaseOrderProgress | null => {
+    const {
+      selectedPurchaseOrder,
+      purchaseOrderId,
+      registeredEntriesCache,
+      scannedItemsProgress,
+      selectedOrderProductId,
+    } = get();
+
+    if (!selectedPurchaseOrder || !purchaseOrderId) {
+      return null;
+    }
+
+    let items = selectedPurchaseOrder.items || [];
+
+    // Si hay un producto seleccionado, filtrar solo ese producto
+    if (selectedOrderProductId) {
+      items = items.filter(item => item.product_id === selectedOrderProductId);
+    }
+
+    const normalizedItems: SelectedPurchaseOrderProgressItem[] = items.map(
+      (item) => {
+        const orderQuantity = item.quantity;
+        const rawRegistered =
+          registeredEntriesCache[purchaseOrderId]?.[item.product_id] || 0;
+        const registered = Math.min(rawRegistered, orderQuantity);
+        const maxPendingAfterRegistered = Math.max(
+          orderQuantity - registered,
+          0
+        );
+        const sessionScannedRaw =
+          scannedItemsProgress.get(item.product_id) || 0;
+        const sessionScanned = Math.min(
+          sessionScannedRaw,
+          maxPendingAfterRegistered
+        );
+        const pending = Math.max(
+          orderQuantity - registered - sessionScanned,
+          0
+        );
+        const isComplete = pending === 0;
+
+        return {
+          item,
+          orderQuantity,
+          registered,
+          sessionScanned,
+          pending,
+          isComplete,
+        };
+      }
+    );
+
+    const totalRequired = normalizedItems.reduce(
+      (sum, x) => sum + x.orderQuantity,
+      0
+    );
+    const totalRegistered = normalizedItems.reduce(
+      (sum, x) => sum + x.registered,
+      0
+    );
+    const totalScanned = normalizedItems.reduce(
+      (sum, x) => sum + x.sessionScanned,
+      0
+    );
+    const totalCompleted = Math.min(
+      totalRegistered + totalScanned,
+      totalRequired
+    );
+
+    return {
+      items: normalizedItems,
+      totalRequired,
+      totalRegistered,
+      totalScanned,
+      totalCompleted,
+    };
   },
 
   loadWarehouses: async () => {
@@ -711,11 +808,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const product = await get().searchProductByBarcode(barcode);
       if (product) {
         const { purchaseOrderId, entryType, selectedOrderProductId } = get();
-        
+
         // Si hay una orden de compra seleccionada, validar contra ella
         if (purchaseOrderId && entryType === 'PO_ENTRY') {
           const validation = get().validateProductAgainstOrder(product.id, 1); // Validar con cantidad 1 inicialmente
-          
+
           if (!validation.valid) {
             set({
               loading: false,
@@ -737,7 +834,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             return;
           }
         }
-        
+
         set({ currentProduct: product, loading: false, step: "scanning" });
       } else {
         set({
@@ -781,7 +878,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   addProductToEntry: async (product, quantity, barcode) => {
     const { entryItems, purchaseOrderId, selectedOrderProductId, entryType, scannedItemsProgress } = get();
-    
+
     // Si hay una orden de compra, validar que el producto esté en la orden
     if (purchaseOrderId && entryType === 'PO_ENTRY') {
       // Validar contra la orden usando la nueva función
@@ -1150,7 +1247,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             if (sessionQty > 0) {
               const registeredInBD =
                 registeredEntriesCache[purchaseOrderId]?.[
-                  orderItem.product_id
+                orderItem.product_id
                 ] || 0;
               const totalAfterSession = registeredInBD + sessionQty;
 
@@ -1162,11 +1259,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
                 return {
                   valid: false,
-                  message: `La cantidad excede lo pendiente para el producto ${
-                    orderItem.product_id
-                  }. Cantidad en orden: ${
-                    orderItem.quantity
-                  }, ya registrado: ${registeredInBD}, pendiente: ${pending}, intentando registrar en esta sesión: ${sessionQty}.`,
+                  message: `La cantidad excede lo pendiente para el producto ${orderItem.product_id
+                    }. Cantidad en orden: ${orderItem.quantity
+                    }, ya registrado: ${registeredInBD}, pendiente: ${pending}, intentando registrar en esta sesión: ${sessionQty}.`,
                 };
               }
             }
@@ -1212,7 +1307,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       if (purchaseOrderId) {
         const { registeredEntriesCache } = get();
         const updatedCache = { ...registeredEntriesCache };
-        
+
         if (!updatedCache[purchaseOrderId]) {
           updatedCache[purchaseOrderId] = {};
         }
@@ -1239,14 +1334,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const updatedValidations = get().purchaseOrderValidations;
       const updatedCache = get().registeredEntriesCache;
       get().reset();
-      
+
       // Restaurar las órdenes, validaciones y cache actualizados
-      set({ 
+      set({
         purchaseOrders: currentPurchaseOrders,
         purchaseOrderValidations: updatedValidations,
         registeredEntriesCache: updatedCache,
       });
-      
+
       return { error: null };
     } catch (error: any) {
       return { error };

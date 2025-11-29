@@ -5,9 +5,9 @@ import {
   useEntriesStore,
 } from "@/components/entries/infrastructure/store/entriesStore";
 
+import { usePurchaseOrders } from "@/components/purchase-orders";
 import { Card } from "@/components/ui/Card";
 import { Colors } from "@/constants/theme";
-import { usePurchaseOrders } from "@/components/purchase-orders";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Alert } from "react-native";
@@ -106,7 +106,7 @@ export function PurchaseOrderSelector({
           text: 'Confirmar',
           onPress: async () => {
             const validation = await validateOrderIsComplete(orderId);
-            
+
             if (!validation.isComplete) {
               let message = validation.error || 'La orden no está completa.\n\n';
               if (validation.details?.missingItems && validation.details.missingItems.length > 0) {
@@ -120,7 +120,7 @@ export function PurchaseOrderSelector({
             }
 
             const result = await markOrderAsReceived(orderId);
-            
+
             if (result.success) {
               Alert.alert('Éxito', 'La orden ha sido marcada como recibida.');
               // Recargar las órdenes del proveedor actual
@@ -216,7 +216,7 @@ export function PurchaseOrderSelector({
               <View style={styles.orderSummary}>
                 <Text style={styles.summaryText}>
                   {totalQuantityOfInventoryEntries} unidad
-                  {totalQuantityOfInventoryEntries !== 1 ? "es" : ""} escaneadas
+                  {totalQuantityOfInventoryEntries !== 1 ? "es" : ""} ya registradas
                 </Text>
                 <Text style={styles.summaryText}>
                   {totalItemsQuantity} unidad
