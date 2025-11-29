@@ -1,12 +1,19 @@
-import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import React, { useEffect, useMemo } from 'react';
+
+import { MaterialIcons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// UI
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// Local
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
+
+// Components
+import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 
 export function SetupForm() {
   const {
@@ -49,8 +56,6 @@ export function SetupForm() {
         supplier.nit?.toLowerCase().includes(query)
     );
   }, [suppliers, supplierSearchQuery]);
-
-  const canStart = supplierId && warehouseId; // Orden de compra es opcional
 
   const renderFlowSelectionStep = () => (
     <View>
