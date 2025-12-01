@@ -78,8 +78,8 @@ export function SetupForm() {
               onValueChange={(value) => setExitMode(value as ExitMode)}
               style={styles.picker}>
               <Picker.Item label="Seleccione el tipo de salida" value={null} />
-              <Picker.Item label="Salida a Usuario Interno" value="direct_user" />
-              <Picker.Item label="Salida a Cliente" value="direct_customer" />
+              <Picker.Item label="Remisión" value="direct_user" />
+              <Picker.Item label="Entrega a Cliente" value="direct_customer" />
             </Picker>
           </View>
         </View>

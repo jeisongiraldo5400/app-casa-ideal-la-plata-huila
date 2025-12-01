@@ -57,24 +57,37 @@ export function DeliveryOrderSelector() {
             <ScrollView style={styles.ordersList} showsVerticalScrollIndicator={false}>
                 {deliveryOrders.map((order: any) => {
                     const isSelected = selectedDeliveryOrderId === order.id;
-                    const progress = order.delivered_quantity / order.total_quantity;
+                    const progress = order.total_quantity > 0 ? order.delivered_quantity / order.total_quantity : 0;
                     const progressPercent = Math.round(progress * 100);
+                    const isComplete = order.total_quantity > 0 && order.delivered_quantity >= order.total_quantity;
 
                     return (
                         <TouchableOpacity
                             key={order.id}
-                            style={[styles.orderItem, isSelected && styles.orderItemSelected]}
-                            onPress={() => selectDeliveryOrder(order.id)}>
+                            style={[
+                                styles.orderItem,
+                                isSelected && styles.orderItemSelected,
+                                isComplete && styles.orderItemComplete,
+                            ]}
+                            onPress={() => !isComplete && selectDeliveryOrder(order.id)}
+                            disabled={isComplete}>
 
                             <View style={styles.orderHeader}>
                                 <View style={styles.orderInfo}>
                                     <Text style={styles.orderId}>Orden #{order.id.slice(0, 8)}</Text>
-                                    <View style={[styles.statusBadge, styles[`status_${order.status}`]]}>
-                                        <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
-                                    </View>
+                                    {isComplete ? (
+                                        <View style={[styles.statusBadge, styles.status_complete]}>
+                                            <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />
+                                            <Text style={[styles.statusText, { color: Colors.success.main }]}>Completa</Text>
+                                        </View>
+                                    ) : (
+                                        <View style={[styles.statusBadge, styles[`status_${order.status}`]]}>
+                                            <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
+                                        </View>
+                                    )}
                                 </View>
-                                {isSelected && (
-                                    <MaterialIcons name="check-circle" size={24} color={Colors.success.main} />
+                                {isSelected && !isComplete && (
+                                    <MaterialIcons name="check-circle" size={24} color={Colors.primary.main} />
                                 )}
                             </View>
 
@@ -229,6 +242,17 @@ const styles = StyleSheet.create({
     },
     status_cancelled: {
         backgroundColor: Colors.error.light + '30',
+    },
+    status_complete: {
+        backgroundColor: Colors.success.light + '30',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    orderItemComplete: {
+        borderColor: Colors.success.main,
+        backgroundColor: Colors.success.light + '10',
+        opacity: 0.8,
     },
     statusText: {
         fontSize: 12,
