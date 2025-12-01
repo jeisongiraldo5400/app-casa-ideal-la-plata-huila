@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
@@ -32,6 +33,7 @@ export function SetupForm() {
     startExit,
     reset,
     error,
+    getSelectedDeliveryOrderProgress,
   } = useExitsStore();
 
   const router = useRouter();
@@ -53,12 +55,18 @@ export function SetupForm() {
     return () => clearTimeout(timer);
   }, [searchInput, searchCustomers]);
 
+  // Verificar si la orden está completa
+  const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
+  const isOrderComplete = deliveryOrderProgress 
+    ? deliveryOrderProgress.items.every(item => item.isComplete)
+    : false;
+
   const canStart =
     warehouseId !== null &&
     exitMode !== null &&
     (
       (exitMode === 'direct_user' && selectedUserId !== null) ||
-      (exitMode === 'direct_customer' && selectedCustomerId !== null)
+      (exitMode === 'direct_customer' && selectedCustomerId !== null && selectedDeliveryOrderId !== null && !isOrderComplete)
     );
 
   return (
@@ -203,6 +211,14 @@ export function SetupForm() {
             disabled={!canStart}
             style={styles.startButton}
           />
+          {exitMode === 'direct_customer' && selectedDeliveryOrderId && isOrderComplete && (
+            <View style={styles.warningContainer}>
+              <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
+              <Text style={styles.warningText}>
+                Esta orden de entrega ya está completa. No se pueden registrar más productos.
+              </Text>
+            </View>
+          )}
           <Button
             title="Cancelar"
             onPress={() => {
@@ -363,6 +379,23 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     marginTop: 0,
+  },
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.success.light + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.success.main + '40',
+    gap: 8,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.success.main,
+    fontWeight: '500',
   },
 });
 

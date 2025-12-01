@@ -643,7 +643,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     },
 
   startExit: () => {
-    const { warehouseId, exitMode, selectedUserId, selectedCustomerId, selectedDeliveryOrderId } = get();
+    const { warehouseId, exitMode, selectedUserId, selectedCustomerId, selectedDeliveryOrderId, selectedDeliveryOrder } = get();
 
     if (!warehouseId) {
       set({ error: "Debe seleccionar una bodega" });
@@ -661,9 +661,26 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    if (exitMode === 'direct_customer' && !selectedCustomerId) {
-      set({ error: "Debe seleccionar un cliente destinatario" });
-      return;
+    if (exitMode === 'direct_customer') {
+      if (!selectedCustomerId) {
+        set({ error: "Debe seleccionar un cliente destinatario" });
+        return;
+      }
+      
+      if (!selectedDeliveryOrderId) {
+        set({ error: "Debe seleccionar una orden de entrega" });
+        return;
+      }
+
+      // Validar que la orden no esté completa
+      const progress = get().getSelectedDeliveryOrderProgress();
+      if (progress) {
+        const isOrderComplete = progress.items.every(item => item.isComplete);
+        if (isOrderComplete) {
+          set({ error: "Esta orden de entrega ya está completa. No se pueden registrar más productos." });
+          return;
+        }
+      }
     }
 
     set({ step: "scanning", error: null });
@@ -1200,6 +1217,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentQuantity: 1,
       currentAvailableStock: 0,
       error: null,
+      exitItems: [], // Limpiar items de salida
+      scannedItemsProgress: new Map(), // Limpiar progreso de escaneo
     });
   },
 }));
