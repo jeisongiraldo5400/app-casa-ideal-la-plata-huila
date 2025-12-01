@@ -1,22 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { Card } from '@/components/ui/Card';
 import { MaterialIcons } from '@expo/vector-icons';
 import { DashboardCard } from '@/components/dashboard/DashboardCard';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 
 export default function HomeScreen() {
-  const { user } = useAuth();
   const { isAdmin } = useUserRoles();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { entriesToday, exitsToday, loading } = useDashboardStats();
+  const { exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
   useEffect(() => {
@@ -76,14 +73,6 @@ export default function HomeScreen() {
         ) : (
           <>
             <DashboardCard
-              title="Entradas Hoy"
-              value={entriesToday}
-              subtitle="Productos recibidos"
-              icon="input"
-              iconColor={colors.success.main}
-              trend="up"
-            />
-            <DashboardCard
               title="Salidas Hoy"
               value={exitsToday}
               subtitle="Productos despachados"
@@ -91,170 +80,143 @@ export default function HomeScreen() {
               iconColor={colors.error.main}
               trend="down"
             />
+            <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+              <View style={styles.ordersCardHeader}>
+                <Text style={[styles.ordersCardTitle, { color: colors.text.primary }]}>Órdenes Pendientes</Text>
+                <View style={[styles.ordersCardIconContainer, { backgroundColor: colors.warning.main + '15' }]}>
+                  <MaterialIcons name="pending-actions" size={24} color={colors.warning.main} />
+                </View>
+              </View>
+              <View style={styles.ordersCardContent}>
+                <View style={styles.ordersCardRow}>
+                  <View style={styles.ordersCardItem}>
+                    <Text style={[styles.ordersCardValue, { color: colors.text.primary }]}>{pendingOrders}</Text>
+                    <Text style={[styles.ordersCardLabel, { color: colors.text.secondary }]}>Órdenes de compra</Text>
+                  </View>
+                  <View style={[styles.ordersCardDivider, { backgroundColor: colors.divider }]} />
+                  <View style={styles.ordersCardItem}>
+                    <Text style={[styles.ordersCardValue, { color: colors.text.primary }]}>{pendingDeliveryOrders}</Text>
+                    <Text style={[styles.ordersCardLabel, { color: colors.text.secondary }]}>Órdenes de entrega</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
           </>
         )}
       </View>
 
       <View style={styles.menuSection}>
-        <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
+        <View style={styles.menuHeader}>
+          <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
+          <View style={[styles.menuTitleUnderline, { backgroundColor: colors.primary.main }]} />
+        </View>
         
-        {isAdmin() && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.primary.main }]}
-            onPress={handleViewReports}
-            activeOpacity={0.8}
-          >
-            <View style={styles.menuItemContent}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.primary.main + '15' }]}>
+        <View style={styles.menuGrid}>
+          {isAdmin() && (
+            <TouchableOpacity 
+              style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+              onPress={handleViewReports}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
                 <MaterialIcons 
                   name="assessment" 
-                  size={28} 
+                  size={24} 
                   color={colors.primary.main}
                 />
               </View>
-              <View style={styles.menuItemTextContainer}>
-                <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                  Reportes
-                </Text>
-                <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
-                  Análisis y estadísticas
-                </Text>
-              </View>
-              <MaterialIcons 
-                name="chevron-right" 
-                size={24} 
-                color={colors.text.secondary} 
-              />
-            </View>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.success.main }]}
-          onPress={handleRegisterEntries}
-          activeOpacity={0.8}
-        >
-          <View style={styles.menuItemContent}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.success.main + '15' }]}>
-              <MaterialIcons 
-                name="input" 
-                size={28} 
-                color={colors.success.main}
-              />
-            </View>
-            <View style={styles.menuItemTextContainer}>
-              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>Registrar Entradas</Text>
-              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
-                Ingreso de productos
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+                Reportes
               </Text>
-            </View>
-            <MaterialIcons 
-              name="chevron-right" 
-              size={24} 
-              color={colors.text.secondary} 
-            />
-          </View>
-        </TouchableOpacity>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Análisis
+              </Text>
+            </TouchableOpacity>
+          )}
 
-        <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.error.main }]}
-          onPress={handleRegisterExits}
-          activeOpacity={0.8}
-        >
-          <View style={styles.menuItemContent}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
+          <TouchableOpacity 
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleRegisterExits}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '12' }]}>
               <MaterialIcons 
                 name="local-shipping" 
-                size={28} 
+                size={24} 
                 color={colors.error.main}
               />
             </View>
-            <View style={styles.menuItemTextContainer}>
-              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                Registrar Salidas
-              </Text>
-              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
-                Despacho de productos
-              </Text>
-            </View>
-            <MaterialIcons 
-              name="chevron-right" 
-              size={24} 
-              color={colors.text.secondary} 
-            />
-          </View>
-        </TouchableOpacity>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Registrar Salidas
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Despacho
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.warning.main }]}
-          onPress={handleViewReceivedOrders}
-          activeOpacity={0.8}
-        >
-          <View style={styles.menuItemContent}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.warning.main + '15' }]}>
+          <TouchableOpacity 
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleRegisterEntries}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '12' }]}>
+              <MaterialIcons 
+                name="input" 
+                size={24} 
+                color={colors.success.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Registrar Entradas
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Ingreso
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewReceivedOrders}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '12' }]}>
               <MaterialIcons 
                 name="receipt-long" 
-                size={28} 
+                size={24} 
                 color={colors.warning.main}
               />
             </View>
-            <View style={styles.menuItemTextContainer}>
-              <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                Mis Órdenes Recibidas
-              </Text>
-              <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
-                Historial de recepciones
-              </Text>
-            </View>
-            <MaterialIcons 
-              name="chevron-right" 
-              size={24} 
-              color={colors.text.secondary} 
-            />
-          </View>
-        </TouchableOpacity>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Mis Órdenes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Historial
+            </Text>
+          </TouchableOpacity>
 
-        {isAdmin() && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { backgroundColor: colors.background.paper, borderLeftColor: colors.info.main }]}
-            onPress={handleViewAllOrders}
-            activeOpacity={0.8}
-          >
-            <View style={styles.menuItemContent}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.info.main + '15' }]}>
+          {isAdmin() && (
+            <TouchableOpacity 
+              style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+              onPress={handleViewAllOrders}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
                 <MaterialIcons 
                   name="list-alt" 
-                  size={28} 
+                  size={24} 
                   color={colors.info.main}
                 />
               </View>
-              <View style={styles.menuItemTextContainer}>
-                <Text style={[styles.menuItemText, { color: colors.text.primary }]}>
-                  Todas las Órdenes
-                </Text>
-                <Text style={[styles.menuItemSubtext, { color: colors.text.secondary }]}>
-                  Gestión completa
-                </Text>
-              </View>
-              <MaterialIcons 
-                name="chevron-right" 
-                size={24} 
-                color={colors.text.secondary} 
-              />
-            </View>
-          </TouchableOpacity>
-        )}
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+                Todas las Órdenes
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Gestión
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-
-      {user && (
-        <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
-          <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Sesión activa</Text>
-          <Text style={[styles.cardText, { color: colors.text.secondary }]}>
-            <Text style={[styles.label, { color: colors.text.primary }]}>Usuario: </Text>
-            {user.email}
-          </Text>
-        </Card>
-      )}
     </ScrollView>
   );
 }
@@ -290,75 +252,68 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
   },
-  card: {
-    marginBottom: 24,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  cardText: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  label: {
-    fontWeight: '600',
-  },
   button: {
     marginTop: 8,
   },
   menuSection: {
-    marginBottom: 24,
+    marginBottom: 32,
+  },
+  menuHeader: {
+    marginBottom: 20,
   },
   menuTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 16,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
     paddingHorizontal: 4,
+    letterSpacing: -0.5,
   },
-  menuItem: {
+  menuTitleUnderline: {
+    height: 3,
+    width: 60,
+    borderRadius: 2,
+    marginLeft: 4,
+  },
+  menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  menuCard: {
     borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 0,
-    borderLeftWidth: 4,
-    overflow: 'hidden',
+    padding: 16,
+    width: '48%',
+    minHeight: 140,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3,
+    borderWidth: 1,
   },
-  menuItemContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 18,
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+  menuCardIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 12,
   },
-  menuItemTextContainer: {
-    flex: 1,
-  },
-  menuItemText: {
-    fontSize: 17,
-    fontWeight: '600',
+  menuCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
     marginBottom: 4,
+    letterSpacing: -0.2,
+    lineHeight: 20,
   },
-  menuItemSubtext: {
-    fontSize: 13,
+  menuCardSubtitle: {
+    fontSize: 12,
     fontWeight: '400',
-  },
-  menuItemTextDisabled: {
-    opacity: 0.6,
+    lineHeight: 16,
   },
   dashboardContainer: {
     flexDirection: 'row',
@@ -370,5 +325,65 @@ const styles = StyleSheet.create({
     padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  ordersCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 140,
+  },
+  ordersCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  ordersCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  ordersCardIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ordersCardContent: {
+    flex: 1,
+  },
+  ordersCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  ordersCardItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  ordersCardValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  ordersCardLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    textAlign: 'center',
+  },
+  ordersCardDivider: {
+    width: 1,
+    height: 50,
+    marginHorizontal: 12,
   },
 });

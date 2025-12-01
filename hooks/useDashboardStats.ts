@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 interface DashboardStats {
   entriesToday: number;
   exitsToday: number;
+  pendingOrders: number;
+  pendingDeliveryOrders: number;
   loading: boolean;
 }
 
@@ -11,6 +13,8 @@ export function useDashboardStats() {
   const [stats, setStats] = useState<DashboardStats>({
     entriesToday: 0,
     exitsToday: 0,
+    pendingOrders: 0,
+    pendingDeliveryOrders: 0,
     loading: true,
   });
 
@@ -26,22 +30,35 @@ export function useDashboardStats() {
   // Función para cargar las estadísticas
   const loadStats = useCallback(async () => {
     try {
-      // OPTIMIZADO: Usar función RPC para obtener estadísticas del día
-      // Esto reduce de 2 consultas a 1 y hace la agregación en el servidor
-      const { data, error } = await supabase.rpc('get_reports_stats_today');
+      // Cargar estadísticas del día y órdenes pendientes en paralelo
+      const [statsResult, purchaseOrdersResult, deliveryOrdersResult] = await Promise.all([
+        supabase.rpc('get_reports_stats_today'),
+        supabase.rpc('get_purchase_orders_stats'),
+        supabase.rpc('get_delivery_orders_stats'),
+      ]);
 
-      if (error) {
-        console.error('Error loading dashboard stats:', error);
-        setStats((prev) => ({ ...prev, loading: false }));
-        return;
+      if (statsResult.error) {
+        console.error('Error loading dashboard stats:', statsResult.error);
+      }
+
+      if (purchaseOrdersResult.error) {
+        console.error('Error loading purchase orders stats:', purchaseOrdersResult.error);
+      }
+
+      if (deliveryOrdersResult.error) {
+        console.error('Error loading delivery orders stats:', deliveryOrdersResult.error);
       }
 
       // La función RPC devuelve un array con un objeto que contiene las estadísticas
-      const statsData = data?.[0] || {};
+      const statsData = statsResult.data?.[0] || {};
+      const purchaseOrdersData = purchaseOrdersResult.data?.[0] || {};
+      const deliveryOrdersData = deliveryOrdersResult.data?.[0] || {};
 
       setStats((prev) => ({
         entriesToday: statsData.entries_quantity_today || 0,
         exitsToday: statsData.exits_quantity_today || 0,
+        pendingOrders: purchaseOrdersData.pending || 0,
+        pendingDeliveryOrders: deliveryOrdersData.pending_orders || 0,
         loading: false,
       }));
     } catch (error) {
