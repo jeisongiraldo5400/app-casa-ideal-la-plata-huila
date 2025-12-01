@@ -51,8 +51,9 @@ export function DashboardCard({
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    marginHorizontal: 6,
+    marginHorizontal: 0,
     minHeight: 140,
+    width: '100%',
   },
   header: {
     flexDirection: 'row',

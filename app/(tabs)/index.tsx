@@ -13,7 +13,7 @@ export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { entriesToday, exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
   useEffect(() => {
@@ -72,14 +72,28 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            <DashboardCard
-              title="Salidas Hoy"
-              value={exitsToday}
-              subtitle="Productos despachados"
-              icon="local-shipping"
-              iconColor={colors.error.main}
-              trend="down"
-            />
+            <View style={styles.topCardsRow}>
+              <View style={styles.halfWidthCard}>
+                <DashboardCard
+                  title="Salidas Hoy"
+                  value={exitsToday}
+                  subtitle="Productos despachados"
+                  icon="local-shipping"
+                  iconColor={colors.error.main}
+                  trend="down"
+                />
+              </View>
+              <View style={styles.halfWidthCard}>
+                <DashboardCard
+                  title="Entradas Hoy"
+                  value={entriesToday}
+                  subtitle="Productos recibidos"
+                  icon="input"
+                  iconColor={colors.success.main}
+                  trend="up"
+                />
+              </View>
+            </View>
             <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <View style={styles.ordersCardHeader}>
                 <Text style={[styles.ordersCardTitle, { color: colors.text.primary }]}>Órdenes Pendientes</Text>
@@ -316,9 +330,16 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   dashboardContainer: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     marginBottom: 24,
     gap: 12,
+  },
+  topCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  halfWidthCard: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -327,7 +348,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ordersCard: {
-    flex: 1,
+    width: '100%',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
