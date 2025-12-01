@@ -171,28 +171,37 @@ export type Database = {
       }
       delivery_order_items: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           created_at: string
           delivered_quantity: number
           delivery_order_id: string
           id: string
+          is_approved: boolean
           product_id: string
           quantity: number
           warehouse_id: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           delivered_quantity?: number
           delivery_order_id: string
           id?: string
+          is_approved?: boolean
           product_id: string
           quantity: number
           warehouse_id: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           delivered_quantity?: number
           delivery_order_id?: string
           id?: string
+          is_approved?: boolean
           product_id?: string
           quantity?: number
           warehouse_id?: string
