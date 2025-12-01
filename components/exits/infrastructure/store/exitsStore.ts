@@ -403,7 +403,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Agrupar por product_id y usar delivered_quantity desde los items
       (orderData.items || []).forEach((item: any) => {
-        updatedCache[orderId][item.product_id] = item.delivered_quantity || 0;
+        const deliveredQty = item.delivered_quantity || 0;
+        updatedCache[orderId][item.product_id] = deliveredQty;
+        console.log(`[selectDeliveryOrder] Product ${item.product_id}: delivered_quantity=${deliveredQty} from BD`);
       });
 
       set({
@@ -628,7 +630,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .select("quantity")
         .eq("product_id", product.id)
         .eq("warehouse_id", warehouseId)
-        .single();
+        .maybeSingle();
+
+      // Manejar error de consulta
+      if (stockError && stockError.code !== 'PGRST116') {
+        console.error("Error checking stock:", stockError);
+        set({
+          loading: false,
+          error: "Error al verificar el stock disponible. Por favor intente de nuevo.",
+          currentProduct: null,
+          currentScannedBarcode: null,
+        });
+        return;
+      }
 
       const availableStock = stock?.quantity || 0;
 
@@ -653,7 +667,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       console.error("Error scanning barcode:", error);
       set({
         loading: false,
-        error: error.message || "Error al escanear el código de barras",
+        error: error?.message || error?.toString() || "Error al escanear el código de barras. Por favor intente de nuevo.",
         currentProduct: null,
         currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
       });
@@ -662,23 +676,31 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   searchProductByBarcode: async (barcode: string): Promise<Product | null> => {
     try {
+      if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
+        console.warn('Barcode inválido en searchProductByBarcode:', barcode);
+        return null;
+      }
+
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("barcode", barcode)
+        .eq("barcode", barcode.trim())
         .is("deleted_at", null)
-        .single();
+        .maybeSingle();
 
       if (error) {
         if (error.code === "PGRST116") {
+          // Producto no encontrado - esto es normal
           return null;
         }
+        console.error("Error searching product:", error);
         throw error;
       }
 
-      return data as Product;
+      return data as Product | null;
     } catch (error: any) {
       console.error("Error searching product:", error);
+      // Retornar null en lugar de lanzar error para evitar crashes
       return null;
     }
   },
@@ -711,14 +733,25 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     if (currentProduct?.id === product.id && currentAvailableStock !== undefined) {
       availableStock = currentAvailableStock;
     } else {
-      const { data: stock } = await supabase
-        .from("warehouse_stock")
-        .select("quantity")
-        .eq("product_id", product.id)
-        .eq("warehouse_id", warehouseId)
-        .single();
+      try {
+        const { data: stock, error: stockError } = await supabase
+          .from("warehouse_stock")
+          .select("quantity")
+          .eq("product_id", product.id)
+          .eq("warehouse_id", warehouseId)
+          .maybeSingle();
 
-      availableStock = stock?.quantity || 0;
+        if (stockError && stockError.code !== 'PGRST116') {
+          set({ error: "Error al verificar el stock disponible. Por favor intente de nuevo." });
+          return;
+        }
+
+        availableStock = stock?.quantity || 0;
+      } catch (error: any) {
+        console.error("Error checking stock:", error);
+        set({ error: "Error al verificar el stock disponible. Por favor intente de nuevo." });
+        return;
+      }
     }
 
     // Calcular cantidad total ya agregada en esta salida
@@ -891,16 +924,38 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       });
 
       // Insertar salidas
-      const { error: exitsError } = await supabase
+      const { data: insertedExits, error: exitsError } = await supabase
         .from("inventory_exits")
-        .insert(exits);
+        .insert(exits)
+        .select();
 
       if (exitsError) {
+        console.error("Error inserting exits:", exitsError);
         return { error: exitsError };
+      }
+
+      // Verificar que se insertaron correctamente
+      if (!insertedExits || insertedExits.length === 0) {
+        console.error("No se insertaron las salidas correctamente");
+        return { error: { message: "Error al registrar las salidas. No se insertaron registros." } };
+      }
+
+      if (insertedExits.length !== exits.length) {
+        console.warn(`Se insertaron ${insertedExits.length} de ${exits.length} salidas`);
       }
 
       // Si hay una orden de entrega seleccionada, actualizar el progreso de la orden
       if (selectedDeliveryOrderId && selectedDeliveryOrder) {
+        // Guardar el orderId y actualizar el cache antes de resetear
+        const orderIdToRefresh = selectedDeliveryOrderId;
+        const { registeredExitsCache } = get();
+        let updatedCache = { ...registeredExitsCache };
+        
+        // Inicializar el cache para esta orden si no existe
+        if (!updatedCache[selectedDeliveryOrderId]) {
+          updatedCache[selectedDeliveryOrderId] = {};
+        }
+        
         for (const item of exitItems) {
           const { data, error: updateError } = await supabase.rpc(
             'update_delivery_order_progress',
@@ -913,11 +968,55 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
           if (updateError) {
             console.error("Error updating delivery order progress:", updateError);
+          } else if (data && data.success) {
+            // Usar el valor actualizado que retorna la función RPC (ya incluye la suma)
+            const currentDelivered = data.current_delivered || 0;
+            const previousValue = updatedCache[selectedDeliveryOrderId][item.product.id] || 0;
+            updatedCache[selectedDeliveryOrderId][item.product.id] = currentDelivered;
+            console.log(`[finalizeExit] Product ${item.product.id}: Updated cache from ${previousValue} to ${currentDelivered} (added ${item.quantity})`);
+            
+            if (data.all_delivered) {
+              console.log("Orden de entrega completada:", selectedDeliveryOrderId);
+            }
+          } else if (data && !data.success) {
+            console.error("Error en update_delivery_order_progress:", data.error);
           }
+        }
 
-          if (data && data.all_delivered) {
-            console.log("Orden de entrega completada:", selectedDeliveryOrderId);
+        // Guardar el cache actualizado antes de resetear
+        set({ registeredExitsCache: updatedCache });
+
+        // Recargar la orden desde BD para verificar y sincronizar el cache
+        try {
+          const { data: orderData, error: orderError } = await supabase
+            .from('delivery_orders')
+            .select(`
+              items:delivery_order_items(
+                product_id,
+                delivered_quantity
+              )
+            `)
+            .eq('id', orderIdToRefresh)
+            .single();
+
+          if (!orderError && orderData?.items) {
+            // Actualizar el cache con los valores confirmados desde la BD
+            const finalCache = { ...updatedCache };
+            
+            if (!finalCache[orderIdToRefresh]) {
+              finalCache[orderIdToRefresh] = {};
+            }
+
+            orderData.items.forEach((item: any) => {
+              const deliveredQty = item.delivered_quantity || 0;
+              finalCache[orderIdToRefresh][item.product_id] = deliveredQty;
+              console.log(`[finalizeExit] Product ${item.product_id}: Refreshed cache from BD: delivered_quantity=${deliveredQty}`);
+            });
+
+            set({ registeredExitsCache: finalCache });
           }
+        } catch (refreshError) {
+          console.error("Error refreshing delivery order cache:", refreshError);
         }
       }
 
@@ -933,6 +1032,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // Reset actions
   reset: () => {
+    // NO resetear registeredExitsCache para mantener los valores actualizados
+    // El cache se mantiene para que las validaciones futuras sean correctas
     set({
       warehouseId: null,
       exitItems: [],
@@ -949,7 +1050,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
-      registeredExitsCache: {},
+      // registeredExitsCache se mantiene - NO resetear
       customerSearchTerm: "",
       deliveryObservations: "",
     });

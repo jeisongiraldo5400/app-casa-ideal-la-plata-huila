@@ -24,11 +24,18 @@ export function ExitItemsList() {
       return;
     }
 
-    const { error } = await finalizeExit(user.id);
-    if (error) {
-      Alert.alert('Error', error.message || 'Error al finalizar la salida');
-    } else {
-      Alert.alert('Éxito', 'Salida registrada correctamente');
+    try {
+      const { error } = await finalizeExit(user.id);
+      if (error) {
+        const errorMessage = error?.message || error?.toString() || 'Error al finalizar la salida';
+        console.error('Error finalizing exit:', error);
+        Alert.alert('Error', errorMessage);
+      } else {
+        Alert.alert('Éxito', 'Salida registrada correctamente');
+      }
+    } catch (error: any) {
+      console.error('Exception finalizing exit:', error);
+      Alert.alert('Error', error?.message || 'Error inesperado al finalizar la salida');
     }
   };
 

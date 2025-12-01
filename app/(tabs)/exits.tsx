@@ -57,16 +57,20 @@ export default function ExitsScreen() {
       // Pequeño delay para asegurar que el scanner se cerró
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Procesar el escaneo
-      await scanBarcode(trimmedBarcode);
+      // Procesar el escaneo con manejo de errores mejorado
+      try {
+        await scanBarcode(trimmedBarcode);
+      } catch (scanError: any) {
+        console.error('Error en scanBarcode:', scanError);
+        // El error ya está manejado en el store, solo asegurar que el scanner esté cerrado
+        setShowScanner(false);
+      }
     } catch (error: any) {
       console.error('Error al escanear código:', error);
       // Asegurar que el scanner esté cerrado incluso si hay error
       setShowScanner(false);
-      // Mostrar el error en el store si es necesario
-      if (error?.message) {
-        // El error será manejado por el store
-      }
+      // Limpiar cualquier estado de error previo
+      clearError();
     }
   };
 
