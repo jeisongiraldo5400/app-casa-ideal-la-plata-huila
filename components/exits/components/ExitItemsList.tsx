@@ -32,6 +32,7 @@ export function ExitItemsList() {
     }
   };
 
+
   const totalItems = exitItems.reduce((sum, item) => sum + item.quantity, 0);
 
   if (exitItems.length === 0) {

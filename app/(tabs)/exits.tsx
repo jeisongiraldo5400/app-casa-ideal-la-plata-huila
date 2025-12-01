@@ -6,7 +6,10 @@ import { QuantityInput } from '@/components/exits/components/QuantityInput';
 import { SetupForm } from '@/components/exits/components/SetupForm';
 import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
 import { Button } from '@/components/ui/Button';
-import { Colors } from '@/constants/theme';
+import { Card } from '@/components/ui/Card';
+import { useTheme } from '@/components/theme';
+import { getColors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -32,8 +35,11 @@ export default function ExitsScreen() {
     resetCurrentScan,
     clearError,
     goBackToSetup,
+    reset,
   } = useExits();
 
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   const [showScanner, setShowScanner] = useState(false);
 
   const handleScan = async (barcode: string) => {
@@ -93,62 +99,102 @@ export default function ExitsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: colors.background.default }]} 
+      contentContainerStyle={styles.content}
+    >
       <View style={styles.header}>
-        <Text style={styles.title}>Salidas de Productos</Text>
-        <Text style={styles.subtitle}>Registre la salida de mercancía de bodega</Text>
+        <View style={styles.headerContent}>
+          <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
+            <MaterialIcons name="local-shipping" size={28} color={colors.error.main} />
+          </View>
+          <View style={styles.headerText}>
+            <Text style={[styles.title, { color: colors.text.primary }]}>Salidas de Productos</Text>
+            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+              Registre la salida de mercancía de bodega
+            </Text>
+          </View>
+        </View>
       </View>
 
       {step === 'setup' && <SetupForm />}
 
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={[styles.errorContainer, { 
+          backgroundColor: colors.error.main + '15',
+          borderColor: colors.error.main 
+        }]}>
+          <MaterialIcons name="error-outline" size={20} color={colors.error.main} />
+          <Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text>
         </View>
       )}
 
       {step === 'scanning' && (
         <>
           {!currentProduct && !currentScannedBarcode && (
-            <View style={styles.scanSection}>
-              <Button
-                title="Escanear código de barras"
-                onPress={() => {
-                  clearError();
-                  setShowScanner(true);
-                }}
-                style={styles.scanButton}
-              />
-              <Button
-                title="Cancelar"
-                onPress={goBackToSetup}
-                variant="outline"
-                style={styles.cancelScanButton}
-              />
-            </View>
+            <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
+              <View style={styles.scanCardContent}>
+                <View style={[styles.scanIconContainer, { backgroundColor: colors.primary.main + '15' }]}>
+                  <MaterialIcons name="qr-code-scanner" size={48} color={colors.primary.main} />
+                </View>
+                <Text style={[styles.scanTitle, { color: colors.text.primary }]}>
+                  Escanear Producto
+                </Text>
+                <Text style={[styles.scanSubtitle, { color: colors.text.secondary }]}>
+                  Use el escáner para buscar productos por código de barras
+                </Text>
+                <View style={styles.scanButtons}>
+                  <Button
+                    title="Escanear código de barras"
+                    onPress={() => {
+                      clearError();
+                      setShowScanner(true);
+                    }}
+                    style={styles.scanButton}
+                  />
+                  <Button
+                    title="Volver a configuración"
+                    onPress={goBackToSetup}
+                    variant="outline"
+                    style={styles.cancelScanButton}
+                  />
+                </View>
+              </View>
+            </Card>
           )}
 
           {error && !currentProduct && !currentScannedBarcode && (
-            <View style={styles.scanSection}>
-              <Button
-                title="Intentar escanear de nuevo"
-                onPress={() => {
-                  clearError();
-                  setShowScanner(true);
-                }}
-                style={styles.scanButton}
-              />
-            </View>
+            <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
+              <View style={styles.scanCardContent}>
+                <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
+                <Text style={[styles.scanTitle, { color: colors.text.primary }]}>
+                  Error al escanear
+                </Text>
+                <Text style={[styles.scanSubtitle, { color: colors.text.secondary }]}>
+                  {error}
+                </Text>
+                <Button
+                  title="Intentar escanear de nuevo"
+                  onPress={() => {
+                    clearError();
+                    setShowScanner(true);
+                  }}
+                  style={styles.scanButton}
+                />
+              </View>
+            </Card>
           )}
 
           {currentProduct && (
-            <>
+            <View style={styles.productSection}>
               <ProductFound product={currentProduct} availableStock={currentAvailableStock} />
-              <QuantityInput
-                quantity={currentQuantity}
-                maxQuantity={currentAvailableStock}
-                onQuantityChange={setQuantity}
-              />
+              <Card style={[styles.quantityCard, { backgroundColor: colors.background.paper }]}>
+                <QuantityInput
+                  quantity={currentQuantity}
+                  maxQuantity={currentAvailableStock}
+                  onQuantityChange={setQuantity}
+                />
+              </Card>
               <View style={styles.actionsContainer}>
                 <Button
                   title="Agregar a la salida"
@@ -162,7 +208,7 @@ export default function ExitsScreen() {
                   style={styles.cancelButton}
                 />
               </View>
-            </>
+            </View>
           )}
 
           {/* Mostrar progreso de orden de entrega si hay una orden seleccionada */}
@@ -178,7 +224,6 @@ export default function ExitsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.default,
   },
   content: {
     paddingBottom: 20,
@@ -188,53 +233,105 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 20,
   },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  iconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+  },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
-    color: Colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 4,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+    fontSize: 15,
+    lineHeight: 20,
   },
-  scanSection: {
-    marginTop: 32,
+  scanCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 24,
+  },
+  scanCardContent: {
     alignItems: 'center',
-    paddingHorizontal: 20,
+  },
+  scanIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  scanTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  scanSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  scanButtons: {
+    width: '100%',
+    gap: 12,
   },
   scanButton: {
-    minWidth: 200,
+    width: '100%',
   },
   cancelScanButton: {
-    minWidth: 200,
-    marginTop: 12,
+    width: '100%',
+    marginTop: 0,
+  },
+  productSection: {
+    paddingHorizontal: 20,
+  },
+  quantityCard: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 20,
   },
   actionsContainer: {
-    paddingHorizontal: 20,
-    marginTop: 16,
+    marginTop: 8,
+    marginBottom: 16,
     gap: 12,
   },
   addButton: {
-    marginTop: 8,
+    marginTop: 0,
   },
   cancelButton: {
-    marginTop: 8,
+    marginTop: 0,
   },
   errorContainer: {
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: 16,
-    padding: 12,
-    backgroundColor: Colors.error.light + '20',
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.error.main,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   errorText: {
     fontSize: 14,
-    color: Colors.error.main,
     fontWeight: '500',
+    flex: 1,
   },
 });
 

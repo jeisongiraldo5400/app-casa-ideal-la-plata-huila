@@ -3,8 +3,9 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { Picker } from '@react-native-picker/picker';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 
 export function SetupForm() {
@@ -29,9 +30,11 @@ export function SetupForm() {
     setSelectedCustomer,
     setDeliveryObservations,
     startExit,
+    reset,
     error,
   } = useExitsStore();
 
+  const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
 
   useEffect(() => {
@@ -193,12 +196,44 @@ export function SetupForm() {
           </View>
         )}
 
-        <Button
-          title="Iniciar Registro de Salida"
-          onPress={startExit}
-          disabled={!canStart}
-          style={styles.startButton}
-        />
+        <View style={styles.buttonsContainer}>
+          <Button
+            title="Iniciar Registro de Salida"
+            onPress={startExit}
+            disabled={!canStart}
+            style={styles.startButton}
+          />
+          <Button
+            title="Cancelar"
+            onPress={() => {
+              if (warehouseId || exitMode || selectedUserId || selectedCustomerId) {
+                Alert.alert(
+                  'Cancelar Configuración',
+                  '¿Está seguro que desea cancelar? Se perderán todos los datos configurados.',
+                  [
+                    {
+                      text: 'No',
+                      style: 'cancel',
+                    },
+                    {
+                      text: 'Sí, cancelar',
+                      style: 'destructive',
+                      onPress: () => {
+                        reset();
+                        router.replace('/(tabs)/');
+                      },
+                    },
+                  ]
+                );
+              } else {
+                reset();
+                router.replace('/(tabs)/');
+              }
+            }}
+            variant="outline"
+            style={styles.cancelButton}
+          />
+        </View>
       </Card>
     </ScrollView>
   );
@@ -319,8 +354,15 @@ const styles = StyleSheet.create({
     color: Colors.error.main,
     fontWeight: '500',
   },
-  startButton: {
+  buttonsContainer: {
     marginTop: 8,
+    gap: 12,
+  },
+  startButton: {
+    marginTop: 0,
+  },
+  cancelButton: {
+    marginTop: 0,
   },
 });
 

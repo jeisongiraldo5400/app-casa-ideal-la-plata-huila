@@ -81,7 +81,7 @@ export function QuantityInput({
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 16,
+    marginTop: 0,
   },
   stockInfo: {
     flexDirection: 'row',
