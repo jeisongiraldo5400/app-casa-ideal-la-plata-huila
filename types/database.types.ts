@@ -115,6 +115,60 @@ export type Database = {
           },
         ]
       }
+      delivery_order_edit_observations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          delivery_order_id: string
+          edit_type: string
+          id: string
+          new_quantity: number | null
+          observations: string
+          previous_quantity: number | null
+          product_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id: string
+          edit_type: string
+          id?: string
+          new_quantity?: number | null
+          observations: string
+          previous_quantity?: number | null
+          product_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id?: string
+          edit_type?: string
+          id?: string
+          new_quantity?: number | null
+          observations?: string
+          previous_quantity?: number | null
+          product_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_delivery_edit_observation_order"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_delivery_edit_observation_product"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_order_items: {
         Row: {
           created_at: string
@@ -167,37 +221,165 @@ export type Database = {
           },
         ]
       }
+      delivery_order_returns: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          delivery_order_id: string
+          id: string
+          inventory_entry_id: string | null
+          inventory_exit_id: string
+          observations: string | null
+          product_id: string
+          quantity: number
+          return_reason: string
+          updated_at: string | null
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id: string
+          id?: string
+          inventory_entry_id?: string | null
+          inventory_exit_id: string
+          observations?: string | null
+          product_id: string
+          quantity: number
+          return_reason: string
+          updated_at?: string | null
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id?: string
+          id?: string
+          inventory_entry_id?: string | null
+          inventory_exit_id?: string
+          observations?: string | null
+          product_id?: string
+          quantity?: number
+          return_reason?: string
+          updated_at?: string | null
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_return_delivery_order"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_inventory_entry"
+            columns: ["inventory_entry_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_inventory_exit"
+            columns: ["inventory_exit_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_exits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_product"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_warehouse"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_order_status_observations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          delivery_order_id: string
+          id: string
+          new_status: string
+          observations: string
+          previous_status: string
+          status_action: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id: string
+          id?: string
+          new_status: string
+          observations: string
+          previous_status: string
+          status_action: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id?: string
+          id?: string
+          new_status?: string
+          observations?: string
+          previous_status?: string
+          status_action?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_delivery_status_observation_order"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_orders: {
         Row: {
           created_at: string
           created_by: string | null
-          customer_id: string
+          customer_id: string | null
           deleted_at: string | null
           delivery_address: string | null
           id: string
           notes: string | null
+          order_type: string
           status: string
           updated_at: string | null
         }
         Insert: {
           created_at?: string
           created_by?: string | null
-          customer_id: string
+          customer_id?: string | null
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
           notes?: string | null
+          order_type?: string
           status?: string
           updated_at?: string | null
         }
         Update: {
           created_at?: string
           created_by?: string | null
-          customer_id?: string
+          customer_id?: string | null
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
           notes?: string | null
+          order_type?: string
           status?: string
           updated_at?: string | null
         }
@@ -216,6 +398,7 @@ export type Database = {
           barcode_scanned: string | null
           created_at: string
           created_by: string | null
+          delivery_order_return_id: string | null
           entry_type: string
           id: string
           product_id: string
@@ -228,6 +411,7 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          delivery_order_return_id?: string | null
           entry_type?: string
           id?: string
           product_id: string
@@ -240,6 +424,7 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          delivery_order_return_id?: string | null
           entry_type?: string
           id?: string
           product_id?: string
@@ -249,6 +434,13 @@ export type Database = {
           warehouse_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_entry_delivery_order_return"
+            columns: ["delivery_order_return_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_order_returns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inventory_entries_product_id_fkey"
             columns: ["product_id"]
@@ -577,6 +769,60 @@ export type Database = {
         }
         Relationships: []
       }
+      purchase_order_edit_observations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          edit_type: string
+          id: string
+          new_quantity: number | null
+          observations: string
+          previous_quantity: number | null
+          product_id: string | null
+          purchase_order_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          edit_type: string
+          id?: string
+          new_quantity?: number | null
+          observations: string
+          previous_quantity?: number | null
+          product_id?: string | null
+          purchase_order_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          edit_type?: string
+          id?: string
+          new_quantity?: number | null
+          observations?: string
+          previous_quantity?: number | null
+          product_id?: string | null
+          purchase_order_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_edit_observation_order"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_edit_observation_product"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_order_items: {
         Row: {
           created_at: string | null
@@ -616,10 +862,55 @@ export type Database = {
           },
         ]
       }
+      purchase_order_status_observations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          new_status: string
+          observations: string
+          previous_status: string
+          purchase_order_id: string
+          status_action: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_status: string
+          observations: string
+          previous_status: string
+          purchase_order_id: string
+          status_action: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_status?: string
+          observations?: string
+          previous_status?: string
+          purchase_order_id?: string
+          status_action?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_status_observation_order"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_orders: {
         Row: {
           created_at: string | null
           created_by: string
+          deleted_at: string | null
           id: string
           notes: string | null
           status: string
@@ -629,6 +920,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           created_by: string
+          deleted_at?: string | null
           id?: string
           notes?: string | null
           status?: string
@@ -638,6 +930,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           created_by?: string
+          deleted_at?: string | null
           id?: string
           notes?: string | null
           status?: string
@@ -1184,26 +1477,49 @@ export type Database = {
           unique_categories: number
         }[]
       }
-      get_purchase_orders_dashboard: {
-        Args: { page?: number; page_size?: number; search_term?: string }
-        Returns: {
-          completion: Json
-          completion_detail: Json
-          created_at: string
-          id: string
-          notes: string
-          status: string
-          supplier_id: string
-          supplier_name: string
-          total_count: number
-          total_items: number
-          total_quantity: number
-        }[]
-      }
+      get_purchase_orders_dashboard:
+        | {
+            Args: { page?: number; page_size?: number; search_term?: string }
+            Returns: {
+              completion: Json
+              completion_detail: Json
+              created_at: string
+              id: string
+              notes: string
+              status: string
+              supplier_id: string
+              supplier_name: string
+              total_count: number
+              total_items: number
+              total_quantity: number
+            }[]
+          }
+        | {
+            Args: {
+              page?: number
+              page_size?: number
+              search_term?: string
+              status_filter?: string
+            }
+            Returns: {
+              completion: Json
+              completion_detail: Json
+              created_at: string
+              id: string
+              notes: string
+              status: string
+              supplier_id: string
+              supplier_name: string
+              total_count: number
+              total_items: number
+              total_quantity: number
+            }[]
+          }
       get_purchase_orders_stats: {
         Args: never
         Returns: {
           approved: number
+          cancelled: number
           pending: number
           received: number
           total: number
