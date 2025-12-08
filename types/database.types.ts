@@ -357,6 +357,7 @@ export type Database = {
       }
       delivery_orders: {
         Row: {
+          assigned_to_user_id: string | null
           created_at: string
           created_by: string | null
           customer_id: string | null
@@ -369,6 +370,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          assigned_to_user_id?: string | null
           created_at?: string
           created_by?: string | null
           customer_id?: string | null
@@ -381,6 +383,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          assigned_to_user_id?: string | null
           created_at?: string
           created_by?: string | null
           customer_id?: string | null
@@ -393,6 +396,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_delivery_order_assigned_to_user"
+            columns: ["assigned_to_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_delivery_order_customer"
             columns: ["customer_id"]
@@ -1594,6 +1604,15 @@ export type Database = {
           name: string
           total_products: number
           total_units: number
+        }[]
+      }
+      search_customers: {
+        Args: { limit_count?: number; search_term?: string }
+        Returns: {
+          address: string
+          id: string
+          id_number: string
+          name: string
         }[]
       }
       show_limit: { Args: never; Returns: number }
