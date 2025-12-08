@@ -2,9 +2,9 @@ import { useExitsStore, type ExitMode } from '@/components/exits/infrastructure/
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
@@ -25,6 +25,7 @@ export function SetupForm() {
     loadWarehouses,
     loadUsers,
     searchCustomers,
+    searchDeliveryOrdersByUser,
     setWarehouse,
     setExitMode,
     setSelectedUser,
@@ -55,6 +56,13 @@ export function SetupForm() {
     return () => clearTimeout(timer);
   }, [searchInput, searchCustomers]);
 
+  // Buscar remisiones cuando se selecciona un usuario
+  useEffect(() => {
+    if (exitMode === 'direct_user' && selectedUserId) {
+      searchDeliveryOrdersByUser(selectedUserId);
+    }
+  }, [exitMode, selectedUserId, searchDeliveryOrdersByUser]);
+
   // Verificar si la orden está completa
   const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
   const isOrderComplete = deliveryOrderProgress 
@@ -65,7 +73,7 @@ export function SetupForm() {
     warehouseId !== null &&
     exitMode !== null &&
     (
-      (exitMode === 'direct_user' && selectedUserId !== null) ||
+      (exitMode === 'direct_user' && selectedUserId !== null && selectedDeliveryOrderId !== null && !isOrderComplete) ||
       (exitMode === 'direct_customer' && selectedCustomerId !== null && selectedDeliveryOrderId !== null && !isOrderComplete)
     );
 
@@ -134,6 +142,11 @@ export function SetupForm() {
           </View>
         )}
 
+        {/* Selector de Remisión (cuando se selecciona un usuario) */}
+        {exitMode === 'direct_user' && selectedUserId && (
+          <DeliveryOrderSelector />
+        )}
+
         {/* Campo condicional: Cliente */}
         {exitMode === 'direct_customer' && (
           <View style={styles.formGroup}>
@@ -183,8 +196,9 @@ export function SetupForm() {
           <DeliveryOrderSelector />
         )}
 
-        {/* Observaciones de entrega (opcional, cuando hay cliente y orden seleccionada) */}
-        {exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId && (
+        {/* Observaciones de entrega (opcional, cuando hay cliente/usuario y orden seleccionada) */}
+        {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
+          (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
           <View style={styles.formGroup}>
             <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
             <TextInput
@@ -211,11 +225,12 @@ export function SetupForm() {
             disabled={!canStart}
             style={styles.startButton}
           />
-          {exitMode === 'direct_customer' && selectedDeliveryOrderId && isOrderComplete && (
+          {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
+            (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
             <View style={styles.warningContainer}>
               <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
               <Text style={styles.warningText}>
-                Esta orden de entrega ya está completa. No se pueden registrar más productos.
+                Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
               </Text>
             </View>
           )}

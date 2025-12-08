@@ -7,27 +7,36 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 
 export function DeliveryOrderSelector() {
     const {
+        exitMode,
         selectedCustomerId,
+        selectedUserId,
         deliveryOrders,
         selectedDeliveryOrderId,
         loading,
         searchDeliveryOrdersByCustomer,
+        searchDeliveryOrdersByUser,
         selectDeliveryOrder,
         error,
     } = useExitsStore();
 
     useEffect(() => {
-        if (selectedCustomerId) {
+        if (exitMode === 'direct_customer' && selectedCustomerId) {
             searchDeliveryOrdersByCustomer(selectedCustomerId);
+        } else if (exitMode === 'direct_user' && selectedUserId) {
+            searchDeliveryOrdersByUser(selectedUserId);
         }
-    }, [selectedCustomerId, searchDeliveryOrdersByCustomer]);
+    }, [exitMode, selectedCustomerId, selectedUserId, searchDeliveryOrdersByCustomer, searchDeliveryOrdersByUser]);
+
+    const isRemissionMode = exitMode === 'direct_user';
+    const orderTypeLabel = isRemissionMode ? 'remisión' : 'orden de entrega';
+    const orderTypeLabelPlural = isRemissionMode ? 'remisiones' : 'órdenes de entrega';
 
     if (loading) {
         return (
             <Card style={styles.card}>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={Colors.primary.main} />
-                    <Text style={styles.loadingText}>Cargando órdenes de entrega...</Text>
+                    <Text style={styles.loadingText}>Cargando {orderTypeLabelPlural}...</Text>
                 </View>
             </Card>
         );
@@ -38,9 +47,11 @@ export function DeliveryOrderSelector() {
             <Card style={styles.card}>
                 <View style={styles.emptyContainer}>
                     <MaterialIcons name="inbox" size={64} color={Colors.text.disabled} />
-                    <Text style={styles.emptyTitle}>No hay órdenes pendientes</Text>
+                    <Text style={styles.emptyTitle}>No hay {orderTypeLabelPlural} pendientes</Text>
                     <Text style={styles.emptySubtitle}>
-                        Este cliente no tiene órdenes de entrega pendientes
+                        {isRemissionMode 
+                            ? 'Este usuario no tiene remisiones pendientes'
+                            : 'Este cliente no tiene órdenes de entrega pendientes'}
                     </Text>
                 </View>
             </Card>
@@ -49,9 +60,9 @@ export function DeliveryOrderSelector() {
 
     return (
         <Card style={styles.card}>
-            <Text style={styles.title}>Seleccione Orden de Entrega</Text>
+            <Text style={styles.title}>Seleccione {isRemissionMode ? 'Remisión' : 'Orden de Entrega'}</Text>
             <Text style={styles.subtitle}>
-                Órdenes pendientes del cliente ({deliveryOrders.length})
+                {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
             </Text>
 
             <ScrollView style={styles.ordersList} showsVerticalScrollIndicator={false}>

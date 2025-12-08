@@ -112,6 +112,7 @@ interface ExitsState {
 
   // Actions - Delivery Orders
   searchDeliveryOrdersByCustomer: (customerId: string) => Promise<void>;
+  searchDeliveryOrdersByUser: (userId: string) => Promise<void>;
   selectDeliveryOrder: (orderId: string) => Promise<void>;
   validateProductAgainstOrder: (productId: string, quantity: number) => {
     valid: boolean;
@@ -194,7 +195,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   setSelectedUser: (userId) => {
-    set({ selectedUserId: userId });
+    set({ 
+      selectedUserId: userId,
+      // Reset delivery order when user changes
+      selectedDeliveryOrderId: null,
+      selectedDeliveryOrder: null,
+      deliveryOrders: [],
+    });
   },
 
   setSelectedCustomer: (customerId) => {
@@ -378,6 +385,104 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
+  searchDeliveryOrdersByUser: async (userId: string) => {
+    set({ loading: true });
+
+    try {
+      // Consulta directa a la tabla delivery_orders con agregación de items
+      // Buscar por assigned_to_user_id en lugar de customer_id
+      const { data, error } = await supabase
+        .from('delivery_orders')
+        .select(`
+          *,
+          items:delivery_order_items(
+            id,
+            product_id,
+            warehouse_id,
+            quantity
+          )
+        `)
+        .eq('assigned_to_user_id', userId)
+        .in('status', ['pending', 'preparing', 'ready'])
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.error("Error loading delivery orders by user:", error);
+        set({ deliveryOrders: [], loading: false, error: error.message });
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        set({ deliveryOrders: [], loading: false });
+        return;
+      }
+
+      // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
+      const orderIds = data.map((order: any) => order.id);
+      
+      // Primero obtener los IDs de salidas canceladas para excluirlas
+      const { data: cancelledExits, error: cancelledError } = await supabase
+        .from("inventory_exit_cancellations")
+        .select("inventory_exit_id");
+      
+      const cancelledExitIds = new Set(
+        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
+      );
+      
+      // Obtener todas las salidas y filtrar las canceladas
+      const { data: exitsData, error: exitsError } = await supabase
+        .from("inventory_exits")
+        .select("id, delivery_order_id, product_id, quantity")
+        .in("delivery_order_id", orderIds);
+
+      if (exitsError) {
+        console.error("Error loading inventory exits for delivery orders:", exitsError);
+      }
+
+      // Agrupar salidas por order_id y product_id (excluyendo canceladas)
+      const exitsByOrder = new Map<string, Map<string, number>>();
+      (exitsData || []).forEach((exit: any) => {
+        // Excluir salidas canceladas
+        if (cancelledExitIds.has(exit.id)) return;
+        if (!exit.delivery_order_id || !exit.product_id) return;
+        if (!exitsByOrder.has(exit.delivery_order_id)) {
+          exitsByOrder.set(exit.delivery_order_id, new Map());
+        }
+        const productMap = exitsByOrder.get(exit.delivery_order_id)!;
+        productMap.set(
+          exit.product_id,
+          (productMap.get(exit.product_id) || 0) + (exit.quantity || 0)
+        );
+      });
+
+      // Transformar los datos para incluir contadores desde inventory_exits
+      const ordersWithCounts = data.map((order: any) => {
+        const orderExits = exitsByOrder.get(order.id) || new Map();
+        let totalDelivered = 0;
+        const totalQuantity = order.items?.reduce((sum: number, item: any) => {
+          const rawDelivered = orderExits.get(item.product_id) || 0;
+          const clampedDelivered = Math.min(rawDelivered, item.quantity);
+          totalDelivered += clampedDelivered;
+          return sum + item.quantity;
+        }, 0) || 0;
+
+        return {
+          ...order,
+          total_items: order.items?.length || 0,
+          total_quantity: totalQuantity,
+          delivered_quantity: totalDelivered,
+        };
+      });
+
+      set({ deliveryOrders: ordersWithCounts, loading: false });
+    } catch (error: any) {
+      console.error("Error loading delivery orders by user:", error);
+      set({ deliveryOrders: [], loading: false, error: error.message });
+    }
+  },
+
   selectDeliveryOrder: async (orderId: string) => {
     set({ loading: true, error: null });
 
@@ -388,6 +493,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .select(`
           *,
           customer:customers(id, name, id_number),
+          assigned_to_user:profiles(id, full_name, email),
           items:delivery_order_items(
             id,
             product_id,
@@ -453,11 +559,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       });
 
       // Transformar los datos al formato esperado
+      // Para remisiones (assigned_to_user_id), usar el nombre del usuario asignado
+      // Para clientes (customer_id), usar el nombre del cliente
+      const customerName = orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
+      const customerIdNumber = orderData.customer?.id_number || '';
+      
       const deliveryOrder: DeliveryOrder = {
         id: orderData.id,
-        customer_id: orderData.customer_id,
-        customer_name: orderData.customer?.name || '',
-        customer_id_number: orderData.customer?.id_number || '',
+        customer_id: orderData.customer_id || '',
+        customer_name: customerName,
+        customer_id_number: customerIdNumber,
         status: orderData.status,
         delivery_address: orderData.delivery_address || '',
         notes: orderData.notes || '',
@@ -656,9 +767,26 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
 
     // Validar según el modo
-    if (exitMode === 'direct_user' && !selectedUserId) {
-      set({ error: "Debe seleccionar un usuario destinatario" });
-      return;
+    if (exitMode === 'direct_user') {
+      if (!selectedUserId) {
+        set({ error: "Debe seleccionar un usuario destinatario" });
+        return;
+      }
+      
+      if (!selectedDeliveryOrderId) {
+        set({ error: "Debe seleccionar una remisión" });
+        return;
+      }
+
+      // Validar que la remisión no esté completa
+      const progress = get().getSelectedDeliveryOrderProgress();
+      if (progress) {
+        const isOrderComplete = progress.items.every(item => item.isComplete);
+        if (isOrderComplete) {
+          set({ error: "Esta remisión ya está completa. No se pueden registrar más productos." });
+          return;
+        }
+      }
     }
 
     if (exitMode === 'direct_customer') {
@@ -1015,9 +1143,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         // Agregar destinatario según el modo
         if (exitMode === 'direct_user') {
           baseExit.delivered_to_user_id = selectedUserId;
+          // Si hay una remisión seleccionada, agregarla
+          if (selectedDeliveryOrderId) {
+            baseExit.delivery_order_id = selectedDeliveryOrderId;
+          }
         } else if (exitMode === 'direct_customer') {
           baseExit.delivered_to_customer_id = selectedCustomerId;
-          // Si hay una orden de entrega seleccionada, agregarla (opcional)
+          // Si hay una orden de entrega seleccionada, agregarla
           if (selectedDeliveryOrderId) {
             baseExit.delivery_order_id = selectedDeliveryOrderId;
           }
