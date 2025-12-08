@@ -251,14 +251,14 @@ export function SetupForm() {
                       style: 'destructive',
                       onPress: () => {
                         reset();
-                        router.replace('/(tabs)/');
+                        router.back();
                       },
                     },
                   ]
                 );
               } else {
                 reset();
-                router.replace('/(tabs)/');
+                router.back();
               }
             }}
             variant="outline"
