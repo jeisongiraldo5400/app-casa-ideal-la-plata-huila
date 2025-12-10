@@ -6,15 +6,18 @@ import { PurchaseOrderProgress } from '@/components/entries/components/PurchaseO
 import { QuantityInput } from '@/components/entries/components/QuantityInput';
 import { SetupForm } from '@/components/entries/components/SetupForm';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
+import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
-import { Colors } from '@/constants/theme';
+import { Colors, getColors } from '@/constants/theme';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 export default function EntriesScreen() {
@@ -26,6 +29,7 @@ export default function EntriesScreen() {
     entryItems,
     purchaseOrderId,
     error,
+    loading,
     scanBarcode,
     addProductToEntry,
     setQuantity,
@@ -34,6 +38,9 @@ export default function EntriesScreen() {
     goBackToSetup,
     reset,
   } = useEntries();
+
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
 
   const [showScanner, setShowScanner] = useState(false);
 
@@ -103,7 +110,28 @@ export default function EntriesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <>
+      {/* Modal de loading de pantalla completa */}
+      <Modal
+        visible={loading}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {}} // Bloquear cierre durante loading
+      >
+        <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingContainer, { backgroundColor: colors.background.paper }]}>
+            <ActivityIndicator size="large" color={colors.primary.main} />
+            <Text style={[styles.loadingText, { color: colors.text.primary }]}>
+              Registrando entrada...
+            </Text>
+            <Text style={[styles.loadingSubtext, { color: colors.text.secondary }]}>
+              Por favor espere
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Entradas de Productos</Text>
         <Text style={styles.subtitle}>Registre la entrada de mercancía a bodega</Text>
@@ -173,6 +201,7 @@ export default function EntriesScreen() {
         />
       )}
     </ScrollView>
+    </>
   );
 }
 
@@ -236,5 +265,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.error.main,
     fontWeight: '500',
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

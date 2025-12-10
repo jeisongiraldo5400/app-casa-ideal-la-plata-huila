@@ -1166,6 +1166,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       };
     }
 
+    // Establecer loading al inicio del proceso
+    set({ loading: true });
+
     // Helper de validación exhaustiva antes de insertar
     const validateEntryDataBeforeInsert = async (): Promise<{
       valid: boolean;
@@ -1357,6 +1360,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     const validationResult = await validateEntryDataBeforeInsert();
     if (!validationResult.valid) {
+      // Limpiar loading si la validación falla
+      set({ loading: false });
       return { error: { message: validationResult.message } };
     }
 
@@ -1378,6 +1383,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .insert(entries);
 
       if (entriesError) {
+        // Limpiar loading en caso de error al insertar
+        set({ loading: false });
         return { error: entriesError };
       }
 
@@ -1428,8 +1435,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         registeredEntriesCache: updatedCache,
       });
 
+      // Limpiar loading después de finalizar exitosamente
+      set({ loading: false });
       return { error: null };
     } catch (error: any) {
+      // Limpiar loading en caso de error
+      set({ loading: false });
       return { error };
     }
   },
