@@ -5,18 +5,20 @@ import { ProductFound } from '@/components/exits/components/ProductFound';
 import { QuantityInput } from '@/components/exits/components/QuantityInput';
 import { SetupForm } from '@/components/exits/components/SetupForm';
 import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
+import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 export default function ExitsScreen() {
@@ -29,6 +31,7 @@ export default function ExitsScreen() {
     currentAvailableStock,
     exitItems,
     error,
+    loading,
     scanBarcode,
     addProductToExit,
     setQuantity,
@@ -103,10 +106,31 @@ export default function ExitsScreen() {
   }
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: colors.background.default }]} 
-      contentContainerStyle={styles.content}
-    >
+    <>
+      {/* Modal de loading de pantalla completa */}
+      <Modal
+        visible={loading}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {}} // Bloquear cierre durante loading
+      >
+        <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingContainer, { backgroundColor: colors.background.paper }]}>
+            <ActivityIndicator size="large" color={colors.primary.main} />
+            <Text style={[styles.loadingText, { color: colors.text.primary }]}>
+              Registrando salida...
+            </Text>
+            <Text style={[styles.loadingSubtext, { color: colors.text.secondary }]}>
+              Por favor espere
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background.default }]}
+        contentContainerStyle={styles.content}
+      >
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
@@ -222,6 +246,7 @@ export default function ExitsScreen() {
         </>
       )}
     </ScrollView>
+    </>
   );
 }
 
@@ -336,6 +361,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     flex: 1,
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

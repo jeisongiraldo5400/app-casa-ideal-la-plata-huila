@@ -1131,6 +1131,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { error: { message: "Debe seleccionar un modo de salida" } };
     }
 
+    // Establecer loading al inicio del proceso
+    set({ loading: true });
+
     try {
       // Preparar datos según el modo de salida
       const exits: InventoryExit[] = exitItems.map((item) => {
@@ -1297,9 +1300,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Resetear todo después de finalizar
       get().reset();
 
+      // Limpiar loading después de finalizar exitosamente
+      set({ loading: false });
       return { error: null };
     } catch (error: any) {
       console.error("Error finalizing exit:", error);
+      // Limpiar loading en caso de error
+      set({ loading: false });
       return { error };
     }
   },
