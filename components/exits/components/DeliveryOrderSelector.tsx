@@ -85,7 +85,7 @@ export function DeliveryOrderSelector() {
 
                             <View style={styles.orderHeader}>
                                 <View style={styles.orderInfo}>
-                                    <Text style={styles.orderId}>Orden #{order.id.slice(0, 8)}</Text>
+                                    <Text style={styles.orderId}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
                                     {isComplete ? (
                                         <View style={[styles.statusBadge, styles.status_complete]}>
                                             <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />

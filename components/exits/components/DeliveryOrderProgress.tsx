@@ -122,7 +122,7 @@ export function DeliveryOrderProgress() {
             </View>
 
             <Text style={styles.subtitle}>
-                Orden #{selectedDeliveryOrder.id.slice(0, 8)} - {selectedDeliveryOrder.customer_name}
+                Orden #{selectedDeliveryOrder.order_number || selectedDeliveryOrder.id.slice(0, 8)} - {selectedDeliveryOrder.customer_name}
             </Text>
 
             {/* Overall Progress Bar */}

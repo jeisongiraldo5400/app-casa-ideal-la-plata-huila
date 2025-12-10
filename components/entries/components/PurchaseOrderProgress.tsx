@@ -23,12 +23,13 @@ export function PurchaseOrderProgress() {
     const selectedOrderProductId = useEntriesStore((state) => state.selectedOrderProductId);
     const entryItems = useEntriesStore((state) => state.entryItems);
 
-    if (!selectedPurchaseOrder || !purchaseOrderId) {
-        return null;
-    }
-
     // Recalcular el progreso cada vez que cambien los valores
+    // Mover useMemo antes del early return para cumplir con las reglas de hooks
     const progress = useMemo(() => {
+        // Si no hay orden seleccionada, retornar null
+        if (!selectedPurchaseOrder || !purchaseOrderId) {
+            return null;
+        }
         // Recrear el Map desde el string JSON
         const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
         const scannedItemsMap = new Map(scannedItemsEntries);
@@ -102,9 +103,10 @@ export function PurchaseOrderProgress() {
         registeredEntriesCache,
         scannedItemsProgressString, // Usar el string en lugar del array
         selectedOrderProductId,
-        entryItems, // Incluir entryItems para forzar recálculo cuando se agregan productos
     ]);
-    if (!progress) {
+
+    // Early return después de todos los hooks
+    if (!progress || !selectedPurchaseOrder || !purchaseOrderId) {
         return null;
     }
 
@@ -130,7 +132,7 @@ export function PurchaseOrderProgress() {
             </View>
 
             <Text style={styles.subtitle}>
-                Orden #{selectedPurchaseOrder.id.slice(0, 8)} - {selectedPurchaseOrder.supplier?.name || 'Proveedor'}
+                Orden #{selectedPurchaseOrder.order_number || selectedPurchaseOrder.id.slice(0, 8)} - {selectedPurchaseOrder.supplier?.name || 'Proveedor'}
             </Text>
 
             {/* Overall Progress Bar */}

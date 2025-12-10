@@ -33,6 +33,7 @@ export interface DeliveryOrderItem {
 
 export interface DeliveryOrder {
   id: string;
+  order_number: string | null;
   customer_id: string;
   customer_name: string;
   customer_id_number: string;
@@ -566,6 +567,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       
       const deliveryOrder: DeliveryOrder = {
         id: orderData.id,
+        order_number: orderData.order_number || null,
         customer_id: orderData.customer_id || '',
         customer_name: customerName,
         customer_id_number: customerIdNumber,

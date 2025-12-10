@@ -1,15 +1,15 @@
+import { useTheme } from '@/components/theme';
+import { Card } from '@/components/ui/Card';
+import { getColors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
+    ActivityIndicator,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Card } from '@/components/ui/Card';
-import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
 import { usePurchaseOrders } from '../infrastructure/hooks/usePurchaseOrders';
 
 export function ReceivedOrdersList() {
@@ -73,7 +73,7 @@ export function ReceivedOrdersList() {
           <Card key={order.id} style={[styles.orderCard, { backgroundColor: colors.background.paper }]}>
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderLeft}>
-                <Text style={[styles.orderId, { color: colors.text.primary }]}>OC #{order.id.slice(0, 8)}</Text>
+                <Text style={[styles.orderId, { color: colors.text.primary }]}>OC #{order.order_number || order.id.slice(0, 8)}</Text>
                 <View style={[styles.statusBadge, { backgroundColor: colors.success.main }]}>
                   <Text style={styles.statusText}>Recibida</Text>
                 </View>

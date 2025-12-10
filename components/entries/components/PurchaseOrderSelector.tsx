@@ -1,12 +1,12 @@
 import React from "react";
 
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 
 import { MaterialIcons } from "@expo/vector-icons";
@@ -20,8 +20,8 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 
 // Store
 import {
-  PurchaseOrderWithItems,
-  useEntriesStore,
+    PurchaseOrderWithItems,
+    useEntriesStore,
 } from "@/components/entries/infrastructure/store/entriesStore";
 import { usePurchaseOrders } from "@/components/purchase-orders";
 
@@ -185,7 +185,7 @@ export function PurchaseOrderSelector({
             >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
-                  <Text style={styles.orderId}>OC #{order.id.slice(0, 8)}</Text>
+                  <Text style={styles.orderId}>OC #{order.order_number || order.id.slice(0, 8)}</Text>
                   <View
                     style={[
                       styles.statusBadge,
