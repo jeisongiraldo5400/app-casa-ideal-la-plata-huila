@@ -189,11 +189,18 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Setup actions
   setEntryType: (type) => {
+    // Limpiar orden de compra y estado relacionado cuando cambia el tipo de entrada
+    // Esto previene estados inconsistentes donde hay una OC seleccionada pero el flujo cambió
     set({
       entryType: type,
       step: "setup",
       // Configurar el paso inicial del setup según el tipo
       setupStep: type === "INITIAL_LOAD" ? "warehouse" : "supplier",
+      // Limpiar orden de compra y estado relacionado para evitar inconsistencias
+      purchaseOrderId: null,
+      selectedPurchaseOrder: null,
+      scannedItemsProgress: new Map(),
+      selectedOrderProductId: null,
     });
   },
 
@@ -860,8 +867,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       if (product) {
         const { purchaseOrderId, entryType, selectedOrderProductId } = get();
 
-        // Si hay una orden de compra seleccionada, validar contra ella
-        if (purchaseOrderId && entryType === "PO_ENTRY") {
+        // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
+        // Esto previene que se puedan escanear productos excediendo las cantidades de la orden
+        if (purchaseOrderId) {
           const validation = get().validateProductAgainstOrder(product.id, 1); // Validar con cantidad 1 inicialmente
 
           if (!validation.valid) {
@@ -875,7 +883,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           }
 
           // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
-          if (selectedOrderProductId && selectedOrderProductId !== product.id) {
+          // Solo para flujo PO_ENTRY
+          if (entryType === "PO_ENTRY" && selectedOrderProductId && selectedOrderProductId !== product.id) {
             set({
               loading: false,
               error: "Debe escanear el producto seleccionado de la orden",
@@ -900,6 +909,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         loading: false,
         error: error.message || "Error al buscar el producto",
         step: "scanning",
+        currentProduct: null,
+        currentScannedBarcode: null, // Limpiar para que reaparezcan los botones del escáner
       });
     }
   },
@@ -936,8 +947,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       scannedItemsProgress,
     } = get();
 
-    // Si hay una orden de compra, validar que el producto esté en la orden
-    if (purchaseOrderId && entryType === "PO_ENTRY") {
+    // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
+    // Esto previene que se puedan agregar productos excediendo las cantidades de la orden
+    if (purchaseOrderId) {
       // Validar contra la orden usando la nueva función
       const validation = get().validateProductAgainstOrder(
         product.id,
@@ -949,16 +961,19 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       }
 
       // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
-      if (selectedOrderProductId && selectedOrderProductId !== product.id) {
+      // Solo para flujo PO_ENTRY
+      if (entryType === "PO_ENTRY" && selectedOrderProductId && selectedOrderProductId !== product.id) {
         set({ error: "Debe escanear el producto seleccionado de la orden" });
         return;
       }
 
-      // Actualizar progreso de escaneo
-      const currentProgress = scannedItemsProgress.get(product.id) || 0;
-      const newProgress = new Map(scannedItemsProgress);
-      newProgress.set(product.id, currentProgress + quantity);
-      set({ scannedItemsProgress: newProgress });
+      // Actualizar progreso de escaneo solo para flujo PO_ENTRY
+      if (entryType === "PO_ENTRY") {
+        const currentProgress = scannedItemsProgress.get(product.id) || 0;
+        const newProgress = new Map(scannedItemsProgress);
+        newProgress.set(product.id, currentProgress + quantity);
+        set({ scannedItemsProgress: newProgress });
+      }
     }
 
     // Verificar si el producto ya está en la lista
@@ -1254,8 +1269,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         };
       }
 
-      // 4. Validación específica de orden de compra si aplica
-      if (entryType === "PO_ENTRY" && purchaseOrderId) {
+      // 4. Validación específica de orden de compra - SIEMPRE validar si hay purchaseOrderId
+      // Esto previene que se puedan registrar entradas excediendo las cantidades de la orden
+      // independientemente del entryType seleccionado
+      if (purchaseOrderId) {
+        // Warning si hay purchaseOrderId pero entryType no es PO_ENTRY (para diagnóstico)
+        if (entryType !== "PO_ENTRY") {
+          console.warn(
+            `[finalizeEntry] Advertencia: Hay una orden de compra seleccionada (${purchaseOrderId}) pero el entryType es ${entryType}. Se aplicarán validaciones de cantidad de todas formas.`
+          );
+        }
+
         // Validar estado de la orden directamente en BD
         const { data: orderData, error: orderError } = await supabase
           .from("purchase_orders")
@@ -1279,7 +1303,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           };
         }
 
-        if (orderData.status !== "pending") {
+        // Solo validar estado para flujo PO_ENTRY, pero validar cantidades siempre
+        if (entryType === "PO_ENTRY" && orderData.status !== "pending") {
           return {
             valid: false,
             message:
@@ -1288,6 +1313,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
 
         // Validar que las cantidades totales de la sesión no excedan lo permitido en la orden
+        // Esta validación se aplica SIEMPRE si hay purchaseOrderId, independiente del entryType
         if (selectedPurchaseOrder) {
           const quantitiesByProduct: Record<string, number> = {};
           entryItems.forEach((item) => {
@@ -1314,7 +1340,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
                 return {
                   valid: false,
-                  message: `La cantidad excede lo pendiente para el producto ${orderItem.product_id}. Cantidad en orden: ${orderItem.quantity}, ya registrado: ${registeredInBD}, pendiente: ${pending}, intentando registrar en esta sesión: ${sessionQty}.`,
+                  message: `La cantidad excede lo permitido para este producto.\n` +
+                    `Cantidad en orden: ${orderItem.quantity}\n` +
+                    `Ya registrado en el sistema: ${registeredInBD}\n` +
+                    `Intentando registrar en esta sesión: ${sessionQty}\n` +
+                    `Máximo permitido: ${orderItem.quantity}, Total después de esta sesión sería: ${totalAfterSession}`,
                 };
               }
             }
