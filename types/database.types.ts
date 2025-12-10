@@ -365,6 +365,7 @@ export type Database = {
           delivery_address: string | null
           id: string
           notes: string | null
+          order_number: string | null
           order_type: string
           status: string
           updated_at: string | null
@@ -378,6 +379,7 @@ export type Database = {
           delivery_address?: string | null
           id?: string
           notes?: string | null
+          order_number?: string | null
           order_type?: string
           status?: string
           updated_at?: string | null
@@ -391,6 +393,7 @@ export type Database = {
           delivery_address?: string | null
           id?: string
           notes?: string | null
+          order_number?: string | null
           order_type?: string
           status?: string
           updated_at?: string | null
@@ -932,6 +935,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           notes: string | null
+          order_number: string | null
           status: string
           supplier_id: string
           updated_at: string | null
@@ -942,6 +946,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           notes?: string | null
+          order_number?: string | null
           status?: string
           supplier_id: string
           updated_at?: string | null
@@ -952,6 +957,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           notes?: string | null
+          order_number?: string | null
           status?: string
           supplier_id?: string
           updated_at?: string | null
@@ -1526,6 +1532,7 @@ export type Database = {
               created_at: string
               id: string
               notes: string
+              order_number: string
               status: string
               supplier_id: string
               supplier_name: string
