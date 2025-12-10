@@ -73,15 +73,10 @@ BEGIN
       AND deleted_at IS NULL
   ) INTO all_items_delivered;
   
-  -- Si todos están entregados, actualizar estado de la orden
-  IF all_items_delivered THEN
-    UPDATE delivery_orders
-    SET 
-      status = 'delivered',
-      updated_at = NOW()
-    WHERE id = order_id_param
-      AND deleted_at IS NULL;
-  END IF;
+  -- NOTA: No actualizamos el estado de la orden automáticamente porque el constraint
+  -- check_delivery_order_status solo permite: 'pending', 'preparing', 'ready'
+  -- El sistema puede determinar si una orden está completa basándose en las cantidades
+  -- entregadas sin necesidad de cambiar el estado
   
   RETURN jsonb_build_object(
     'success', true,
