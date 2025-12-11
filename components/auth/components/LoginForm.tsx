@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.border?.default || '#e5e7eb',
+    borderTopColor: Colors.divider,
   },
   versionText: {
     fontSize: 12,
