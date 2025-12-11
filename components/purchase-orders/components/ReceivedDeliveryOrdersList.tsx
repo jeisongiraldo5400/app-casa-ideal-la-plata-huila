@@ -61,8 +61,9 @@ export function ReceivedDeliveryOrdersList() {
     setError(null);
     try {
       // Consultar directamente la tabla para obtener información completa de cliente y usuario
-      // Filtrar órdenes eliminadas, creadas por el usuario logueado y con estados "delivered" o "approved"
+      // Filtrar órdenes eliminadas, creadas por el usuario logueado y con estados completados o aprobados
       // Filtrar por created_by para mostrar solo las órdenes que el usuario logueado registró
+      // Incluir estados: delivered, approved, received (todas las completadas o aprobadas)
       const { data: ordersData, error: ordersError } = await supabase
         .from('delivery_orders')
         .select(`
@@ -81,7 +82,7 @@ export function ReceivedDeliveryOrdersList() {
         `)
         .is('deleted_at', null)
         .eq('created_by', user.id) // Solo órdenes creadas por el usuario logueado
-        .in('status', ['delivered', 'approved']) // Solo estados entregadas o aprobadas
+        .in('status', ['delivered', 'approved', 'received']) // Todas las órdenes completadas o aprobadas
         .order('created_at', { ascending: false })
         .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 
