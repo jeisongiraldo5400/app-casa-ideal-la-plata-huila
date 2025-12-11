@@ -35,7 +35,7 @@ type DeliveryOrder = {
   items: any;
 };
 
-export function AllDeliveryOrdersList() {
+export function ReceivedDeliveryOrdersList() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -43,10 +43,10 @@ export function AllDeliveryOrdersList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDeliveryOrders();
+    loadReceivedDeliveryOrders();
   }, []);
 
-  const loadDeliveryOrders = async () => {
+  const loadReceivedDeliveryOrders = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -151,41 +151,45 @@ export function AllDeliveryOrdersList() {
               delivered_items: stats.delivered_items,
               delivered_quantity: stats.delivered_quantity,
               created_by_profile: createdByProfile || null,
-              created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
             };
           });
         }
       }
 
-      // Transformar al formato esperado
-      const transformedOrders = ordersWithStats.map((order: any) => ({
-        id: order.id,
-        order_number: order.order_number,
-        created_at: order.created_at,
-        created_by: order.created_by,
-        created_by_name: order.created_by_name,
-        customer_id: order.customer_id,
-        customer_id_number: order.customer?.id_number || null,
-        customer_name: order.customer?.name || null,
-        assigned_to_user_id: order.assigned_to_user_id,
-        assigned_to_user_name: order.assigned_to_user?.full_name || null,
-        assigned_to_user_email: order.assigned_to_user?.email || null,
-        order_type: order.order_type,
-        delivery_address: order.delivery_address,
-        notes: order.notes,
-        status: order.status,
-        total_items: order.total_items,
-        total_quantity: order.total_quantity,
-        delivered_items: order.delivered_items,
-        delivered_quantity: order.delivered_quantity,
-        items: [],
-      }));
+      // Filtrar solo las órdenes completadas (todas las unidades entregadas)
+      // Una orden está completa cuando delivered_quantity >= total_quantity
+      const completedOrders = ordersWithStats
+        .filter((order: any) => 
+          order.total_quantity > 0 && order.delivered_quantity >= order.total_quantity
+        )
+        .map((order: any) => ({
+          id: order.id,
+          order_number: order.order_number,
+          created_at: order.created_at,
+          created_by: order.created_by,
+          created_by_name: order.created_by_profile?.full_name || order.created_by_profile?.email || 'Usuario desconocido',
+          customer_id: order.customer_id,
+          customer_id_number: order.customer?.id_number || null,
+          customer_name: order.customer?.name || null,
+          assigned_to_user_id: order.assigned_to_user_id,
+          assigned_to_user_name: order.assigned_to_user?.full_name || null,
+          assigned_to_user_email: order.assigned_to_user?.email || null,
+          order_type: order.order_type,
+          delivery_address: order.delivery_address,
+          notes: order.notes,
+          status: order.status,
+          total_items: order.total_items,
+          total_quantity: order.total_quantity,
+          delivered_items: order.delivered_items,
+          delivered_quantity: order.delivered_quantity,
+          items: [],
+        }));
 
-      setDeliveryOrders(transformedOrders);
+      setDeliveryOrders(completedOrders);
       setLoading(false);
     } catch (err: any) {
       console.error('Error loading delivery orders:', err);
-      setError(err.message || 'Error al cargar las órdenes de entrega');
+      setError(err.message || 'Error al cargar las órdenes de entrega completadas');
       setLoading(false);
     }
   };
@@ -206,46 +210,12 @@ export function AllDeliveryOrdersList() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return colors.success.main;
-      case 'ready':
-        return colors.info.main;
-      case 'preparing':
-        return colors.warning.main;
-      case 'pending':
-        return colors.warning.main;
-      case 'cancelled':
-        return colors.error.main;
-      default:
-        return colors.text.secondary;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return 'Entregada';
-      case 'ready':
-        return 'Lista';
-      case 'preparing':
-        return 'Preparando';
-      case 'pending':
-        return 'Pendiente';
-      case 'cancelled':
-        return 'Cancelada';
-      default:
-        return status;
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary.main} />
         <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
-          Cargando órdenes de entrega...
+          Cargando órdenes de entrega completadas...
         </Text>
       </View>
     );
@@ -265,10 +235,10 @@ export function AllDeliveryOrdersList() {
       <View style={styles.emptyContainer}>
         <MaterialIcons name="local-shipping" size={64} color={colors.text.secondary} />
         <Text style={[styles.emptyText, { color: colors.text.primary }]}>
-          No hay órdenes de entrega registradas
+          No hay órdenes de entrega completadas
         </Text>
         <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          Las órdenes de entrega aparecerán aquí
+          Las órdenes de entrega completas (todas las unidades entregadas) aparecerán aquí
         </Text>
       </View>
     );
@@ -277,11 +247,6 @@ export function AllDeliveryOrdersList() {
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {deliveryOrders.map((order) => {
-        const statusColor = getStatusColor(order.status);
-        const progress = order.total_quantity > 0 
-          ? (order.delivered_quantity / order.total_quantity) * 100 
-          : 0;
-
         return (
           <Card key={order.id} style={[styles.orderCard, { backgroundColor: colors.background.paper }]}>
             <View style={styles.orderHeader}>
@@ -289,9 +254,9 @@ export function AllDeliveryOrdersList() {
                 <Text style={[styles.orderId, { color: colors.text.primary }]}>
                   OE #{order.order_number || order.id.slice(0, 8)}
                 </Text>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text style={[styles.statusText, { color: statusColor }]}>
-                    {getStatusLabel(order.status)}
+                <View style={[styles.statusBadge, { backgroundColor: colors.success.main + '20' }]}>
+                  <Text style={[styles.statusText, { color: colors.success.main }]}>
+                    Entregada
                   </Text>
                 </View>
               </View>
@@ -361,24 +326,13 @@ export function AllDeliveryOrdersList() {
               <Text style={[styles.summaryText, { color: colors.text.primary }]}>
                 {order.total_items} producto{order.total_items !== 1 ? 's' : ''} • {order.total_quantity} unidad{order.total_quantity !== 1 ? 'es' : ''}
               </Text>
-              {order.delivered_quantity > 0 && (
-                <View style={styles.progressContainer}>
-                  <View style={[styles.progressBar, { backgroundColor: colors.divider }]}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { 
-                          width: `${progress}%`, 
-                          backgroundColor: statusColor 
-                        }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={[styles.progressText, { color: colors.text.secondary }]}>
-                    {order.delivered_quantity} / {order.total_quantity} entregado{order.delivered_quantity !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              )}
+            </View>
+
+            <View style={[styles.receivedBadge, { backgroundColor: colors.success.main + '15' }]}>
+              <MaterialIcons name="check-circle" size={20} color={colors.success.main} />
+              <Text style={[styles.receivedText, { color: colors.success.main }]}>
+                Entregada completamente
+              </Text>
             </View>
           </Card>
         );
@@ -517,24 +471,19 @@ const styles = StyleSheet.create({
   summaryText: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 8,
   },
-  progressContainer: {
-    marginTop: 8,
+  receivedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
   },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 12,
-    textAlign: 'right',
+  receivedText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
-

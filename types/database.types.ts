@@ -972,6 +972,83 @@ export type Database = {
           },
         ]
       }
+      returns: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          inventory_entry_id: string | null
+          inventory_exit_id: string | null
+          observations: string | null
+          order_id: string
+          product_id: string
+          quantity: number
+          return_reason: string
+          return_type: string
+          updated_at: string | null
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id?: string | null
+          inventory_exit_id?: string | null
+          observations?: string | null
+          order_id: string
+          product_id: string
+          quantity: number
+          return_reason: string
+          return_type: string
+          updated_at?: string | null
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id?: string | null
+          inventory_exit_id?: string | null
+          observations?: string | null
+          order_id?: string
+          product_id?: string
+          quantity?: number
+          return_reason?: string
+          return_type?: string
+          updated_at?: string | null
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_return_inventory_entry"
+            columns: ["inventory_entry_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_inventory_exit"
+            columns: ["inventory_exit_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_exits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_product"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_return_warehouse"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       roles: {
         Row: {
           created_at: string
@@ -1447,6 +1524,23 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_orders_for_return:
+        | {
+            Args: { return_type_param: string }
+            Returns: {
+              display_name: string
+              id: string
+              order_number: string
+            }[]
+          }
+        | {
+            Args: { return_type_param: string; search_term?: string }
+            Returns: {
+              display_name: string
+              id: string
+              order_number: string
+            }[]
+          }
       get_period_stats: {
         Args: { end_date: string; period_type?: string; start_date: string }
         Returns: {
@@ -1491,6 +1585,18 @@ export type Database = {
           stock_by_warehouse: Json
           total_count: number
           total_stock: number
+        }[]
+      }
+      get_products_for_return: {
+        Args: { order_id_param: string; return_type_param: string }
+        Returns: {
+          already_returned: number
+          max_returnable: number
+          product_id: string
+          product_name: string
+          product_sku: string
+          warehouse_id: string
+          warehouse_name: string
         }[]
       }
       get_products_stats: {
@@ -1564,6 +1670,33 @@ export type Database = {
           exits_today: number
           movements_today: number
           total_stock: number
+        }[]
+      }
+      get_returns_dashboard: {
+        Args: {
+          page?: number
+          page_size?: number
+          return_type_filter?: string
+          search_term?: string
+        }
+        Returns: {
+          created_at: string
+          created_by: string
+          created_by_name: string
+          id: string
+          inventory_entry_id: string
+          observations: string
+          order_id: string
+          order_number: string
+          product_id: string
+          product_name: string
+          product_sku: string
+          quantity: number
+          return_reason: string
+          return_type: string
+          total_count: number
+          warehouse_id: string
+          warehouse_name: string
         }[]
       }
       get_user_activities_today: {
