@@ -65,7 +65,11 @@ export function DeliveryOrderSelector() {
                 {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
             </Text>
 
-            <ScrollView style={styles.ordersList} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                style={styles.ordersList} 
+                contentContainerStyle={styles.ordersListContent}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}>
                 {deliveryOrders.map((order: any) => {
                     const isSelected = selectedDeliveryOrderId === order.id;
                     const progress = order.total_quantity > 0 ? order.delivered_quantity / order.total_quantity : 0;
@@ -166,6 +170,7 @@ function getStatusLabel(status: string): string {
 const styles = StyleSheet.create({
     card: {
         marginBottom: 20,
+        overflow: 'hidden',
     },
     title: {
         fontSize: 18,
@@ -205,6 +210,11 @@ const styles = StyleSheet.create({
     },
     ordersList: {
         maxHeight: 400,
+        flexGrow: 0,
+    },
+    ordersListContent: {
+        paddingBottom: 8,
+        flexGrow: 0,
     },
     orderItem: {
         padding: 16,

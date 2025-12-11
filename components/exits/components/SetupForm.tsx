@@ -78,7 +78,10 @@ export function SetupForm() {
     );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.content}
+        nestedScrollEnabled={true}>
       <Card style={styles.card}>
         <Text style={styles.title}>Configuración de Salida</Text>
         <Text style={styles.subtitle}>
