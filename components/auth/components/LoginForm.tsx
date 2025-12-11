@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Colors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import * as Yup from 'yup';
 
 interface LoginFormValues {
@@ -120,6 +121,15 @@ export function LoginForm() {
             loading={isSubmitting}
             style={styles.button}
           />
+
+          <View style={styles.versionContainer}>
+            <Text style={styles.versionText}>
+              Versión {Constants.expoConfig?.version || '1.0.0'}
+            </Text>
+            <Text style={styles.yearText}>
+              © {new Date().getFullYear()}
+            </Text>
+          </View>
         </Card>
       )}
     </Formik>
@@ -166,6 +176,22 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 16,
+  },
+  versionContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border?.default || '#e5e7eb',
+  },
+  versionText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  yearText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
   },
 });
 
