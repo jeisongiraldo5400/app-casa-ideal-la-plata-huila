@@ -1201,6 +1201,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           updatedCache[selectedDeliveryOrderId] = {};
         }
         
+        let orderCompleted = false;
         for (const item of exitItems) {
           const { data, error: updateError } = await supabase.rpc(
             'update_delivery_order_progress',
@@ -1221,11 +1222,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             console.log(`[finalizeExit] Product ${item.product.id}: Updated cache from ${previousValue} to ${currentDelivered} (added ${item.quantity})`);
             
             if (data.all_delivered) {
-              console.log("Orden de entrega completada:", selectedDeliveryOrderId);
+              orderCompleted = true;
+              console.log("Orden de entrega completada y marcada como recibida:", selectedDeliveryOrderId);
             }
           } else if (data && !data.success) {
             console.error("Error en update_delivery_order_progress:", data.error);
           }
+        }
+
+        // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
+        if (orderCompleted) {
+          await get().selectDeliveryOrder(orderIdToRefresh);
         }
 
         // Recargar desde inventory_exits para sincronizar el cache (fuente de verdad)
