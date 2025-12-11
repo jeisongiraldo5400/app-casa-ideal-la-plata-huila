@@ -1,4 +1,5 @@
 import { useTheme } from '@/components/theme';
+import { BackButton } from '@/components/ui/BackButton';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -107,6 +108,7 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Entradas',
+          headerLeft: () => <BackButton />,
         }}
       />
       <Tabs.Screen
@@ -114,6 +116,7 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Salidas',
+          headerLeft: () => <BackButton />,
         }}
       />
       <Tabs.Screen
@@ -121,6 +124,7 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Mis Órdenes Recibidas',
+          headerLeft: () => <BackButton />,
         }}
       />
       <Tabs.Screen
@@ -128,6 +132,7 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Todas las Órdenes',
+          headerLeft: () => <BackButton />,
         }}
       />
       <Tabs.Screen
@@ -135,6 +140,7 @@ export default function TabLayout() {
         options={{
           href: null, // Ocultar del tab bar pero mantener la ruta accesible
           title: 'Reportes',
+          headerLeft: () => <BackButton />,
         }}
       />
     </Tabs>
