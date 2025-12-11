@@ -306,7 +306,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           )
         `)
         .eq('customer_id', customerId)
-        .in('status', ['pending', 'preparing', 'ready'])
+        .eq('status', 'pending')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -379,7 +379,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       });
 
-      set({ deliveryOrders: ordersWithCounts, loading: false });
+      // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
+      // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
+      const incompleteOrders = ordersWithCounts.filter((order: any) => 
+        order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
+      );
+
+      set({ deliveryOrders: incompleteOrders, loading: false });
     } catch (error: any) {
       console.error("Error loading delivery orders:", error);
       set({ deliveryOrders: [], loading: false, error: error.message });
@@ -404,7 +410,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           )
         `)
         .eq('assigned_to_user_id', userId)
-        .in('status', ['pending', 'preparing', 'ready'])
+        .eq('status', 'pending')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -477,7 +483,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       });
 
-      set({ deliveryOrders: ordersWithCounts, loading: false });
+      // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
+      // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
+      const incompleteOrders = ordersWithCounts.filter((order: any) => 
+        order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
+      );
+
+      set({ deliveryOrders: incompleteOrders, loading: false });
     } catch (error: any) {
       console.error("Error loading delivery orders by user:", error);
       set({ deliveryOrders: [], loading: false, error: error.message });
