@@ -32,6 +32,7 @@ export default function ExitsScreen() {
     exitItems,
     error,
     loading,
+    loadingMessage,
     scanBarcode,
     addProductToExit,
     setQuantity,
@@ -118,7 +119,7 @@ export default function ExitsScreen() {
           <View style={[styles.loadingContainer, { backgroundColor: colors.background.paper }]}>
             <ActivityIndicator size="large" color={colors.primary.main} />
             <Text style={[styles.loadingText, { color: colors.text.primary }]}>
-              Registrando salida...
+              {loadingMessage || 'Procesando...'}
             </Text>
             <Text style={[styles.loadingSubtext, { color: colors.text.secondary }]}>
               Por favor espere

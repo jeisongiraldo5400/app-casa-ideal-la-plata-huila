@@ -80,6 +80,7 @@ interface ExitsState {
 
   // Estado de UI
   loading: boolean;
+  loadingMessage: string | null;
   error: string | null;
   step: "setup" | "scanning";
 
@@ -162,6 +163,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // UI
   loading: false,
+  loadingMessage: null,
   error: null,
   step: "setup",
 
@@ -260,7 +262,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchCustomers: async (searchTerm: string) => {
-    set({ customerSearchTerm: searchTerm, loading: true });
+    set({ customerSearchTerm: searchTerm, loading: true, loadingMessage: 'Buscando clientes...' });
 
     try {
       // Buscar directamente en la tabla customers
@@ -279,18 +281,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       if (error) {
         console.error("Error searching customers:", error);
-        set({ customers: [], loading: false });
+        set({ customers: [], loading: false, loadingMessage: null });
         return;
       }
-      set({ customers: data || [], loading: false });
+      set({ customers: data || [], loading: false, loadingMessage: null });
     } catch (error: any) {
       console.error("Error searching customers:", error);
-      set({ customers: [], loading: false });
+      set({ customers: [], loading: false, loadingMessage: null });
     }
   },
 
   searchDeliveryOrdersByCustomer: async (customerId: string) => {
-    set({ loading: true });
+    set({ loading: true, loadingMessage: 'Cargando órdenes de entrega...' });
 
     try {
       // Consulta directa a la tabla delivery_orders con agregación de items
@@ -313,12 +315,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       if (error) {
         console.error("Error loading delivery orders:", error);
-        set({ deliveryOrders: [], loading: false, error: error.message });
+        set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
         return;
       }
 
       if (!data || data.length === 0) {
-        set({ deliveryOrders: [], loading: false });
+        set({ deliveryOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
@@ -385,15 +387,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
       );
 
-      set({ deliveryOrders: incompleteOrders, loading: false });
+      set({ deliveryOrders: incompleteOrders, loading: false, loadingMessage: null });
     } catch (error: any) {
       console.error("Error loading delivery orders:", error);
-      set({ deliveryOrders: [], loading: false, error: error.message });
+      set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
     }
   },
 
   searchDeliveryOrdersByUser: async (userId: string) => {
-    set({ loading: true });
+    set({ loading: true, loadingMessage: 'Cargando remisiones...' });
 
     try {
       // Consulta directa a la tabla delivery_orders con agregación de items
@@ -417,12 +419,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       if (error) {
         console.error("Error loading delivery orders by user:", error);
-        set({ deliveryOrders: [], loading: false, error: error.message });
+        set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
         return;
       }
 
       if (!data || data.length === 0) {
-        set({ deliveryOrders: [], loading: false });
+        set({ deliveryOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
@@ -489,15 +491,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
       );
 
-      set({ deliveryOrders: incompleteOrders, loading: false });
+      set({ deliveryOrders: incompleteOrders, loading: false, loadingMessage: null });
     } catch (error: any) {
       console.error("Error loading delivery orders by user:", error);
-      set({ deliveryOrders: [], loading: false, error: error.message });
+      set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
     }
   },
 
   selectDeliveryOrder: async (orderId: string) => {
-    set({ loading: true, error: null });
+    set({ loading: true, loadingMessage: 'Cargando detalles de la orden...', error: null });
 
     try {
       // Consulta directa con joins para obtener todos los detalles
@@ -525,6 +527,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           selectedDeliveryOrder: null,
           selectedDeliveryOrderId: null,
           loading: false,
+          loadingMessage: null,
           error: orderError.message
         });
         return;
@@ -535,6 +538,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           selectedDeliveryOrder: null,
           selectedDeliveryOrderId: null,
           loading: false,
+          loadingMessage: null,
           error: "Orden de entrega no encontrada"
         });
         return;
@@ -629,7 +633,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         selectedDeliveryOrderId: orderId,
         scannedItemsProgress: new Map(),
         registeredExitsCache: updatedCache,
-        loading: false
+        loading: false,
+        loadingMessage: null
       });
     } catch (error: any) {
       console.error("Error loading delivery order details:", error);
@@ -637,6 +642,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         selectedDeliveryOrder: null,
         selectedDeliveryOrderId: null,
         loading: false,
+        loadingMessage: null,
         error: error.message
       });
     }
@@ -830,7 +836,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // Scanning actions
   scanBarcode: async (barcode: string) => {
-    set({ loading: true, error: null, currentScannedBarcode: barcode });
+    set({ loading: true, loadingMessage: 'Buscando producto...', error: null, currentScannedBarcode: barcode });
 
     try {
       const product = await get().searchProductByBarcode(barcode);
@@ -838,6 +844,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (!product) {
         set({
           loading: false,
+          loadingMessage: null,
           error: "Producto no encontrado. Este código de barras no está registrado en el sistema.",
           currentProduct: null,
           currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
@@ -849,6 +856,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (!warehouseId) {
         set({
           loading: false,
+          loadingMessage: null,
           error: "Debe seleccionar una bodega primero",
           currentProduct: null,
           currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
@@ -866,6 +874,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         if (!validation.valid) {
           set({
             loading: false,
+            loadingMessage: null,
             error: validation.error || "Producto no válido para esta orden",
             currentProduct: null,
             currentScannedBarcode: null,
@@ -875,6 +884,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       // Verificar stock disponible en la bodega seleccionada
+      set({ loadingMessage: 'Verificando stock disponible...' });
+      
       const { data: stock, error: stockError } = await supabase
         .from("warehouse_stock")
         .select("quantity")
@@ -887,6 +898,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         console.error("Error checking stock:", stockError);
         set({
           loading: false,
+          loadingMessage: null,
           error: "Error al verificar el stock disponible. Por favor intente de nuevo.",
           currentProduct: null,
           currentScannedBarcode: null,
@@ -899,6 +911,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (availableStock <= 0) {
         set({
           loading: false,
+          loadingMessage: null,
           error: `No hay stock disponible de este producto en la bodega seleccionada. Stock actual: ${availableStock}`,
           currentProduct: null,
           currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
@@ -908,6 +921,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       set({
         loading: false,
+        loadingMessage: null,
         currentProduct: product,
         currentQuantity: 1,
         currentAvailableStock: availableStock,
@@ -917,6 +931,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       console.error("Error scanning barcode:", error);
       set({
         loading: false,
+        loadingMessage: null,
         error: error?.message || error?.toString() || "Error al escanear el código de barras. Por favor intente de nuevo.",
         currentProduct: null,
         currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
@@ -1144,7 +1159,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
 
     // Establecer loading al inicio del proceso
-    set({ loading: true });
+    set({ loading: true, loadingMessage: 'Registrando salida...' });
 
     try {
       // Preparar datos según el modo de salida
@@ -1181,6 +1196,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       });
 
       // Insertar salidas
+      set({ loadingMessage: 'Guardando productos en el inventario...' });
+      
       const { data: insertedExits, error: exitsError } = await supabase
         .from("inventory_exits")
         .insert(exits)
@@ -1203,6 +1220,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Si hay una orden de entrega seleccionada, actualizar el progreso de la orden
       if (selectedDeliveryOrderId && selectedDeliveryOrder) {
+        set({ loadingMessage: 'Actualizando progreso de la orden...' });
+        
         // Guardar el orderId y actualizar el cache antes de resetear
         const orderIdToRefresh = selectedDeliveryOrderId;
         const { registeredExitsCache } = get();
@@ -1244,6 +1263,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
         // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
         if (orderCompleted) {
+          set({ loadingMessage: 'Actualizando estado de la orden...' });
           await get().selectDeliveryOrder(orderIdToRefresh);
         }
 
@@ -1320,12 +1340,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       get().reset();
 
       // Limpiar loading después de finalizar exitosamente
-      set({ loading: false });
+      set({ loading: false, loadingMessage: null });
       return { error: null };
     } catch (error: any) {
       console.error("Error finalizing exit:", error);
       // Limpiar loading en caso de error
-      set({ loading: false });
+      set({ loading: false, loadingMessage: null });
       return { error };
     }
   },
@@ -1343,6 +1363,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       step: "setup",
       error: null,
+      loading: false,
+      loadingMessage: null,
       exitMode: null,
       selectedUserId: null,
       selectedCustomerId: null,
