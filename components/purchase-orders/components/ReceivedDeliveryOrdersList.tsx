@@ -1,3 +1,4 @@
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
@@ -38,20 +39,30 @@ type DeliveryOrder = {
 export function ReceivedDeliveryOrdersList() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { user } = useAuth();
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadReceivedDeliveryOrders();
-  }, []);
+    if (user) {
+      loadReceivedDeliveryOrders();
+    }
+  }, [user]);
 
   const loadReceivedDeliveryOrders = async () => {
+    if (!user) {
+      setError('Usuario no autenticado');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       // Consultar directamente la tabla para obtener información completa de cliente y usuario
-      // Filtrar órdenes eliminadas (solo delivery_orders tiene deleted_at, no delivery_order_items)
+      // Filtrar órdenes eliminadas, creadas por el usuario logueado y con estados "delivered" o "approved"
+      // Filtrar por created_by para mostrar solo las órdenes que el usuario logueado registró
       const { data: ordersData, error: ordersError } = await supabase
         .from('delivery_orders')
         .select(`
@@ -69,7 +80,10 @@ export function ReceivedDeliveryOrdersList() {
           assigned_to_user:profiles(id, full_name, email)
         `)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .eq('created_by', user.id) // Solo órdenes creadas por el usuario logueado
+        .in('status', ['delivered', 'approved']) // Solo estados entregadas o aprobadas
+        .order('created_at', { ascending: false })
+        .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 
       if (ordersError) {
         console.error('Error loading delivery orders:', ordersError);
@@ -194,13 +208,9 @@ export function ReceivedDeliveryOrdersList() {
         });
       }
 
-      // Filtrar solo las órdenes completadas (todas las unidades entregadas)
-      // Una orden está completa cuando delivered_quantity >= total_quantity
-      const completedOrders = ordersWithStats
-        .filter((order: any) => 
-          order.total_quantity > 0 && order.delivered_quantity >= order.total_quantity
-        )
-        .map((order: any) => ({
+      // Las órdenes ya están filtradas por estado "delivered" o "approved" en la consulta
+      // Transformar al formato esperado
+      const completedOrders = ordersWithStats.map((order: any) => ({
           id: order.id,
           order_number: order.order_number,
           created_at: order.created_at,

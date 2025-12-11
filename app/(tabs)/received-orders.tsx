@@ -1,3 +1,4 @@
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { usePurchaseOrders } from '@/components/purchase-orders';
 import { ReceivedDeliveryOrdersList } from '@/components/purchase-orders/components/ReceivedDeliveryOrdersList';
 import { ReceivedOrdersList } from '@/components/purchase-orders/components/ReceivedOrdersList';
@@ -11,17 +12,22 @@ type TabType = 'purchase' | 'delivery';
 
 export default function ReceivedOrdersScreen() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
+  const { user } = useAuth();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [activeTab, setActiveTab] = useState<TabType>('purchase');
 
   useEffect(() => {
-    // Cargar todas las órdenes recibidas sin filtrar por usuario
-    loadPurchaseOrders('received');
-  }, [loadPurchaseOrders]);
+    // Cargar solo las órdenes recibidas del usuario logueado
+    if (user) {
+      loadPurchaseOrders('received', user.id);
+    }
+  }, [loadPurchaseOrders, user]);
 
   const handleRefresh = () => {
-    loadPurchaseOrders('received');
+    if (user) {
+      loadPurchaseOrders('received', user.id);
+    }
   };
 
   return (
