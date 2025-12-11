@@ -77,7 +77,9 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
             nit
           )
         `)
-        .order('created_at', { ascending: false });
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 
       if (status) {
         query = query.eq('status', status);
@@ -108,31 +110,37 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
         (profilesData || []).map((profile) => [profile.id, profile])
       );
 
-      // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
-      // Esto reduce de N consultas a 1 consulta
+      // OPTIMIZADO: Cargar todos los items de todas las órdenes en lotes
+      // Esto reduce de N consultas a múltiples consultas en lotes (evita problemas N+1)
+      // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
       const orderIds = (data || []).map((order: any) => order.id);
       
       let allItems: any[] = [];
       if (orderIds.length > 0) {
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('purchase_order_items')
-          .select(`
-            *,
-            products:product_id (
-              id,
-              name,
-              barcode
-            ),
-            purchase_order_id
-          `)
-          .in('purchase_order_id', orderIds);
-
-        if (itemsError) {
-          console.error('Error loading purchase order items:', itemsError);
-        } else {
-          allItems = itemsData || [];
+        const BATCH_SIZE = 500;
+        
+        for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+          const batch = orderIds.slice(i, i + BATCH_SIZE);
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('purchase_order_items')
+            .select(`
+              *,
+              products:product_id (
+                id,
+                name,
+                barcode
+              ),
+              purchase_order_id
+            `)
+            .in('purchase_order_id', batch);
+          
+          if (itemsError) {
+            console.error('Error loading purchase order items batch:', itemsError);
+          } else {
+            allItems = [...allItems, ...(itemsData || [])];
+          }
         }
-      }
+
 
       // Agrupar items por purchase_order_id en memoria
       const itemsByOrderId = new Map<string, PurchaseOrderItem[]>();

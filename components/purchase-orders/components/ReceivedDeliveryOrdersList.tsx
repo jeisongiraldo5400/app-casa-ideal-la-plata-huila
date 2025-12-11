@@ -98,17 +98,29 @@ export function ReceivedDeliveryOrdersList() {
       
       let ordersWithStats: any[] = [];
       if (orderIds.length > 0) {
-        // Cargar items de todas las órdenes
-        // Nota: delivery_order_items NO tiene columna deleted_at según las migraciones
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('delivery_order_items')
-          .select('delivery_order_id, quantity, delivered_quantity')
-          .in('delivery_order_id', orderIds);
+        // Cargar items de todas las órdenes en lotes para evitar límites de Supabase
+        // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
+        const BATCH_SIZE = 500;
+        let allItemsData: any[] = [];
+        
+        for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+          const batch = orderIds.slice(i, i + BATCH_SIZE);
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('delivery_order_items')
+            .select('delivery_order_id, quantity, delivered_quantity')
+            .in('delivery_order_id', batch);
+          
+          if (itemsError) {
+            console.error('Error loading delivery order items batch:', itemsError);
+          } else {
+            allItemsData = [...allItemsData, ...(itemsData || [])];
+          }
+        }
+        
+        const itemsData = allItemsData;
 
-        if (itemsError) {
-          console.error('Error loading delivery order items:', itemsError);
-        } else {
-          // Calcular estadísticas por orden
+        // Calcular estadísticas por orden
+        if (itemsData.length > 0) {
           const statsByOrder = new Map<string, {
             total_items: number;
             total_quantity: number;
@@ -116,7 +128,7 @@ export function ReceivedDeliveryOrdersList() {
             delivered_quantity: number;
           }>();
 
-          (itemsData || []).forEach((item: any) => {
+          itemsData.forEach((item: any) => {
             const orderId = item.delivery_order_id;
             if (!statsByOrder.has(orderId)) {
               statsByOrder.set(orderId, {
@@ -153,7 +165,33 @@ export function ReceivedDeliveryOrdersList() {
               created_by_profile: createdByProfile || null,
             };
           });
+        } else {
+          // Si no hay items, crear órdenes sin estadísticas
+          ordersWithStats = (ordersData || []).map((order: any) => {
+            const createdByProfile = createdByProfilesMap.get(order.created_by);
+            return {
+              ...order,
+              total_items: 0,
+              total_quantity: 0,
+              delivered_items: 0,
+              delivered_quantity: 0,
+              created_by_profile: createdByProfile || null,
+            };
+          });
         }
+      } else {
+        // Si no hay orderIds, crear órdenes sin estadísticas
+        ordersWithStats = (ordersData || []).map((order: any) => {
+          const createdByProfile = createdByProfilesMap.get(order.created_by);
+          return {
+            ...order,
+            total_items: 0,
+            total_quantity: 0,
+            delivered_items: 0,
+            delivered_quantity: 0,
+            created_by_profile: createdByProfile || null,
+          };
+        });
       }
 
       // Filtrar solo las órdenes completadas (todas las unidades entregadas)

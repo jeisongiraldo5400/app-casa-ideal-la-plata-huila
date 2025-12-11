@@ -44,7 +44,7 @@ export function AllDeliveryOrdersList() {
 
   useEffect(() => {
     loadDeliveryOrders();
-  }, []);
+  }, []); // Solo cargar una vez al montar el componente
 
   const loadDeliveryOrders = async () => {
     setLoading(true);
@@ -52,6 +52,7 @@ export function AllDeliveryOrdersList() {
     try {
       // Consultar directamente la tabla para obtener información completa de cliente y usuario
       // Mostrar TODAS las órdenes en cualquier estado (solo filtramos las eliminadas)
+      // Limitar a 100 órdenes para mejorar rendimiento
       const { data: ordersData, error: ordersError } = await supabase
         .from('delivery_orders')
         .select(`
@@ -69,7 +70,8 @@ export function AllDeliveryOrdersList() {
           assigned_to_user:profiles(id, full_name, email)
         `)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 
       if (ordersError) {
         console.error('Error loading delivery orders:', ordersError);
@@ -98,17 +100,29 @@ export function AllDeliveryOrdersList() {
       
       let ordersWithStats: any[] = [];
       if (orderIds.length > 0) {
-        // Cargar items de todas las órdenes
-        // Nota: delivery_order_items NO tiene columna deleted_at según las migraciones
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('delivery_order_items')
-          .select('delivery_order_id, quantity, delivered_quantity')
-          .in('delivery_order_id', orderIds);
+        // Cargar items de todas las órdenes en lotes para evitar límites de Supabase
+        // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
+        const BATCH_SIZE = 500;
+        let allItemsData: any[] = [];
+        
+        for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+          const batch = orderIds.slice(i, i + BATCH_SIZE);
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('delivery_order_items')
+            .select('delivery_order_id, quantity, delivered_quantity')
+            .in('delivery_order_id', batch);
+          
+          if (itemsError) {
+            console.error('Error loading delivery order items batch:', itemsError);
+          } else {
+            allItemsData = [...allItemsData, ...(itemsData || [])];
+          }
+        }
+        
+        const itemsData = allItemsData;
 
-        if (itemsError) {
-          console.error('Error loading delivery order items:', itemsError);
-        } else {
-          // Calcular estadísticas por orden
+        // Calcular estadísticas por orden
+        if (itemsData.length > 0) {
           const statsByOrder = new Map<string, {
             total_items: number;
             total_quantity: number;
@@ -116,7 +130,7 @@ export function AllDeliveryOrdersList() {
             delivered_quantity: number;
           }>();
 
-          (itemsData || []).forEach((item: any) => {
+          itemsData.forEach((item: any) => {
             const orderId = item.delivery_order_id;
             if (!statsByOrder.has(orderId)) {
               statsByOrder.set(orderId, {
@@ -154,7 +168,35 @@ export function AllDeliveryOrdersList() {
               created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
             };
           });
+        } else {
+          // Si no hay items, crear órdenes sin estadísticas
+          ordersWithStats = (ordersData || []).map((order: any) => {
+            const createdByProfile = createdByProfilesMap.get(order.created_by);
+            return {
+              ...order,
+              total_items: 0,
+              total_quantity: 0,
+              delivered_items: 0,
+              delivered_quantity: 0,
+              created_by_profile: createdByProfile || null,
+              created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
+            };
+          });
         }
+      } else {
+        // Si no hay orderIds, simplemente crear órdenes sin estadísticas
+        ordersWithStats = (ordersData || []).map((order: any) => {
+          const createdByProfile = createdByProfilesMap.get(order.created_by);
+          return {
+            ...order,
+            total_items: 0,
+            total_quantity: 0,
+            delivered_items: 0,
+            delivered_quantity: 0,
+            created_by_profile: createdByProfile || null,
+            created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
+          };
+        });
       }
 
       // Transformar al formato esperado
@@ -274,8 +316,19 @@ export function AllDeliveryOrdersList() {
     );
   }
 
+  // Mostrar mensaje si hay muchas órdenes (más de 100)
+  const showLimitMessage = deliveryOrders.length >= 100;
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {showLimitMessage && (
+        <View style={[styles.limitMessage, { backgroundColor: colors.info.main + '15', borderColor: colors.info.main }]}>
+          <MaterialIcons name="info-outline" size={20} color={colors.info.main} />
+          <Text style={[styles.limitMessageText, { color: colors.info.main }]}>
+            Mostrando las últimas 100 órdenes de entrega
+          </Text>
+        </View>
+      )}
       {deliveryOrders.map((order) => {
         const statusColor = getStatusColor(order.status);
         const progress = order.total_quantity > 0 
@@ -535,6 +588,20 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 12,
     textAlign: 'right',
+  },
+  limitMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 8,
+  },
+  limitMessageText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
 });
 
