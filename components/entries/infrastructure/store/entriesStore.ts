@@ -81,6 +81,7 @@ interface EntriesState {
 
   // Estado de UI
   loading: boolean;
+  loadingMessage: string | null;
   error: string | null;
   step: "flow-selection" | "setup" | "scanning" | "product-form"; // flow-selection: elegir tipo, setup: seleccionar supplier/PO/warehouse, scanning: escaneando, product-form: crear producto
   setupStep: "supplier" | "purchase-order" | "warehouse"; // Paso actual en el setup
@@ -175,6 +176,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   currentScannedBarcode: null,
   currentQuantity: 1,
   loading: false,
+  loadingMessage: null,
   error: null,
   step: "flow-selection",
   setupStep: "supplier",
@@ -227,7 +229,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   selectPurchaseOrder: async (purchaseOrderId: string) => {
-    set({ loading: true, error: null });
+    set({ loading: true, loadingMessage: 'Cargando detalles de la orden de compra...', error: null });
 
     try {
       // Buscar la orden en las órdenes ya cargadas
@@ -267,6 +269,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             selectedPurchaseOrder: null,
             purchaseOrderId: null,
             loading: false,
+            loadingMessage: null,
             error: orderError.message,
           });
           return;
@@ -277,6 +280,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             selectedPurchaseOrder: null,
             purchaseOrderId: null,
             loading: false,
+            loadingMessage: null,
             error: "Orden de compra no encontrada",
           });
           return;
@@ -326,6 +330,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchaseOrderId,
         scannedItemsProgress: new Map(),
         loading: false,
+        loadingMessage: null,
       });
     } catch (error: any) {
       console.error("Error loading purchase order details:", error);
@@ -333,6 +338,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         selectedPurchaseOrder: null,
         purchaseOrderId: null,
         loading: false,
+        loadingMessage: null,
         error: error.message,
       });
     }
@@ -432,9 +438,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   loadPurchaseOrders: async (supplierId: string) => {
-    set({ loading: true });
+    set({ loading: true, loadingMessage: 'Cargando órdenes de compra pendientes...' });
     try {
-      // Cargar órdenes de compra pendientes o en proceso para el proveedor
+      // Cargar órdenes de compra pendientes para el proveedor
       const { data: orders, error: ordersError } = await supabase
         .from("purchase_orders")
         .select("*")
@@ -444,7 +450,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (ordersError) {
         console.error("Error loading purchase orders:", ordersError);
-        set({ purchaseOrders: [], loading: false });
+        set({ purchaseOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
@@ -493,7 +499,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         })
       );
 
-      set({ purchaseOrders: ordersWithItems, loading: false });
+      set({ purchaseOrders: ordersWithItems, loading: false, loadingMessage: null });
 
       // Validar todas las órdenes después de cargarlas
       if (ordersWithItems.length > 0) {
@@ -501,7 +507,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       }
     } catch (error: any) {
       console.error("Error loading purchase orders:", error);
-      set({ purchaseOrders: [], loading: false });
+      set({ purchaseOrders: [], loading: false, loadingMessage: null });
     }
   },
 
@@ -858,6 +864,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   scanBarcode: async (barcode: string) => {
     set({
       loading: true,
+      loadingMessage: 'Buscando producto...',
       error: null,
       currentScannedBarcode: barcode,
       currentQuantity: 1,
@@ -875,6 +882,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           if (!validation.valid) {
             set({
               loading: false,
+              loadingMessage: null,
               error: validation.error || "Producto no válido para esta orden",
               currentProduct: null,
               currentScannedBarcode: null,
@@ -887,6 +895,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           if (entryType === "PO_ENTRY" && selectedOrderProductId && selectedOrderProductId !== product.id) {
             set({
               loading: false,
+              loadingMessage: null,
               error: "Debe escanear el producto seleccionado de la orden",
               currentProduct: null,
               currentScannedBarcode: null,
@@ -895,11 +904,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           }
         }
 
-        set({ currentProduct: product, loading: false, step: "scanning" });
+        set({ currentProduct: product, loading: false, loadingMessage: null, step: "scanning" });
       } else {
         set({
           currentProduct: null,
           loading: false,
+          loadingMessage: null,
           step: "product-form",
           error: null, // No es error, es flujo normal
         });
@@ -907,6 +917,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error: any) {
       set({
         loading: false,
+        loadingMessage: null,
         error: error.message || "Error al buscar el producto",
         step: "scanning",
         currentProduct: null,
@@ -1167,7 +1178,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
 
     // Establecer loading al inicio del proceso
-    set({ loading: true });
+    set({ loading: true, loadingMessage: 'Registrando entrada...' });
 
     // Helper de validación exhaustiva antes de insertar
     const validateEntryDataBeforeInsert = async (): Promise<{
@@ -1361,12 +1372,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const validationResult = await validateEntryDataBeforeInsert();
     if (!validationResult.valid) {
       // Limpiar loading si la validación falla
-      set({ loading: false });
+      set({ loading: false, loadingMessage: null });
       return { error: { message: validationResult.message } };
     }
 
     try {
       // Registrar cada producto en inventory_entries
+      set({ loadingMessage: 'Guardando productos en el inventario...' });
+      
       const entries: InventoryEntry[] = entryItems.map((item) => ({
         product_id: item.product.id,
         quantity: item.quantity,
@@ -1384,7 +1397,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       if (entriesError) {
         // Limpiar loading en caso de error al insertar
-        set({ loading: false });
+        set({ loading: false, loadingMessage: null });
         return { error: entriesError };
       }
 
@@ -1395,6 +1408,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       // Actualizar el cache de entradas registradas inmediatamente
       if (purchaseOrderId) {
+        set({ loadingMessage: 'Actualizando progreso de la orden...' });
         const { registeredEntriesCache } = get();
         const updatedCache = { ...registeredEntriesCache };
 
@@ -1436,11 +1450,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       });
 
       // Limpiar loading después de finalizar exitosamente
-      set({ loading: false });
+      set({ loading: false, loadingMessage: null });
       return { error: null };
     } catch (error: any) {
       // Limpiar loading en caso de error
-      set({ loading: false });
+      set({ loading: false, loadingMessage: null });
       return { error };
     }
   },
@@ -1453,6 +1467,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       error: null,
+      loading: false,
+      loadingMessage: null,
       step: "flow-selection",
       setupStep: "supplier",
       entryType: null,

@@ -30,6 +30,7 @@ export default function EntriesScreen() {
     purchaseOrderId,
     error,
     loading,
+    loadingMessage,
     scanBarcode,
     addProductToEntry,
     setQuantity,
@@ -122,7 +123,7 @@ export default function EntriesScreen() {
           <View style={[styles.loadingContainer, { backgroundColor: colors.background.paper }]}>
             <ActivityIndicator size="large" color={colors.primary.main} />
             <Text style={[styles.loadingText, { color: colors.text.primary }]}>
-              Registrando entrada...
+              {loadingMessage || 'Procesando...'}
             </Text>
             <Text style={[styles.loadingSubtext, { color: colors.text.secondary }]}>
               Por favor espere
