@@ -1,18 +1,20 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, Switch, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { ChangePasswordForm } from '@/components/auth/components/ChangePasswordForm';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
   const { themeMode, isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -67,6 +69,21 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
+
+        <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+        <TouchableOpacity
+          style={styles.changePasswordRow}
+          onPress={() => setShowChangePasswordModal(true)}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="lock" size={20} color={colors.text.secondary} />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Contraseña</Text>
+            <Text style={[styles.infoValue, { color: colors.primary.main }]}>Cambiar contraseña</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
       </Card>
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
@@ -116,6 +133,11 @@ export default function ProfileScreen() {
         onPress={handleSignOut}
         variant="outline"
         style={styles.signOutButton}
+      />
+
+      <ChangePasswordForm
+        visible={showChangePasswordModal}
+        onClose={() => setShowChangePasswordModal(false)}
       />
     </ScrollView>
   );
@@ -186,6 +208,11 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     marginVertical: 16,
+  },
+  changePasswordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
   },
   signOutButton: {
     marginTop: 8,
