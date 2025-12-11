@@ -140,7 +140,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
             allItems = [...allItems, ...(itemsData || [])];
           }
         }
-
+      }
 
       // Agrupar items por purchase_order_id en memoria
       const itemsByOrderId = new Map<string, PurchaseOrderItem[]>();
