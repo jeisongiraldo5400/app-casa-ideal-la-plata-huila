@@ -184,21 +184,21 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   setExitMode: (mode) => {
-      set({
-        exitMode: mode,
-        // Reset related fields when mode changes
-        selectedUserId: null,
-        selectedCustomerId: null,
-        selectedDeliveryOrderId: null,
-        selectedDeliveryOrder: null,
-        deliveryOrders: [],
-        scannedItemsProgress: new Map(),
-        registeredExitsCache: {},
-      });
+    set({
+      exitMode: mode,
+      // Reset related fields when mode changes
+      selectedUserId: null,
+      selectedCustomerId: null,
+      selectedDeliveryOrderId: null,
+      selectedDeliveryOrder: null,
+      deliveryOrders: [],
+      scannedItemsProgress: new Map(),
+      registeredExitsCache: {},
+    });
   },
 
   setSelectedUser: (userId) => {
-    set({ 
+    set({
       selectedUserId: userId,
       // Reset delivery order when user changes
       selectedDeliveryOrderId: null,
@@ -300,7 +300,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .from('delivery_orders')
         .select(`
           *,
-          items:delivery_order_items(
+          items:delivery_order_items!fk_delivery_order_item_order(
             id,
             product_id,
             warehouse_id,
@@ -326,16 +326,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
       const orderIds = data.map((order: any) => order.id);
-      
+
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from("inventory_exit_cancellations")
         .select("inventory_exit_id");
-      
+
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
       );
-      
+
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
         .from("inventory_exits")
@@ -383,7 +383,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
       // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
-      const incompleteOrders = ordersWithCounts.filter((order: any) => 
+      const incompleteOrders = ordersWithCounts.filter((order: any) =>
         order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
       );
 
@@ -395,51 +395,40 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchDeliveryOrdersByUser: async (userId: string) => {
-    set({ loading: true, loadingMessage: 'Cargando remisiones...' });
+    set({ loading: true, loadingMessage: 'Cargando órdenes...' });
 
     try {
-      // Consulta directa a la tabla delivery_orders con agregación de items
-      // Buscar por assigned_to_user_id en lugar de customer_id
+      // Usar RPC que expande remisiones en órdenes independientes
       const { data, error } = await supabase
-        .from('delivery_orders')
-        .select(`
-          *,
-          items:delivery_order_items(
-            id,
-            product_id,
-            warehouse_id,
-            quantity
-          )
-        `)
-        .eq('assigned_to_user_id', userId)
-        .eq('status', 'pending')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(50);
+        .rpc('get_user_delivery_orders_expanded', {
+          p_user_id: userId
+        });
 
       if (error) {
-        console.error("Error loading delivery orders by user:", error);
+        console.error("Error loading orders:", error);
         set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
         return;
       }
 
-      if (!data || data.length === 0) {
+      const orders = data || [];
+
+      if (orders.length === 0) {
         set({ deliveryOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
-      const orderIds = data.map((order: any) => order.id);
-      
+      const orderIds = orders.map((order: any) => order.id);
+
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from("inventory_exit_cancellations")
         .select("inventory_exit_id");
-      
+
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
       );
-      
+
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
         .from("inventory_exits")
@@ -447,7 +436,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .in("delivery_order_id", orderIds);
 
       if (exitsError) {
-        console.error("Error loading inventory exits for delivery orders:", exitsError);
+        console.error("Error loading inventory exits for orders:", exitsError);
       }
 
       // Agrupar salidas por order_id y product_id (excluyendo canceladas)
@@ -466,34 +455,35 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         );
       });
 
-      // Transformar los datos para incluir contadores desde inventory_exits
-      const ordersWithCounts = data.map((order: any) => {
+      // Calcular delivered_quantity para cada orden
+      const ordersWithProgress = orders.map((order: any) => {
         const orderExits = exitsByOrder.get(order.id) || new Map();
+
+        // El RPC ya retorna total_quantity, solo necesitamos calcular delivered
         let totalDelivered = 0;
-        const totalQuantity = order.items?.reduce((sum: number, item: any) => {
-          const rawDelivered = orderExits.get(item.product_id) || 0;
-          const clampedDelivered = Math.min(rawDelivered, item.quantity);
-          totalDelivered += clampedDelivered;
-          return sum + item.quantity;
-        }, 0) || 0;
+
+        // Sumar todas las salidas registradas para esta orden
+        orderExits.forEach((quantity) => {
+          totalDelivered += quantity;
+        });
+
+        // Limitar delivered_quantity al total_quantity
+        const clampedDelivered = Math.min(totalDelivered, order.total_quantity || 0);
 
         return {
           ...order,
-          total_items: order.items?.length || 0,
-          total_quantity: totalQuantity,
-          delivered_quantity: totalDelivered,
+          delivered_quantity: clampedDelivered,
         };
       });
 
       // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
-      // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
-      const incompleteOrders = ordersWithCounts.filter((order: any) => 
+      const incompleteOrders = ordersWithProgress.filter((order: any) =>
         order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
       );
 
       set({ deliveryOrders: incompleteOrders, loading: false, loadingMessage: null });
     } catch (error: any) {
-      console.error("Error loading delivery orders by user:", error);
+      console.error("Error loading orders:", error);
       set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
     }
   },
@@ -509,11 +499,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           *,
           customer:customers(id, name, id_number),
           assigned_to_user:profiles(id, full_name, email),
-          items:delivery_order_items(
+          items:delivery_order_items!fk_delivery_order_item_order(
             id,
             product_id,
             warehouse_id,
             quantity,
+            source_delivery_order_id,
             product:products(id, name, barcode, sku),
             warehouse:warehouses(id, name)
           )
@@ -549,11 +540,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from("inventory_exit_cancellations")
         .select("inventory_exit_id");
-      
+
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
       );
-      
+
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
         .from("inventory_exits")
@@ -580,7 +571,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Para clientes (customer_id), usar el nombre del cliente
       const customerName = orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
       const customerIdNumber = orderData.customer?.id_number || '';
-      
+
+      // Incluir TODOS los items (directos + de órdenes asignadas)
+      const allItems = orderData.items || [];
+
       const deliveryOrder: DeliveryOrder = {
         id: orderData.id,
         order_number: orderData.order_number || null,
@@ -591,7 +585,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         delivery_address: orderData.delivery_address || '',
         notes: orderData.notes || '',
         created_at: orderData.created_at,
-        items: (orderData.items || []).map((item: any) => {
+        items: allItems.map((item: any) => {
           const rawRegistered = registeredByProduct[item.product_id] || 0;
           const clampedRegistered = Math.min(rawRegistered, item.quantity);
           return {
@@ -620,7 +614,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrder.items.forEach((item) => {
         const rawRegistered = registeredByProduct[item.product_id] || 0;
         const clampedRegistered = Math.min(rawRegistered, item.quantity);
-        
+
         // Solo agregar al cache si tiene cantidad registrada > 0
         if (clampedRegistered > 0) {
           updatedCache[orderId][item.product_id] = clampedRegistered;
@@ -792,7 +786,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         set({ error: "Debe seleccionar un usuario destinatario" });
         return;
       }
-      
+
       if (!selectedDeliveryOrderId) {
         set({ error: "Debe seleccionar una remisión" });
         return;
@@ -814,7 +808,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         set({ error: "Debe seleccionar un cliente destinatario" });
         return;
       }
-      
+
       if (!selectedDeliveryOrderId) {
         set({ error: "Debe seleccionar una orden de entrega" });
         return;
@@ -885,7 +879,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Verificar stock disponible en la bodega seleccionada
       set({ loadingMessage: 'Verificando stock disponible...' });
-      
+
       const { data: stock, error: stockError } = await supabase
         .from("warehouse_stock")
         .select("quantity")
@@ -1064,7 +1058,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   removeProductFromExit: (index: number) => {
     const { exitItems, selectedDeliveryOrderId, scannedItemsProgress } = get();
     const itemToRemove = exitItems[index];
-    
+
     if (!itemToRemove) return;
 
     const updatedItems = exitItems.filter((_, i) => i !== index);
@@ -1074,13 +1068,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const currentProgress = scannedItemsProgress.get(itemToRemove.product.id) || 0;
       const newProgress = new Map(scannedItemsProgress);
       const newValue = Math.max(0, currentProgress - itemToRemove.quantity);
-      
+
       if (newValue > 0) {
         newProgress.set(itemToRemove.product.id, newValue);
       } else {
         newProgress.delete(itemToRemove.product.id);
       }
-      
+
       set({ exitItems: updatedItems, scannedItemsProgress: newProgress });
     } else {
       set({ exitItems: updatedItems });
@@ -1115,13 +1109,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const quantityDelta = quantity - item.quantity;
       const newProgress = new Map(scannedItemsProgress);
       const newValue = Math.max(0, currentProgress + quantityDelta);
-      
+
       if (newValue > 0) {
         newProgress.set(item.product.id, newValue);
       } else {
         newProgress.delete(item.product.id);
       }
-      
+
       set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
     } else {
       set({ exitItems: updatedItems, error: null });
@@ -1197,7 +1191,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Insertar salidas
       set({ loadingMessage: 'Guardando productos en el inventario...' });
-      
+
       const { data: insertedExits, error: exitsError } = await supabase
         .from("inventory_exits")
         .insert(exits)
@@ -1221,17 +1215,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Si hay una orden de entrega seleccionada, actualizar el progreso de la orden
       if (selectedDeliveryOrderId && selectedDeliveryOrder) {
         set({ loadingMessage: 'Actualizando progreso de la orden...' });
-        
+
         // Guardar el orderId y actualizar el cache antes de resetear
         const orderIdToRefresh = selectedDeliveryOrderId;
         const { registeredExitsCache } = get();
         let updatedCache = { ...registeredExitsCache };
-        
+
         // Inicializar el cache para esta orden si no existe
         if (!updatedCache[selectedDeliveryOrderId]) {
           updatedCache[selectedDeliveryOrderId] = {};
         }
-        
+
         let orderCompleted = false;
         for (const item of exitItems) {
           const { data, error: updateError } = await supabase.rpc(
@@ -1251,7 +1245,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             const previousValue = updatedCache[selectedDeliveryOrderId][item.product.id] || 0;
             updatedCache[selectedDeliveryOrderId][item.product.id] = currentDelivered;
             console.log(`[finalizeExit] Product ${item.product.id}: Updated cache from ${previousValue} to ${currentDelivered} (added ${item.quantity})`);
-            
+
             if (data.all_delivered) {
               orderCompleted = true;
               console.log("Orden de entrega completada y marcada como recibida:", selectedDeliveryOrderId);
@@ -1273,11 +1267,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           const { data: cancelledExits, error: cancelledError } = await supabase
             .from("inventory_exit_cancellations")
             .select("inventory_exit_id");
-          
+
           const cancelledExitIds = new Set(
             (cancelledExits || []).map((c: any) => c.inventory_exit_id)
           );
-          
+
           // Obtener todas las salidas y filtrar las canceladas
           const { data: exitsData, error: exitsError } = await supabase
             .from("inventory_exits")
@@ -1308,7 +1302,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
               .single();
 
             const finalCache = { ...updatedCache };
-            
+
             if (!finalCache[orderIdToRefresh]) {
               finalCache[orderIdToRefresh] = {};
             }
@@ -1318,7 +1312,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
               orderData.items.forEach((item: any) => {
                 const rawRegistered = registeredByProduct[item.product_id] || 0;
                 const clampedRegistered = Math.min(rawRegistered, item.quantity);
-                
+
                 if (clampedRegistered > 0) {
                   finalCache[orderIdToRefresh][item.product_id] = clampedRegistered;
                 } else {
