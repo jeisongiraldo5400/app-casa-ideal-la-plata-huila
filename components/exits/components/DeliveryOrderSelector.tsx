@@ -4,6 +4,7 @@ import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getStatusColor, getTypeColor, translateOrderStatus, translateOrderType } from '../utils/translations';
 
 export function DeliveryOrderSelector() {
     const {
@@ -49,7 +50,7 @@ export function DeliveryOrderSelector() {
                     <MaterialIcons name="inbox" size={64} color={Colors.text.disabled} />
                     <Text style={styles.emptyTitle}>No hay {orderTypeLabelPlural} pendientes</Text>
                     <Text style={styles.emptySubtitle}>
-                        {isRemissionMode 
+                        {isRemissionMode
                             ? 'Este usuario no tiene remisiones pendientes'
                             : 'Este cliente no tiene órdenes de entrega pendientes'}
                     </Text>
@@ -65,8 +66,8 @@ export function DeliveryOrderSelector() {
                 {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
             </Text>
 
-            <ScrollView 
-                style={styles.ordersList} 
+            <ScrollView
+                style={styles.ordersList}
                 contentContainerStyle={styles.ordersListContent}
                 showsVerticalScrollIndicator={true}
                 nestedScrollEnabled={true}>
@@ -90,14 +91,37 @@ export function DeliveryOrderSelector() {
                             <View style={styles.orderHeader}>
                                 <View style={styles.orderInfo}>
                                     <Text style={styles.orderId}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
+
+                                    {/* Badge de Tipo */}
+                                    <View style={[
+                                        styles.typeBadge,
+                                        { backgroundColor: getTypeColor(order.order_type || 'customer').bg }
+                                    ]}>
+                                        <Text style={[
+                                            styles.typeText,
+                                            { color: getTypeColor(order.order_type || 'customer').text }
+                                        ]}>
+                                            {translateOrderType(order.order_type || 'customer')}
+                                        </Text>
+                                    </View>
+
+                                    {/* Badge de Estado */}
                                     {isComplete ? (
                                         <View style={[styles.statusBadge, styles.status_complete]}>
                                             <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />
                                             <Text style={[styles.statusText, { color: Colors.success.main }]}>Completa</Text>
                                         </View>
                                     ) : (
-                                        <View style={[styles.statusBadge, styles[`status_${order.status}`]]}>
-                                            <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
+                                        <View style={[
+                                            styles.statusBadge,
+                                            { backgroundColor: getStatusColor(order.status).bg }
+                                        ]}>
+                                            <Text style={[
+                                                styles.statusText,
+                                                { color: getStatusColor(order.status).text }
+                                            ]}>
+                                                {getStatusLabel(order.status)}
+                                            </Text>
                                         </View>
                                     )}
                                 </View>
@@ -107,6 +131,16 @@ export function DeliveryOrderSelector() {
                             </View>
 
                             <View style={styles.orderDetails}>
+                                {/* Nombre del cliente o usuario asignado */}
+                                {(order.customer_name || order.assigned_to_user_name) && (
+                                    <View style={styles.detailRow}>
+                                        <MaterialIcons name="person" size={16} color={Colors.text.secondary} />
+                                        <Text style={styles.detailText}>
+                                            {order.customer_name || order.assigned_to_user_name}
+                                        </Text>
+                                    </View>
+                                )}
+
                                 <View style={styles.detailRow}>
                                     <MaterialIcons name="inventory" size={16} color={Colors.text.secondary} />
                                     <Text style={styles.detailText}>
@@ -157,14 +191,7 @@ export function DeliveryOrderSelector() {
 }
 
 function getStatusLabel(status: string): string {
-    const labels: Record<string, string> = {
-        pending: 'Pendiente',
-        preparing: 'Preparando',
-        ready: 'Lista',
-        delivered: 'Entregada',
-        cancelled: 'Cancelada',
-    };
-    return labels[status] || status;
+    return translateOrderStatus(status);
 }
 
 const styles = StyleSheet.create({
@@ -243,6 +270,18 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: Colors.text.primary,
+    },
+    typeBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 6,
+        minWidth: 70,
+        alignItems: 'center',
+    },
+    typeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        textAlign: 'center',
     },
     statusBadge: {
         paddingHorizontal: 8,
