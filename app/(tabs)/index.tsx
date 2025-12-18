@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useUserRoles } from '@/hooks/useUserRoles';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { DashboardCard } from '@/components/dashboard/DashboardCard';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { MaterialIcons } from '@expo/vector-icons';
-import { DashboardCard } from '@/components/dashboard/DashboardCard';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export default function HomeScreen() {
-  const { isAdmin } = useUserRoles();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
@@ -31,7 +30,7 @@ export default function HomeScreen() {
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     const seconds = date.getSeconds().toString().padStart(2, '0');
-    
+
     return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
   };
 
@@ -124,39 +123,37 @@ export default function HomeScreen() {
           <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
           <View style={[styles.menuTitleUnderline, { backgroundColor: colors.primary.main }]} />
         </View>
-        
-        <View style={styles.menuGrid}>
-          {isAdmin() && (
-            <TouchableOpacity 
-              style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-              onPress={handleViewReports}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
-                <MaterialIcons 
-                  name="assessment" 
-                  size={24} 
-                  color={colors.primary.main}
-                />
-              </View>
-              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-                Reportes
-              </Text>
-              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-                Análisis
-              </Text>
-            </TouchableOpacity>
-          )}
 
-          <TouchableOpacity 
+        <View style={styles.menuGrid}>
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewReports}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
+              <MaterialIcons
+                name="assessment"
+                size={24}
+                color={colors.primary.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Reportes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Análisis
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
             onPress={handleRegisterExits}
             activeOpacity={0.7}
           >
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '12' }]}>
-              <MaterialIcons 
-                name="local-shipping" 
-                size={24} 
+              <MaterialIcons
+                name="local-shipping"
+                size={24}
                 color={colors.error.main}
               />
             </View>
@@ -168,15 +165,15 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
             onPress={handleRegisterEntries}
             activeOpacity={0.7}
           >
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '12' }]}>
-              <MaterialIcons 
-                name="input" 
-                size={24} 
+              <MaterialIcons
+                name="input"
+                size={24}
                 color={colors.success.main}
               />
             </View>
@@ -188,15 +185,15 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
             onPress={handleViewReceivedOrders}
             activeOpacity={0.7}
           >
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '12' }]}>
-              <MaterialIcons 
-                name="receipt-long" 
-                size={24} 
+              <MaterialIcons
+                name="receipt-long"
+                size={24}
                 color={colors.warning.main}
               />
             </View>
@@ -208,27 +205,25 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
-          {isAdmin() && (
-            <TouchableOpacity 
-              style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-              onPress={handleViewAllOrders}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
-                <MaterialIcons 
-                  name="list-alt" 
-                  size={24} 
-                  color={colors.info.main}
-                />
-              </View>
-              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-                Todas las Órdenes
-              </Text>
-              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-                Gestión
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewAllOrders}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
+              <MaterialIcons
+                name="list-alt"
+                size={24}
+                color={colors.info.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Todas las Órdenes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Gestión
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </ScrollView>

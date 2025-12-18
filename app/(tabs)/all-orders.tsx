@@ -1,10 +1,8 @@
 import { AllDeliveryOrdersList, AllOrdersList, usePurchaseOrders } from '@/components/purchase-orders';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type TabType = 'purchase' | 'delivery';
@@ -13,63 +11,19 @@ export default function AllOrdersScreen() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { isAdmin, loading: rolesLoading } = useUserRoles();
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('purchase');
-  const hasRedirected = useRef(false);
-  const hasLoadedOrders = useRef(false);
 
   useEffect(() => {
-    // Solo ejecutar cuando los roles hayan terminado de cargar
-    if (rolesLoading) {
-      return;
-    }
-
-    // Verificar que el usuario sea admin antes de cargar
-    const adminStatus = isAdmin();
-    
-    if (!adminStatus && !hasRedirected.current) {
-      // Redirigir si no es admin (solo una vez)
-      hasRedirected.current = true;
-      router.replace('/(tabs)');
-      return;
-    }
-    
-    // Cargar todas las órdenes sin filtrar por estado o usuario (solo una vez)
-    if (adminStatus && !hasLoadedOrders.current) {
-      hasLoadedOrders.current = true;
-      loadPurchaseOrders();
-    }
+    // Cargar todas las órdenes al montar el componente
+    loadPurchaseOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rolesLoading]); // Solo dependemos de rolesLoading
+  }, []);
 
   const handleRefresh = () => {
-    if (isAdmin()) {
-      loadPurchaseOrders();
-    }
+    loadPurchaseOrders();
   };
 
-  // Mostrar loading mientras se verifica el rol
-  if (rolesLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background.default, justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Verificando permisos...</Text>
-      </View>
-    );
-  }
 
-  // Mostrar mensaje de no autorizado si no es admin
-  if (!isAdmin()) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background.default, justifyContent: 'center', alignItems: 'center', padding: 40 }]}>
-        <MaterialIcons name="lock" size={64} color={colors.error.main} />
-        <Text style={[styles.title, { color: colors.text.primary, marginTop: 16, textAlign: 'center' }]}>Acceso Restringido</Text>
-        <Text style={[styles.subtitle, { color: colors.text.secondary, marginTop: 8, textAlign: 'center' }]}>
-          Solo los administradores pueden acceder a este módulo
-        </Text>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
@@ -90,10 +44,10 @@ export default function AllOrdersScreen() {
             onPress={() => setActiveTab('purchase')}
             activeOpacity={0.7}
           >
-            <MaterialIcons 
-              name="receipt-long" 
-              size={20} 
-              color={activeTab === 'purchase' ? colors.primary.main : colors.text.secondary} 
+            <MaterialIcons
+              name="receipt-long"
+              size={20}
+              color={activeTab === 'purchase' ? colors.primary.main : colors.text.secondary}
             />
             <Text
               style={[
@@ -116,10 +70,10 @@ export default function AllOrdersScreen() {
             onPress={() => setActiveTab('delivery')}
             activeOpacity={0.7}
           >
-            <MaterialIcons 
-              name="local-shipping" 
-              size={20} 
-              color={activeTab === 'delivery' ? colors.primary.main : colors.text.secondary} 
+            <MaterialIcons
+              name="local-shipping"
+              size={20}
+              color={activeTab === 'delivery' ? colors.primary.main : colors.text.secondary}
             />
             <Text
               style={[
