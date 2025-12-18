@@ -1,5 +1,4 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
-import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
@@ -34,20 +33,20 @@ export function DeliveryOrderSelector() {
 
     if (loading) {
         return (
-            <Card style={styles.card}>
+            <View style={styles.listContainer}>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={Colors.primary.main} />
                     <Text style={styles.loadingText}>Cargando {orderTypeLabelPlural}...</Text>
                 </View>
-            </Card>
+            </View>
         );
     }
 
     if (deliveryOrders.length === 0) {
         return (
-            <Card style={styles.card}>
+            <View style={styles.listContainer}>
                 <View style={styles.emptyContainer}>
-                    <MaterialIcons name="inbox" size={64} color={Colors.text.disabled} />
+                    <MaterialIcons name="inbox" size={64} color={Colors.text.secondary} />
                     <Text style={styles.emptyTitle}>No hay {orderTypeLabelPlural} pendientes</Text>
                     <Text style={styles.emptySubtitle}>
                         {isRemissionMode
@@ -55,12 +54,12 @@ export function DeliveryOrderSelector() {
                             : 'Este cliente no tiene órdenes de entrega pendientes'}
                     </Text>
                 </View>
-            </Card>
+            </View>
         );
     }
 
     return (
-        <Card style={styles.card}>
+        <View style={styles.listContainer}>
             <Text style={styles.title}>Seleccione {isRemissionMode ? 'Remisión' : 'Orden de Entrega'}</Text>
             <Text style={styles.subtitle}>
                 {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
@@ -90,43 +89,49 @@ export function DeliveryOrderSelector() {
 
                             <View style={styles.orderHeader}>
                                 <View style={styles.orderInfo}>
-                                    <Text style={styles.orderId}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
+                                    <View style={styles.idAndBadgesRow}>
+                                        <Text style={styles.orderId} numberOfLines={1}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
 
-                                    {/* Badge de Tipo */}
-                                    <View style={[
-                                        styles.typeBadge,
-                                        { backgroundColor: getTypeColor(order.order_type || 'customer').bg }
-                                    ]}>
-                                        <Text style={[
-                                            styles.typeText,
-                                            { color: getTypeColor(order.order_type || 'customer').text }
-                                        ]}>
-                                            {translateOrderType(order.order_type || 'customer')}
-                                        </Text>
-                                    </View>
-
-                                    {/* Badge de Estado */}
-                                    {isComplete ? (
-                                        <View style={[styles.statusBadge, styles.status_complete]}>
-                                            <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />
-                                            <Text style={[styles.statusText, { color: Colors.success.main }]}>Completa</Text>
-                                        </View>
-                                    ) : (
-                                        <View style={[
-                                            styles.statusBadge,
-                                            { backgroundColor: getStatusColor(order.status).bg }
-                                        ]}>
-                                            <Text style={[
-                                                styles.statusText,
-                                                { color: getStatusColor(order.status).text }
+                                        <View style={styles.badgesWrapper}>
+                                            {/* Badge de Tipo */}
+                                            <View style={[
+                                                styles.typeBadge,
+                                                { backgroundColor: getTypeColor(order.order_type || 'customer').bg }
                                             ]}>
-                                                {getStatusLabel(order.status)}
-                                            </Text>
+                                                <Text style={[
+                                                    styles.typeText,
+                                                    { color: getTypeColor(order.order_type || 'customer').text }
+                                                ]}>
+                                                    {translateOrderType(order.order_type || 'customer')}
+                                                </Text>
+                                            </View>
+
+                                            {/* Badge de Estado */}
+                                            {isComplete ? (
+                                                <View style={[styles.statusBadge, styles.status_complete]}>
+                                                    <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />
+                                                    <Text style={[styles.statusText, { color: Colors.success.main }]}>Comp.</Text>
+                                                </View>
+                                            ) : (
+                                                <View style={[
+                                                    styles.statusBadge,
+                                                    { backgroundColor: getStatusColor(order.status).bg }
+                                                ]}>
+                                                    <Text style={[
+                                                        styles.statusText,
+                                                        { color: getStatusColor(order.status).text }
+                                                    ]}>
+                                                        {getStatusLabel(order.status)}
+                                                    </Text>
+                                                </View>
+                                            )}
                                         </View>
-                                    )}
+                                    </View>
                                 </View>
                                 {isSelected && !isComplete && (
-                                    <MaterialIcons name="check-circle" size={24} color={Colors.primary.main} />
+                                    <View style={styles.selectedIconWrapper}>
+                                        <MaterialIcons name="check-circle" size={24} color={Colors.primary.main} />
+                                    </View>
                                 )}
                             </View>
 
@@ -186,7 +191,7 @@ export function DeliveryOrderSelector() {
                     <Text style={styles.errorText}>{error}</Text>
                 </View>
             )}
-        </Card>
+        </View>
     );
 }
 
@@ -195,9 +200,9 @@ function getStatusLabel(status: string): string {
 }
 
 const styles = StyleSheet.create({
-    card: {
+    listContainer: {
+        marginTop: 8,
         marginBottom: 20,
-        overflow: 'hidden',
     },
     title: {
         fontSize: 18,
@@ -236,7 +241,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     ordersList: {
-        maxHeight: 400,
+        maxHeight: 450,
         flexGrow: 0,
     },
     ordersListContent: {
@@ -244,7 +249,7 @@ const styles = StyleSheet.create({
         flexGrow: 0,
     },
     orderItem: {
-        padding: 16,
+        padding: 12,
         marginBottom: 12,
         borderRadius: 12,
         borderWidth: 2,
@@ -258,34 +263,47 @@ const styles = StyleSheet.create({
     orderHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         marginBottom: 12,
     },
     orderInfo: {
+        flex: 1,
+    },
+    idAndBadgesRow: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 12,
+        gap: 8,
     },
     orderId: {
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '700',
         color: Colors.text.primary,
+        flexShrink: 1,
+    },
+    badgesWrapper: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+    },
+    selectedIconWrapper: {
+        marginLeft: 8,
     },
     typeBadge: {
-        paddingHorizontal: 10,
-        paddingVertical: 5,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
         borderRadius: 6,
-        minWidth: 70,
+        minWidth: 60,
         alignItems: 'center',
     },
     typeText: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11,
+        fontWeight: '700',
         textAlign: 'center',
     },
     statusBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
         borderRadius: 6,
     },
     status_pending: {
@@ -298,7 +316,7 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.success.light + '30',
     },
     status_delivered: {
-        backgroundColor: Colors.text.disabled + '30',
+        backgroundColor: Colors.divider,
     },
     status_cancelled: {
         backgroundColor: Colors.error.light + '30',
@@ -315,12 +333,12 @@ const styles = StyleSheet.create({
         opacity: 0.8,
     },
     statusText: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11,
+        fontWeight: '700',
         color: Colors.text.primary,
     },
     orderDetails: {
-        gap: 8,
+        gap: 6,
     },
     detailRow: {
         flexDirection: 'row',
@@ -328,13 +346,13 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     detailText: {
-        fontSize: 14,
+        fontSize: 13,
         color: Colors.text.secondary,
         flex: 1,
     },
     progressContainer: {
-        marginTop: 12,
-        paddingTop: 12,
+        marginTop: 10,
+        paddingTop: 10,
         borderTopWidth: 1,
         borderTopColor: Colors.divider,
     },
@@ -350,7 +368,7 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.success.main,
     },
     progressText: {
-        fontSize: 12,
+        fontSize: 11,
         color: Colors.text.secondary,
         textAlign: 'right',
     },

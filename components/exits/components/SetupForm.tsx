@@ -65,7 +65,7 @@ export function SetupForm() {
 
   // Verificar si la orden está completa
   const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
-  const isOrderComplete = deliveryOrderProgress 
+  const isOrderComplete = deliveryOrderProgress
     ? deliveryOrderProgress.items.every(item => item.isComplete)
     : false;
 
@@ -78,10 +78,10 @@ export function SetupForm() {
     );
 
   return (
-    <ScrollView 
-        style={styles.container} 
-        contentContainerStyle={styles.content}
-        nestedScrollEnabled={true}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      nestedScrollEnabled={true}>
       <Card style={styles.card}>
         <Text style={styles.title}>Configuración de Salida</Text>
         <Text style={styles.subtitle}>
@@ -202,18 +202,18 @@ export function SetupForm() {
         {/* Observaciones de entrega (opcional, cuando hay cliente/usuario y orden seleccionada) */}
         {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
           (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
-              value={deliveryObservations}
-              onChangeText={setDeliveryObservations}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-        )}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
+                value={deliveryObservations}
+                onChangeText={setDeliveryObservations}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          )}
 
         {error && (
           <View style={styles.errorContainer}>
@@ -230,13 +230,13 @@ export function SetupForm() {
           />
           {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
             (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
-            <View style={styles.warningContainer}>
-              <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
-              <Text style={styles.warningText}>
-                Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
-              </Text>
-            </View>
-          )}
+              <View style={styles.warningContainer}>
+                <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
+                <Text style={styles.warningText}>
+                  Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
+                </Text>
+              </View>
+            )}
           <Button
             title="Cancelar"
             onPress={() => {
@@ -278,10 +278,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
   },
   card: {
     marginBottom: 20,
+    padding: 16,
   },
   title: {
     fontSize: 20,
