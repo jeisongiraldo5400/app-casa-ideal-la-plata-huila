@@ -96,9 +96,9 @@ export function SetupForm() {
               selectedValue={exitMode}
               onValueChange={(value) => setExitMode(value as ExitMode)}
               style={styles.picker}>
-              <Picker.Item label="Seleccione el tipo de salida" value={null} />
-              <Picker.Item label="Remisión" value="direct_user" />
-              <Picker.Item label="Entrega a Cliente" value="direct_customer" />
+              <Picker.Item label="Seleccione el tipo de salida" value={null} color="#1f2937" />
+              <Picker.Item label="Remisión" value="direct_user" color="#1f2937" />
+              <Picker.Item label="Entrega a Cliente" value="direct_customer" color="#1f2937" />
             </Picker>
           </View>
         </View>
@@ -111,12 +111,13 @@ export function SetupForm() {
               selectedValue={warehouseId}
               onValueChange={(value) => setWarehouse(value)}
               style={styles.picker}>
-              <Picker.Item label="Seleccione una bodega" value={null} />
+              <Picker.Item label="Seleccione una bodega" value={null} color="#1f2937" />
               {warehouses.map((warehouse) => (
                 <Picker.Item
                   key={warehouse.id}
                   label={warehouse.name}
                   value={warehouse.id}
+                  color="#1f2937"
                 />
               ))}
             </Picker>
@@ -132,12 +133,13 @@ export function SetupForm() {
                 selectedValue={selectedUserId}
                 onValueChange={(value) => setSelectedUser(value)}
                 style={styles.picker}>
-                <Picker.Item label="Seleccione un usuario" value={null} />
+                <Picker.Item label="Seleccione un usuario" value={null} color="#1f2937" />
                 {users.map((user) => (
                   <Picker.Item
                     key={user.id}
                     label={user.full_name || user.email || 'Usuario sin nombre'}
                     value={user.id}
+                    color="#1f2937"
                   />
                 ))}
               </Picker>

@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
 import { Colors } from '@/constants/theme';
+import { Picker } from '@react-native-picker/picker';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 export function WarehouseFilter() {
   const { warehouses, selectedWarehouseId, setSelectedWarehouse, loadInventory } = useInventory();
@@ -26,12 +26,13 @@ export function WarehouseFilter() {
           onValueChange={handleWarehouseChange}
           style={styles.picker}
           itemStyle={styles.pickerItem}>
-          <Picker.Item label="Todas las bodegas" value="all" />
+          <Picker.Item label="Todas las bodegas" value="all" color="#1f2937" />
           {warehouses.map((warehouse) => (
             <Picker.Item
               key={warehouse.id}
               label={warehouse.name}
               value={warehouse.id}
+              color="#1f2937"
             />
           ))}
         </Picker>

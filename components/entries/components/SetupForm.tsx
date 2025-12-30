@@ -69,14 +69,14 @@ export function SetupForm() {
         onPress={() => setEntryType('PO_ENTRY')}
         style={styles.flowButton}
       />
-      
+
       <Button
         title="Registrar entrada manual"
         onPress={() => setEntryType('ENTRY')}
         style={styles.flowButton}
         variant="secondary"
       />
-      
+
       <Button
         title="Realizar carga inicial"
         onPress={() => setEntryType('INITIAL_LOAD')}
@@ -124,12 +124,13 @@ export function SetupForm() {
             onValueChange={(value) => setSupplier(value)}
             style={styles.picker}
             itemStyle={styles.pickerItem}>
-            <Picker.Item label="Seleccione un proveedor" value={null} />
+            <Picker.Item label="Seleccione un proveedor" value={null} color="#1f2937" />
             {filteredSuppliers.map((supplier) => (
               <Picker.Item
                 key={supplier.id}
                 label={`${supplier.name || 'Sin nombre'}${supplier.nit ? ` - NIT: ${supplier.nit}` : ''}`}
                 value={supplier.id}
+                color="#1f2937"
               />
             ))}
           </Picker>
@@ -145,7 +146,7 @@ export function SetupForm() {
               style={styles.continueButton}
             />
           )}
-          
+
           {entryType === 'ENTRY' && (
             <Button
               title="Continuar a bodega"
@@ -205,7 +206,7 @@ export function SetupForm() {
       if (!purchaseOrderId) return 0;
       const validation = purchaseOrderValidations[purchaseOrderId];
       if (!validation) return 0;
-      
+
       // Esto es una aproximación, necesitaríamos consultar por producto específico
       // Por ahora usamos la validación general
       return 0;
@@ -214,7 +215,7 @@ export function SetupForm() {
     return (
       <View>
         <View style={styles.stepHeader}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               if (entryType === 'INITIAL_LOAD') {
                 setEntryType(null as any); // Volver a selección de flujo
@@ -223,14 +224,14 @@ export function SetupForm() {
               } else {
                 setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
               }
-            }} 
+            }}
             style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
             <Text style={styles.stepTitle}>Paso 3: Seleccionar Bodega{entryType === 'PO_ENTRY' && purchaseOrderId ? ' y Producto' : ''}</Text>
             <Text style={styles.stepDescription}>
-              {entryType === 'PO_ENTRY' && purchaseOrderId 
+              {entryType === 'PO_ENTRY' && purchaseOrderId
                 ? 'Seleccione la bodega y el producto de la orden a escanear'
                 : 'Seleccione la bodega de destino para la entrada'}
             </Text>
@@ -245,12 +246,13 @@ export function SetupForm() {
               onValueChange={(value) => setWarehouse(value)}
               style={styles.picker}
               itemStyle={styles.pickerItem}>
-              <Picker.Item label="Seleccione una bodega" value={null} />
+              <Picker.Item label="Seleccione una bodega" value={null} color="#1f2937" />
               {warehouses.map((warehouse) => (
                 <Picker.Item
                   key={warehouse.id}
                   label={warehouse.name}
                   value={warehouse.id}
+                  color="#1f2937"
                 />
               ))}
             </Picker>
@@ -266,7 +268,7 @@ export function SetupForm() {
                 onValueChange={(value) => setSelectedOrderProduct(value)}
                 style={styles.picker}
                 itemStyle={styles.pickerItem}>
-                <Picker.Item label="Seleccione un producto" value={null} />
+                <Picker.Item label="Seleccione un producto" value={null} color="#1f2937" />
                 {orderProducts.map((item) => {
                   const product = item.product;
                   const orderQuantity = item.quantity;
@@ -275,6 +277,7 @@ export function SetupForm() {
                       key={item.id}
                       label={`${product?.name || 'Sin nombre'} - ${orderQuantity} unidad${orderQuantity !== 1 ? 'es' : ''} en orden`}
                       value={product?.id || null}
+                      color="#1f2937"
                     />
                   );
                 })}
@@ -291,7 +294,7 @@ export function SetupForm() {
             isOrderComplete = validation?.isComplete || false;
           }
 
-          const canStart = warehouseId && 
+          const canStart = warehouseId &&
             (entryType !== 'PO_ENTRY' || !purchaseOrderId || selectedOrderProductId) &&
             !isOrderComplete;
 

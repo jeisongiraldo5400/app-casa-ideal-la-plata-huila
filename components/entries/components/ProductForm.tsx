@@ -152,12 +152,13 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                     onValueChange={handleChange('category_id')}
                     style={styles.picker}
                     itemStyle={styles.pickerItem}>
-                    <Picker.Item label="Seleccione una categoría" value="" />
+                    <Picker.Item label="Seleccione una categoría" value="" color="#1f2937" />
                     {categories.map((category) => (
                       <Picker.Item
                         key={category.id}
                         label={category.name}
                         value={category.id}
+                        color="#1f2937"
                       />
                     ))}
                   </Picker>
@@ -175,12 +176,13 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                     onValueChange={handleChange('brand_id')}
                     style={styles.picker}
                     itemStyle={styles.pickerItem}>
-                    <Picker.Item label="Seleccione una marca" value="" />
+                    <Picker.Item label="Seleccione una marca" value="" color="#1f2937" />
                     {brands.map((brand) => (
                       <Picker.Item
                         key={brand.id}
                         label={brand.name || 'Sin nombre'}
                         value={brand.id}
+                        color="#1f2937"
                       />
                     ))}
                   </Picker>
