@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
@@ -49,7 +50,7 @@ export default function ProfileScreen() {
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
         <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Información de la cuenta</Text>
-        
+
         <View style={styles.infoRow}>
           <MaterialIcons name="email" size={20} color={colors.text.secondary} />
           <View style={styles.infoContent}>
@@ -88,17 +89,17 @@ export default function ProfileScreen() {
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
         <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Apariencia</Text>
-        
+
         <TouchableOpacity
           style={styles.themeRow}
           onPress={() => setThemeMode(isDark ? 'light' : 'dark')}
           activeOpacity={0.7}
         >
           <View style={styles.themeRowLeft}>
-            <MaterialIcons 
-              name={isDark ? 'dark-mode' : 'light-mode'} 
-              size={20} 
-              color={colors.text.secondary} 
+            <MaterialIcons
+              name={isDark ? 'dark-mode' : 'light-mode'}
+              size={20}
+              color={colors.text.secondary}
             />
             <View style={styles.infoContent}>
               <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Modo oscuro</Text>
@@ -118,12 +119,14 @@ export default function ProfileScreen() {
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
         <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Sistema</Text>
-        
+
         <View style={styles.infoRow}>
           <MaterialIcons name="info" size={20} color={colors.text.secondary} />
           <View style={styles.infoContent}>
             <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Versión de la aplicación</Text>
-            <Text style={[styles.infoValue, { color: colors.text.primary }]}>1.0.0</Text>
+            <Text style={[styles.infoValue, { color: colors.text.primary }]}>
+              {Constants.expoConfig?.version || '1.0.0'}
+            </Text>
           </View>
         </View>
       </Card>
