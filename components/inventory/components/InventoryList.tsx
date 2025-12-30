@@ -59,6 +59,9 @@ export function InventoryList() {
                 <Text style={styles.productBarcode}>Código: {item.barcode || 'N/A'}</Text>
                 <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
                 <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
+                {item.color_name && (
+                  <Text style={styles.productColor}>Color: {item.color_name}</Text>
+                )}
               </View>
               <View style={styles.quantityContainer}>
                 <Text style={styles.quantityLabel}>Stock</Text>
@@ -153,6 +156,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   productCategory: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  productColor: {
     fontSize: 12,
     color: Colors.text.secondary,
   },

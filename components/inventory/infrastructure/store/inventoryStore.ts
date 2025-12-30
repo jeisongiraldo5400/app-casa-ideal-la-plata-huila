@@ -16,6 +16,7 @@ export interface InventoryItem {
   barcode: string;
   brand_name: string;
   category_name: string;
+  color_name: string | null;
   total_stock: number;
   stock_by_warehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>;
   status: boolean;
@@ -137,6 +138,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           barcode: item.barcode,
           brand_name: item.brand_name,
           category_name: item.category_name,
+          color_name: item.color_name || null,
           total_stock: item.total_stock,
           stock_by_warehouse: stockByWarehouse,
           status: item.status,
