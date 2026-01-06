@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
@@ -45,6 +46,25 @@ export function SetupForm() {
     loadSuppliers();
     loadWarehouses();
   }, []);
+
+  // Refrescar datos cuando la pantalla recibe foco
+  useFocusEffect(
+    useCallback(() => {
+      loadSuppliers();
+      loadWarehouses();
+      // Refrescar órdenes de compra si hay un proveedor seleccionado
+      if (supplierId) {
+        setSupplier(supplierId);
+      }
+    }, [loadSuppliers, loadWarehouses, supplierId, setSupplier])
+  );
+
+  // Refrescar órdenes de compra cuando se vuelve al paso de purchase-order
+  useEffect(() => {
+    if (setupStep === 'purchase-order' && supplierId) {
+      setSupplier(supplierId); // Esto dispara loadPurchaseOrders
+    }
+  }, [setupStep, supplierId, setSupplier]);
 
   // Filtrar proveedores por búsqueda (nombre o NIT)
   const filteredSuppliers = useMemo(() => {
@@ -117,7 +137,19 @@ export function SetupForm() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Proveedor {entryType === 'PO_ENTRY' ? '*' : '(Opcional)'}</Text>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.label}>Proveedor {entryType === 'PO_ENTRY' ? '*' : '(Opcional)'}</Text>
+          <TouchableOpacity
+            onPress={() => loadSuppliers()}
+            style={styles.refreshButton}
+            disabled={loading}>
+            <MaterialIcons
+              name="refresh"
+              size={20}
+              color={loading ? Colors.text.secondary : Colors.primary.main}
+            />
+          </TouchableOpacity>
+        </View>
         <View style={styles.pickerContainer}>
           <Picker
             selectedValue={supplierId}
@@ -172,6 +204,24 @@ export function SetupForm() {
           </Text>
         </View>
       </View>
+
+      {supplierId && (
+        <View style={styles.refreshContainer}>
+          <TouchableOpacity
+            onPress={() => setSupplier(supplierId)}
+            style={styles.refreshButtonInline}
+            disabled={loading}>
+            <MaterialIcons
+              name="refresh"
+              size={18}
+              color={loading ? Colors.text.secondary : Colors.primary.main}
+            />
+            <Text style={[styles.refreshText, { color: loading ? Colors.text.secondary : Colors.primary.main }]}>
+              Actualizar órdenes
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -239,7 +289,19 @@ export function SetupForm() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Bodega *</Text>
+          <View style={styles.fieldHeader}>
+            <Text style={styles.label}>Bodega *</Text>
+            <TouchableOpacity
+              onPress={() => loadWarehouses()}
+              style={styles.refreshButton}
+              disabled={loading}>
+              <MaterialIcons
+                name="refresh"
+                size={20}
+                color={loading ? Colors.text.secondary : Colors.primary.main}
+              />
+            </TouchableOpacity>
+          </View>
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={warehouseId}
@@ -401,11 +463,36 @@ const styles = StyleSheet.create({
   field: {
     marginBottom: 20,
   },
+  fieldHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   label: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 8,
+    flex: 1,
+  },
+  refreshButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  refreshContainer: {
+    marginBottom: 16,
+    alignItems: 'flex-end',
+  },
+  refreshButtonInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  refreshText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   pickerContainer: {
     borderWidth: 1.5,

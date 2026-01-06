@@ -4,8 +4,9 @@ import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 
@@ -44,6 +45,18 @@ export function SetupForm() {
     loadWarehouses();
     loadUsers();
   }, [loadWarehouses, loadUsers]);
+
+  // Refrescar datos cuando la pantalla recibe foco
+  useFocusEffect(
+    useCallback(() => {
+      loadWarehouses();
+      loadUsers();
+      // Refrescar remisiones si hay un usuario seleccionado
+      if (exitMode === 'direct_user' && selectedUserId) {
+        searchDeliveryOrdersByUser(selectedUserId);
+      }
+    }, [loadWarehouses, loadUsers, exitMode, selectedUserId, searchDeliveryOrdersByUser])
+  );
 
   // Debounce customer search
   useEffect(() => {
@@ -105,7 +118,19 @@ export function SetupForm() {
 
         {/* Bodega */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Bodega *</Text>
+          <View style={styles.fieldHeader}>
+            <Text style={styles.label}>Bodega *</Text>
+            <TouchableOpacity
+              onPress={() => loadWarehouses()}
+              style={styles.refreshButton}
+              disabled={loading}>
+              <MaterialIcons
+                name="refresh"
+                size={20}
+                color={loading ? Colors.text.secondary : Colors.primary.main}
+              />
+            </TouchableOpacity>
+          </View>
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={warehouseId}
@@ -127,7 +152,19 @@ export function SetupForm() {
         {/* Campo condicional: Usuario Interno */}
         {exitMode === 'direct_user' && (
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Usuario Destinatario *</Text>
+            <View style={styles.fieldHeader}>
+              <Text style={styles.label}>Usuario Destinatario *</Text>
+              <TouchableOpacity
+                onPress={() => loadUsers()}
+                style={styles.refreshButton}
+                disabled={loading}>
+                <MaterialIcons
+                  name="refresh"
+                  size={20}
+                  color={loading ? Colors.text.secondary : Colors.primary.main}
+                />
+              </TouchableOpacity>
+            </View>
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={selectedUserId}
@@ -149,7 +186,24 @@ export function SetupForm() {
 
         {/* Selector de Remisión (cuando se selecciona un usuario) */}
         {exitMode === 'direct_user' && selectedUserId && (
-          <DeliveryOrderSelector />
+          <>
+            <View style={styles.refreshContainer}>
+              <TouchableOpacity
+                onPress={() => searchDeliveryOrdersByUser(selectedUserId)}
+                style={styles.refreshButtonInline}
+                disabled={loading}>
+                <MaterialIcons
+                  name="refresh"
+                  size={18}
+                  color={loading ? Colors.text.secondary : Colors.primary.main}
+                />
+                <Text style={[styles.refreshText, { color: loading ? Colors.text.secondary : Colors.primary.main }]}>
+                  Actualizar remisiones
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <DeliveryOrderSelector />
+          </>
         )}
 
         {/* Campo condicional: Cliente */}
@@ -301,11 +355,36 @@ const styles = StyleSheet.create({
   formGroup: {
     marginBottom: 20,
   },
+  fieldHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   label: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 8,
+    flex: 1,
+  },
+  refreshButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  refreshContainer: {
+    marginBottom: 16,
+    alignItems: 'flex-end',
+  },
+  refreshButtonInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  refreshText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   pickerContainer: {
     borderWidth: 1.5,
