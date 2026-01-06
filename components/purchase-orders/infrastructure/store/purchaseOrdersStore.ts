@@ -78,6 +78,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
           )
         `)
         .is('deleted_at', null)
+        .neq('status', 'cancelled') // Excluir órdenes canceladas
         .order('created_at', { ascending: false })
         .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 

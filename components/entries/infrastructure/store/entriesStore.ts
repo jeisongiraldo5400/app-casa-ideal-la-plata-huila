@@ -441,11 +441,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     set({ loading: true, loadingMessage: 'Cargando órdenes de compra pendientes...' });
     try {
       // Cargar órdenes de compra pendientes para el proveedor
+      // Solo órdenes no eliminadas y no canceladas
       const { data: orders, error: ordersError } = await supabase
         .from("purchase_orders")
         .select("*")
         .eq("supplier_id", supplierId)
         .in("status", ["pending"])
+        .is("deleted_at", null) // Filtrar órdenes no eliminadas
         .order("created_at", { ascending: false });
 
       if (ordersError) {
