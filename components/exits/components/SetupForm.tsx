@@ -7,7 +7,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 
 export function SetupForm() {
@@ -46,28 +46,46 @@ export function SetupForm() {
     loadUsers();
   }, [loadWarehouses, loadUsers]);
 
-  // Refrescar datos cuando la pantalla recibe foco
+  // Limpiar estado cuando el componente se desmonta
+  useEffect(() => {
+    return () => {
+      reset();
+      setSearchInput(''); // Limpiar el input local
+    };
+  }, [reset]);
+
+  // Refrescar datos cuando la pantalla recibe foco (sin refrescar constantemente)
   useFocusEffect(
     useCallback(() => {
+      // Solo refrescar cuando la pantalla recibe foco, no en cada cambio de estado
       loadWarehouses();
       loadUsers();
-      // Refrescar remisiones si hay un usuario seleccionado
-      if (exitMode === 'direct_user' && selectedUserId) {
-        searchDeliveryOrdersByUser(selectedUserId);
-      }
-    }, [loadWarehouses, loadUsers, exitMode, selectedUserId, searchDeliveryOrdersByUser])
+      // No refrescar remisiones aquí - ya hay un useEffect separado que lo maneja
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []) // Sin dependencias para evitar refrescos constantes
   );
 
   // Debounce customer search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchInput.length >= 2) {
+      if (searchInput.length >= 4) {
         searchCustomers(searchInput);
+      } else if (searchInput.length === 0) {
+        // Limpiar resultados cuando el input está vacío
+        searchCustomers('');
       }
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchInput, searchCustomers]);
+
+  // Ocultar teclado automáticamente cuando se encuentran clientes
+  useEffect(() => {
+    if (!loading && searchInput.length >= 4 && customers.length > 0) {
+      // Ocultar teclado para que los resultados sean visibles
+      Keyboard.dismiss();
+    }
+  }, [customers.length, loading, searchInput.length]);
 
   // Buscar remisiones cuando se selecciona un usuario
   useEffect(() => {
@@ -91,10 +109,15 @@ export function SetupForm() {
     );
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      nestedScrollEnabled={true}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled={true}>
       <Card style={styles.card}>
         <Text style={styles.title}>Configuración de Salida</Text>
         <Text style={styles.subtitle}>
@@ -224,7 +247,7 @@ export function SetupForm() {
               </View>
             )}
 
-            {!loading && searchInput.length >= 2 && customers.length > 0 && (
+            {!loading && searchInput.length >= 4 && customers.length > 0 && (
               <View style={styles.customersList}>
                 {customers.slice(0, 5).map((customer) => (
                   <TouchableOpacity
@@ -236,6 +259,7 @@ export function SetupForm() {
                     onPress={() => {
                       setSelectedCustomer(customer.id);
                       setSearchInput(customer.name);
+                      Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                     }}>
                     <Text style={styles.customerName}>{customer.name}</Text>
                     <Text style={styles.customerIdNumber}>ID: {customer.id_number}</Text>
@@ -244,7 +268,7 @@ export function SetupForm() {
               </View>
             )}
 
-            {!loading && searchInput.length >= 2 && customers.length === 0 && (
+            {!loading && searchInput.length >= 4 && customers.length === 0 && (
               <Text style={styles.noResults}>No se encontraron clientes</Text>
             )}
           </View>
@@ -326,6 +350,7 @@ export function SetupForm() {
         </View>
       </Card>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
