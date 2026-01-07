@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
 import { ExitsList } from '@/components/exits-list/components/ExitsList';
 import { ExitsSearchBar } from '@/components/exits-list/components/ExitsSearchBar';
+import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
 import { Colors } from '@/constants/theme';
+import React, { useEffect } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function ExitsListScreen() {
   const { loadExits, loading, exits } = useExitsList();
@@ -27,9 +27,9 @@ export default function ExitsListScreen() {
       }>
       <View style={styles.header}>
         <Text style={styles.title}>Salidas</Text>
-        <Text style={styles.subtitle}>
+        {/*<Text style={styles.subtitle}>
           {exits.length} registro(s) - {totalItems} unidad(es) despachadas
-        </Text>
+        </Text>*/}
       </View>
 
       <ExitsSearchBar />
