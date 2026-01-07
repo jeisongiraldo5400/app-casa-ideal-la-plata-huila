@@ -2,7 +2,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { DashboardCard } from '@/components/dashboard/DashboardCard';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
@@ -72,7 +71,7 @@ export default function HomeScreen() {
         ) : (
           <>
             <View style={styles.topCardsRow}>
-              <View style={styles.halfWidthCard}>
+              {/*<View style={styles.halfWidthCard}>
                 <DashboardCard
                   title="Salidas Hoy"
                   value={exitsToday}
@@ -91,7 +90,7 @@ export default function HomeScreen() {
                   iconColor={colors.success.main}
                   trend="up"
                 />
-              </View>
+              </View>*/}
             </View>
             <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <View style={styles.ordersCardHeader}>
