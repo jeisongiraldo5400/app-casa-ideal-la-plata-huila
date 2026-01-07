@@ -23,7 +23,12 @@ export default function LoginScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <View style={styles.logoContainer}>
+        <View style={[styles.logoContainer, {
+          backgroundColor: '#ffffff',
+          borderRadius: 20,
+          padding: 20,
+          marginBottom: 20,
+        }]}>
           <Image
             source={require('@/assets/images/logo_completo.png')}
             style={styles.logoImage}
