@@ -46,13 +46,14 @@ export function SetupForm() {
     loadUsers();
   }, [loadWarehouses, loadUsers]);
 
-  // Limpiar estado cuando el componente se desmonta
+  // Limpiar solo el input local cuando el componente se desmonta
+  // NO llamar reset() aquí porque se ejecuta al cambiar de step a 'scanning'
+  // y eso limpia todo el estado, volviendo a 'setup'
   useEffect(() => {
     return () => {
-      reset();
-      setSearchInput(''); // Limpiar el input local
+      setSearchInput(''); // Solo limpiar el input local
     };
-  }, [reset]);
+  }, []);
 
   // Refrescar datos cuando la pantalla recibe foco (sin refrescar constantemente)
   useFocusEffect(
@@ -118,67 +119,33 @@ export function SetupForm() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled={true}>
-      <Card style={styles.card}>
-        <Text style={styles.title}>Configuración de Salida</Text>
-        <Text style={styles.subtitle}>
-          Configure el tipo de salida y seleccione los datos requeridos
-        </Text>
+        <Card style={styles.card}>
+          <Text style={styles.title}>Configuración de Salida</Text>
+          <Text style={styles.subtitle}>
+            Configure el tipo de salida y seleccione los datos requeridos
+          </Text>
 
-        {/* Modo de Salida */}
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Tipo de Salida *</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={exitMode}
-              onValueChange={(value) => setExitMode(value as ExitMode)}
-              style={styles.picker}>
-              <Picker.Item label="Seleccione el tipo de salida" value={null} color="#1f2937" />
-              <Picker.Item label="Remisión" value="direct_user" color="#1f2937" />
-              <Picker.Item label="Entrega a Cliente" value="direct_customer" color="#1f2937" />
-            </Picker>
+          {/* Modo de Salida */}
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Tipo de Salida *</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={exitMode}
+                onValueChange={(value) => setExitMode(value as ExitMode)}
+                style={styles.picker}>
+                <Picker.Item label="Seleccione el tipo de salida" value={null} color="#1f2937" />
+                <Picker.Item label="Remisión" value="direct_user" color="#1f2937" />
+                <Picker.Item label="Entrega a Cliente" value="direct_customer" color="#1f2937" />
+              </Picker>
+            </View>
           </View>
-        </View>
 
-        {/* Bodega */}
-        <View style={styles.formGroup}>
-          <View style={styles.fieldHeader}>
-            <Text style={styles.label}>Bodega *</Text>
-            <TouchableOpacity
-              onPress={() => loadWarehouses()}
-              style={styles.refreshButton}
-              disabled={loading}>
-              <MaterialIcons
-                name="refresh"
-                size={20}
-                color={loading ? Colors.text.secondary : Colors.primary.main}
-              />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={warehouseId}
-              onValueChange={(value) => setWarehouse(value)}
-              style={styles.picker}>
-              <Picker.Item label="Seleccione una bodega" value={null} color="#1f2937" />
-              {warehouses.map((warehouse) => (
-                <Picker.Item
-                  key={warehouse.id}
-                  label={warehouse.name}
-                  value={warehouse.id}
-                  color="#1f2937"
-                />
-              ))}
-            </Picker>
-          </View>
-        </View>
-
-        {/* Campo condicional: Usuario Interno */}
-        {exitMode === 'direct_user' && (
+          {/* Bodega */}
           <View style={styles.formGroup}>
             <View style={styles.fieldHeader}>
-              <Text style={styles.label}>Usuario Destinatario *</Text>
+              <Text style={styles.label}>Bodega *</Text>
               <TouchableOpacity
-                onPress={() => loadUsers()}
+                onPress={() => loadWarehouses()}
                 style={styles.refreshButton}
                 disabled={loading}>
                 <MaterialIcons
@@ -190,166 +157,200 @@ export function SetupForm() {
             </View>
             <View style={styles.pickerContainer}>
               <Picker
-                selectedValue={selectedUserId}
-                onValueChange={(value) => setSelectedUser(value)}
+                selectedValue={warehouseId}
+                onValueChange={(value) => setWarehouse(value)}
                 style={styles.picker}>
-                <Picker.Item label="Seleccione un usuario" value={null} color="#1f2937" />
-                {users.map((user) => (
+                <Picker.Item label="Seleccione una bodega" value={null} color="#1f2937" />
+                {warehouses.map((warehouse) => (
                   <Picker.Item
-                    key={user.id}
-                    label={user.full_name || user.email || 'Usuario sin nombre'}
-                    value={user.id}
+                    key={warehouse.id}
+                    label={warehouse.name}
+                    value={warehouse.id}
                     color="#1f2937"
                   />
                 ))}
               </Picker>
             </View>
           </View>
-        )}
 
-        {/* Selector de Remisión (cuando se selecciona un usuario) */}
-        {exitMode === 'direct_user' && selectedUserId && (
-          <>
-            <View style={styles.refreshContainer}>
-              <TouchableOpacity
-                onPress={() => searchDeliveryOrdersByUser(selectedUserId)}
-                style={styles.refreshButtonInline}
-                disabled={loading}>
-                <MaterialIcons
-                  name="refresh"
-                  size={18}
-                  color={loading ? Colors.text.secondary : Colors.primary.main}
-                />
-                <Text style={[styles.refreshText, { color: loading ? Colors.text.secondary : Colors.primary.main }]}>
-                  Actualizar remisiones
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <DeliveryOrderSelector />
-          </>
-        )}
-
-        {/* Campo condicional: Cliente */}
-        {exitMode === 'direct_customer' && (
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Cliente *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Buscar por nombre o número de identificación"
-              value={searchInput}
-              onChangeText={setSearchInput}
-            />
-
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color={Colors.primary.main} />
-                <Text style={styles.loadingText}>Buscando clientes...</Text>
-              </View>
-            )}
-
-            {!loading && searchInput.length >= 4 && customers.length > 0 && (
-              <View style={styles.customersList}>
-                {customers.slice(0, 5).map((customer) => (
-                  <TouchableOpacity
-                    key={customer.id}
-                    style={[
-                      styles.customerItem,
-                      selectedCustomerId === customer.id && styles.customerItemSelected
-                    ]}
-                    onPress={() => {
-                      setSelectedCustomer(customer.id);
-                      setSearchInput(customer.name);
-                      Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
-                    }}>
-                    <Text style={styles.customerName}>{customer.name}</Text>
-                    <Text style={styles.customerIdNumber}>ID: {customer.id_number}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {!loading && searchInput.length >= 4 && customers.length === 0 && (
-              <Text style={styles.noResults}>No se encontraron clientes</Text>
-            )}
-          </View>
-        )}
-
-        {/* Selector de Orden de Entrega (opcional para Salida a Cliente) */}
-        {exitMode === 'direct_customer' && selectedCustomerId && (
-          <DeliveryOrderSelector />
-        )}
-
-        {/* Observaciones de entrega (opcional, cuando hay cliente/usuario y orden seleccionada) */}
-        {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
-          (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
+          {/* Campo condicional: Usuario Interno */}
+          {exitMode === 'direct_user' && (
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
-                value={deliveryObservations}
-                onChangeText={setDeliveryObservations}
-                multiline
-                numberOfLines={3}
-              />
+              <View style={styles.fieldHeader}>
+                <Text style={styles.label}>Usuario Destinatario *</Text>
+                <TouchableOpacity
+                  onPress={() => loadUsers()}
+                  style={styles.refreshButton}
+                  disabled={loading}>
+                  <MaterialIcons
+                    name="refresh"
+                    size={20}
+                    color={loading ? Colors.text.secondary : Colors.primary.main}
+                  />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={selectedUserId}
+                  onValueChange={(value) => setSelectedUser(value)}
+                  style={styles.picker}>
+                  <Picker.Item label="Seleccione un usuario" value={null} color="#1f2937" />
+                  {users.map((user) => (
+                    <Picker.Item
+                      key={user.id}
+                      label={user.full_name || user.email || 'Usuario sin nombre'}
+                      value={user.id}
+                      color="#1f2937"
+                    />
+                  ))}
+                </Picker>
+              </View>
             </View>
           )}
 
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
+          {/* Selector de Remisión (cuando se selecciona un usuario) */}
+          {exitMode === 'direct_user' && selectedUserId && (
+            <>
+              <View style={styles.refreshContainer}>
+                <TouchableOpacity
+                  onPress={() => searchDeliveryOrdersByUser(selectedUserId)}
+                  style={styles.refreshButtonInline}
+                  disabled={loading}>
+                  <MaterialIcons
+                    name="refresh"
+                    size={18}
+                    color={loading ? Colors.text.secondary : Colors.primary.main}
+                  />
+                  <Text style={[styles.refreshText, { color: loading ? Colors.text.secondary : Colors.primary.main }]}>
+                    Actualizar remisiones
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <DeliveryOrderSelector />
+            </>
+          )}
 
-        <View style={styles.buttonsContainer}>
-          <Button
-            title="Iniciar Registro de Salida"
-            onPress={startExit}
-            disabled={!canStart}
-            style={styles.startButton}
-          />
-          {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
-            (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
-              <View style={styles.warningContainer}>
-                <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
-                <Text style={styles.warningText}>
-                  Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
-                </Text>
+          {/* Campo condicional: Cliente */}
+          {exitMode === 'direct_customer' && (
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Cliente *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Buscar por nombre o número de identificación"
+                value={searchInput}
+                onChangeText={setSearchInput}
+              />
+
+              {loading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={Colors.primary.main} />
+                  <Text style={styles.loadingText}>Buscando clientes...</Text>
+                </View>
+              )}
+
+              {!loading && searchInput.length >= 4 && customers.length > 0 && (
+                <View style={styles.customersList}>
+                  {customers.slice(0, 5).map((customer) => (
+                    <TouchableOpacity
+                      key={customer.id}
+                      style={[
+                        styles.customerItem,
+                        selectedCustomerId === customer.id && styles.customerItemSelected
+                      ]}
+                      onPress={() => {
+                        setSelectedCustomer(customer.id);
+                        setSearchInput(customer.name);
+                        Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
+                      }}>
+                      <Text style={styles.customerName}>{customer.name}</Text>
+                      <Text style={styles.customerIdNumber}>ID: {customer.id_number}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {!loading && searchInput.length >= 4 && customers.length === 0 && (
+                <Text style={styles.noResults}>No se encontraron clientes</Text>
+              )}
+            </View>
+          )}
+
+          {/* Selector de Orden de Entrega (opcional para Salida a Cliente) */}
+          {exitMode === 'direct_customer' && selectedCustomerId && (
+            <DeliveryOrderSelector />
+          )}
+
+          {/* Observaciones de entrega (opcional, cuando hay cliente/usuario y orden seleccionada) */}
+          {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
+            (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
+                  value={deliveryObservations}
+                  onChangeText={setDeliveryObservations}
+                  multiline
+                  numberOfLines={3}
+                />
               </View>
             )}
-          <Button
-            title="Cancelar"
-            onPress={() => {
-              if (warehouseId || exitMode || selectedUserId || selectedCustomerId) {
-                Alert.alert(
-                  'Cancelar Configuración',
-                  '¿Está seguro que desea cancelar? Se perderán todos los datos configurados.',
-                  [
-                    {
-                      text: 'No',
-                      style: 'cancel',
-                    },
-                    {
-                      text: 'Sí, cancelar',
-                      style: 'destructive',
-                      onPress: () => {
-                        reset();
-                        router.back();
+
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          <View style={styles.buttonsContainer}>
+            <Button
+              title="Iniciar Registro de Salida"
+              onPress={startExit}
+              disabled={!canStart}
+              style={styles.startButton}
+            />
+            {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
+              (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
+                <View style={styles.warningContainer}>
+                  <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
+                  <Text style={styles.warningText}>
+                    Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
+                  </Text>
+                </View>
+              )}
+            <Button
+              title="Cancelar"
+              onPress={() => {
+                if (warehouseId || exitMode || selectedUserId || selectedCustomerId) {
+                  Alert.alert(
+                    'Cancelar Configuración',
+                    '¿Está seguro que desea cancelar? Se perderán todos los datos configurados.',
+                    [
+                      {
+                        text: 'No',
+                        style: 'cancel',
                       },
-                    },
-                  ]
-                );
-              } else {
-                reset();
-                router.back();
-              }
-            }}
-            variant="outline"
-            style={styles.cancelButton}
-          />
-        </View>
-      </Card>
-    </ScrollView>
+                      {
+                        text: 'Sí, cancelar',
+                        style: 'destructive',
+                        onPress: () => {
+                          reset();
+                          router.back();
+                        },
+                      },
+                    ]
+                  );
+                } else {
+                  reset();
+                  router.back();
+                }
+              }}
+              variant="outline"
+              style={styles.cancelButton}
+            />
+          </View>
+        </Card>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
