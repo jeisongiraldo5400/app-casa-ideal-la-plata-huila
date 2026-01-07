@@ -858,57 +858,65 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      // Si hay una orden de entrega seleccionada, validar contra ella
-      if (selectedDeliveryOrderId && selectedDeliveryOrder) {
-        const validation = get().validateProductAgainstOrder(
-          product.id,
-          1 // Validar con cantidad 1 inicialmente
-        );
-
-        if (!validation.valid) {
-          set({
-            loading: false,
-            loadingMessage: null,
-            error: validation.error || "Producto no válido para esta orden",
-            currentProduct: null,
-            currentScannedBarcode: null,
-          });
-          return;
-        }
-      }
-
-      // Verificar stock disponible en la bodega seleccionada
-      set({ loadingMessage: 'Verificando stock disponible...' });
-
-      const { data: stock, error: stockError } = await supabase
-        .from("warehouse_stock")
-        .select("quantity")
-        .eq("product_id", product.id)
-        .eq("warehouse_id", warehouseId)
-        .maybeSingle();
-
-      // Manejar error de consulta
-      if (stockError && stockError.code !== 'PGRST116') {
-        console.error("Error checking stock:", stockError);
+      // Validar que haya una orden de entrega seleccionada (siempre requerida)
+      if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
         set({
           loading: false,
           loadingMessage: null,
-          error: "Error al verificar el stock disponible. Por favor intente de nuevo.",
+          error: "Debe seleccionar una orden de entrega primero",
           currentProduct: null,
           currentScannedBarcode: null,
         });
         return;
       }
 
-      const availableStock = stock?.quantity || 0;
+      // Validar contra la orden de entrega
+      const validation = get().validateProductAgainstOrder(
+        product.id,
+        1 // Validar con cantidad 1 inicialmente
+      );
+
+      if (!validation.valid) {
+        set({
+          loading: false,
+          loadingMessage: null,
+          error: validation.error || "Producto no válido para esta orden",
+          currentProduct: null,
+          currentScannedBarcode: null,
+        });
+        return;
+      }
+
+      // Calcular stock disponible basado en la orden de entrega
+      set({ loadingMessage: 'Verificando disponibilidad en la orden...' });
+
+      const orderItem = selectedDeliveryOrder.items.find(
+        (item) => item.product_id === product.id && item.warehouse_id === warehouseId
+      );
+
+      if (!orderItem) {
+        set({
+          loading: false,
+          loadingMessage: null,
+          error: "Este producto no está incluido en la orden de entrega para esta bodega",
+          currentProduct: null,
+          currentScannedBarcode: null,
+        });
+        return;
+      }
+
+      // Calcular cantidad disponible en la orden
+      const registeredExitsCache = get().registeredExitsCache;
+      const registeredInBD = registeredExitsCache[selectedDeliveryOrderId]?.[product.id] || 0;
+      const availableStock = Math.max(orderItem.quantity - registeredInBD, 0);
 
       if (availableStock <= 0) {
         set({
           loading: false,
           loadingMessage: null,
-          error: `No hay stock disponible de este producto en la bodega seleccionada. Stock actual: ${availableStock}`,
+          error: `Este producto ya fue entregado completamente en esta orden. Cantidad en orden: ${orderItem.quantity}, Ya entregado: ${registeredInBD}`,
           currentProduct: null,
-          currentScannedBarcode: null, // Limpiar para permitir escanear de nuevo
+          currentScannedBarcode: null,
         });
         return;
       }
@@ -977,41 +985,32 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    // Si hay una orden de entrega seleccionada, validar contra la orden (opcional para direct_customer)
-    if (selectedDeliveryOrderId) {
-      const validation = get().validateProductAgainstOrder(product.id, quantity);
-      if (!validation.valid) {
-        set({ error: validation.error });
-        return;
-      }
+    // Validar que haya una orden de entrega seleccionada (siempre requerida)
+    const { selectedDeliveryOrder, registeredExitsCache } = get();
+    if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
+      set({ error: "Debe seleccionar una orden de entrega primero" });
+      return;
     }
 
-    // OPTIMIZADO: Reutilizar stock cacheado si es el mismo producto recién escaneado
-    let availableStock: number = 0;
-
-    if (currentProduct?.id === product.id && currentAvailableStock !== undefined) {
-      availableStock = currentAvailableStock;
-    } else {
-      try {
-        const { data: stock, error: stockError } = await supabase
-          .from("warehouse_stock")
-          .select("quantity")
-          .eq("product_id", product.id)
-          .eq("warehouse_id", warehouseId)
-          .maybeSingle();
-
-        if (stockError && stockError.code !== 'PGRST116') {
-          set({ error: "Error al verificar el stock disponible. Por favor intente de nuevo." });
-          return;
-        }
-
-        availableStock = stock?.quantity || 0;
-      } catch (error: any) {
-        console.error("Error checking stock:", error);
-        set({ error: "Error al verificar el stock disponible. Por favor intente de nuevo." });
-        return;
-      }
+    // Validar contra la orden de entrega
+    const validation = get().validateProductAgainstOrder(product.id, quantity);
+    if (!validation.valid) {
+      set({ error: validation.error });
+      return;
     }
+
+    // Calcular stock disponible basado en la orden
+    const orderItem = selectedDeliveryOrder.items.find(
+      (item) => item.product_id === product.id && item.warehouse_id === warehouseId
+    );
+
+    if (!orderItem) {
+      set({ error: "Este producto no está en la orden de entrega para esta bodega" });
+      return;
+    }
+
+    const registeredInBD = registeredExitsCache[selectedDeliveryOrderId]?.[product.id] || 0;
+    const availableStock = Math.max(orderItem.quantity - registeredInBD, 0);
 
     // Calcular cantidad total ya agregada en esta salida
     const existingItem = exitItems.find((item) => item.product.id === product.id);
