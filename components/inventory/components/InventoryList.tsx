@@ -39,6 +39,22 @@ export function InventoryList() {
     );
   }
 
+  // Extraer nombres de bodegas desde stock_by_warehouse
+  const getWarehouseNames = (stockByWarehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>): string => {
+    const warehouses = Object.values(stockByWarehouse);
+    
+    if (warehouses.length === 0) {
+      return 'Sin bodega';
+    }
+    
+    if (warehouses.length === 1) {
+      return warehouses[0].warehouse_name;
+    }
+    
+    // Múltiples bodegas: mostrar nombres separados por comas
+    return warehouses.map(w => w.warehouse_name).join(', ');
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {inventory.map((item) => {
@@ -48,7 +64,9 @@ export function InventoryList() {
           : null;
 
         const displayQuantity = warehouseStock?.quantity || item.total_stock;
-        const displayWarehouse = warehouseStock?.warehouse_name || 'Todas las bodegas';
+        const displayWarehouse = selectedWarehouseId
+          ? warehouseStock?.warehouse_name || 'Sin bodega'
+          : getWarehouseNames(item.stock_by_warehouse);
 
         return (
           <Card key={item.id} style={styles.itemCard}>
