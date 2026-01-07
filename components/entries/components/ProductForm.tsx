@@ -2,7 +2,8 @@ import { useEntriesStore } from '@/components/entries/infrastructure/store/entri
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Picker } from '@react-native-picker/picker';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useEffect, useState } from 'react';
@@ -44,6 +45,8 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     currentQuantity,
   } = useEntriesStore();
 
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -96,8 +99,8 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
         <View style={styles.header}>
-          <Text style={styles.title}>Producto no encontrado</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: Colors.text.primary }]}>Producto no encontrado</Text>
+          <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
             Registre el producto para continuar con la entrada
           </Text>
         </View>
@@ -145,50 +148,62 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
               />
 
               <View style={styles.field}>
-                <Text style={styles.label}>Categoría *</Text>
-                <View style={styles.pickerContainer}>
+                <Text style={[styles.label, { color: Colors.text.primary }]}>Categoría *</Text>
+                <View style={[styles.pickerContainer, {
+                  backgroundColor: Colors.background.paper,
+                  borderColor: Colors.divider
+                }]}>
                   <Picker
                     selectedValue={values.category_id}
                     onValueChange={handleChange('category_id')}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}>
-                    <Picker.Item label="Seleccione una categoría" value="" color="#1f2937" />
+                    style={[styles.picker, { color: Colors.text.primary }]}
+                    dropdownIconColor={Colors.text.primary}
+                    itemStyle={[styles.pickerItem, { 
+                      color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                    }]}>
+                    <Picker.Item label="Seleccione una categoría" value="" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
                     {categories.map((category) => (
                       <Picker.Item
                         key={category.id}
                         label={category.name}
                         value={category.id}
-                        color="#1f2937"
+                        color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
                       />
                     ))}
                   </Picker>
                 </View>
                 {touched.category_id && errors.category_id && (
-                  <Text style={styles.errorText}>{errors.category_id}</Text>
+                  <Text style={[styles.errorText, { color: Colors.error.main }]}>{errors.category_id}</Text>
                 )}
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Marca *</Text>
-                <View style={styles.pickerContainer}>
+                <Text style={[styles.label, { color: Colors.text.primary }]}>Marca *</Text>
+                <View style={[styles.pickerContainer, {
+                  backgroundColor: Colors.background.paper,
+                  borderColor: Colors.divider
+                }]}>
                   <Picker
                     selectedValue={values.brand_id}
                     onValueChange={handleChange('brand_id')}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}>
-                    <Picker.Item label="Seleccione una marca" value="" color="#1f2937" />
+                    style={[styles.picker, { color: Colors.text.primary }]}
+                    dropdownIconColor={Colors.text.primary}
+                    itemStyle={[styles.pickerItem, { 
+                      color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                    }]}>
+                    <Picker.Item label="Seleccione una marca" value="" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
                     {brands.map((brand) => (
                       <Picker.Item
                         key={brand.id}
                         label={brand.name || 'Sin nombre'}
                         value={brand.id}
-                        color="#1f2937"
+                        color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
                       />
                     ))}
                   </Picker>
                 </View>
                 {touched.brand_id && errors.brand_id && (
-                  <Text style={styles.errorText}>{errors.brand_id}</Text>
+                  <Text style={[styles.errorText, { color: Colors.error.main }]}>{errors.brand_id}</Text>
                 )}
               </View>
 
@@ -238,12 +253,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.text.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.text.secondary,
   },
   field: {
     marginBottom: 16,
@@ -251,14 +264,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: Colors.text.primary,
     marginBottom: 8,
   },
   pickerContainer: {
     borderWidth: 1.5,
-    borderColor: Colors.divider,
     borderRadius: 8,
-    backgroundColor: Colors.background.paper,
     overflow: 'hidden',
     minHeight: 56,
     justifyContent: 'center',
@@ -269,11 +279,9 @@ const styles = StyleSheet.create({
   pickerItem: {
     height: 56,
     fontSize: 16,
-    color: Colors.text.primary,
   },
   errorText: {
     fontSize: 12,
-    color: Colors.error.main,
     marginTop: 4,
   },
   buttons: {

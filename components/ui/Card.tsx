@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface CardProps {
   children: React.ReactNode;
@@ -8,12 +9,25 @@ interface CardProps {
 }
 
 export function Card({ children, style }: CardProps) {
-  return <View style={[styles.card, style]}>{children}</View>;
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
+  
+  return (
+    <View style={[
+      styles.card,
+      {
+        backgroundColor: Colors.background.paper,
+        borderColor: Colors.divider,
+      },
+      style
+    ]}>
+      {children}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.background.paper,
     borderRadius: 16,
     padding: 24,
     shadowColor: '#000',
@@ -25,7 +39,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
 });
 

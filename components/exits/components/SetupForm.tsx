@@ -1,7 +1,8 @@
 import { useExitsStore, type ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -39,6 +40,8 @@ export function SetupForm() {
   } = useExitsStore();
 
   const router = useRouter();
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
   const [searchInput, setSearchInput] = useState('');
 
   useEffect(() => {
@@ -111,31 +114,47 @@ export function SetupForm() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: Colors.background.default }]}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled={true}>
         <Card style={styles.card}>
-          <Text style={styles.title}>Configuración de Salida</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { 
+            color: Colors.text.primary,
+            fontWeight: '700'
+          }]}>Configuración de Salida</Text>
+          <Text style={[styles.subtitle, { 
+            color: Colors.text.primary,
+            opacity: 0.9
+          }]}>
             Configure el tipo de salida y seleccione los datos requeridos
           </Text>
 
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Tipo de Salida *</Text>
-            <View style={styles.pickerContainer}>
+            <Text style={[styles.label, { color: Colors.text.primary }]}>Tipo de Salida *</Text>
+            <View style={[styles.pickerContainer, {
+              backgroundColor: Colors.background.paper,
+              borderColor: Colors.divider
+            }]}>
               <Picker
                 selectedValue={exitMode}
                 onValueChange={(value) => setExitMode(value as ExitMode)}
-                style={styles.picker}>
-                <Picker.Item label="Seleccione el tipo de salida" value={null} color="#1f2937" />
-                <Picker.Item label="Remisión" value="direct_user" color="#1f2937" />
-                <Picker.Item label="Entrega a Cliente" value="direct_customer" color="#1f2937" />
+                style={[styles.picker, { 
+                  color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
+                  fontWeight: '500'
+                }]}
+                dropdownIconColor={Colors.text.primary}
+                itemStyle={[styles.pickerItem, { 
+                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                }]}>
+                <Picker.Item label="Seleccione el tipo de salida" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+                <Picker.Item label="Remisión" value="direct_user" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+                <Picker.Item label="Entrega a Cliente" value="direct_customer" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
               </Picker>
             </View>
           </View>
@@ -143,7 +162,7 @@ export function SetupForm() {
           {/* Bodega */}
           <View style={styles.formGroup}>
             <View style={styles.fieldHeader}>
-              <Text style={styles.label}>Bodega *</Text>
+              <Text style={[styles.label, { color: Colors.text.primary }]}>Bodega *</Text>
               <TouchableOpacity
                 onPress={() => loadWarehouses()}
                 style={styles.refreshButton}
@@ -155,18 +174,28 @@ export function SetupForm() {
                 />
               </TouchableOpacity>
             </View>
-            <View style={styles.pickerContainer}>
+            <View style={[styles.pickerContainer, {
+              backgroundColor: Colors.background.paper,
+              borderColor: Colors.divider
+            }]}>
               <Picker
                 selectedValue={warehouseId}
                 onValueChange={(value) => setWarehouse(value)}
-                style={styles.picker}>
-                <Picker.Item label="Seleccione una bodega" value={null} color="#1f2937" />
+                style={[styles.picker, { 
+                  color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
+                  fontWeight: '500'
+                }]}
+                dropdownIconColor={Colors.text.primary}
+                itemStyle={[styles.pickerItem, { 
+                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                }]}>
+                <Picker.Item label="Seleccione una bodega" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
                 {warehouses.map((warehouse) => (
                   <Picker.Item
                     key={warehouse.id}
                     label={warehouse.name}
                     value={warehouse.id}
-                    color="#1f2937"
+                    color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
                   />
                 ))}
               </Picker>
@@ -177,7 +206,7 @@ export function SetupForm() {
           {exitMode === 'direct_user' && (
             <View style={styles.formGroup}>
               <View style={styles.fieldHeader}>
-                <Text style={styles.label}>Usuario Destinatario *</Text>
+                <Text style={[styles.label, { color: Colors.text.primary }]}>Usuario Destinatario *</Text>
                 <TouchableOpacity
                   onPress={() => loadUsers()}
                   style={styles.refreshButton}
@@ -189,18 +218,28 @@ export function SetupForm() {
                   />
                 </TouchableOpacity>
               </View>
-              <View style={styles.pickerContainer}>
+              <View style={[styles.pickerContainer, {
+                backgroundColor: Colors.background.paper,
+                borderColor: Colors.divider
+              }]}>
                 <Picker
                   selectedValue={selectedUserId}
                   onValueChange={(value) => setSelectedUser(value)}
-                  style={styles.picker}>
-                  <Picker.Item label="Seleccione un usuario" value={null} color="#1f2937" />
+                  style={[styles.picker, { 
+                    color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
+                    fontWeight: '500'
+                  }]}
+                  dropdownIconColor={Colors.text.primary}
+                  itemStyle={[styles.pickerItem, { 
+                    color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                  }]}>
+                  <Picker.Item label="Seleccione un usuario" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
                   {users.map((user) => (
                     <Picker.Item
                       key={user.id}
                       label={user.full_name || user.email || 'Usuario sin nombre'}
                       value={user.id}
-                      color="#1f2937"
+                      color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
                     />
                   ))}
                 </Picker>
@@ -233,44 +272,53 @@ export function SetupForm() {
           {/* Campo condicional: Cliente */}
           {exitMode === 'direct_customer' && (
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Cliente *</Text>
+              <Text style={[styles.label, { color: Colors.text.primary }]}>Cliente *</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, {
+                  backgroundColor: Colors.background.paper,
+                  borderColor: Colors.divider,
+                  color: Colors.text.primary
+                }]}
                 placeholder="Buscar por nombre o número de identificación"
+                placeholderTextColor={Colors.text.secondary}
                 value={searchInput}
                 onChangeText={setSearchInput}
               />
 
               {loading && (
-                <View style={styles.loadingContainer}>
+                <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
                   <ActivityIndicator size="small" color={Colors.primary.main} />
-                  <Text style={styles.loadingText}>Buscando clientes...</Text>
+                  <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
                 </View>
               )}
 
               {!loading && searchInput.length >= 4 && customers.length > 0 && (
-                <View style={styles.customersList}>
+                <View style={[styles.customersList, {
+                  backgroundColor: Colors.background.paper,
+                  borderColor: Colors.divider
+                }]}>
                   {customers.slice(0, 5).map((customer) => (
                     <TouchableOpacity
                       key={customer.id}
                       style={[
                         styles.customerItem,
-                        selectedCustomerId === customer.id && styles.customerItemSelected
+                        { borderBottomColor: Colors.divider },
+                        selectedCustomerId === customer.id && { backgroundColor: Colors.primary.light + '20' }
                       ]}
                       onPress={() => {
                         setSelectedCustomer(customer.id);
                         setSearchInput(customer.name);
                         Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                       }}>
-                      <Text style={styles.customerName}>{customer.name}</Text>
-                      <Text style={styles.customerIdNumber}>ID: {customer.id_number}</Text>
+                      <Text style={[styles.customerName, { color: Colors.text.primary }]}>{customer.name}</Text>
+                      <Text style={[styles.customerIdNumber, { color: Colors.text.secondary }]}>ID: {customer.id_number}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
 
               {!loading && searchInput.length >= 4 && customers.length === 0 && (
-                <Text style={styles.noResults}>No se encontraron clientes</Text>
+                <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
           )}
@@ -284,10 +332,15 @@ export function SetupForm() {
           {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
             (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Observaciones de la entrega (opcional)</Text>
+                <Text style={[styles.label, { color: Colors.text.primary }]}>Observaciones de la entrega (opcional)</Text>
                 <TextInput
-                  style={[styles.input, styles.textArea]}
+                  style={[styles.input, styles.textArea, {
+                    backgroundColor: Colors.background.paper,
+                    borderColor: Colors.divider,
+                    color: Colors.text.primary
+                  }]}
                   placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
+                  placeholderTextColor={Colors.text.secondary}
                   value={deliveryObservations}
                   onChangeText={setDeliveryObservations}
                   multiline
@@ -297,8 +350,11 @@ export function SetupForm() {
             )}
 
           {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
+            <View style={[styles.errorContainer, {
+              backgroundColor: Colors.error.light + '20',
+              borderColor: Colors.error.main
+            }]}>
+              <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
             </View>
           )}
 
@@ -311,9 +367,12 @@ export function SetupForm() {
             />
             {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
               (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
-                <View style={styles.warningContainer}>
+                <View style={[styles.warningContainer, {
+                  backgroundColor: Colors.success.light + '20',
+                  borderColor: Colors.success.main + '40'
+                }]}>
                   <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
-                  <Text style={styles.warningText}>
+                  <Text style={[styles.warningText, { color: Colors.success.main }]}>
                     Esta {exitMode === 'direct_user' ? 'remisión' : 'orden de entrega'} ya está completa. No se pueden registrar más productos.
                   </Text>
                 </View>
@@ -369,14 +428,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '600',
-    color: Colors.text.primary,
+    fontWeight: '700',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.text.secondary,
     marginBottom: 24,
+    fontWeight: '500',
   },
   formGroup: {
     marginBottom: 20,
@@ -389,8 +447,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text.primary,
+    fontWeight: '700',
     flex: 1,
   },
   refreshButton: {
@@ -414,23 +471,21 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     borderWidth: 1.5,
-    borderColor: Colors.divider,
     borderRadius: 12,
-    backgroundColor: Colors.background.paper,
     overflow: 'hidden',
   },
   picker: {
     height: 52,
   },
+  pickerItem: {
+    fontSize: 16,
+  },
   input: {
     borderWidth: 1.5,
-    borderColor: Colors.divider,
     borderRadius: 12,
-    backgroundColor: Colors.background.paper,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: Colors.text.primary,
   },
   textArea: {
     height: 96,
@@ -441,60 +496,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     padding: 12,
-    backgroundColor: Colors.background.default,
     borderRadius: 8,
   },
   loadingText: {
     marginLeft: 12,
     fontSize: 14,
-    color: Colors.text.secondary,
   },
   customersList: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: Colors.divider,
     borderRadius: 12,
-    backgroundColor: Colors.background.paper,
     maxHeight: 250,
   },
   customerItem: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  customerItemSelected: {
-    backgroundColor: Colors.primary.light + '20',
   },
   customerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text.primary,
     marginBottom: 4,
   },
   customerIdNumber: {
     fontSize: 14,
-    color: Colors.text.secondary,
   },
   noResults: {
     marginTop: 12,
     padding: 16,
     textAlign: 'center',
     fontSize: 14,
-    color: Colors.text.secondary,
     fontStyle: 'italic',
   },
   errorContainer: {
     marginTop: 16,
     marginBottom: 16,
     padding: 12,
-    backgroundColor: Colors.error.light + '20',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.error.main,
   },
   errorText: {
     fontSize: 14,
-    color: Colors.error.main,
     fontWeight: '500',
   },
   buttonsContainer: {
@@ -512,16 +553,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     padding: 12,
-    backgroundColor: Colors.success.light + '20',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.success.main + '40',
     gap: 8,
   },
   warningText: {
     flex: 1,
     fontSize: 14,
-    color: Colors.success.main,
     fontWeight: '500',
   },
 });

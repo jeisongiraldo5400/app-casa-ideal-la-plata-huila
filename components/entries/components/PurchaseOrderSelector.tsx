@@ -13,7 +13,8 @@ import { MaterialIcons } from "@expo/vector-icons";
 
 // UI
 import { Card } from "@/components/ui/Card";
-import { Colors } from "@/constants/theme";
+import { getColors } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 
 // Hooks
 import { useUserRoles } from "@/hooks/useUserRoles";
@@ -43,11 +44,13 @@ export function PurchaseOrderSelector({
 
   // Hooks
   const { canMarkOrderAsReceived } = useUserRoles();
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
 
   if (purchaseOrders.length === 0) {
     return (
       <Card style={styles.emptyCard}>
-        <Text style={styles.emptyText}>
+        <Text style={[styles.emptyText, { color: Colors.text.secondary }]}>
           No hay órdenes de compra pendientes o en proceso para este proveedor
         </Text>
       </Card>
@@ -179,13 +182,14 @@ export function PurchaseOrderSelector({
             <Card
               style={[
                 styles.orderCard,
-                ...(isSelected ? [styles.selectedOrderCard] : []),
-                ...(isOrderComplete ? [styles.completeOrderCard] : []),
+                { borderColor: Colors.divider },
+                ...(isSelected ? [{ borderColor: Colors.primary.main, backgroundColor: Colors.primary.light }] : []),
+                ...(isOrderComplete ? [{ opacity: 0.7, backgroundColor: Colors.success.light + "20" }] : []),
               ]}
             >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
-                  <Text style={styles.orderId}>OC #{order.order_number || order.id.slice(0, 8)}</Text>
+                  <Text style={[styles.orderId, { color: Colors.text.primary }]}>OC #{order.order_number || order.id.slice(0, 8)}</Text>
                   <View
                     style={[
                       styles.statusBadge,
@@ -195,85 +199,88 @@ export function PurchaseOrderSelector({
                     <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
                   </View>
                   {isComplete ? (
-                    <View style={styles.completePurchaseOrderCard}>
+                    <View style={[styles.completePurchaseOrderCard, { backgroundColor: Colors.success.main }]}>
                       <Text style={styles.completePurchaseOrderText}>✓</Text>
                     </View>
                   ) : (
-                    <View style={styles.incompletePurchaseOrderCard}>
+                    <View style={[styles.incompletePurchaseOrderCard, { backgroundColor: Colors.error.main }]}>
                       <Text style={styles.incompletePurchaseOrderText}>✗</Text>
                     </View>
                   )}
                 </View>
-                <Text style={styles.orderDate}>
+                <Text style={[styles.orderDate, { color: Colors.text.secondary }]}>
                   {formatDate(order.created_at)}
                 </Text>
               </View>
 
               {order.notes && (
-                <Text style={styles.orderNotes} numberOfLines={2}>
+                <Text style={[styles.orderNotes, { color: Colors.text.secondary }]} numberOfLines={2}>
                   {order.notes}
                 </Text>
               )}
 
-              <View style={styles.orderSummary}>
-                <Text style={styles.summaryText}>
+              <View style={[styles.orderSummary, { borderTopColor: Colors.divider }]}>
+                <Text style={[styles.summaryText, { color: Colors.text.primary }]}>
                   {totalProducts} producto{totalProducts !== 1 ? "s" : ""} •{" "}
                   {totalQuantity} unidad{totalQuantity !== 1 ? "es" : ""}
                 </Text>
               </View>
 
-              <View style={styles.orderSummary}>
-                <Text style={styles.summaryText}>
+              <View style={[styles.orderSummary, { borderTopColor: Colors.divider }]}>
+                <Text style={[styles.summaryText, { color: Colors.text.primary }]}>
                   {totalQuantityOfInventoryEntries} unidad
                   {totalQuantityOfInventoryEntries !== 1 ? "es" : ""} ya registradas
                 </Text>
-                <Text style={styles.summaryText}>
+                <Text style={[styles.summaryText, { color: Colors.text.primary }]}>
                   {totalItemsQuantity} unidad
                   {totalItemsQuantity !== 1 ? "es" : ""} en la orden
                 </Text>
               </View>
 
               {isOrderComplete && order.status !== 'received' && (
-                <View style={styles.completeMessageContainer}>
-                  <Text style={styles.completeMessageText}>
+                <View style={[styles.completeMessageContainer, {
+                  backgroundColor: Colors.success.light + "30",
+                  borderColor: Colors.success.main
+                }]}>
+                  <Text style={[styles.completeMessageText, { color: Colors.success.main }]}>
                     ✓ Orden completa - No se pueden escanear más productos
                   </Text>
                   {canMarkOrderAsReceived() && (
                     <TouchableOpacity
-                      style={styles.markReceivedButton}
+                      style={[styles.markReceivedButton, { backgroundColor: Colors.success.main + "15" }]}
                       onPress={() => handleMarkAsReceived(order.id)}
                       activeOpacity={0.7}
                     >
                       <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
-                      <Text style={styles.markReceivedButtonText}>Marcar como recibida</Text>
+                      <Text style={[styles.markReceivedButtonText, { color: Colors.success.main }]}>Marcar como recibida</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               )}
 
               {order.status === 'received' && (
-                <View style={styles.receivedBadge}>
+                <View style={[styles.receivedBadge, { backgroundColor: Colors.success.main + "15" }]}>
                   <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
-                  <Text style={styles.receivedText}>Orden recibida</Text>
+                  <Text style={[styles.receivedText, { color: Colors.success.main }]}>Orden recibida</Text>
                 </View>
               )}
 
               <View style={styles.productsList}>
-                <Text style={styles.productsListTitle}>
+                <Text style={[styles.productsListTitle, { color: Colors.text.primary }]}>
                   Productos incluidos:
                 </Text>
                 {order.items.slice(0, 3).map((item, index) => (
-                  <View key={item.id} style={styles.productItem}>
-                    <Text style={styles.productName} numberOfLines={1}>
+                  <View key={item.id} style={[styles.productItem, { backgroundColor: Colors.background.default }]}>
+                    <Text style={[styles.productName, { color: Colors.text.primary }]} numberOfLines={1}>
                       {item.product?.name || "Producto sin nombre"}
                     </Text>
-                    <Text style={styles.productQuantity}>
+                    <Text style={[styles.productQuantity, { color: Colors.text.secondary }]}>
                       Cantidad: {item.quantity}
                     </Text>
                   </View>
                 ))}
                 {order.items.length > 3 && (
-                  <Text style={styles.moreProducts}>
+                  <Text style={[styles.moreProducts, { color: Colors.text.secondary }]}>
                     +{order.items.length - 3} producto
                     {order.items.length - 3 !== 1 ? "s" : ""} más
                   </Text>
@@ -281,8 +288,8 @@ export function PurchaseOrderSelector({
               </View>
 
               {isSelected && (
-                <View style={styles.selectedIndicator}>
-                  <Text style={styles.selectedText}>✓ Seleccionada</Text>
+                <View style={[styles.selectedIndicator, { borderTopColor: Colors.primary.main }]}>
+                  <Text style={[styles.selectedText, { color: Colors.primary.main }]}>✓ Seleccionada</Text>
                 </View>
               )}
             </Card>
@@ -304,18 +311,12 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: Colors.text.secondary,
     textAlign: "center",
   },
   orderCard: {
     marginBottom: 12,
     padding: 16,
     borderWidth: 2,
-    borderColor: Colors.divider,
-  },
-  selectedOrderCard: {
-    borderColor: Colors.primary.main,
-    backgroundColor: Colors.primary.light,
   },
   orderHeader: {
     flexDirection: "row",
@@ -332,7 +333,6 @@ const styles = StyleSheet.create({
   orderId: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.text.primary,
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -346,11 +346,9 @@ const styles = StyleSheet.create({
   },
   orderDate: {
     fontSize: 12,
-    color: Colors.text.secondary,
   },
   orderNotes: {
     fontSize: 14,
-    color: Colors.text.secondary,
     marginBottom: 8,
     fontStyle: "italic",
   },
@@ -358,12 +356,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: Colors.divider,
   },
   summaryText: {
     fontSize: 14,
     fontWeight: "500",
-    color: Colors.text.primary,
   },
   productsList: {
     marginTop: 8,
@@ -371,7 +367,6 @@ const styles = StyleSheet.create({
   productsListTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.text.primary,
     marginBottom: 8,
   },
   productItem: {
@@ -380,24 +375,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 4,
     paddingHorizontal: 8,
-    backgroundColor: Colors.background.default,
     borderRadius: 4,
     marginBottom: 4,
   },
   productName: {
     flex: 1,
     fontSize: 13,
-    color: Colors.text.primary,
     marginRight: 8,
   },
   productQuantity: {
     fontSize: 13,
     fontWeight: "500",
-    color: Colors.text.secondary,
   },
   moreProducts: {
     fontSize: 12,
-    color: Colors.text.secondary,
     fontStyle: "italic",
     marginTop: 4,
   },
@@ -405,19 +396,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.primary.main,
     alignItems: "center",
   },
   selectedText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.primary.main,
   },
   completePurchaseOrderCard: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: Colors.success.main,
   },
   completePurchaseOrderText: {
     fontSize: 12,
@@ -428,29 +416,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: Colors.error.main,
   },
   incompletePurchaseOrderText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#FFFFFF",
   },
-  completeOrderCard: {
-    opacity: 0.7,
-    backgroundColor: Colors.success.light + "20",
-  },
   completeMessageContainer: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: Colors.success.light + "30",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.success.main,
   },
   completeMessageText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.success.main,
     textAlign: "center",
     marginBottom: 12,
   },
@@ -458,7 +438,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.success.main + "15",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -468,13 +447,11 @@ const styles = StyleSheet.create({
   markReceivedButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.success.main,
   },
   receivedBadge: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.success.main + "15",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -484,6 +461,5 @@ const styles = StyleSheet.create({
   receivedText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.success.main,
   },
 });

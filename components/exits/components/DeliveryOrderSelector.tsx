@@ -1,5 +1,6 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -19,6 +20,9 @@ export function DeliveryOrderSelector() {
         error,
     } = useExitsStore();
 
+    const colorScheme = useColorScheme() ?? 'light';
+    const Colors = getColors(colorScheme === 'dark');
+
     useEffect(() => {
         if (exitMode === 'direct_customer' && selectedCustomerId) {
             searchDeliveryOrdersByCustomer(selectedCustomerId);
@@ -36,7 +40,7 @@ export function DeliveryOrderSelector() {
             <View style={styles.listContainer}>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={Colors.primary.main} />
-                    <Text style={styles.loadingText}>Cargando {orderTypeLabelPlural}...</Text>
+                    <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Cargando {orderTypeLabelPlural}...</Text>
                 </View>
             </View>
         );
@@ -47,8 +51,8 @@ export function DeliveryOrderSelector() {
             <View style={styles.listContainer}>
                 <View style={styles.emptyContainer}>
                     <MaterialIcons name="inbox" size={64} color={Colors.text.secondary} />
-                    <Text style={styles.emptyTitle}>No hay {orderTypeLabelPlural} pendientes</Text>
-                    <Text style={styles.emptySubtitle}>
+                    <Text style={[styles.emptyTitle, { color: Colors.text.primary }]}>No hay {orderTypeLabelPlural} pendientes</Text>
+                    <Text style={[styles.emptySubtitle, { color: Colors.text.secondary }]}>
                         {isRemissionMode
                             ? 'Este usuario no tiene remisiones pendientes'
                             : 'Este cliente no tiene órdenes de entrega pendientes'}
@@ -60,8 +64,8 @@ export function DeliveryOrderSelector() {
 
     return (
         <View style={styles.listContainer}>
-            <Text style={styles.title}>Seleccione {isRemissionMode ? 'Remisión' : 'Orden de Entrega'}</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, { color: Colors.text.primary }]}>Seleccione {isRemissionMode ? 'Remisión' : 'Orden de Entrega'}</Text>
+            <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
                 {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
             </Text>
 
@@ -81,8 +85,19 @@ export function DeliveryOrderSelector() {
                             key={order.id}
                             style={[
                                 styles.orderItem,
-                                isSelected && styles.orderItemSelected,
-                                isComplete && styles.orderItemComplete,
+                                { 
+                                    borderColor: Colors.divider,
+                                    backgroundColor: Colors.background.paper
+                                },
+                                isSelected && { 
+                                    borderColor: Colors.primary.main,
+                                    backgroundColor: Colors.primary.light + '10'
+                                },
+                                isComplete && { 
+                                    borderColor: Colors.success.main,
+                                    backgroundColor: Colors.success.light + '10',
+                                    opacity: 0.8
+                                },
                             ]}
                             onPress={() => !isComplete && selectDeliveryOrder(order.id)}
                             disabled={isComplete}>
@@ -90,7 +105,7 @@ export function DeliveryOrderSelector() {
                             <View style={styles.orderHeader}>
                                 <View style={styles.orderInfo}>
                                     <View style={styles.idAndBadgesRow}>
-                                        <Text style={styles.orderId} numberOfLines={1}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
+                                        <Text style={[styles.orderId, { color: Colors.text.primary }]} numberOfLines={1}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
 
                                         <View style={styles.badgesWrapper}>
                                             {/* Badge de Tipo */}
@@ -140,7 +155,7 @@ export function DeliveryOrderSelector() {
                                 {(order.customer_name || order.assigned_to_user_name) && (
                                     <View style={styles.detailRow}>
                                         <MaterialIcons name="person" size={16} color={Colors.text.secondary} />
-                                        <Text style={styles.detailText}>
+                                        <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
                                             {order.customer_name || order.assigned_to_user_name}
                                         </Text>
                                     </View>
@@ -148,7 +163,7 @@ export function DeliveryOrderSelector() {
 
                                 <View style={styles.detailRow}>
                                     <MaterialIcons name="inventory" size={16} color={Colors.text.secondary} />
-                                    <Text style={styles.detailText}>
+                                    <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
                                         {order.total_items} productos ({order.total_quantity} unidades)
                                     </Text>
                                 </View>
@@ -156,7 +171,7 @@ export function DeliveryOrderSelector() {
                                 {order.delivery_address && (
                                     <View style={styles.detailRow}>
                                         <MaterialIcons name="location-on" size={16} color={Colors.text.secondary} />
-                                        <Text style={styles.detailText} numberOfLines={1}>
+                                        <Text style={[styles.detailText, { color: Colors.text.secondary }]} numberOfLines={1}>
                                             {order.delivery_address}
                                         </Text>
                                     </View>
@@ -164,7 +179,7 @@ export function DeliveryOrderSelector() {
 
                                 <View style={styles.detailRow}>
                                     <MaterialIcons name="calendar-today" size={16} color={Colors.text.secondary} />
-                                    <Text style={styles.detailText}>
+                                    <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
                                         {new Date(order.created_at).toLocaleDateString('es-CO')}
                                     </Text>
                                 </View>
@@ -172,11 +187,14 @@ export function DeliveryOrderSelector() {
 
                             {/* Progress bar */}
                             {order.delivered_quantity > 0 && (
-                                <View style={styles.progressContainer}>
-                                    <View style={styles.progressBar}>
-                                        <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+                                <View style={[styles.progressContainer, { borderTopColor: Colors.divider }]}>
+                                    <View style={[styles.progressBar, { backgroundColor: Colors.divider }]}>
+                                        <View style={[styles.progressFill, { 
+                                            width: `${progressPercent}%`,
+                                            backgroundColor: Colors.success.main
+                                        }]} />
                                     </View>
-                                    <Text style={styles.progressText}>
+                                    <Text style={[styles.progressText, { color: Colors.text.secondary }]}>
                                         {order.delivered_quantity} / {order.total_quantity} entregados ({progressPercent}%)
                                     </Text>
                                 </View>
@@ -187,8 +205,11 @@ export function DeliveryOrderSelector() {
             </ScrollView>
 
             {error && (
-                <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{error}</Text>
+                <View style={[styles.errorContainer, {
+                    backgroundColor: Colors.error.light + '20',
+                    borderColor: Colors.error.main
+                }]}>
+                    <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
                 </View>
             )}
         </View>
@@ -207,12 +228,10 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 18,
         fontWeight: '600',
-        color: Colors.text.primary,
         marginBottom: 4,
     },
     subtitle: {
         fontSize: 14,
-        color: Colors.text.secondary,
         marginBottom: 16,
     },
     loadingContainer: {
@@ -222,7 +241,6 @@ const styles = StyleSheet.create({
     loadingText: {
         marginTop: 16,
         fontSize: 14,
-        color: Colors.text.secondary,
     },
     emptyContainer: {
         padding: 40,
@@ -232,12 +250,10 @@ const styles = StyleSheet.create({
         marginTop: 16,
         fontSize: 16,
         fontWeight: '600',
-        color: Colors.text.primary,
     },
     emptySubtitle: {
         marginTop: 8,
         fontSize: 14,
-        color: Colors.text.secondary,
         textAlign: 'center',
     },
     ordersList: {
@@ -253,12 +269,6 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         borderRadius: 12,
         borderWidth: 2,
-        borderColor: Colors.divider,
-        backgroundColor: Colors.background.paper,
-    },
-    orderItemSelected: {
-        borderColor: Colors.primary.main,
-        backgroundColor: Colors.primary.light + '10',
     },
     orderHeader: {
         flexDirection: 'row',
@@ -278,7 +288,6 @@ const styles = StyleSheet.create({
     orderId: {
         fontSize: 16,
         fontWeight: '700',
-        color: Colors.text.primary,
         flexShrink: 1,
     },
     badgesWrapper: {
@@ -306,36 +315,14 @@ const styles = StyleSheet.create({
         paddingVertical: 3,
         borderRadius: 6,
     },
-    status_pending: {
-        backgroundColor: Colors.warning.light + '30',
-    },
-    status_preparing: {
-        backgroundColor: Colors.info.light + '30',
-    },
-    status_ready: {
-        backgroundColor: Colors.success.light + '30',
-    },
-    status_delivered: {
-        backgroundColor: Colors.divider,
-    },
-    status_cancelled: {
-        backgroundColor: Colors.error.light + '30',
-    },
     status_complete: {
-        backgroundColor: Colors.success.light + '30',
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
     },
-    orderItemComplete: {
-        borderColor: Colors.success.main,
-        backgroundColor: Colors.success.light + '10',
-        opacity: 0.8,
-    },
     statusText: {
         fontSize: 11,
         fontWeight: '700',
-        color: Colors.text.primary,
     },
     orderDetails: {
         gap: 6,
@@ -347,42 +334,34 @@ const styles = StyleSheet.create({
     },
     detailText: {
         fontSize: 13,
-        color: Colors.text.secondary,
         flex: 1,
     },
     progressContainer: {
         marginTop: 10,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: Colors.divider,
     },
     progressBar: {
         height: 6,
-        backgroundColor: Colors.divider,
         borderRadius: 3,
         overflow: 'hidden',
         marginBottom: 6,
     },
     progressFill: {
         height: '100%',
-        backgroundColor: Colors.success.main,
     },
     progressText: {
         fontSize: 11,
-        color: Colors.text.secondary,
         textAlign: 'right',
     },
     errorContainer: {
         marginTop: 16,
         padding: 12,
-        backgroundColor: Colors.error.light + '20',
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: Colors.error.main,
     },
     errorText: {
         fontSize: 14,
-        color: Colors.error.main,
         fontWeight: '500',
     },
 });

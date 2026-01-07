@@ -139,7 +139,9 @@ export default function ExitsScreen() {
           </View>
           <View style={styles.headerText}>
             <Text style={[styles.title, { color: colors.text.primary }]}>Salidas de Productos</Text>
-            <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
+            <Text style={[styles.subtitle, { 
+              color: isDark ? colors.text.primary : colors.text.secondary 
+            }]}>
               Registre la salida de mercancía de bodega
             </Text>
           </View>
@@ -287,6 +289,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     lineHeight: 20,
+    fontWeight: '500',
   },
   scanCard: {
     marginHorizontal: 20,
