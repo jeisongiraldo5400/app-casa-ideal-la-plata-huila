@@ -1,5 +1,6 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import React from 'react';
 import {
   Image,
@@ -11,9 +12,12 @@ import {
 } from 'react-native';
 
 export default function LoginScreen() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
+  
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -36,7 +40,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.default,
   },
   scrollContent: {
     flexGrow: 1,

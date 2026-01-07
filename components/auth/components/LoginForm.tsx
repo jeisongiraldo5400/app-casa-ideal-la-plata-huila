@@ -2,7 +2,8 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -29,6 +30,8 @@ export function LoginForm() {
   const { signIn } = useAuth();
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
 
   const initialValues: LoginFormValues = {
     email: '',
@@ -69,8 +72,11 @@ export function LoginForm() {
       }) => (
         <Card style={styles.card}>
           <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>Iniciar Sesión</Text>
-            <Text style={styles.formSubtitle}>
+            <Text style={[styles.formTitle, { color: Colors.text.primary }]}>Iniciar Sesión</Text>
+            <Text style={[styles.formSubtitle, { 
+              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
+              opacity: colorScheme === 'dark' ? 0.9 : 1
+            }]}>
               Ingresa tus credenciales para acceder
             </Text>
           </View>
@@ -122,11 +128,17 @@ export function LoginForm() {
             style={styles.button}
           />
 
-          <View style={styles.versionContainer}>
-            <Text style={styles.versionText}>
+          <View style={[styles.versionContainer, { borderTopColor: Colors.divider }]}>
+            <Text style={[styles.versionText, { 
+              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
+              opacity: colorScheme === 'dark' ? 0.8 : 1
+            }]}>
               Versión {Constants.expoConfig?.version || '1.0.0'}
             </Text>
-            <Text style={styles.yearText}>
+            <Text style={[styles.yearText, { 
+              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
+              opacity: colorScheme === 'dark' ? 0.8 : 1
+            }]}>
               © {new Date().getFullYear()}
             </Text>
           </View>
@@ -149,12 +161,10 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.text.primary,
     marginBottom: 8,
   },
   formSubtitle: {
     fontSize: 14,
-    color: Colors.text.secondary,
     textAlign: 'center',
   },
   inputsContainer: {
@@ -182,16 +192,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.divider,
   },
   versionText: {
     fontSize: 12,
-    color: Colors.text.secondary,
     marginBottom: 4,
   },
   yearText: {
     fontSize: 12,
-    color: Colors.text.secondary,
   },
 });
 
