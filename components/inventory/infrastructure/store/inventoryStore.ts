@@ -120,14 +120,18 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           if (item.stock_by_warehouse) {
             const stockArray = item.stock_by_warehouse as any[];
             stockArray.forEach((stock: any) => {
-              // Usar warehouseId como viene de la BD (camelCase)
-              // Compatibilidad con ambos formatos por si acaso hay datos en diferentes formatos
-              const warehouseId = stock.warehouseId || stock.warehouse_id;
-              stockByWarehouse[warehouseId] = {
-                warehouse_id: warehouseId,
-                warehouse_name: stock.warehouseName || stock.warehouse_name,
-                quantity: stock.quantity,
-              };
+              // Solo incluir bodegas con stock mayor a 0
+              const quantity = stock.quantity || 0;
+              if (quantity > 0) {
+                // Usar warehouseId como viene de la BD (camelCase)
+                // Compatibilidad con ambos formatos por si acaso hay datos en diferentes formatos
+                const warehouseId = stock.warehouseId || stock.warehouse_id;
+                stockByWarehouse[warehouseId] = {
+                  warehouse_id: warehouseId,
+                  warehouse_name: stock.warehouseName || stock.warehouse_name,
+                  quantity: quantity,
+                };
+              }
             });
           }
         } catch (e) {

@@ -1,13 +1,13 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
 import { InventoryList } from '@/components/inventory/components/InventoryList';
-import { WarehouseFilter } from '@/components/inventory/components/WarehouseFilter';
 import { SearchBar } from '@/components/inventory/components/SearchBar';
+import { WarehouseFilter } from '@/components/inventory/components/WarehouseFilter';
+import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
 import { Colors } from '@/constants/theme';
+import React, { useEffect } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function InventoryScreen() {
-  const { loadInventory, loadWarehouses, loading, inventory } = useInventory();
+  const { loadInventory, loadWarehouses, loading, inventory, searchQuery } = useInventory();
 
   useEffect(() => {
     loadWarehouses();
@@ -18,7 +18,7 @@ export default function InventoryScreen() {
     loadInventory();
   };
 
-  const totalItems = inventory.reduce((sum, item) => sum + item.quantity, 0);
+  const totalItems = inventory.reduce((sum, item) => sum + (item.total_stock || 0), 0);
 
   return (
     <ScrollView
@@ -29,9 +29,11 @@ export default function InventoryScreen() {
       }>
       <View style={styles.header}>
         <Text style={styles.title}>Inventario</Text>
-        <Text style={styles.subtitle}>
-          {inventory.length} producto(s) - {totalItems} unidad(es) en total
-        </Text>
+        {searchQuery && (
+          <Text style={styles.subtitle}>
+            {inventory.length}
+          </Text>
+        )}
       </View>
 
       <WarehouseFilter />

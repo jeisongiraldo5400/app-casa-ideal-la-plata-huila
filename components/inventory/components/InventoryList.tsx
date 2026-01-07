@@ -41,7 +41,8 @@ export function InventoryList() {
 
   // Extraer nombres de bodegas desde stock_by_warehouse
   const getWarehouseNames = (stockByWarehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>): string => {
-    const warehouses = Object.values(stockByWarehouse);
+    // Filtrar solo bodegas con stock mayor a 0
+    const warehouses = Object.values(stockByWarehouse).filter(w => (w.quantity || 0) > 0);
     
     if (warehouses.length === 0) {
       return 'Sin bodega';
@@ -80,16 +81,21 @@ export function InventoryList() {
                 {item.color_name && (
                   <Text style={styles.productColor}>Color: {item.color_name}</Text>
                 )}
+                <Text style={styles.productWarehouses}>
+                  Bodegas: {getWarehouseNames(item.stock_by_warehouse)}
+                </Text>
               </View>
               <View style={styles.quantityContainer}>
                 <Text style={styles.quantityLabel}>Stock</Text>
                 <Text style={styles.quantityValue}>{displayQuantity}</Text>
               </View>
             </View>
-            <View style={styles.warehouseInfo}>
-              <Text style={styles.warehouseLabel}>Bodega:</Text>
-              <Text style={styles.warehouseName}>{displayWarehouse}</Text>
-            </View>
+            {selectedWarehouseId && (
+              <View style={styles.warehouseInfo}>
+                <Text style={styles.warehouseLabel}>Bodega:</Text>
+                <Text style={styles.warehouseName}>{displayWarehouse}</Text>
+              </View>
+            )}
           </Card>
         );
       })}
@@ -181,6 +187,11 @@ const styles = StyleSheet.create({
   productColor: {
     fontSize: 12,
     color: Colors.text.secondary,
+  },
+  productWarehouses: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginTop: 2,
   },
   quantityContainer: {
     alignItems: 'flex-end',
