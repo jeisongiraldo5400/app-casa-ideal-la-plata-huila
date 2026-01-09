@@ -81,9 +81,22 @@ export function InventoryList() {
                 {item.color_name && (
                   <Text style={styles.productColor}>Color: {item.color_name}</Text>
                 )}
-                <Text style={styles.productWarehouses}>
-                  Bodegas: {getWarehouseNames(item.stock_by_warehouse)}
-                </Text>
+                <View style={styles.warehousesList}>
+                  <Text style={styles.warehousesTitle}>Bodegas:</Text>
+                  {Object.values(item.stock_by_warehouse)
+                    .filter(w => (w.quantity || 0) > 0)
+                    .map((warehouse) => (
+                      <View key={warehouse.warehouse_id} style={styles.warehouseItem}>
+                        <Text style={styles.warehouseItemName}>{warehouse.warehouse_name}:</Text>
+                        <Text style={styles.warehouseItemQuantity}>
+                          {warehouse.quantity} unidad{warehouse.quantity !== 1 ? 'es' : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  {Object.values(item.stock_by_warehouse).filter(w => (w.quantity || 0) > 0).length === 0 && (
+                    <Text style={styles.warehouseItemName}>Sin stock en bodegas</Text>
+                  )}
+                </View>
               </View>
               <View style={styles.quantityContainer}>
                 <Text style={styles.quantityLabel}>Stock</Text>
@@ -188,10 +201,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.secondary,
   },
-  productWarehouses: {
+  warehousesList: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+  },
+  warehousesTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  warehouseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+    marginTop: 2,
+  },
+  warehouseItemName: {
     fontSize: 12,
     color: Colors.text.secondary,
-    marginTop: 2,
+    marginRight: 4,
+  },
+  warehouseItemQuantity: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.info.main,
   },
   quantityContainer: {
     alignItems: 'flex-end',
