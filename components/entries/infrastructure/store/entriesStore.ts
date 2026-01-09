@@ -1409,6 +1409,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // se duplicaría el incremento del stock.
 
       // Actualizar el cache de entradas registradas inmediatamente
+      // y verificar si la orden está completa para actualizar el estado automáticamente
       if (purchaseOrderId) {
         set({ loadingMessage: 'Actualizando progreso de la orden...' });
         const { registeredEntriesCache } = get();
@@ -1427,6 +1428,25 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         });
 
         set({ registeredEntriesCache: updatedCache });
+
+        // Verificar si la orden está completa y actualizar el estado automáticamente
+        const { data: progressData, error: progressError } = await supabase.rpc(
+          'update_purchase_order_progress',
+          {
+            order_id_param: purchaseOrderId,
+          }
+        );
+
+        if (progressError) {
+          console.error("Error updating purchase order progress:", progressError);
+        } else if (progressData && progressData.success && progressData.all_complete) {
+          console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
+          // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
+          if (progressData.updated) {
+            set({ loadingMessage: 'Actualizando estado de la orden...' });
+            await get().selectPurchaseOrder(purchaseOrderId);
+          }
+        }
       }
 
       // Guardar las órdenes antes de resetear
