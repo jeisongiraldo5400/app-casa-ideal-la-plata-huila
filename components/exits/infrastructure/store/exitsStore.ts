@@ -1247,7 +1247,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
             if (data.all_delivered) {
               orderCompleted = true;
-              console.log("Orden de entrega completada y marcada como recibida:", selectedDeliveryOrderId);
+              console.log("Orden de entrega completada y marcada automáticamente como 'delivered':", selectedDeliveryOrderId);
             }
           } else if (data && !data.success) {
             console.error("Error en update_delivery_order_progress:", data.error);
