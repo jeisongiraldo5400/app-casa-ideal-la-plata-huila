@@ -1,17 +1,15 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
+import React from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function ExitItemsList() {
   const {
     exitItems,
     removeProductFromExit,
-    updateProductQuantity,
     finalizeExit,
     loading,
   } = useExitsStore();
@@ -74,20 +72,9 @@ export function ExitItemsList() {
 
               <View style={styles.quantityRow}>
                 <Text style={styles.quantityLabel}>Cantidad:</Text>
-                <Input
-                  value={item.quantity.toString()}
-                  onChangeText={(text) => {
-                    const num = parseInt(text, 10);
-                    if (!isNaN(num) && num > 0) {
-                      updateProductQuantity(index, num);
-                    } else if (text === '') {
-                      updateProductQuantity(index, 1);
-                    }
-                  }}
-                  keyboardType="numeric"
-                  style={styles.quantityInput}
-                  containerStyle={styles.quantityInputContainer}
-                />
+                <View style={styles.quantityDisplayContainer}>
+                  <Text style={styles.quantityDisplayText}>{item.quantity}</Text>
+                </View>
               </View>
             </View>
           ))}
@@ -184,12 +171,20 @@ const styles = StyleSheet.create({
     marginRight: 12,
     minWidth: 80,
   },
-  quantityInputContainer: {
+  quantityDisplayContainer: {
     flex: 1,
-    marginBottom: 0,
+    height: 48,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    borderColor: Colors.divider,
+    backgroundColor: Colors.background.default,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  quantityInput: {
-    textAlign: 'center',
+  quantityDisplayText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   finalizeButton: {
     marginTop: 16,
