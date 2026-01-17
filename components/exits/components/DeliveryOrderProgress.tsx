@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 export function DeliveryOrderProgress() {
     // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
@@ -138,8 +138,8 @@ export function DeliveryOrderProgress() {
                 </Text>
             </View>
 
-            {/* Items List */}
-            <ScrollView style={styles.itemsList} showsVerticalScrollIndicator={false}>
+            {/* Items List - Sin ScrollView, se expande naturalmente con el scroll principal */}
+            <View style={styles.itemsList}>
                 {items.map(({ item, registered, pending, sessionScanned, isComplete }) => {
                     const itemPending = Math.max(pending, 0);
                     const pendingAtStartForItem = item.quantity - registered;
@@ -226,7 +226,7 @@ export function DeliveryOrderProgress() {
                         </View>
                     );
                 })}
-            </ScrollView>
+            </View>
 
             {/* Summary */}
             <View style={styles.summary}>
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     itemsList: {
-        maxHeight: 400,
+        // Sin maxHeight - se expande naturalmente con el scroll del contenedor padre
     },
     itemCard: {
         padding: 16,
