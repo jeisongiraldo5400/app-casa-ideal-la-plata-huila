@@ -12,13 +12,13 @@ import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 export default function ExitsScreen() {
