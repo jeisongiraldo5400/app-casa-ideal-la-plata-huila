@@ -242,10 +242,11 @@ export default function ExitsScreen() {
             </View>
           )}
 
-          {/* Mostrar progreso de orden de entrega si hay una orden seleccionada */}
-          {selectedDeliveryOrderId && <DeliveryOrderProgress />}
-
+          {/* Productos escaneados (carrito) - se muestra primero */}
           {exitItems.length > 0 && <ExitItemsList />}
+
+          {/* Listado de productos de la orden de entrega */}
+          {selectedDeliveryOrderId && <DeliveryOrderProgress />}
         </>
       )}
     </ScrollView>

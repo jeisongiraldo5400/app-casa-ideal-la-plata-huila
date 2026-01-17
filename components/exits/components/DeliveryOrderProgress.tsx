@@ -2,8 +2,8 @@ import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStor
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export function DeliveryOrderProgress() {
     // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
@@ -94,12 +94,32 @@ export function DeliveryOrderProgress() {
         scannedItemsProgressString,
     ]);
 
+    // Estados locales para UI
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [visibleCount, setVisibleCount] = useState(5);
+
+    // Reset visibleCount cuando cambia el searchTerm
+    useEffect(() => {
+        setVisibleCount(5);
+    }, [searchTerm]);
+
     // Early return si no hay progreso o datos necesarios
     if (!progress || !selectedDeliveryOrder) {
         return null;
     }
 
     const { items, totalRequired, totalRegistered, totalScanned } = progress;
+
+    // Filtrar items por búsqueda
+    const filteredItems = items.filter(({ item }) =>
+        item.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.product_sku?.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    // Paginar items
+    const visibleItems = filteredItems.slice(0, visibleCount);
+    const hasMoreItems = filteredItems.length > visibleCount;
 
     // Calcular cuánto faltaba al inicio de esta sesión
     const pendingAtStart = Math.max(totalRequired - totalRegistered, 0);
@@ -111,20 +131,33 @@ export function DeliveryOrderProgress() {
 
     return (
         <Card style={styles.card}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Progreso de Entrega</Text>
-                <View style={styles.progressBadge}>
-                    <Text style={styles.progressBadgeText}>
-                        {Math.round(overallProgress)}%
+            {/* Header colapsable */}
+            <TouchableOpacity 
+                style={styles.header} 
+                onPress={() => setIsExpanded(!isExpanded)}
+                activeOpacity={0.7}
+            >
+                <View style={styles.headerLeft}>
+                    <Text style={styles.title}>Progreso de Entrega</Text>
+                    <Text style={styles.subtitle}>
+                        Orden #{selectedDeliveryOrder.order_number || selectedDeliveryOrder.id.slice(0, 8)} - {selectedDeliveryOrder.customer_name}
                     </Text>
                 </View>
-            </View>
+                <View style={styles.headerRight}>
+                    <View style={styles.progressBadge}>
+                        <Text style={styles.progressBadgeText}>
+                            {Math.round(overallProgress)}%
+                        </Text>
+                    </View>
+                    <MaterialIcons 
+                        name={isExpanded ? "expand-less" : "expand-more"} 
+                        size={28} 
+                        color={Colors.text.secondary} 
+                    />
+                </View>
+            </TouchableOpacity>
 
-            <Text style={styles.subtitle}>
-                Orden #{selectedDeliveryOrder.order_number || selectedDeliveryOrder.id.slice(0, 8)} - {selectedDeliveryOrder.customer_name}
-            </Text>
-
-            {/* Overall Progress Bar */}
+            {/* Overall Progress Bar - siempre visible */}
             <View style={styles.overallProgressContainer}>
                 <View style={styles.progressBar}>
                     <View style={[styles.progressFill, { width: `${overallProgress}%` }]} />
@@ -137,9 +170,35 @@ export function DeliveryOrderProgress() {
                 </Text>
             </View>
 
-            {/* Items List - Sin ScrollView, se expande naturalmente con el scroll principal */}
-            <View style={styles.itemsList}>
-                {items.map(({ item, registered, pending, sessionScanned, isComplete }) => {
+            {/* Contenido expandible */}
+            {isExpanded && (
+                <>
+                    {/* Buscador local */}
+                    <View style={styles.searchContainer}>
+                        <MaterialIcons name="search" size={20} color={Colors.text.secondary} />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Buscar por nombre o SKU..."
+                            placeholderTextColor={Colors.text.secondary}
+                            value={searchTerm}
+                            onChangeText={setSearchTerm}
+                        />
+                        {searchTerm.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchTerm('')}>
+                                <MaterialIcons name="close" size={20} color={Colors.text.secondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Contador de productos */}
+                    <Text style={styles.itemsCounter}>
+                        Mostrando {visibleItems.length} de {filteredItems.length} productos
+                        {searchTerm.length > 0 && ` (filtrado de ${items.length} total)`}
+                    </Text>
+
+                    {/* Items List */}
+                    <View style={styles.itemsList}>
+                        {visibleItems.map(({ item, registered, pending, sessionScanned, isComplete }) => {
                     const itemPending = Math.max(pending, 0);
                     const pendingAtStartForItem = item.quantity - registered;
 
@@ -222,20 +281,35 @@ export function DeliveryOrderProgress() {
                                     </Text>
                                 </View>
                             )}
-                        </View>
-                    );
-                })}
-            </View>
+                            </View>
+                        );
+                    })}
+                    </View>
 
-            {/* Summary */}
-            <View style={styles.summary}>
-                <View style={styles.summaryRow}>
-                    <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
-                    <Text style={styles.summaryText}>
-                        {items.filter(x => x.isComplete).length} / {items.length} productos completos
-                    </Text>
-                </View>
-            </View>
+                    {/* Botón Ver más */}
+                    {hasMoreItems && (
+                        <TouchableOpacity 
+                            style={styles.loadMoreButton}
+                            onPress={() => setVisibleCount(prev => prev + 5)}
+                        >
+                            <Text style={styles.loadMoreText}>
+                                Ver más productos ({filteredItems.length - visibleCount} restantes)
+                            </Text>
+                            <MaterialIcons name="expand-more" size={20} color={Colors.primary.main} />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Summary */}
+                    <View style={styles.summary}>
+                        <View style={styles.summaryRow}>
+                            <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
+                            <Text style={styles.summaryText}>
+                                {items.filter(x => x.isComplete).length} / {items.length} productos completos
+                            </Text>
+                        </View>
+                    </View>
+                </>
+            )}
         </Card>
     );
 }
@@ -247,13 +321,23 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    headerLeft: {
+        flex: 1,
+        marginRight: 12,
+    },
+    headerRight: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 4,
+        gap: 8,
     },
     title: {
         fontSize: 18,
         fontWeight: '600',
         color: Colors.text.primary,
+        marginBottom: 4,
     },
     progressBadge: {
         backgroundColor: Colors.primary.main,
@@ -267,13 +351,12 @@ const styles = StyleSheet.create({
         color: Colors.primary.contrastText,
     },
     subtitle: {
-        fontSize: 14,
+        fontSize: 13,
         color: Colors.text.secondary,
-        marginBottom: 16,
     },
     overallProgressContainer: {
-        marginBottom: 20,
-        paddingBottom: 20,
+        marginBottom: 16,
+        paddingBottom: 16,
         borderBottomWidth: 1,
         borderBottomColor: Colors.divider,
     },
@@ -300,8 +383,30 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 4,
     },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.background.default,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: Colors.text.primary,
+        padding: 0,
+    },
+    itemsCounter: {
+        fontSize: 12,
+        color: Colors.text.secondary,
+        marginBottom: 12,
+        textAlign: 'center',
+    },
     itemsList: {
-        // Sin maxHeight - se expande naturalmente con el scroll del contenedor padre
+        // Se expande naturalmente
     },
     itemCard: {
         padding: 16,
@@ -405,6 +510,19 @@ const styles = StyleSheet.create({
         color: Colors.text.secondary,
         minWidth: 40,
         textAlign: 'right',
+    },
+    loadMoreButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        marginTop: 4,
+        gap: 4,
+    },
+    loadMoreText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.primary.main,
     },
     summary: {
         marginTop: 16,
