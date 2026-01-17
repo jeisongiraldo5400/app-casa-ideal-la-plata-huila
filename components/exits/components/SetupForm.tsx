@@ -22,7 +22,6 @@ export function SetupForm() {
     deliveryObservations,
     users,
     customers,
-    customerSearchTerm,
     loading,
     loadWarehouses,
     loadUsers,

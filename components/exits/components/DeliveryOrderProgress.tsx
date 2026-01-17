@@ -19,15 +19,14 @@ export function DeliveryOrderProgress() {
         const entries = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
         return JSON.stringify(entries);
     });
-    
-    const exitItems = useExitsStore((state) => state.exitItems);
-
-    if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
-        return null;
-    }
 
     // Recalcular el progreso cada vez que cambien los valores
+    // useMemo debe llamarse ANTES de cualquier early return para cumplir con las reglas de hooks
     const progress = useMemo(() => {
+        if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
+            return null;
+        }
+
         // Recrear el Map desde el string JSON
         const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
         const scannedItemsMap = new Map(scannedItemsEntries);
@@ -92,11 +91,11 @@ export function DeliveryOrderProgress() {
         selectedDeliveryOrder,
         selectedDeliveryOrderId,
         registeredExitsCache,
-        scannedItemsProgressString, // Usar el string en lugar del array
-        exitItems, // Incluir exitItems para forzar recálculo cuando se agregan productos
+        scannedItemsProgressString,
     ]);
 
-    if (!progress) {
+    // Early return si no hay progreso o datos necesarios
+    if (!progress || !selectedDeliveryOrder) {
         return null;
     }
 
