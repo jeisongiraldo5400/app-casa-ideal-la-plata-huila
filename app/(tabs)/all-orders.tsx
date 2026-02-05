@@ -11,7 +11,7 @@ export default function AllOrdersScreen() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [activeTab, setActiveTab] = useState<TabType>('purchase');
+  const [activeTab, setActiveTab] = useState<TabType>('delivery');
 
   useEffect(() => {
     // Cargar todas las órdenes al montar el componente
@@ -39,32 +39,6 @@ export default function AllOrdersScreen() {
           <TouchableOpacity
             style={[
               styles.tab,
-              activeTab === 'purchase' && [styles.tabActive, { backgroundColor: colors.background.paper }],
-            ]}
-            onPress={() => setActiveTab('purchase')}
-            activeOpacity={0.7}
-          >
-            <MaterialIcons
-              name="receipt-long"
-              size={20}
-              color={activeTab === 'purchase' ? colors.primary.main : colors.text.secondary}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                {
-                  color: activeTab === 'purchase' ? colors.primary.main : colors.text.secondary,
-                  fontWeight: activeTab === 'purchase' ? '600' : '400',
-                },
-              ]}
-            >
-              Órdenes de Compra
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tab,
               activeTab === 'delivery' && [styles.tabActive, { backgroundColor: colors.background.paper }],
             ]}
             onPress={() => setActiveTab('delivery')}
@@ -85,6 +59,32 @@ export default function AllOrdersScreen() {
               ]}
             >
               Órdenes de Entrega
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === 'purchase' && [styles.tabActive, { backgroundColor: colors.background.paper }],
+            ]}
+            onPress={() => setActiveTab('purchase')}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons
+              name="receipt-long"
+              size={20}
+              color={activeTab === 'purchase' ? colors.primary.main : colors.text.secondary}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color: activeTab === 'purchase' ? colors.primary.main : colors.text.secondary,
+                  fontWeight: activeTab === 'purchase' ? '600' : '400',
+                },
+              ]}
+            >
+              Órdenes de Compra
             </Text>
           </TouchableOpacity>
         </View>
