@@ -166,3 +166,107 @@ export function formatDate(dateString: string | null): string {
     return 'Fecha inválida';
   }
 }
+
+// ============================================================
+// Tipos compartidos para órdenes de compra (Purchase Orders)
+// ============================================================
+
+export interface PurchaseOrderItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string | null;
+  product_barcode: string | null;
+  quantity: number;
+  registered_quantity: number;
+  pending_quantity: number;
+  is_complete: boolean;
+}
+
+export interface PurchaseOrderSupplier {
+  id: string;
+  name: string;
+}
+
+export interface PurchaseOrderCreator {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  order_number: string | null;
+  created_at: string;
+  created_by: string;
+  created_by_name: string;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  notes: string | null;
+  status: string;
+  total_items: number;
+  total_quantity: number;
+  registered_items: number;
+  registered_quantity: number;
+}
+
+export interface PurchaseOrderWithProgress extends PurchaseOrder {
+  pending_items: number;
+  completed_items: number;
+  is_fully_registered: boolean;
+  progress_percentage: number;
+}
+
+// Helper para calcular progreso de orden de compra
+export function calculatePurchaseOrderProgress(order: PurchaseOrder): {
+  pending_items: number;
+  completed_items: number;
+  is_fully_registered: boolean;
+  progress_percentage: number;
+} {
+  const pending_items = order.total_items - order.registered_items;
+  const completed_items = order.registered_items;
+  const is_fully_registered = order.total_quantity > 0 && order.registered_quantity >= order.total_quantity;
+  const progress_percentage = order.total_quantity > 0
+    ? Math.min((order.registered_quantity / order.total_quantity) * 100, 100)
+    : 0;
+
+  return {
+    pending_items,
+    completed_items,
+    is_fully_registered,
+    progress_percentage,
+  };
+}
+
+// Helper para obtener color del estado de orden de compra
+export function getPurchaseOrderStatusColor(status: string, colors: any): string {
+  switch (status) {
+    case 'received':
+      return colors.success.main;
+    case 'approved':
+      return colors.info.main;
+    case 'pending':
+      return colors.warning.main;
+    case 'cancelled':
+      return colors.error.main;
+    default:
+      return colors.text.secondary;
+  }
+}
+
+// Helper para obtener etiqueta del estado de orden de compra
+export function getPurchaseOrderStatusLabel(status: string): string {
+  switch (status) {
+    case 'received':
+      return 'Recibida';
+    case 'approved':
+      return 'Aprobada';
+    case 'pending':
+      return 'Pendiente';
+    case 'cancelled':
+      return 'Cancelada';
+    default:
+      return status;
+  }
+}
