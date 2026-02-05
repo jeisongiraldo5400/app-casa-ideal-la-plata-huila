@@ -689,23 +689,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchaseOrderId,
         registeredEntriesCache,
         scannedItemsProgress,
-        selectedOrderProductId,
       } = get();
 
       if (!selectedPurchaseOrder || !purchaseOrderId) {
         return null;
       }
 
-      let items = selectedPurchaseOrder.items || [];
-
-      console.log({ items });
-
-      // Si hay un producto seleccionado, filtrar solo ese producto
-      if (selectedOrderProductId) {
-        items = items.filter(
-          (item) => item.product_id === selectedOrderProductId
-        );
-      }
+      // Mostrar TODOS los productos de la orden (no filtrar por selectedOrderProductId)
+      // Esto permite ver el progreso completo de toda la orden de compra
+      const items = selectedPurchaseOrder.items || [];
 
       const normalizedItems: SelectedPurchaseOrderProgressItem[] = items.map(
         (item) => {
@@ -892,18 +884,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             return;
           }
 
-          // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
-          // Solo para flujo PO_ENTRY
-          if (entryType === "PO_ENTRY" && selectedOrderProductId && selectedOrderProductId !== product.id) {
-            set({
-              loading: false,
-              loadingMessage: null,
-              error: "Debe escanear el producto seleccionado de la orden",
-              currentProduct: null,
-              currentScannedBarcode: null,
-            });
-            return;
-          }
+          // NOTA: Ya no se requiere seleccionar un producto específico de la orden
+          // El sistema valida automáticamente contra toda la orden usando validateProductAgainstOrder()
+          // Esto permite escanear cualquier producto de la OC sin preselección (similar a Exits)
         }
 
         set({ currentProduct: product, loading: false, loadingMessage: null, step: "scanning" });
@@ -973,14 +956,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         return;
       }
 
-      // Validar que el producto escaneado sea el seleccionado de la orden (si hay uno seleccionado)
-      // Solo para flujo PO_ENTRY
-      if (entryType === "PO_ENTRY" && selectedOrderProductId && selectedOrderProductId !== product.id) {
-        set({ error: "Debe escanear el producto seleccionado de la orden" });
-        return;
-      }
+      // NOTA: Ya no se requiere seleccionar un producto específico de la orden
+      // El sistema valida automáticamente contra toda la orden (similar a Exits)
 
-      // Actualizar progreso de escaneo solo para flujo PO_ENTRY
+      // Actualizar progreso de escaneo para flujo PO_ENTRY
       if (entryType === "PO_ENTRY") {
         const currentProgress = scannedItemsProgress.get(product.id) || 0;
         const newProgress = new Map(scannedItemsProgress);

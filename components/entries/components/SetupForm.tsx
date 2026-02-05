@@ -39,8 +39,6 @@ export function SetupForm() {
     entryType,
     setEntryType,
     purchaseOrderValidations,
-    selectedOrderProductId,
-    setSelectedOrderProduct,
   } = useEntriesStore();
 
   const colorScheme = useColorScheme() ?? 'light';
@@ -260,20 +258,10 @@ export function SetupForm() {
   );
 
   const renderWarehouseStep = () => {
-    // Obtener la orden seleccionada y sus productos
+    // Obtener la orden seleccionada para mostrar información
     const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
-    const orderProducts = selectedOrder?.items || [];
-
-    // Obtener cantidades registradas por producto
-    const getProductRegisteredQuantity = (productId: string) => {
-      if (!purchaseOrderId) return 0;
-      const validation = purchaseOrderValidations[purchaseOrderId];
-      if (!validation) return 0;
-
-      // Esto es una aproximación, necesitaríamos consultar por producto específico
-      // Por ahora usamos la validación general
-      return 0;
-    };
+    const orderItemsCount = selectedOrder?.items?.length || 0;
+    const totalUnits = selectedOrder?.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
     return (
       <View>
@@ -292,14 +280,29 @@ export function SetupForm() {
             <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
-            <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 3: Seleccionar Bodega{entryType === 'PO_ENTRY' && purchaseOrderId ? ' y Producto' : ''}</Text>
+            <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>
+              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar Bodega
+            </Text>
             <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-              {entryType === 'PO_ENTRY' && purchaseOrderId
-                ? 'Seleccione la bodega y el producto de la orden a escanear'
-                : 'Seleccione la bodega de destino para la entrada'}
+              Seleccione la bodega de destino para la entrada
             </Text>
           </View>
         </View>
+
+        {/* Mostrar resumen de la orden seleccionada si existe */}
+        {entryType === 'PO_ENTRY' && purchaseOrderId && selectedOrder && (
+          <View style={[styles.orderSummary, { backgroundColor: Colors.primary.main + '10', borderColor: Colors.primary.main }]}>
+            <MaterialIcons name="inventory-2" size={24} color={Colors.primary.main} />
+            <View style={styles.orderSummaryText}>
+              <Text style={[styles.orderSummaryTitle, { color: Colors.text.primary }]}>
+                Orden #{selectedOrder.order_number || selectedOrder.id.slice(0, 8)}
+              </Text>
+              <Text style={[styles.orderSummarySubtitle, { color: Colors.text.secondary }]}>
+                {orderItemsCount} producto{orderItemsCount !== 1 ? 's' : ''} • {totalUnits} unidad{totalUnits !== 1 ? 'es' : ''} total
+              </Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.field}>
           <View style={styles.fieldHeader}>
@@ -324,8 +327,8 @@ export function SetupForm() {
               onValueChange={(value) => setWarehouse(value)}
               style={[styles.picker, { color: Colors.text.primary }]}
               dropdownIconColor={Colors.text.primary}
-              itemStyle={[styles.pickerItem, { 
-                color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+              itemStyle={[styles.pickerItem, {
+                color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary
               }]}>
               <Picker.Item label="Seleccione una bodega" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
               {warehouses.map((warehouse) => (
@@ -340,36 +343,13 @@ export function SetupForm() {
           </View>
         </View>
 
-        {entryType === 'PO_ENTRY' && purchaseOrderId && orderProducts.length > 0 && (
-          <View style={styles.field}>
-            <Text style={[styles.label, { color: Colors.text.primary }]}>Producto de la Orden *</Text>
-            <View style={[styles.pickerContainer, {
-              backgroundColor: Colors.background.paper,
-              borderColor: Colors.divider
-            }]}>
-              <Picker
-                selectedValue={selectedOrderProductId}
-                onValueChange={(value) => setSelectedOrderProduct(value)}
-                style={[styles.picker, { color: Colors.text.primary }]}
-                dropdownIconColor={Colors.text.primary}
-                itemStyle={[styles.pickerItem, { 
-                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                }]}>
-                <Picker.Item label="Seleccione un producto" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                {orderProducts.map((item) => {
-                  const product = item.product;
-                  const orderQuantity = item.quantity;
-                  return (
-                    <Picker.Item
-                      key={item.id}
-                      label={`${product?.name || 'Sin nombre'} - ${orderQuantity} unidad${orderQuantity !== 1 ? 'es' : ''} en orden`}
-                      value={product?.id || null}
-                      color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-                    />
-                  );
-                })}
-              </Picker>
-            </View>
+        {/* Nota informativa para OC */}
+        {entryType === 'PO_ENTRY' && purchaseOrderId && (
+          <View style={[styles.infoNote, { backgroundColor: Colors.info?.light + '20' || Colors.primary.light + '20' }]}>
+            <MaterialIcons name="info-outline" size={20} color={Colors.info?.main || Colors.primary.main} />
+            <Text style={[styles.infoNoteText, { color: Colors.text.secondary }]}>
+              Podrá escanear cualquier producto de la orden. El sistema validará automáticamente las cantidades.
+            </Text>
           </View>
         )}
 
@@ -381,9 +361,8 @@ export function SetupForm() {
             isOrderComplete = validation?.isComplete || false;
           }
 
-          const canStart = warehouseId &&
-            (entryType !== 'PO_ENTRY' || !purchaseOrderId || selectedOrderProductId) &&
-            !isOrderComplete;
+          // Simplificado: solo necesita bodega y que la orden no esté completa
+          const canStart = warehouseId && !isOrderComplete;
 
           return (
             <Button
@@ -551,6 +530,39 @@ const styles = StyleSheet.create({
   },
   flowButton: {
     marginBottom: 16,
+  },
+  orderSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+    gap: 12,
+  },
+  orderSummaryText: {
+    flex: 1,
+  },
+  orderSummaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  orderSummarySubtitle: {
+    fontSize: 14,
+  },
+  infoNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 10,
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
 

@@ -2,8 +2,8 @@ import { useEntriesStore } from '@/components/entries/infrastructure/store/entri
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export function PurchaseOrderProgress() {
     // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
@@ -11,7 +11,7 @@ export function PurchaseOrderProgress() {
     const selectedPurchaseOrder = useEntriesStore((state) => state.selectedPurchaseOrder);
     const purchaseOrderId = useEntriesStore((state) => state.purchaseOrderId);
     const registeredEntriesCache = useEntriesStore((state) => state.registeredEntriesCache);
-    
+
     // Convertir Map a string JSON estable para evitar loops infinitos
     // El string solo cambia cuando el contenido real del Map cambia
     const scannedItemsProgressString = useEntriesStore((state) => {
@@ -19,29 +19,20 @@ export function PurchaseOrderProgress() {
         const entries = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
         return JSON.stringify(entries);
     });
-    
-    const selectedOrderProductId = useEntriesStore((state) => state.selectedOrderProductId);
-    const entryItems = useEntriesStore((state) => state.entryItems);
 
     // Recalcular el progreso cada vez que cambien los valores
-    // Mover useMemo antes del early return para cumplir con las reglas de hooks
+    // useMemo debe llamarse ANTES de cualquier early return para cumplir con las reglas de hooks
     const progress = useMemo(() => {
-        // Si no hay orden seleccionada, retornar null
         if (!selectedPurchaseOrder || !purchaseOrderId) {
             return null;
         }
+
         // Recrear el Map desde el string JSON
         const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
         const scannedItemsMap = new Map(scannedItemsEntries);
-        
-        let items = selectedPurchaseOrder.items || [];
 
-        // Si hay un producto seleccionado, filtrar solo ese producto
-        if (selectedOrderProductId) {
-            items = items.filter(
-                (item) => item.product_id === selectedOrderProductId
-            );
-        }
+        // Mostrar TODOS los productos de la orden
+        const items = selectedPurchaseOrder.items || [];
 
         const normalizedItems = items.map((item) => {
             const orderQuantity = item.quantity;
@@ -101,16 +92,35 @@ export function PurchaseOrderProgress() {
         selectedPurchaseOrder,
         purchaseOrderId,
         registeredEntriesCache,
-        scannedItemsProgressString, // Usar el string en lugar del array
-        selectedOrderProductId,
+        scannedItemsProgressString,
     ]);
 
-    // Early return después de todos los hooks
-    if (!progress || !selectedPurchaseOrder || !purchaseOrderId) {
+    // Estados locales para UI
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [visibleCount, setVisibleCount] = useState(5);
+
+    // Reset visibleCount cuando cambia el searchTerm
+    useEffect(() => {
+        setVisibleCount(5);
+    }, [searchTerm]);
+
+    // Early return si no hay progreso o datos necesarios
+    if (!progress || !selectedPurchaseOrder) {
         return null;
     }
 
     const { items, totalRequired, totalRegistered, totalScanned } = progress;
+
+    // Filtrar items por búsqueda
+    const filteredItems = items.filter(({ item }) =>
+        item.product?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.product?.sku?.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    // Paginar items
+    const visibleItems = filteredItems.slice(0, visibleCount);
+    const hasMoreItems = filteredItems.length > visibleCount;
 
     // Calcular cuánto faltaba al inicio de esta sesión
     const pendingAtStart = Math.max(totalRequired - totalRegistered, 0);
@@ -122,20 +132,33 @@ export function PurchaseOrderProgress() {
 
     return (
         <Card style={styles.card}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Progreso de Recepción</Text>
-                <View style={styles.progressBadge}>
-                    <Text style={styles.progressBadgeText}>
-                        {Math.round(overallProgress)}%
+            {/* Header colapsable */}
+            <TouchableOpacity
+                style={styles.header}
+                onPress={() => setIsExpanded(!isExpanded)}
+                activeOpacity={0.7}
+            >
+                <View style={styles.headerLeft}>
+                    <Text style={styles.title}>Progreso de Recepción</Text>
+                    <Text style={styles.subtitle}>
+                        Orden #{selectedPurchaseOrder.order_number || selectedPurchaseOrder.id.slice(0, 8)} - {selectedPurchaseOrder.supplier?.name || 'Proveedor'}
                     </Text>
                 </View>
-            </View>
+                <View style={styles.headerRight}>
+                    <View style={styles.progressBadge}>
+                        <Text style={styles.progressBadgeText}>
+                            {Math.round(overallProgress)}%
+                        </Text>
+                    </View>
+                    <MaterialIcons
+                        name={isExpanded ? "expand-less" : "expand-more"}
+                        size={28}
+                        color={Colors.text.secondary}
+                    />
+                </View>
+            </TouchableOpacity>
 
-            <Text style={styles.subtitle}>
-                Orden #{selectedPurchaseOrder.order_number || selectedPurchaseOrder.id.slice(0, 8)} - {selectedPurchaseOrder.supplier?.name || 'Proveedor'}
-            </Text>
-
-            {/* Overall Progress Bar */}
+            {/* Overall Progress Bar - siempre visible */}
             <View style={styles.overallProgressContainer}>
                 <View style={styles.progressBar}>
                     <View style={[styles.progressFill, { width: `${overallProgress}%` }]} />
@@ -148,101 +171,148 @@ export function PurchaseOrderProgress() {
                 </Text>
             </View>
 
-            {/* Items List */}
-            <ScrollView style={styles.itemsList} showsVerticalScrollIndicator={false}>
-                {items.map(({ item, registered, pending, sessionScanned, isComplete }) => {
-                    const itemPending = Math.max(pending, 0);
-                    const pendingAtStartForItem = item.quantity - registered;
+            {/* Contenido expandible */}
+            {isExpanded && (
+                <>
+                    {/* Buscador local */}
+                    <View style={styles.searchContainer}>
+                        <MaterialIcons name="search" size={20} color={Colors.text.secondary} />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Buscar por nombre o SKU..."
+                            placeholderTextColor={Colors.text.secondary}
+                            value={searchTerm}
+                            onChangeText={setSearchTerm}
+                        />
+                        {searchTerm.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchTerm('')}>
+                                <MaterialIcons name="close" size={20} color={Colors.text.secondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
 
-                    // Progreso del item basado en lo escaneado en sesión vs lo que faltaba
-                    const itemProgress = pendingAtStartForItem > 0
-                        ? Math.min((sessionScanned / pendingAtStartForItem) * 100, 100)
-                        : 100;
-
-                    const hasScanned = sessionScanned > 0;
-
-                    return (
-                        <View
-                            key={item.id}
-                            style={[
-                                styles.itemCard,
-                                isComplete && styles.itemCardComplete,
-                                hasScanned && !isComplete && styles.itemCardInProgress,
-                            ]}>
-
-                            <View style={styles.itemHeader}>
-                                <View style={styles.itemInfo}>
-                                    <Text style={styles.itemName} numberOfLines={2}>
-                                        {item.product?.name || 'Producto sin nombre'}
-                                    </Text>
-                                    {item.product?.sku && (
-                                        <Text style={styles.itemSku}>SKU: {item.product.sku}</Text>
-                                    )}
-                                </View>
-
-                                <View style={styles.itemStatus}>
-                                    {isComplete ? (
-                                        <MaterialIcons name="check-circle" size={32} color={Colors.success.main} />
-                                    ) : hasScanned ? (
-                                        <MaterialIcons name="pending" size={32} color={Colors.warning.main} />
-                                    ) : (
-                                        <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.secondary} />
-                                    )}
-                                </View>
-                            </View>
-
-                            <View style={styles.itemQuantities}>
-                                <View style={styles.quantityBox}>
-                                    <Text style={styles.quantityLabel}>Pendiente</Text>
-                                    <Text style={styles.quantityValue}>{itemPending}</Text>
-                                </View>
-
-                                <View style={[styles.quantityBox, styles.quantityBoxScanned]}>
-                                    <Text style={styles.quantityLabel}>Escaneado</Text>
-                                    <Text style={[styles.quantityValue, styles.quantityValueScanned]}>
-                                        {sessionScanned}
-                                    </Text>
-                                </View>
-
-                                {registered > 0 && (
-                                    <View style={styles.quantityBox}>
-                                        <Text style={styles.quantityLabel}>Ya registrado</Text>
-                                        <Text style={styles.quantityValue}>{registered}</Text>
-                                    </View>
-                                )}
-                            </View>
-
-                            {/* Item Progress Bar */}
-                            {hasScanned && (
-                                <View style={styles.itemProgressContainer}>
-                                    <View style={styles.itemProgressBar}>
-                                        <View
-                                            style={[
-                                                styles.itemProgressFill,
-                                                isComplete ? styles.itemProgressFillComplete : styles.itemProgressFillPartial,
-                                                { width: `${Math.min(itemProgress, 100)}%` },
-                                            ]}
-                                        />
-                                    </View>
-                                    <Text style={styles.itemProgressText}>
-                                        {Math.round(itemProgress)}%
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-                    );
-                })}
-            </ScrollView>
-
-            {/* Summary */}
-            <View style={styles.summary}>
-                <View style={styles.summaryRow}>
-                    <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
-                    <Text style={styles.summaryText}>
-                        {items.filter(x => x.isComplete).length} / {items.length} productos completos
+                    {/* Contador de productos */}
+                    <Text style={styles.itemsCounter}>
+                        Mostrando {visibleItems.length} de {filteredItems.length} productos
+                        {searchTerm.length > 0 && ` (filtrado de ${items.length} total)`}
                     </Text>
-                </View>
-            </View>
+
+                    {/* Items List */}
+                    <View style={styles.itemsList}>
+                        {visibleItems.map(({ item, registered, pending, sessionScanned, isComplete }) => {
+                            const itemPending = Math.max(pending, 0);
+                            const pendingAtStartForItem = item.quantity - registered;
+
+                            // Progreso del item basado en lo escaneado en sesión vs lo que faltaba
+                            const itemProgress = pendingAtStartForItem > 0
+                                ? Math.min((sessionScanned / pendingAtStartForItem) * 100, 100)
+                                : 100;
+
+                            const hasScanned = sessionScanned > 0;
+
+                            return (
+                                <View
+                                    key={item.id}
+                                    style={[
+                                        styles.itemCard,
+                                        isComplete && styles.itemCardComplete,
+                                        hasScanned && !isComplete && styles.itemCardInProgress,
+                                    ]}>
+
+                                    <View style={styles.itemHeader}>
+                                        <View style={styles.itemInfo}>
+                                            <Text style={styles.itemName} numberOfLines={2}>
+                                                {item.product?.name || 'Producto sin nombre'}
+                                            </Text>
+                                            {item.product?.sku && (
+                                                <Text style={styles.itemSku}>SKU: {item.product.sku}</Text>
+                                            )}
+                                            {item.product?.barcode && (
+                                                <Text style={styles.itemBarcode}>
+                                                    <MaterialIcons name="qr-code" size={12} color={Colors.text.secondary} />
+                                                    {' '}{item.product.barcode}
+                                                </Text>
+                                            )}
+                                        </View>
+
+                                        <View style={styles.itemStatus}>
+                                            {isComplete ? (
+                                                <MaterialIcons name="check-circle" size={32} color={Colors.success.main} />
+                                            ) : hasScanned ? (
+                                                <MaterialIcons name="pending" size={32} color={Colors.warning.main} />
+                                            ) : (
+                                                <MaterialIcons name="radio-button-unchecked" size={32} color={Colors.text.secondary} />
+                                            )}
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.itemQuantities}>
+                                        <View style={styles.quantityBox}>
+                                            <Text style={styles.quantityLabel}>Pendiente</Text>
+                                            <Text style={styles.quantityValue}>{itemPending}</Text>
+                                        </View>
+
+                                        <View style={[styles.quantityBox, styles.quantityBoxScanned]}>
+                                            <Text style={styles.quantityLabel}>Escaneado</Text>
+                                            <Text style={[styles.quantityValue, styles.quantityValueScanned]}>
+                                                {sessionScanned}
+                                            </Text>
+                                        </View>
+
+                                        {registered > 0 && (
+                                            <View style={styles.quantityBox}>
+                                                <Text style={styles.quantityLabel}>Ya registrado</Text>
+                                                <Text style={styles.quantityValue}>{registered}</Text>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Item Progress Bar */}
+                                    {hasScanned && (
+                                        <View style={styles.itemProgressContainer}>
+                                            <View style={styles.itemProgressBar}>
+                                                <View
+                                                    style={[
+                                                        styles.itemProgressFill,
+                                                        isComplete ? styles.itemProgressFillComplete : styles.itemProgressFillPartial,
+                                                        { width: `${Math.min(itemProgress, 100)}%` },
+                                                    ]}
+                                                />
+                                            </View>
+                                            <Text style={styles.itemProgressText}>
+                                                {Math.round(itemProgress)}%
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            );
+                        })}
+                    </View>
+
+                    {/* Botón Ver más */}
+                    {hasMoreItems && (
+                        <TouchableOpacity
+                            style={styles.loadMoreButton}
+                            onPress={() => setVisibleCount(prev => prev + 5)}
+                        >
+                            <Text style={styles.loadMoreText}>
+                                Ver más productos ({filteredItems.length - visibleCount} restantes)
+                            </Text>
+                            <MaterialIcons name="expand-more" size={20} color={Colors.primary.main} />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Summary */}
+                    <View style={styles.summary}>
+                        <View style={styles.summaryRow}>
+                            <MaterialIcons name="inventory-2" size={20} color={Colors.text.secondary} />
+                            <Text style={styles.summaryText}>
+                                {items.filter(x => x.isComplete).length} / {items.length} productos completos
+                            </Text>
+                        </View>
+                    </View>
+                </>
+            )}
         </Card>
     );
 }
@@ -254,13 +324,23 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    headerLeft: {
+        flex: 1,
+        marginRight: 12,
+    },
+    headerRight: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 4,
+        gap: 8,
     },
     title: {
         fontSize: 18,
         fontWeight: '600',
         color: Colors.text.primary,
+        marginBottom: 4,
     },
     progressBadge: {
         backgroundColor: Colors.primary.main,
@@ -274,13 +354,12 @@ const styles = StyleSheet.create({
         color: Colors.primary.contrastText,
     },
     subtitle: {
-        fontSize: 14,
+        fontSize: 13,
         color: Colors.text.secondary,
-        marginBottom: 16,
     },
     overallProgressContainer: {
-        marginBottom: 20,
-        paddingBottom: 20,
+        marginBottom: 16,
+        paddingBottom: 16,
         borderBottomWidth: 1,
         borderBottomColor: Colors.divider,
     },
@@ -307,8 +386,30 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 4,
     },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.background.default,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: Colors.text.primary,
+        padding: 0,
+    },
+    itemsCounter: {
+        fontSize: 12,
+        color: Colors.text.secondary,
+        marginBottom: 12,
+        textAlign: 'center',
+    },
     itemsList: {
-        maxHeight: 400,
+        // Se expande naturalmente
     },
     itemCard: {
         padding: 16,
@@ -345,6 +446,12 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: Colors.text.secondary,
         marginBottom: 2,
+    },
+    itemBarcode: {
+        fontSize: 12,
+        color: Colors.text.secondary,
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     itemStatus: {
         justifyContent: 'center',
@@ -407,6 +514,19 @@ const styles = StyleSheet.create({
         minWidth: 40,
         textAlign: 'right',
     },
+    loadMoreButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        marginTop: 4,
+        gap: 4,
+    },
+    loadMoreText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.primary.main,
+    },
     summary: {
         marginTop: 16,
         paddingTop: 16,
@@ -424,4 +544,3 @@ const styles = StyleSheet.create({
         color: Colors.text.primary,
     },
 });
-
