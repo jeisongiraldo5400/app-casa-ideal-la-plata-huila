@@ -139,6 +139,7 @@ interface ExitsState {
 
   // Actions - Reset
   reset: () => void;
+  resetAll: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
   goBackToSetup: () => void;
@@ -1366,6 +1367,32 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
       // registeredExitsCache se mantiene - NO resetear
+      customerSearchTerm: "",
+      deliveryObservations: "",
+    });
+  },
+
+  // Reset all state including cache - for navigation cleanup
+  resetAll: () => {
+    set({
+      warehouseId: null,
+      exitItems: [],
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      currentAvailableStock: 0,
+      step: "setup",
+      error: null,
+      loading: false,
+      loadingMessage: null,
+      exitMode: null,
+      selectedUserId: null,
+      selectedCustomerId: null,
+      selectedDeliveryOrderId: null,
+      selectedDeliveryOrder: null,
+      deliveryOrders: [],
+      scannedItemsProgress: new Map(),
+      registeredExitsCache: {},
       customerSearchTerm: "",
       deliveryObservations: "",
     });

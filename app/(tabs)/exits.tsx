@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,12 +40,23 @@ export default function ExitsScreen() {
     resetCurrentScan,
     clearError,
     goBackToSetup,
-    reset,
+    resetAll,
   } = useExits();
 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [showScanner, setShowScanner] = useState(false);
+
+  // Reset state when screen loses focus (tab navigation)
+  useFocusEffect(
+    useCallback(() => {
+      // Called when screen gains focus - no action needed
+      return () => {
+        // Called when screen loses focus - reset all state including cache
+        resetAll();
+      };
+    }, [resetAll])
+  );
 
   const handleScan = async (barcode: string) => {
     try {

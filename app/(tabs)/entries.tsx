@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -39,7 +40,7 @@ export default function EntriesScreen() {
     resetCurrentScan,
     clearError,
     goBackToSetup,
-    reset,
+    resetAll,
   } = useEntries();
 
   const { isDark } = useTheme();
@@ -47,12 +48,16 @@ export default function EntriesScreen() {
 
   const [showScanner, setShowScanner] = useState(false);
 
-  // Limpiar completamente el estado de entradas cuando se sale de la pantalla
-  useEffect(() => {
-    return () => {
-      reset();
-    };
-  }, [reset]);
+  // Reset state when screen loses focus (tab navigation)
+  useFocusEffect(
+    useCallback(() => {
+      // Called when screen gains focus - no action needed
+      return () => {
+        // Called when screen loses focus - reset all state including cache
+        resetAll();
+      };
+    }, [resetAll])
+  );
 
   const handleScan = async (barcode: string) => {
     try {

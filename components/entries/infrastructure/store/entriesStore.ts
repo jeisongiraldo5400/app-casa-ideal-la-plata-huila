@@ -157,6 +157,7 @@ interface EntriesState {
 
   // Actions - Reset
   reset: () => void;
+  resetAll: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
   goBackToSetup: () => void;
@@ -1482,6 +1483,32 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       supplierSearchQuery: "",
       purchaseOrderValidations: {},
       scannedItemsProgress: new Map(),
+    });
+  },
+
+  // Reset all state including cache - for navigation cleanup
+  resetAll: () => {
+    set({
+      entryItems: [],
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      error: null,
+      loading: false,
+      loadingMessage: null,
+      step: "flow-selection",
+      setupStep: "supplier",
+      entryType: null,
+      supplierId: null,
+      purchaseOrderId: null,
+      selectedPurchaseOrder: null,
+      warehouseId: null,
+      selectedOrderProductId: null,
+      purchaseOrders: [],
+      supplierSearchQuery: "",
+      purchaseOrderValidations: {},
+      scannedItemsProgress: new Map(),
+      registeredEntriesCache: {},
     });
   },
 
