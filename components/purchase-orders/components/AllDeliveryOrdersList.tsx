@@ -1,5 +1,4 @@
 import { useTheme } from '@/components/theme';
-import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -11,29 +10,8 @@ import {
     Text,
     View,
 } from 'react-native';
-
-type DeliveryOrder = {
-  id: string;
-  order_number: string | null;
-  created_at: string;
-  created_by: string;
-  created_by_name: string;
-  customer_id: string | null;
-  customer_id_number: string | null;
-  customer_name: string | null;
-  assigned_to_user_id: string | null;
-  assigned_to_user_name: string | null;
-  assigned_to_user_email: string | null;
-  order_type: string;
-  delivery_address: string | null;
-  notes: string | null;
-  status: string;
-  total_items: number;
-  total_quantity: number;
-  delivered_items: number;
-  delivered_quantity: number;
-  items: any;
-};
+import { DeliveryOrder } from '../types';
+import { DeliveryOrderCard } from './DeliveryOrderCard';
 
 export function AllDeliveryOrdersList() {
   const { isDark } = useTheme();
@@ -232,56 +210,6 @@ export function AllDeliveryOrdersList() {
     }
   };
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Sin fecha';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return 'Fecha inválida';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return colors.success.main;
-      case 'ready':
-        return colors.info.main;
-      case 'preparing':
-        return colors.warning.main;
-      case 'pending':
-        return colors.warning.main;
-      case 'cancelled':
-        return colors.error.main;
-      default:
-        return colors.text.secondary;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return 'Entregada';
-      case 'ready':
-        return 'Lista';
-      case 'preparing':
-        return 'Preparando';
-      case 'pending':
-        return 'Pendiente';
-      case 'cancelled':
-        return 'Cancelada';
-      default:
-        return status;
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -329,113 +257,9 @@ export function AllDeliveryOrdersList() {
           </Text>
         </View>
       )}
-      {deliveryOrders.map((order) => {
-        const statusColor = getStatusColor(order.status);
-        const progress = order.total_quantity > 0 
-          ? (order.delivered_quantity / order.total_quantity) * 100 
-          : 0;
-
-        return (
-          <Card key={order.id} style={[styles.orderCard, { backgroundColor: colors.background.paper }]}>
-            <View style={styles.orderHeader}>
-              <View style={styles.orderHeaderLeft}>
-                <Text style={[styles.orderId, { color: colors.text.primary }]}>
-                  OE #{order.order_number || order.id.slice(0, 8)}
-                </Text>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text style={[styles.statusText, { color: statusColor }]}>
-                    {getStatusLabel(order.status)}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.orderDate, { color: colors.text.secondary }]}>
-                {formatDate(order.created_at)}
-              </Text>
-            </View>
-
-            {/* Mostrar destinatario: Cliente o Usuario (Remisión) */}
-            {order.customer_id ? (
-              <View style={styles.recipientInfo}>
-                <MaterialIcons name="person" size={16} color={colors.text.secondary} />
-                <View style={styles.recipientContent}>
-                  <Text style={[styles.recipientLabel, { color: colors.text.secondary }]}>Cliente:</Text>
-                  <Text style={[styles.recipientText, { color: colors.text.primary }]}>
-                    {order.customer_name || 'Cliente sin nombre'}
-                  </Text>
-                  {order.customer_id_number && (
-                    <Text style={[styles.recipientSubtext, { color: colors.text.secondary }]}>
-                      NIT/CC: {order.customer_id_number}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            ) : order.assigned_to_user_id ? (
-              <View style={styles.recipientInfo}>
-                <MaterialIcons name="account-circle" size={16} color={colors.text.secondary} />
-                <View style={styles.recipientContent}>
-                  <Text style={[styles.recipientLabel, { color: colors.text.secondary }]}>Remisión a:</Text>
-                  <Text style={[styles.recipientText, { color: colors.text.primary }]}>
-                    {order.assigned_to_user_name || order.assigned_to_user_email || 'Usuario sin nombre'}
-                  </Text>
-                  {order.assigned_to_user_email && order.assigned_to_user_name && (
-                    <Text style={[styles.recipientSubtext, { color: colors.text.secondary }]}>
-                      {order.assigned_to_user_email}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            ) : null}
-
-            {order.delivery_address && (
-              <View style={styles.addressInfo}>
-                <MaterialIcons name="location-on" size={16} color={colors.text.secondary} />
-                <Text style={[styles.addressText, { color: colors.text.secondary }]} numberOfLines={2}>
-                  {order.delivery_address}
-                </Text>
-              </View>
-            )}
-
-            {order.created_by_name && (
-              <View style={styles.creatorInfo}>
-                <MaterialIcons name="person-outline" size={16} color={colors.text.secondary} />
-                <Text style={[styles.creatorText, { color: colors.text.secondary }]}>
-                  Creada por: {order.created_by_name}
-                </Text>
-              </View>
-            )}
-
-            {order.notes && (
-              <Text style={[styles.orderNotes, { color: colors.text.secondary }]} numberOfLines={2}>
-                {order.notes}
-              </Text>
-            )}
-
-            <View style={[styles.orderSummary, { borderTopColor: colors.divider }]}>
-              <Text style={[styles.summaryText, { color: colors.text.primary }]}>
-                {order.total_items} producto{order.total_items !== 1 ? 's' : ''} • {order.total_quantity} unidad{order.total_quantity !== 1 ? 'es' : ''}
-              </Text>
-              {order.delivered_quantity > 0 && (
-                <View style={styles.progressContainer}>
-                  <View style={[styles.progressBar, { backgroundColor: colors.divider }]}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { 
-                          width: `${progress}%`, 
-                          backgroundColor: statusColor 
-                        }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={[styles.progressText, { color: colors.text.secondary }]}>
-                    {order.delivered_quantity} / {order.total_quantity} entregado{order.delivered_quantity !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </Card>
-        );
-      })}
+      {deliveryOrders.map((order) => (
+        <DeliveryOrderCard key={order.id} order={order} />
+      ))}
     </ScrollView>
   );
 }
@@ -480,114 +304,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     textAlign: 'center',
-  },
-  orderCard: {
-    marginBottom: 16,
-    padding: 16,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  orderHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  orderId: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  orderDate: {
-    fontSize: 12,
-  },
-  recipientInfo: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-    gap: 8,
-  },
-  recipientContent: {
-    flex: 1,
-  },
-  recipientLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 2,
-    textTransform: 'uppercase',
-  },
-  recipientText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recipientSubtext: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  addressInfo: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-    gap: 6,
-  },
-  addressText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  creatorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 6,
-  },
-  creatorText: {
-    fontSize: 14,
-  },
-  orderNotes: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  orderSummary: {
-    marginTop: 8,
-    marginBottom: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  summaryText: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  progressContainer: {
-    marginTop: 8,
-  },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 12,
-    textAlign: 'right',
   },
   limitMessage: {
     flexDirection: 'row',
