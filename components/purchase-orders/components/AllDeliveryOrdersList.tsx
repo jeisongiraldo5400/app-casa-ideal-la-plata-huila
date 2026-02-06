@@ -2,7 +2,7 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     ScrollView,
@@ -13,7 +13,11 @@ import {
 import { DeliveryOrder } from '../types';
 import { DeliveryOrderCard } from './DeliveryOrderCard';
 
-export function AllDeliveryOrdersList() {
+interface AllDeliveryOrdersListProps {
+  searchQuery?: string;
+}
+
+export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersListProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -210,6 +214,23 @@ export function AllDeliveryOrdersList() {
     }
   };
 
+  const filteredOrders = useMemo(() => {
+    if (!searchQuery.trim()) return deliveryOrders;
+    const q = searchQuery.toLowerCase().trim();
+    return deliveryOrders.filter((order) => {
+      const fields = [
+        order.order_number,
+        order.customer_name,
+        order.assigned_to_user_name,
+        order.delivery_address,
+        order.status,
+        order.notes,
+        order.created_by_name,
+      ];
+      return fields.some((field) => field && field.toLowerCase().includes(q));
+    });
+  }, [deliveryOrders, searchQuery]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -244,6 +265,20 @@ export function AllDeliveryOrdersList() {
     );
   }
 
+  if (filteredOrders.length === 0 && searchQuery.trim()) {
+    return (
+      <View style={styles.emptyContainer}>
+        <MaterialIcons name="search-off" size={64} color={colors.text.secondary} />
+        <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+          No se encontraron resultados
+        </Text>
+        <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+          No hay órdenes de entrega que coincidan con "{searchQuery}"
+        </Text>
+      </View>
+    );
+  }
+
   // Mostrar mensaje si hay muchas órdenes (más de 100)
   const showLimitMessage = deliveryOrders.length >= 100;
 
@@ -257,7 +292,7 @@ export function AllDeliveryOrdersList() {
           </Text>
         </View>
       )}
-      {deliveryOrders.map((order) => (
+      {filteredOrders.map((order) => (
         <DeliveryOrderCard key={order.id} order={order} />
       ))}
     </ScrollView>

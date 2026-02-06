@@ -1,7 +1,7 @@
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     ActivityIndicator,
     ScrollView,
@@ -12,10 +12,29 @@ import {
 import { usePurchaseOrders } from '../infrastructure/hooks/usePurchaseOrders';
 import { PurchaseOrderCard } from './PurchaseOrderCard';
 
-export function AllOrdersList() {
+interface AllOrdersListProps {
+  searchQuery?: string;
+}
+
+export function AllOrdersList({ searchQuery = '' }: AllOrdersListProps) {
   const { purchaseOrders, loading, error } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+
+  const filteredOrders = useMemo(() => {
+    if (!searchQuery.trim()) return purchaseOrders;
+    const q = searchQuery.toLowerCase().trim();
+    return purchaseOrders.filter((order) => {
+      const fields = [
+        order.order_number,
+        (order as any).supplier?.name,
+        order.status,
+        order.notes,
+        (order as any).created_by_profile?.full_name,
+      ];
+      return fields.some((field) => field && String(field).toLowerCase().includes(q));
+    });
+  }, [purchaseOrders, searchQuery]);
 
   if (loading) {
     return (
@@ -51,9 +70,23 @@ export function AllOrdersList() {
     );
   }
 
+  if (filteredOrders.length === 0 && searchQuery.trim()) {
+    return (
+      <View style={styles.emptyContainer}>
+        <MaterialIcons name="search-off" size={64} color={colors.text.secondary} />
+        <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+          No se encontraron resultados
+        </Text>
+        <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+          No hay órdenes de compra que coincidan con "{searchQuery}"
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {purchaseOrders.map((order) => (
+      {filteredOrders.map((order) => (
         <PurchaseOrderCard key={order.id} order={order} />
       ))}
     </ScrollView>

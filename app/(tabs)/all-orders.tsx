@@ -3,7 +3,7 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 type TabType = 'purchase' | 'delivery';
 
@@ -12,6 +12,7 @@ export default function AllOrdersScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [activeTab, setActiveTab] = useState<TabType>('delivery');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     // Cargar todas las órdenes al montar el componente
@@ -23,8 +24,6 @@ export default function AllOrdersScreen() {
     loadPurchaseOrders();
   };
 
-
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <View style={[styles.header, { backgroundColor: colors.background.default }]}>
@@ -34,6 +33,29 @@ export default function AllOrdersScreen() {
         </Text>
       </View>
 
+      {/* Buscador */}
+      <View style={[styles.searchContainer, { backgroundColor: colors.background.paper }]}>
+        <View style={[styles.searchInputWrapper, { backgroundColor: colors.background.default, borderColor: colors.divider }]}>
+          <MaterialIcons name="search" size={22} color={colors.text.secondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text.primary }]}
+            placeholder={activeTab === 'delivery'
+              ? 'Buscar por # orden, cliente, dirección...'
+              : 'Buscar por # orden, proveedor...'}
+            placeholderTextColor={colors.text.secondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <MaterialIcons name="close" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <View style={[styles.tabsContainer, { backgroundColor: colors.background.paper }]}>
         <View style={[styles.tabsWrapper, { backgroundColor: colors.background.default }]}>
           <TouchableOpacity
@@ -41,7 +63,7 @@ export default function AllOrdersScreen() {
               styles.tab,
               activeTab === 'delivery' && [styles.tabActive, { backgroundColor: colors.background.paper }],
             ]}
-            onPress={() => setActiveTab('delivery')}
+            onPress={() => { setActiveTab('delivery'); setSearchQuery(''); }}
             activeOpacity={0.7}
           >
             <MaterialIcons
@@ -67,7 +89,7 @@ export default function AllOrdersScreen() {
               styles.tab,
               activeTab === 'purchase' && [styles.tabActive, { backgroundColor: colors.background.paper }],
             ]}
-            onPress={() => setActiveTab('purchase')}
+            onPress={() => { setActiveTab('purchase'); setSearchQuery(''); }}
             activeOpacity={0.7}
           >
             <MaterialIcons
@@ -97,7 +119,10 @@ export default function AllOrdersScreen() {
           <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
         }
       >
-        {activeTab === 'purchase' ? <AllOrdersList /> : <AllDeliveryOrdersList />}
+        {activeTab === 'purchase'
+          ? <AllOrdersList searchQuery={searchQuery} />
+          : <AllDeliveryOrdersList searchQuery={searchQuery} />
+        }
       </ScrollView>
     </View>
   );
@@ -157,6 +182,24 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 4,
   },
 });
 
