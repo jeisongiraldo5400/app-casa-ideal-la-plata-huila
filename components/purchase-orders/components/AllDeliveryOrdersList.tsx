@@ -1,23 +1,25 @@
-import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
-import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from "@/components/theme";
+import { getColors } from "@/constants/theme";
+import { supabase } from "@/lib/supabase";
+import { MaterialIcons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
-import { DeliveryOrder } from '../types';
-import { DeliveryOrderCard } from './DeliveryOrderCard';
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { DeliveryOrder } from "../types";
+import { DeliveryOrderCard } from "./DeliveryOrderCard";
 
 interface AllDeliveryOrdersListProps {
   searchQuery?: string;
 }
 
-export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersListProps) {
+export function AllDeliveryOrdersList({
+  searchQuery = "",
+}: AllDeliveryOrdersListProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -36,8 +38,9 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
       // Mostrar TODAS las órdenes en cualquier estado (solo filtramos las eliminadas)
       // Limitar a 100 órdenes para mejorar rendimiento
       const { data: ordersData, error: ordersError } = await supabase
-        .from('delivery_orders')
-        .select(`
+        .from("delivery_orders")
+        .select(
+          `
           id,
           created_at,
           created_by,
@@ -48,69 +51,122 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
           notes,
           status,
           order_number,
-          customer:customers(id, name, id_number),
+          customer:customers(id, name, id_number, phone, email),
           assigned_to_user:profiles(id, full_name, email)
-        `)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
+        `,
+        )
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
         .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
 
       if (ordersError) {
-        console.error('Error loading delivery orders:', ordersError);
+        console.error("Error loading delivery orders:", ordersError);
         setError(ordersError.message);
         setLoading(false);
         return;
       }
 
       // Cargar perfiles de los creadores por separado (ya que no hay foreign key directa)
-      const createdByUserIds = [...new Set((ordersData || []).map((order: any) => order.created_by).filter(Boolean))];
+      const createdByUserIds = [
+        ...new Set(
+          (ordersData || [])
+            .map((order: any) => order.created_by)
+            .filter(Boolean),
+        ),
+      ];
       let createdByProfilesMap = new Map();
-      
+
       if (createdByUserIds.length > 0) {
         const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', createdByUserIds);
-        
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", createdByUserIds);
+
         createdByProfilesMap = new Map(
-          (profilesData || []).map((profile) => [profile.id, profile])
+          (profilesData || []).map((profile) => [profile.id, profile]),
         );
       }
 
       // Calcular estadísticas manualmente para incluir todas las órdenes (clientes y remisiones)
       const orderIds = (ordersData || []).map((order: any) => order.id);
-      
+
       let ordersWithStats: any[] = [];
       if (orderIds.length > 0) {
         // Cargar items de todas las órdenes en lotes para evitar límites de Supabase
         // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
         const BATCH_SIZE = 500;
         let allItemsData: any[] = [];
-        
+
         for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
           const batch = orderIds.slice(i, i + BATCH_SIZE);
           const { data: itemsData, error: itemsError } = await supabase
-            .from('delivery_order_items')
-            .select('delivery_order_id, quantity, delivered_quantity')
-            .in('delivery_order_id', batch);
-          
+            .from("delivery_order_items")
+            .select(
+              "delivery_order_id, product_id, quantity, delivered_quantity",
+            )
+            .in("delivery_order_id", batch);
+
           if (itemsError) {
-            console.error('Error loading delivery order items batch:', itemsError);
+            console.error(
+              "Error loading delivery order items batch:",
+              itemsError,
+            );
           } else {
             allItemsData = [...allItemsData, ...(itemsData || [])];
           }
         }
-        
+
         const itemsData = allItemsData;
 
-        // Calcular estadísticas por orden
+        // Reconciliación: obtener salidas de inventory_exits para comparar con delivered_quantity
+        // Esto asegura que el progreso se muestre correctamente incluso si el RPC falló previamente
+        const { data: cancelledExits } = await supabase
+          .from("inventory_exit_cancellations")
+          .select("inventory_exit_id");
+
+        const cancelledExitIds = new Set(
+          (cancelledExits || []).map((c: any) => c.inventory_exit_id),
+        );
+
+        // Cargar inventory_exits en lotes
+        let allExitsData: any[] = [];
+        for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+          const batch = orderIds.slice(i, i + BATCH_SIZE);
+          const { data: exitsData, error: exitsError } = await supabase
+            .from("inventory_exits")
+            .select("id, delivery_order_id, product_id, quantity")
+            .in("delivery_order_id", batch);
+
+          if (exitsError) {
+            console.error("Error loading inventory exits batch:", exitsError);
+          } else {
+            allExitsData = [...allExitsData, ...(exitsData || [])];
+          }
+        }
+
+        // Agrupar salidas por (delivery_order_id, product_id), excluyendo canceladas
+        const exitsByOrderProduct = new Map<string, number>();
+        allExitsData.forEach((exit: any) => {
+          if (cancelledExitIds.has(exit.id)) return;
+          if (!exit.delivery_order_id || !exit.product_id) return;
+          const key = `${exit.delivery_order_id}:${exit.product_id}`;
+          exitsByOrderProduct.set(
+            key,
+            (exitsByOrderProduct.get(key) || 0) + (exit.quantity || 0),
+          );
+        });
+
+        // Calcular estadísticas por orden (con reconciliación)
         if (itemsData.length > 0) {
-          const statsByOrder = new Map<string, {
-            total_items: number;
-            total_quantity: number;
-            delivered_items: number;
-            delivered_quantity: number;
-          }>();
+          const statsByOrder = new Map<
+            string,
+            {
+              total_items: number;
+              total_quantity: number;
+              delivered_items: number;
+              delivered_quantity: number;
+            }
+          >();
 
           itemsData.forEach((item: any) => {
             const orderId = item.delivery_order_id;
@@ -124,11 +180,22 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
             }
             const stats = statsByOrder.get(orderId)!;
             stats.total_items += 1;
-            stats.total_quantity += item.quantity || 0;
-            if (item.delivered_quantity > 0) {
+            const itemQuantity = item.quantity || 0;
+            stats.total_quantity += itemQuantity;
+
+            // Reconciliar: usar el mayor entre delivered_quantity de BD e inventory_exits
+            const fromDB = item.delivered_quantity || 0;
+            const exitKey = `${orderId}:${item.product_id}`;
+            const fromExits = exitsByOrderProduct.get(exitKey) || 0;
+            const reconciledDelivered = Math.min(
+              Math.max(fromExits, fromDB),
+              itemQuantity,
+            );
+
+            if (reconciledDelivered >= itemQuantity && itemQuantity > 0) {
               stats.delivered_items += 1;
             }
-            stats.delivered_quantity += item.delivered_quantity || 0;
+            stats.delivered_quantity += reconciledDelivered;
           });
 
           // Combinar datos de órdenes con estadísticas
@@ -147,7 +214,10 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
               delivered_items: stats.delivered_items,
               delivered_quantity: stats.delivered_quantity,
               created_by_profile: createdByProfile || null,
-              created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
+              created_by_name:
+                createdByProfile?.full_name ||
+                createdByProfile?.email ||
+                "Usuario desconocido",
             };
           });
         } else {
@@ -161,7 +231,10 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
               delivered_items: 0,
               delivered_quantity: 0,
               created_by_profile: createdByProfile || null,
-              created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
+              created_by_name:
+                createdByProfile?.full_name ||
+                createdByProfile?.email ||
+                "Usuario desconocido",
             };
           });
         }
@@ -176,7 +249,10 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
             delivered_items: 0,
             delivered_quantity: 0,
             created_by_profile: createdByProfile || null,
-            created_by_name: createdByProfile?.full_name || createdByProfile?.email || 'Usuario desconocido',
+            created_by_name:
+              createdByProfile?.full_name ||
+              createdByProfile?.email ||
+              "Usuario desconocido",
           };
         });
       }
@@ -191,6 +267,8 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
         customer_id: order.customer_id,
         customer_id_number: order.customer?.id_number || null,
         customer_name: order.customer?.name || null,
+        customer_phone: order.customer?.phone || null,
+        customer_email: order.customer?.email || null,
         assigned_to_user_id: order.assigned_to_user_id,
         assigned_to_user_name: order.assigned_to_user?.full_name || null,
         assigned_to_user_email: order.assigned_to_user?.email || null,
@@ -208,8 +286,8 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
       setDeliveryOrders(transformedOrders);
       setLoading(false);
     } catch (err: any) {
-      console.error('Error loading delivery orders:', err);
-      setError(err.message || 'Error al cargar las órdenes de entrega');
+      console.error("Error loading delivery orders:", err);
+      setError(err.message || "Error al cargar las órdenes de entrega");
       setLoading(false);
     }
   };
@@ -245,8 +323,14 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
-        <Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text>
+        <MaterialIcons
+          name="error-outline"
+          size={48}
+          color={colors.error.main}
+        />
+        <Text style={[styles.errorText, { color: colors.error.main }]}>
+          {error}
+        </Text>
       </View>
     );
   }
@@ -254,7 +338,11 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
   if (deliveryOrders.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <MaterialIcons name="local-shipping" size={64} color={colors.text.secondary} />
+        <MaterialIcons
+          name="local-shipping"
+          size={64}
+          color={colors.text.secondary}
+        />
         <Text style={[styles.emptyText, { color: colors.text.primary }]}>
           No hay órdenes de entrega registradas
         </Text>
@@ -268,12 +356,16 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
   if (filteredOrders.length === 0 && searchQuery.trim()) {
     return (
       <View style={styles.emptyContainer}>
-        <MaterialIcons name="search-off" size={64} color={colors.text.secondary} />
+        <MaterialIcons
+          name="search-off"
+          size={64}
+          color={colors.text.secondary}
+        />
         <Text style={[styles.emptyText, { color: colors.text.primary }]}>
           No se encontraron resultados
         </Text>
         <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          No hay órdenes de entrega que coincidan con "{searchQuery}"
+          No hay órdenes de entrega que coincidan con &quot;{searchQuery}&quot;
         </Text>
       </View>
     );
@@ -285,8 +377,20 @@ export function AllDeliveryOrdersList({ searchQuery = '' }: AllDeliveryOrdersLis
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {showLimitMessage && (
-        <View style={[styles.limitMessage, { backgroundColor: colors.info.main + '15', borderColor: colors.info.main }]}>
-          <MaterialIcons name="info-outline" size={20} color={colors.info.main} />
+        <View
+          style={[
+            styles.limitMessage,
+            {
+              backgroundColor: colors.info.main + "15",
+              borderColor: colors.info.main,
+            },
+          ]}
+        >
+          <MaterialIcons
+            name="info-outline"
+            size={20}
+            color={colors.info.main}
+          />
           <Text style={[styles.limitMessageText, { color: colors.info.main }]}>
             Mostrando las últimas 100 órdenes de entrega
           </Text>
@@ -305,8 +409,8 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 40,
   },
   loadingText: {
@@ -315,34 +419,34 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 40,
   },
   errorText: {
     marginTop: 16,
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 40,
   },
   emptyText: {
     marginTop: 16,
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   emptySubtext: {
     marginTop: 8,
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
   },
   limitMessage: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
@@ -351,8 +455,7 @@ const styles = StyleSheet.create({
   },
   limitMessageText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
     flex: 1,
   },
 });
-

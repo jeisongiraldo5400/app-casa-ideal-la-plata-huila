@@ -193,8 +193,54 @@ export type Database = {
           },
         ]
       }
+      delivery_order_item_approvals: {
+        Row: {
+          approved_at: string
+          approved_by: string | null
+          created_at: string
+          delivered_by_user_id: string | null
+          delivery_order_id: string
+          id: string
+          observations: string
+        }
+        Insert: {
+          approved_at?: string
+          approved_by?: string | null
+          created_at?: string
+          delivered_by_user_id?: string | null
+          delivery_order_id: string
+          id?: string
+          observations: string
+        }
+        Update: {
+          approved_at?: string
+          approved_by?: string | null
+          created_at?: string
+          delivered_by_user_id?: string | null
+          delivery_order_id?: string
+          id?: string
+          observations?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_order_item_approvals_delivered_by_user_id_fkey"
+            columns: ["delivered_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_order_item_approvals_delivery_order_id_fkey"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_order_items: {
         Row: {
+          approval_id: string | null
           approved_at: string | null
           approved_by: string | null
           created_at: string
@@ -208,6 +254,7 @@ export type Database = {
           warehouse_id: string
         }
         Insert: {
+          approval_id?: string | null
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
@@ -221,6 +268,7 @@ export type Database = {
           warehouse_id: string
         }
         Update: {
+          approval_id?: string | null
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
@@ -234,6 +282,13 @@ export type Database = {
           warehouse_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "delivery_order_items_approval_id_fkey"
+            columns: ["approval_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_order_item_approvals"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_delivery_order_item_order"
             columns: ["delivery_order_id"]
@@ -684,6 +739,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      operation_error_logs: {
+        Row: {
+          context: Json | null
+          created_at: string
+          created_by: string | null
+          entity_id: string | null
+          entity_type: string | null
+          error_code: string
+          error_message: string
+          id: string
+          module: string
+          operation: string
+          severity: string
+          step: string | null
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string
+          created_by?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          error_code: string
+          error_message: string
+          id?: string
+          module: string
+          operation: string
+          severity?: string
+          step?: string | null
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string
+          created_by?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          error_code?: string
+          error_message?: string
+          id?: string
+          module?: string
+          operation?: string
+          severity?: string
+          step?: string | null
+        }
+        Relationships: []
       }
       permisos: {
         Row: {
@@ -1202,6 +1302,68 @@ export type Database = {
           },
         ]
       }
+      stock_transfers: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          destination_warehouse_id: string
+          id: string
+          observations: string
+          product_id: string
+          quantity: number
+          source_warehouse_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          destination_warehouse_id: string
+          id?: string
+          observations: string
+          product_id: string
+          quantity: number
+          source_warehouse_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          destination_warehouse_id?: string
+          id?: string
+          observations?: string
+          product_id?: string
+          quantity?: number
+          source_warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_destination_warehouse_id_fkey"
+            columns: ["destination_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_source_warehouse_id_fkey"
+            columns: ["source_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           cell_phone: string | null
@@ -1362,6 +1524,53 @@ export type Database = {
       }
     }
     Views: {
+      stock_transfers_searchable: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          created_by_name: string | null
+          destination_warehouse_id: string | null
+          destination_warehouse_name: string | null
+          id: string | null
+          observations: string | null
+          product_id: string | null
+          product_name: string | null
+          product_sku: string | null
+          quantity: number | null
+          source_warehouse_id: string | null
+          source_warehouse_name: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_destination_warehouse_id_fkey"
+            columns: ["destination_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_source_warehouse_id_fkey"
+            columns: ["source_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_cancelled_entries: {
         Row: {
           cancellation_id: string | null
@@ -1650,22 +1859,22 @@ export type Database = {
         }[]
       }
       get_orders_for_return:
-      | {
-        Args: { return_type_param: string }
-        Returns: {
-          display_name: string
-          id: string
-          order_number: string
-        }[]
-      }
-      | {
-        Args: { return_type_param: string; search_term?: string }
-        Returns: {
-          display_name: string
-          id: string
-          order_number: string
-        }[]
-      }
+        | {
+            Args: { return_type_param: string }
+            Returns: {
+              display_name: string
+              id: string
+              order_number: string
+            }[]
+          }
+        | {
+            Args: { return_type_param: string; search_term?: string }
+            Returns: {
+              display_name: string
+              id: string
+              order_number: string
+            }[]
+          }
       get_period_stats: {
         Args: { end_date: string; period_type?: string; start_date: string }
         Returns: {
@@ -1736,44 +1945,44 @@ export type Database = {
         }[]
       }
       get_purchase_orders_dashboard:
-      | {
-        Args: { page?: number; page_size?: number; search_term?: string }
-        Returns: {
-          completion: Json
-          completion_detail: Json
-          created_at: string
-          id: string
-          notes: string
-          status: string
-          supplier_id: string
-          supplier_name: string
-          total_count: number
-          total_items: number
-          total_quantity: number
-        }[]
-      }
-      | {
-        Args: {
-          page?: number
-          page_size?: number
-          search_term?: string
-          status_filter?: string
-        }
-        Returns: {
-          completion: Json
-          completion_detail: Json
-          created_at: string
-          id: string
-          notes: string
-          order_number: string
-          status: string
-          supplier_id: string
-          supplier_name: string
-          total_count: number
-          total_items: number
-          total_quantity: number
-        }[]
-      }
+        | {
+            Args: { page?: number; page_size?: number; search_term?: string }
+            Returns: {
+              completion: Json
+              completion_detail: Json
+              created_at: string
+              id: string
+              notes: string
+              status: string
+              supplier_id: string
+              supplier_name: string
+              total_count: number
+              total_items: number
+              total_quantity: number
+            }[]
+          }
+        | {
+            Args: {
+              page?: number
+              page_size?: number
+              search_term?: string
+              status_filter?: string
+            }
+            Returns: {
+              completion: Json
+              completion_detail: Json
+              created_at: string
+              id: string
+              notes: string
+              order_number: string
+              status: string
+              supplier_id: string
+              supplier_name: string
+              total_count: number
+              total_items: number
+              total_quantity: number
+            }[]
+          }
       get_purchase_orders_stats: {
         Args: never
         Returns: {
@@ -1905,12 +2114,27 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      transfer_product_between_warehouses: {
+        Args: {
+          p_destination_warehouse_id: string
+          p_observations: string
+          p_product_id: string
+          p_quantity: number
+          p_source_warehouse_id: string
+        }
+        Returns: Json
+      }
       update_delivery_order_progress: {
         Args: {
           order_id_param: string
           product_id_param: string
           quantity_delivered_param: number
+          warehouse_id_param: string
         }
+        Returns: Json
+      }
+      update_purchase_order_progress: {
+        Args: { order_id_param: string }
         Returns: Json
       }
     }
@@ -1929,116 +2153,116 @@ type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-  | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-  : never = never,
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
-  ? R
-  : never
+    ? R
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])
-  ? (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-      Row: infer R
-    }
-  ? R
-  : never
-  : never
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
+      Insert: infer I
+    }
+    ? I
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Update: infer U
-  }
-  ? U
-  : never
+      Update: infer U
+    }
+    ? U
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Update: infer U
-  }
-  ? U
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-  | keyof DefaultSchema["Enums"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-  : never
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-  | keyof DefaultSchema["CompositeTypes"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-  : never
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 export const Constants = {
   public: {
