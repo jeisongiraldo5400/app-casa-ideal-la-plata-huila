@@ -13,6 +13,7 @@ export default function AllOrdersScreen() {
   const colors = getColors(isDark);
   const [activeTab, setActiveTab] = useState<TabType>('delivery');
   const [searchQuery, setSearchQuery] = useState('');
+  const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
 
   useEffect(() => {
     // Cargar todas las órdenes al montar el componente
@@ -22,6 +23,7 @@ export default function AllOrdersScreen() {
 
   const handleRefresh = () => {
     loadPurchaseOrders();
+    setDeliveryRefreshKey(k => k + 1);
   };
 
   return (
@@ -121,7 +123,7 @@ export default function AllOrdersScreen() {
       >
         {activeTab === 'purchase'
           ? <AllOrdersList searchQuery={searchQuery} />
-          : <AllDeliveryOrdersList searchQuery={searchQuery} />
+          : <AllDeliveryOrdersList searchQuery={searchQuery} refreshTrigger={deliveryRefreshKey} />
         }
       </ScrollView>
     </View>
