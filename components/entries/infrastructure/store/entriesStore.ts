@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 // supabase
 import { supabase } from "@/lib/supabase";
+import { logOperationError } from "@/lib/operationLogger";
 
 // types
 import { Database } from "@/types/database.types";
@@ -266,6 +267,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
         if (orderError) {
           console.error("Error loading purchase order details:", orderError);
+          logOperationError({
+            error_code: "PURCHASE_ORDER_LOAD_FAILED",
+            error_message: orderError.message || String(orderError),
+            module: "entries",
+            operation: "select_purchase_order",
+            step: "query",
+            entity_type: "purchase_order",
+            entity_id: purchaseOrderId,
+          });
           set({
             selectedPurchaseOrder: null,
             purchaseOrderId: null,
@@ -1353,6 +1363,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     const validationResult = await validateEntryDataBeforeInsert();
     if (!validationResult.valid) {
+      logOperationError({
+        error_code: "ENTRY_VALIDATION_FAILED",
+        error_message: validationResult.message || "Validation failed",
+        module: "entries",
+        operation: "finalize_entry",
+        step: "validation",
+        entity_type: purchaseOrderId ? "purchase_order" : undefined,
+        entity_id: purchaseOrderId || undefined,
+        context: {
+          warehouseId,
+          productIds: entryItems.map((i) => i.product.id),
+          quantities: entryItems.map((i) => i.quantity),
+          entryType,
+          purchaseOrderId,
+          supplierId,
+        },
+      });
       // Limpiar loading si la validación falla
       set({ loading: false, loadingMessage: null });
       return { error: { message: validationResult.message } };
@@ -1378,6 +1405,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .insert(entries);
 
       if (entriesError) {
+        logOperationError({
+          error_code: "ENTRY_INSERT_FAILED",
+          error_message: entriesError.message || String(entriesError),
+          module: "entries",
+          operation: "finalize_entry",
+          step: "insert_records",
+          entity_type: purchaseOrderId ? "purchase_order" : undefined,
+          entity_id: purchaseOrderId || undefined,
+          context: {
+            warehouseId,
+            productIds: entryItems.map((i) => i.product.id),
+            quantities: entryItems.map((i) => i.quantity),
+            entryType,
+            purchaseOrderId,
+            supplierId,
+          },
+        });
         // Limpiar loading en caso de error al insertar
         set({ loading: false, loadingMessage: null });
         return { error: entriesError };
@@ -1419,6 +1463,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
         if (progressError) {
           console.error("Error updating purchase order progress:", progressError);
+          logOperationError({
+            error_code: "PURCHASE_PROGRESS_FAILED",
+            error_message: progressError.message || String(progressError),
+            module: "entries",
+            operation: "finalize_entry",
+            step: "rpc_update_progress",
+            entity_type: "purchase_order",
+            entity_id: purchaseOrderId,
+            context: {
+              warehouseId,
+              productIds: entryItems.map((i) => i.product.id),
+              quantities: entryItems.map((i) => i.quantity),
+              entryType,
+              purchaseOrderId,
+              supplierId,
+            },
+          });
         } else if (progressData && progressData.success && progressData.all_complete) {
           console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
           // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado

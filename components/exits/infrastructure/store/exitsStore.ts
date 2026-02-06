@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { logOperationError } from "@/lib/operationLogger";
 import { Database } from "@/types/database.types";
 import { create } from "zustand";
 
@@ -534,6 +535,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       if (orderError) {
         console.error("Error loading delivery order details:", orderError);
+        logOperationError({
+          error_code: "DELIVERY_ORDER_LOAD_FAILED",
+          error_message: orderError.message || String(orderError),
+          module: "exits",
+          operation: "select_delivery_order",
+          step: "query",
+          entity_type: "delivery_order",
+          entity_id: orderId,
+        });
         set({
           selectedDeliveryOrder: null,
           selectedDeliveryOrderId: null,
@@ -1219,6 +1229,22 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       if (exitsError) {
         console.error("Error inserting exits:", exitsError);
+        logOperationError({
+          error_code: "EXIT_INSERT_FAILED",
+          error_message: exitsError.message || String(exitsError),
+          module: "exits",
+          operation: "finalize_exit",
+          step: "insert_records",
+          entity_type: selectedDeliveryOrderId ? "delivery_order" : undefined,
+          entity_id: selectedDeliveryOrderId || undefined,
+          context: {
+            warehouseId,
+            productIds: exitItems.map((i) => i.product.id),
+            quantities: exitItems.map((i) => i.quantity),
+            exitMode,
+            deliveryOrderId: selectedDeliveryOrderId,
+          },
+        });
         return { error: exitsError };
       }
 
@@ -1264,6 +1290,22 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
           if (updateError) {
             console.error("Error updating delivery order progress:", updateError);
+            logOperationError({
+              error_code: "DELIVERY_PROGRESS_FAILED",
+              error_message: updateError.message || String(updateError),
+              module: "exits",
+              operation: "finalize_exit",
+              step: "rpc_update_progress",
+              entity_type: "delivery_order",
+              entity_id: selectedDeliveryOrderId,
+              context: {
+                warehouseId: itemWarehouseId,
+                productId: item.product.id,
+                quantity: item.quantity,
+                exitMode,
+                deliveryOrderId: selectedDeliveryOrderId,
+              },
+            });
             failedProgressUpdates.push(item.product.name || item.product.id);
           } else if (data && data.success) {
             // Usar el valor actualizado que retorna la función RPC (ya incluye la suma)
@@ -1363,8 +1405,23 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
             set({ registeredExitsCache: finalCache });
           }
-        } catch (refreshError) {
+        } catch (refreshError: any) {
           console.error("Error refreshing delivery order cache from inventory_exits:", refreshError);
+          logOperationError({
+            error_code: "EXIT_CACHE_REFRESH_FAILED",
+            error_message: refreshError?.message || String(refreshError),
+            module: "exits",
+            operation: "finalize_exit",
+            step: "cache_refresh",
+            severity: "warning",
+            entity_type: "delivery_order",
+            entity_id: orderIdToRefresh,
+            context: {
+              warehouseId,
+              exitMode,
+              deliveryOrderId: orderIdToRefresh,
+            },
+          });
         }
       }
 

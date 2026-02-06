@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { logOperationError } from '@/lib/operationLogger';
 import { Database } from '@/types/database.types';
 import { create } from 'zustand';
 
@@ -94,6 +95,14 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
 
       if (error) {
         console.error('Error loading purchase orders:', error);
+        logOperationError({
+          error_code: "PO_LOAD_FAILED",
+          error_message: error.message || String(error),
+          module: "purchase_orders",
+          operation: "load_purchase_orders",
+          step: "query",
+          context: { status, userId },
+        });
         set({ error: error.message, loading: false });
         return;
       }
@@ -190,6 +199,16 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>((set, get) => 
 
       if (error) {
         console.error('Error updating purchase order status:', error);
+        logOperationError({
+          error_code: "PO_STATUS_UPDATE_FAILED",
+          error_message: error.message || String(error),
+          module: "purchase_orders",
+          operation: "update_status",
+          step: "update_record",
+          entity_type: "purchase_order",
+          entity_id: orderId,
+          context: { orderId, status },
+        });
         set({ loading: false });
         return { success: false, error: error.message };
       }
