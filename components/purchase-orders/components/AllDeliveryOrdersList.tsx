@@ -2,7 +2,8 @@ import { useTheme } from "@/components/theme";
 import { getColors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { MaterialIcons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -15,10 +16,12 @@ import { DeliveryOrderCard } from "./DeliveryOrderCard";
 
 interface AllDeliveryOrdersListProps {
   searchQuery?: string;
+  refreshTrigger?: number;
 }
 
 export function AllDeliveryOrdersList({
   searchQuery = "",
+  refreshTrigger,
 }: AllDeliveryOrdersListProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -26,9 +29,17 @@ export function AllDeliveryOrdersList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadDeliveryOrders();
+    }, [])
+  );
+
   useEffect(() => {
-    loadDeliveryOrders();
-  }, []); // Solo cargar una vez al montar el componente
+    if (refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadDeliveryOrders();
+    }
+  }, [refreshTrigger]);
 
   const loadDeliveryOrders = async () => {
     setLoading(true);
