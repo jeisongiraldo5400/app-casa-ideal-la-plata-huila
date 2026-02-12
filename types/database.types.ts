@@ -198,6 +198,7 @@ export type Database = {
           approved_at: string
           approved_by: string | null
           created_at: string
+          deleted_at: string | null
           delivered_by_user_id: string | null
           delivery_order_id: string
           id: string
@@ -207,6 +208,7 @@ export type Database = {
           approved_at?: string
           approved_by?: string | null
           created_at?: string
+          deleted_at?: string | null
           delivered_by_user_id?: string | null
           delivery_order_id: string
           id?: string
@@ -216,6 +218,7 @@ export type Database = {
           approved_at?: string
           approved_by?: string | null
           created_at?: string
+          deleted_at?: string | null
           delivered_by_user_id?: string | null
           delivery_order_id?: string
           id?: string
@@ -244,6 +247,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           created_at: string
+          deleted_at: string | null
           delivered_quantity: number
           delivery_order_id: string
           id: string
@@ -258,6 +262,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
+          deleted_at?: string | null
           delivered_quantity?: number
           delivery_order_id: string
           id?: string
@@ -272,6 +277,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           created_at?: string
+          deleted_at?: string | null
           delivered_quantity?: number
           delivery_order_id?: string
           id?: string
@@ -519,6 +525,7 @@ export type Database = {
           barcode_scanned: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           delivery_order_return_id: string | null
           entry_type: string
           id: string
@@ -532,6 +539,7 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           delivery_order_return_id?: string | null
           entry_type?: string
           id?: string
@@ -545,6 +553,7 @@ export type Database = {
           barcode_scanned?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           delivery_order_return_id?: string | null
           entry_type?: string
           id?: string
@@ -596,6 +605,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           id: string
           inventory_entry_id: string
           observations: string
@@ -604,6 +614,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_entry_id: string
           observations: string
@@ -612,6 +623,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_entry_id?: string
           observations?: string
@@ -631,6 +643,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           id: string
           inventory_exit_id: string
           observations: string
@@ -639,6 +652,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_exit_id: string
           observations: string
@@ -647,6 +661,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_exit_id?: string
           observations?: string
@@ -1002,24 +1017,30 @@ export type Database = {
       purchase_order_items: {
         Row: {
           created_at: string | null
+          deleted_at: string | null
           id: string
           product_id: string
           purchase_order_id: string
           quantity: number
+          updated_at: string | null
         }
         Insert: {
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           product_id: string
           purchase_order_id: string
           quantity: number
+          updated_at?: string | null
         }
         Update: {
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           product_id?: string
           purchase_order_id?: string
           quantity?: number
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -1269,18 +1290,21 @@ export type Database = {
       roles_permisos: {
         Row: {
           created_at: string | null
+          deleted_at: string | null
           id: string
           permiso_id: string
           rol_id: string
         }
         Insert: {
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           permiso_id: string
           rol_id: string
         }
         Update: {
           created_at?: string | null
+          deleted_at?: string | null
           id?: string
           permiso_id?: string
           rol_id?: string
@@ -1471,6 +1495,7 @@ export type Database = {
           city: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           description: string | null
           id: string
           is_active: boolean
@@ -1481,6 +1506,7 @@ export type Database = {
           city?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           description?: string | null
           id?: string
           is_active?: boolean
@@ -1491,6 +1517,7 @@ export type Database = {
           city?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           description?: string | null
           id?: string
           is_active?: boolean
@@ -1656,6 +1683,26 @@ export type Database = {
           success: boolean
         }[]
       }
+      edit_delivery_order_items: {
+        Args: {
+          p_delivery_address?: string
+          p_delivery_order_id: string
+          p_items: Json
+          p_notes?: string
+          p_status?: string
+        }
+        Returns: Json
+      }
+      edit_purchase_order_items: {
+        Args: {
+          p_items: Json
+          p_notes?: string
+          p_purchase_order_id: string
+          p_status?: string
+          p_supplier_id?: string
+        }
+        Returns: Json
+      }
       get_customer_delivery_orders: {
         Args: { customer_id_param: string; page?: number; page_size?: number }
         Returns: {
@@ -1761,7 +1808,15 @@ export type Database = {
         }[]
       }
       get_inventory_entries_dashboard: {
-        Args: { page?: number; page_size?: number; search_term?: string }
+        Args: {
+          date_from?: string
+          date_to?: string
+          page?: number
+          page_size?: number
+          search_term?: string
+          supplier_filter?: string
+          user_filter?: string
+        }
         Returns: {
           barcode_scanned: string
           cancellation_created_at: string
@@ -1797,7 +1852,16 @@ export type Database = {
         }[]
       }
       get_inventory_exits_dashboard: {
-        Args: { page?: number; page_size?: number; search_term?: string }
+        Args: {
+          date_from?: string
+          date_to?: string
+          page?: number
+          page_size?: number
+          search_term?: string
+          status_filter?: string
+          user_filter?: string
+          warehouse_filter?: string
+        }
         Returns: {
           barcode_scanned: string
           cancellation_created_at: string
@@ -1963,6 +2027,8 @@ export type Database = {
           }
         | {
             Args: {
+              date_from?: string
+              date_to?: string
               page?: number
               page_size?: number
               search_term?: string
