@@ -101,7 +101,8 @@ export function ReceivedDeliveryOrdersList() {
           const { data: itemsData, error: itemsError } = await supabase
             .from('delivery_order_items')
             .select('delivery_order_id, quantity, delivered_quantity')
-            .in('delivery_order_id', batch);
+            .in('delivery_order_id', batch)
+            .is('deleted_at', null);
           
           if (itemsError) {
             console.error('Error loading delivery order items batch:', itemsError);

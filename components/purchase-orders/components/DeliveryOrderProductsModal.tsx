@@ -60,10 +60,13 @@ export function DeliveryOrderProductsModal({
                     warehouse_id,
                     quantity,
                     delivered_quantity,
-                    product:products(id, name, sku, barcode),
+                    deleted_at,
+                    product:products!inner(id, name, sku, barcode, deleted_at),
                     warehouse:warehouses(id, name)
                 `)
-                .eq('delivery_order_id', orderId);
+                .eq('delivery_order_id', orderId)
+                .is('deleted_at', null)
+                .is('product.deleted_at', null);
 
             if (itemsError) {
                 console.error('Error loading order items:', itemsError);

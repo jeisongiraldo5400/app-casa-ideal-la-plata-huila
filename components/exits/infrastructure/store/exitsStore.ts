@@ -302,17 +302,21 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .from('delivery_orders')
         .select(`
           *,
-          items:delivery_order_items!fk_delivery_order_item_order(
+          items:delivery_order_items!fk_delivery_order_item_order!inner(
             id,
             product_id,
             warehouse_id,
             quantity,
-            delivered_quantity
+            delivered_quantity,
+            deleted_at,
+            product:products!inner(id, name, barcode, sku, deleted_at)
           )
         `)
         .eq('customer_id', customerId)
         .eq('status', 'pending')
         .is('deleted_at', null)
+        .is('items.deleted_at', null)
+        .is('items.product.deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -367,9 +371,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Transformar los datos para incluir contadores (reconciliando BD con inventory_exits)
       const ordersWithCounts = data.map((order: any) => {
+        // Filtrar items eliminados (seguridad adicional)
+        const activeItems = (order.items || []).filter((item: any) => 
+          !item.deleted_at && 
+          item.product && 
+          !item.product.deleted_at
+        );
+
         const orderExits = exitsByOrder.get(order.id) || new Map();
         let totalDelivered = 0;
-        const totalQuantity = order.items?.reduce((sum: number, item: any) => {
+        const totalQuantity = activeItems.reduce((sum: number, item: any) => {
           const fromExits = orderExits.get(item.product_id) || 0;
           const fromDB = item.delivered_quantity || 0;
           const bestEstimate = Math.max(fromExits, fromDB);
@@ -380,7 +391,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
         return {
           ...order,
-          total_items: order.items?.length || 0,
+          items: activeItems, // Guardar solo items activos
+          total_items: activeItems.length,
           total_quantity: totalQuantity,
           delivered_quantity: totalDelivered,
         };
@@ -464,7 +476,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const { data: dbItems, error: dbItemsError } = await supabase
         .from("delivery_order_items")
         .select("delivery_order_id, delivered_quantity")
-        .in("delivery_order_id", orderIds);
+        .in("delivery_order_id", orderIds)
+        .is("deleted_at", null);
 
       // Agrupar delivered_quantity de BD por order_id
       const dbDeliveredByOrder = new Map<string, number>();
@@ -519,18 +532,21 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           *,
           customer:customers(id, name, id_number),
           assigned_to_user:profiles(id, full_name, email),
-          items:delivery_order_items!fk_delivery_order_item_order(
+          items:delivery_order_items!fk_delivery_order_item_order!inner(
             id,
             product_id,
             warehouse_id,
             quantity,
             delivered_quantity,
+            deleted_at,
             source_delivery_order_id,
-            product:products(id, name, barcode, sku),
+            product:products!inner(id, name, barcode, sku, deleted_at),
             warehouse:warehouses(id, name)
           )
         `)
         .eq('id', orderId)
+        .is('items.deleted_at', null)
+        .is('items.product.deleted_at', null)
         .single();
 
       if (orderError) {
@@ -603,7 +619,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const customerIdNumber = orderData.customer?.id_number || '';
 
       // Incluir TODOS los items (directos + de órdenes asignadas)
-      const allItems = orderData.items || [];
+      // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
+      const activeItems = (orderData.items || []).filter((item: any) => 
+        !item.deleted_at && 
+        item.product && 
+        !item.product.deleted_at
+      );
 
       const deliveryOrder: DeliveryOrder = {
         id: orderData.id,
@@ -615,7 +636,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         delivery_address: orderData.delivery_address || '',
         notes: orderData.notes || '',
         created_at: orderData.created_at,
-        items: allItems.map((item: any) => {
+        items: activeItems.map((item: any) => {
           const fromExits = registeredByProduct[item.product_id] || 0;
           const fromDB = item.delivered_quantity || 0;
           // Usar el mayor entre el valor de BD y el calculado desde inventory_exits
@@ -1370,13 +1391,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             const { data: orderData } = await supabase
               .from('delivery_orders')
               .select(`
-                items:delivery_order_items(
+                items:delivery_order_items!inner(
                   product_id,
                   quantity,
-                  delivered_quantity
+                  delivered_quantity,
+                  deleted_at
                 )
               `)
               .eq('id', orderIdToRefresh)
+              .is('items.deleted_at', null)
               .single();
 
             const finalCache = { ...updatedCache };

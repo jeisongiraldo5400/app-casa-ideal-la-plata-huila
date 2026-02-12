@@ -115,7 +115,8 @@ export function AllDeliveryOrdersList({
             .select(
               "delivery_order_id, product_id, quantity, delivered_quantity",
             )
-            .in("delivery_order_id", batch);
+            .in("delivery_order_id", batch)
+            .is("deleted_at", null);
 
           if (itemsError) {
             console.error(
