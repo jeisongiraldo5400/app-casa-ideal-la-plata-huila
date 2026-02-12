@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +18,7 @@ export function EntryItemsList() {
 
   const { user } = useAuth();
   const [registeredQuantities, setRegisteredQuantities] = useState<Map<string, number>>(new Map());
+  const isFinalizingRef = useRef(false);
 
   // Función para cargar las cantidades registradas desde inventory_entries
   const loadRegisteredQuantities = useCallback(async () => {
@@ -58,20 +59,31 @@ export function EntryItemsList() {
   }, [loadRegisteredQuantities]);
 
   const handleFinalize = async () => {
-    if (!user) {
-      Alert.alert('Error', 'Usuario no autenticado');
+    // GUARD: Prevenir doble ejecución usando ref (inmune a race conditions de React)
+    if (isFinalizingRef.current) {
+      console.warn('[handleFinalize] Ya se está finalizando, ignorando tap duplicado');
       return;
     }
+    isFinalizingRef.current = true;
 
-    const { error } = await finalizeEntry(user.id);
-    if (error) {
-      Alert.alert('Error', error.message || 'Error al finalizar la entrada');
-    } else {
-      // Recargar las cantidades registradas después de finalizar exitosamente
-      if (purchaseOrderId) {
-        await loadRegisteredQuantities();
+    try {
+      if (!user) {
+        Alert.alert('Error', 'Usuario no autenticado');
+        return;
       }
-      Alert.alert('Éxito', 'Entrada registrada correctamente');
+
+      const { error } = await finalizeEntry(user.id);
+      if (error) {
+        Alert.alert('Error', error.message || 'Error al finalizar la entrada');
+      } else {
+        // Recargar las cantidades registradas después de finalizar exitosamente
+        if (purchaseOrderId) {
+          await loadRegisteredQuantities();
+        }
+        Alert.alert('Éxito', 'Entrada registrada correctamente');
+      }
+    } finally {
+      isFinalizingRef.current = false;
     }
   };
 

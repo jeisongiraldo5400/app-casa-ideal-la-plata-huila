@@ -946,6 +946,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   addProductToEntry: async (product, quantity, barcode) => {
+    // GUARD: Prevenir doble ejecución por doble-tap
+    // Si currentProduct ya fue limpiado por una ejecución previa, ignorar
+    if (!get().currentProduct) {
+      console.warn('[addProductToEntry] currentProduct es null, ignorando llamada duplicada');
+      return;
+    }
+
     const {
       entryItems,
       purchaseOrderId,
@@ -1134,6 +1141,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Finalize entry
   finalizeEntry: async (userId): Promise<{ error: any }> => {
+    // GUARD: Prevenir doble ejecución por doble-tap o race condition
+    // Esto es crítico porque entre el tap del usuario y el re-render de React
+    // que deshabilita el botón, un segundo tap puede disparar otra ejecución
+    if (get().loading) {
+      console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
+      return { error: null };
+    }
+
     const {
       entryItems,
       supplierId,
