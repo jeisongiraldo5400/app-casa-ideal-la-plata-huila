@@ -253,16 +253,19 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             `
             *,
             supplier:suppliers(id, name, nit),
-            items:purchase_order_items(
+            items:purchase_order_items!inner(
               id,
               product_id,
               purchase_order_id,
               quantity,
-              product:products(id, name, barcode, sku)
+              deleted_at,
+              product:products!inner(id, name, barcode, sku, deleted_at)
             )
           `
           )
           .eq("id", purchaseOrderId)
+          .is("items.deleted_at", null)
+          .is("items.product.deleted_at", null)
           .single();
 
         if (orderError) {
@@ -297,14 +300,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           return;
         }
 
-        // Transformar los datos al formato esperado
+        // Transformar los datos al formato esperado con filtrado adicional de seguridad
         purchaseOrder = {
           ...orderData,
           supplier: orderData.supplier as Supplier,
-          items: (orderData.items || []).map((item: any) => ({
-            ...item,
-            product: item.product as Product,
-          })),
+          items: (orderData.items || [])
+            .filter((item: any) => !item.deleted_at && item.product && !item.product.deleted_at)
+            .map((item: any) => ({
+              ...item,
+              product: item.product as Product,
+            })),
         };
       }
 
@@ -479,16 +484,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           .select(
             `
             *,
-            products(*),
+            products!inner(id, name, barcode, sku, deleted_at),
             purchase_order_id
           `
           )
-          .in("purchase_order_id", orderIds);
+          .in("purchase_order_id", orderIds)
+          .is("deleted_at", null)
+          .is("products.deleted_at", null);
 
         if (itemsError) {
           console.error("Error loading purchase order items:", itemsError);
         } else {
-          allItems = itemsData || [];
+          // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
+          allItems = (itemsData || []).filter((item: any) => 
+            !item.deleted_at && 
+            item.products && 
+            !item.products.deleted_at
+          );
         }
       }
 
