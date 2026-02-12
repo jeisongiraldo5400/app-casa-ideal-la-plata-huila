@@ -31,7 +31,8 @@ export function EntryItemsList() {
       const { data: inventoryEntries, error: errorInventoryEntries } = await supabase
         .from('inventory_entries')
         .select('product_id, quantity')
-        .eq('purchase_order_id', purchaseOrderId);
+        .eq('purchase_order_id', purchaseOrderId)
+        .is('deleted_at', null);
 
       if (errorInventoryEntries) {
         console.error('Error loading inventory entries:', errorInventoryEntries);

@@ -75,13 +75,15 @@ export function PurchaseOrderCard({ order, showCreatedBy = true }: PurchaseOrder
             const { data: orderItems } = await supabase
                 .from('purchase_order_items')
                 .select('product_id, quantity')
-                .eq('purchase_order_id', order.id);
+                .eq('purchase_order_id', order.id)
+                .is('deleted_at', null);
 
             // Obtener entradas registradas
             const { data: entries } = await supabase
                 .from('inventory_entries')
                 .select('product_id, quantity')
-                .eq('purchase_order_id', order.id);
+                .eq('purchase_order_id', order.id)
+                .is('deleted_at', null);
 
             // Calcular totales
             const itemsMap: Record<string, { ordered: number; registered: number }> = {};

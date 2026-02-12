@@ -312,7 +312,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const { data: inventoryEntries, error: entriesError } = await supabase
         .from("inventory_entries")
         .select("product_id, quantity")
-        .eq("purchase_order_id", purchaseOrderId);
+        .eq("purchase_order_id", purchaseOrderId)
+        .is("deleted_at", null);
 
       if (entriesError) {
         console.error("Error loading inventory entries:", entriesError);
@@ -548,7 +549,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const { data, error } = await supabase
         .from("inventory_entries")
         .select("product_id, quantity")
-        .eq("purchase_order_id", purchaseOrderId);
+        .eq("purchase_order_id", purchaseOrderId)
+        .is("deleted_at", null);
 
       if (error) {
         console.error("Error validating purchase order progress:", error);
@@ -616,7 +618,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const { data: allEntries, error: entriesError } = await supabase
       .from("inventory_entries")
       .select("purchase_order_id, product_id, quantity")
-      .in("purchase_order_id", orderIds);
+      .in("purchase_order_id", orderIds)
+      .is("deleted_at", null);
 
     if (entriesError) {
       console.error(

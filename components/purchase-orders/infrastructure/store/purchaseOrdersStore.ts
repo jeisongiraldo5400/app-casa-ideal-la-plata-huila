@@ -158,7 +158,8 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
               purchase_order_id
             `,
               )
-              .in("purchase_order_id", batch);
+              .in("purchase_order_id", batch)
+              .is("deleted_at", null);
 
             if (itemsError) {
               console.error(
@@ -288,7 +289,8 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
         const { data: orderItems, error: itemsError } = await supabase
           .from("purchase_order_items")
           .select("product_id, quantity")
-          .eq("purchase_order_id", orderId);
+          .eq("purchase_order_id", orderId)
+          .is("deleted_at", null);
 
         if (itemsError) {
           return {
@@ -308,7 +310,8 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
         const { data: inventoryEntries, error: entriesError } = await supabase
           .from("inventory_entries")
           .select("product_id, quantity")
-          .eq("purchase_order_id", orderId);
+          .eq("purchase_order_id", orderId)
+          .is("deleted_at", null);
 
         if (entriesError) {
           return {

@@ -61,7 +61,8 @@ export function PurchaseOrderProductsModal({
                     quantity,
                     product:products(id, name, sku, barcode)
                 `)
-                .eq('purchase_order_id', orderId);
+                .eq('purchase_order_id', orderId)
+                .is('deleted_at', null);
 
             if (orderError) {
                 console.error('Error loading order items:', orderError);
@@ -74,7 +75,8 @@ export function PurchaseOrderProductsModal({
             const { data: entriesData, error: entriesError } = await supabase
                 .from('inventory_entries')
                 .select('product_id, quantity')
-                .eq('purchase_order_id', orderId);
+                .eq('purchase_order_id', orderId)
+                .is('deleted_at', null);
 
             if (entriesError) {
                 console.error('Error loading inventory entries:', entriesError);
