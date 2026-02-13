@@ -13,8 +13,6 @@ import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 
 export function SetupForm() {
   const {
-    warehouseId,
-    warehouses,
     exitMode,
     selectedUserId,
     selectedCustomerId,
@@ -23,11 +21,9 @@ export function SetupForm() {
     users,
     customers,
     loading,
-    loadWarehouses,
     loadUsers,
     searchCustomers,
     searchDeliveryOrdersByUser,
-    setWarehouse,
     setExitMode,
     setSelectedUser,
     setSelectedCustomer,
@@ -44,9 +40,8 @@ export function SetupForm() {
   const [searchInput, setSearchInput] = useState('');
 
   useEffect(() => {
-    loadWarehouses();
     loadUsers();
-  }, [loadWarehouses, loadUsers]);
+  }, [loadUsers]);
 
   // Limpiar solo el input local cuando el componente se desmonta
   // NO llamar reset() aquí porque se ejecuta al cambiar de step a 'scanning'
@@ -61,7 +56,6 @@ export function SetupForm() {
   useFocusEffect(
     useCallback(() => {
       // Solo refrescar cuando la pantalla recibe foco, no en cada cambio de estado
-      loadWarehouses();
       loadUsers();
       // No refrescar remisiones aquí - ya hay un useEffect separado que lo maneja
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,8 +97,8 @@ export function SetupForm() {
     ? deliveryOrderProgress.items.every(item => item.isComplete)
     : false;
 
+  // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
   const canStart =
-    warehouseId !== null &&
     exitMode !== null &&
     (
       (exitMode === 'direct_user' && selectedUserId !== null && selectedDeliveryOrderId !== null && !isOrderComplete) ||
@@ -158,48 +152,23 @@ export function SetupForm() {
             </View>
           </View>
 
-          {/* Bodega */}
-          <View style={styles.formGroup}>
-            <View style={styles.fieldHeader}>
-              <Text style={[styles.label, { color: Colors.text.primary }]}>Bodega *</Text>
-              <TouchableOpacity
-                onPress={() => loadWarehouses()}
-                style={styles.refreshButton}
-                disabled={loading}>
-                <MaterialIcons
-                  name="refresh"
-                  size={20}
-                  color={loading ? Colors.text.secondary : Colors.primary.main}
-                />
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.pickerContainer, {
-              backgroundColor: Colors.background.paper,
-              borderColor: Colors.divider
+          {/* Bodega - Solo se muestra info cuando hay orden seleccionada */}
+          {selectedDeliveryOrderId && (
+            <View style={[styles.formGroup, {
+              backgroundColor: Colors.primary.light + '15',
+              padding: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: Colors.primary.main + '30',
             }]}>
-              <Picker
-                selectedValue={warehouseId}
-                onValueChange={(value) => setWarehouse(value)}
-                style={[styles.picker, { 
-                  color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
-                  fontWeight: '500'
-                }]}
-                dropdownIconColor={Colors.text.primary}
-                itemStyle={[styles.pickerItem, { 
-                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                }]}>
-                <Picker.Item label="Seleccione una bodega" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                {warehouses.map((warehouse) => (
-                  <Picker.Item
-                    key={warehouse.id}
-                    label={warehouse.name}
-                    value={warehouse.id}
-                    color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-                  />
-                ))}
-              </Picker>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MaterialIcons name="warehouse" size={20} color={Colors.primary.main} />
+                <Text style={[styles.label, { color: Colors.primary.main, flex: 1, marginBottom: 0 }]}>
+                  La bodega se asigna automáticamente desde la orden de entrega
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Campo condicional: Usuario Interno */}
           {exitMode === 'direct_user' && (
@@ -379,7 +348,7 @@ export function SetupForm() {
             <Button
               title="Cancelar"
               onPress={() => {
-                if (warehouseId || exitMode || selectedUserId || selectedCustomerId) {
+                if (exitMode || selectedUserId || selectedCustomerId) {
                   Alert.alert(
                     'Cancelar Configuración',
                     '¿Está seguro que desea cancelar? Se perderán todos los datos configurados.',
