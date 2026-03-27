@@ -4,11 +4,12 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { getColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Picker } from '@react-native-picker/picker';
 import { Formik, FormikHelpers } from 'formik';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Yup from 'yup';
+
+import { EntryOptionPickerField } from './EntryOptionPickerField';
 
 interface ProductFormValues {
   name: string;
@@ -47,7 +48,17 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
+  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [loading, setLoading] = useState(false);
+
+  const categoryOptions = useMemo(
+    () => categories.map((c) => ({ value: c.id, label: c.name })),
+    [categories]
+  );
+  const brandOptions = useMemo(
+    () => brands.map((b) => ({ value: b.id, label: b.name || 'Sin nombre' })),
+    [brands]
+  );
 
   useEffect(() => {
     loadCategories();
@@ -149,29 +160,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 
               <View style={styles.field}>
                 <Text style={[styles.label, { color: Colors.text.primary }]}>Categoría *</Text>
-                <View style={[styles.pickerContainer, {
-                  backgroundColor: Colors.background.paper,
-                  borderColor: Colors.divider
-                }]}>
-                  <Picker
-                    selectedValue={values.category_id}
-                    onValueChange={handleChange('category_id')}
-                    style={[styles.picker, { color: Colors.text.primary }]}
-                    dropdownIconColor={Colors.text.primary}
-                    itemStyle={[styles.pickerItem, { 
-                      color: Colors.text.primary 
-                    }]}>
-                    <Picker.Item label="Seleccione una categoría" value="" color={Colors.text.primary} />
-                    {categories.map((category) => (
-                      <Picker.Item
-                        key={category.id}
-                        label={category.name}
-                        value={category.id}
-                        color={Colors.text.primary}
-                      />
-                    ))}
-                  </Picker>
-                </View>
+                <EntryOptionPickerField
+                  value={values.category_id}
+                  onValueChange={handleChange('category_id')}
+                  options={categoryOptions}
+                  placeholder="Seleccione una categoría"
+                  modalTitle="Categoría"
+                  colors={Colors}
+                  colorScheme={uiColorScheme}
+                />
                 {touched.category_id && errors.category_id && (
                   <Text style={[styles.errorText, { color: Colors.error.main }]}>{errors.category_id}</Text>
                 )}
@@ -179,29 +176,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 
               <View style={styles.field}>
                 <Text style={[styles.label, { color: Colors.text.primary }]}>Marca *</Text>
-                <View style={[styles.pickerContainer, {
-                  backgroundColor: Colors.background.paper,
-                  borderColor: Colors.divider
-                }]}>
-                  <Picker
-                    selectedValue={values.brand_id}
-                    onValueChange={handleChange('brand_id')}
-                    style={[styles.picker, { color: Colors.text.primary }]}
-                    dropdownIconColor={Colors.text.primary}
-                    itemStyle={[styles.pickerItem, { 
-                      color: Colors.text.primary 
-                    }]}>
-                    <Picker.Item label="Seleccione una marca" value="" color={Colors.text.primary} />
-                    {brands.map((brand) => (
-                      <Picker.Item
-                        key={brand.id}
-                        label={brand.name || 'Sin nombre'}
-                        value={brand.id}
-                        color={Colors.text.primary}
-                      />
-                    ))}
-                  </Picker>
-                </View>
+                <EntryOptionPickerField
+                  value={values.brand_id}
+                  onValueChange={handleChange('brand_id')}
+                  options={brandOptions}
+                  placeholder="Seleccione una marca"
+                  modalTitle="Marca"
+                  colors={Colors}
+                  colorScheme={uiColorScheme}
+                />
                 {touched.brand_id && errors.brand_id && (
                   <Text style={[styles.errorText, { color: Colors.error.main }]}>{errors.brand_id}</Text>
                 )}
@@ -265,20 +248,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
-  },
-  pickerContainer: {
-    borderWidth: 1.5,
-    borderRadius: 8,
-    overflow: 'hidden',
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  picker: {
-    height: 56,
-  },
-  pickerItem: {
-    height: 56,
-    fontSize: 16,
   },
   errorText: {
     fontSize: 12,

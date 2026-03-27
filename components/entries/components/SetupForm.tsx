@@ -2,7 +2,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // UI
@@ -13,6 +12,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // Local
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
+import { SupplierPickerField } from './SupplierPickerField';
+import { WarehousePickerField } from './WarehousePickerField';
 
 // Components
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
@@ -43,6 +44,7 @@ export function SetupForm() {
 
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
+  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
 
   useEffect(() => {
     loadSuppliers();
@@ -155,29 +157,13 @@ export function SetupForm() {
             />
           </TouchableOpacity>
         </View>
-        <View style={[styles.pickerContainer, {
-          backgroundColor: Colors.background.paper,
-          borderColor: Colors.divider
-        }]}>
-          <Picker
-            selectedValue={supplierId}
-            onValueChange={(value) => setSupplier(value)}
-            style={[styles.picker, { color: Colors.text.primary }]}
-            dropdownIconColor={Colors.text.primary}
-            itemStyle={[styles.pickerItem, { 
-              color: Colors.text.primary 
-            }]}>
-            <Picker.Item label="Seleccione un proveedor" value={null} color={Colors.text.primary} />
-            {filteredSuppliers.map((supplier) => (
-              <Picker.Item
-                key={supplier.id}
-                label={`${supplier.name || 'Sin nombre'}${supplier.nit ? ` - NIT: ${supplier.nit}` : ''}`}
-                value={supplier.id}
-                color={Colors.text.primary}
-              />
-            ))}
-          </Picker>
-        </View>
+        <SupplierPickerField
+          supplierId={supplierId}
+          suppliers={filteredSuppliers}
+          onSupplierChange={setSupplier}
+          colors={Colors}
+          colorScheme={uiColorScheme}
+        />
       </View>
 
       {(supplierId || entryType === 'ENTRY') && (
@@ -318,29 +304,13 @@ export function SetupForm() {
               />
             </TouchableOpacity>
           </View>
-          <View style={[styles.pickerContainer, {
-            backgroundColor: Colors.background.paper,
-            borderColor: Colors.divider
-          }]}>
-            <Picker
-              selectedValue={warehouseId}
-              onValueChange={(value) => setWarehouse(value)}
-              style={[styles.picker, { color: Colors.text.primary }]}
-              dropdownIconColor={Colors.text.primary}
-              itemStyle={[styles.pickerItem, {
-                color: Colors.text.primary
-              }]}>
-              <Picker.Item label="Seleccione una bodega" value={null} color={Colors.text.primary} />
-              {warehouses.map((warehouse) => (
-                <Picker.Item
-                  key={warehouse.id}
-                  label={warehouse.name}
-                  value={warehouse.id}
-                  color={Colors.text.primary}
-                />
-              ))}
-            </Picker>
-          </View>
+          <WarehousePickerField
+            warehouseId={warehouseId}
+            warehouses={warehouses}
+            onWarehouseChange={setWarehouse}
+            colors={Colors}
+            colorScheme={uiColorScheme}
+          />
         </View>
 
         {/* Nota informativa para OC */}
@@ -489,20 +459,6 @@ const styles = StyleSheet.create({
   refreshText: {
     fontSize: 14,
     fontWeight: '500',
-  },
-  pickerContainer: {
-    borderWidth: 1.5,
-    borderRadius: 8,
-    overflow: 'hidden',
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  picker: {
-    height: 56,
-  },
-  pickerItem: {
-    height: 56,
-    fontSize: 16,
   },
   continueButton: {
     marginTop: 8,
