@@ -1,4 +1,5 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -34,15 +35,16 @@ export function DeliveryOrderProgress() {
         let items = selectedDeliveryOrder.items || [];
 
         const normalizedItems = items.map((item) => {
+            const key = compositeKey(item.product_id, item.warehouse_id);
             const orderQuantity = item.quantity;
             const rawRegistered =
-                registeredExitsCache[selectedDeliveryOrderId]?.[item.product_id] || 0;
+                registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
             const registered = Math.min(rawRegistered, orderQuantity);
             const maxPendingAfterRegistered = Math.max(
                 orderQuantity - registered,
                 0
             );
-            const sessionScannedRaw = scannedItemsMap.get(item.product_id) || 0;
+            const sessionScannedRaw = scannedItemsMap.get(key) || 0;
             const sessionScanned = Math.min(
                 sessionScannedRaw,
                 maxPendingAfterRegistered

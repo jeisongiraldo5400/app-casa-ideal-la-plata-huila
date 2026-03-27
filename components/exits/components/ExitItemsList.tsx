@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function ExitItemsList() {
   const {
@@ -52,7 +52,7 @@ export function ExitItemsList() {
           <Text style={styles.subtitle}>{exitItems.length} producto(s) - {totalItems} unidad(es)</Text>
         </View>
 
-        <ScrollView style={styles.list}>
+        <View style={styles.list}>
           {exitItems.map((item, index) => (
             <View key={index} style={styles.item}>
               <View style={styles.itemHeader}>
@@ -78,7 +78,7 @@ export function ExitItemsList() {
               </View>
             </View>
           ))}
-        </ScrollView>
+        </View>
 
         <Button
           title={`Finalizar Salida (${totalItems} unidades)`}
@@ -112,9 +112,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  list: {
-    maxHeight: 300,
-  },
+  list: {},
   item: {
     padding: 12,
     backgroundColor: Colors.background.default,
