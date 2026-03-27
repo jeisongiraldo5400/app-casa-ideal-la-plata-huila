@@ -48,7 +48,7 @@ Este proyecto utiliza [file-based routing](https://docs.expo.dev/router/introduc
 Para sincronizar los tipos de la base de datos con el cliente de TypeScript, ejecuta el siguiente comando desde la raíz del proyecto:
 
 ```bash
-npx supabase gen types typescript > src/types/database.types.ts
+npx supabase gen types typescript > types/database.types.ts
 ```
 
 Esto crea o actualiza el archivo `src/types/database.types.ts` con los tipos generados automáticamente desde tu base de datos de Supabase.

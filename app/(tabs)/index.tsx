@@ -1,98 +1,404 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useTheme } from '@/components/theme';
+import { getColors } from '@/constants/theme';
+import { useDashboardStats } from '@/hooks/useDashboardStats';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const router = useRouter();
+  const { entriesToday, exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 1000); // Actualizar cada segundo
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDateTime = (date: Date) => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  };
+
+  const handleRegisterEntries = () => {
+    router.push('/(tabs)/entries');
+  };
+
+  const handleRegisterExits = () => {
+    router.push('/(tabs)/exits');
+  };
+
+  const handleViewReceivedOrders = () => {
+    router.push('/(tabs)/received-orders');
+  };
+
+  const handleViewAllOrders = () => {
+    router.push('/(tabs)/all-orders');
+  };
+
+  const handleViewReports = () => {
+    router.push('/(tabs)/reports');
+  };
+
+  return (
+    <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text.primary }]}>Casa Ideal</Text>
+          <Text style={[styles.dateTime, { color: colors.text.secondary }]}>{formatDateTime(currentDateTime)}</Text>
+        </View>
+        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
+      </View>
+
+      <View style={styles.dashboardContainer}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary.main} />
+          </View>
+        ) : (
+          <>
+            <View style={styles.topCardsRow}>
+              {/*<View style={styles.halfWidthCard}>
+                <DashboardCard
+                  title="Salidas Hoy"
+                  value={exitsToday}
+                  subtitle="Productos despachados"
+                  icon="local-shipping"
+                  iconColor={colors.error.main}
+                  trend="down"
+                />
+              </View>
+              <View style={styles.halfWidthCard}>
+                <DashboardCard
+                  title="Entradas Hoy"
+                  value={entriesToday}
+                  subtitle="Productos recibidos"
+                  icon="input"
+                  iconColor={colors.success.main}
+                  trend="up"
+                />
+              </View>*/}
+            </View>
+            <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+              <View style={styles.ordersCardHeader}>
+                <Text style={[styles.ordersCardTitle, { color: colors.text.primary }]}>Órdenes Pendientes</Text>
+                <View style={[styles.ordersCardIconContainer, { backgroundColor: colors.warning.main + '15' }]}>
+                  <MaterialIcons name="pending-actions" size={24} color={colors.warning.main} />
+                </View>
+              </View>
+              <View style={styles.ordersCardContent}>
+                <View style={styles.ordersCardRow}>
+                  <View style={styles.ordersCardItem}>
+                    <Text style={[styles.ordersCardValue, { color: colors.text.primary }]}>{pendingOrders}</Text>
+                    <Text style={[styles.ordersCardLabel, { color: colors.text.secondary }]}>Órdenes de compra</Text>
+                  </View>
+                  <View style={[styles.ordersCardDivider, { backgroundColor: colors.divider }]} />
+                  <View style={styles.ordersCardItem}>
+                    <Text style={[styles.ordersCardValue, { color: colors.text.primary }]}>{pendingDeliveryOrders}</Text>
+                    <Text style={[styles.ordersCardLabel, { color: colors.text.secondary }]}>Órdenes de entrega</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </>
+        )}
+      </View>
+
+      <View style={styles.menuSection}>
+        <View style={styles.menuHeader}>
+          <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
+          <View style={[styles.menuTitleUnderline, { backgroundColor: colors.primary.main }]} />
+        </View>
+
+        <View style={styles.menuGrid}>
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewReports}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
+              <MaterialIcons
+                name="assessment"
+                size={24}
+                color={colors.primary.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Reportes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Análisis
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleRegisterExits}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '12' }]}>
+              <MaterialIcons
+                name="local-shipping"
+                size={24}
+                color={colors.error.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Registrar Salidas
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Despacho
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleRegisterEntries}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '12' }]}>
+              <MaterialIcons
+                name="input"
+                size={24}
+                color={colors.success.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Registrar Entradas
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Ingreso
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewReceivedOrders}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '12' }]}>
+              <MaterialIcons
+                name="receipt-long"
+                size={24}
+                color={colors.warning.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Mis Órdenes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Historial
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={handleViewAllOrders}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
+              <MaterialIcons
+                name="list-alt"
+                size={24}
+                color={colors.info.main}
+              />
+            </View>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
+              Todas las Órdenes
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Gestión
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
+    marginBottom: 32,
+    marginTop: 20,
+  },
   titleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    flex: 1,
+  },
+  dateTime: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+  },
+  button: {
+    marginTop: 8,
+  },
+  menuSection: {
+    marginBottom: 32,
+  },
+  menuHeader: {
+    marginBottom: 20,
+  },
+  menuTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+    letterSpacing: -0.5,
+  },
+  menuTitleUnderline: {
+    height: 3,
+    width: 60,
+    borderRadius: 2,
+    marginLeft: 4,
+  },
+  menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  menuCard: {
+    borderRadius: 16,
+    padding: 16,
+    width: '48%',
+    minHeight: 140,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+  },
+  menuCardIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  menuCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+    letterSpacing: -0.2,
+    lineHeight: 20,
+  },
+  menuCardSubtitle: {
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+  },
+  dashboardContainer: {
+    flexDirection: 'column',
+    marginBottom: 24,
+    gap: 12,
+  },
+  topCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  halfWidthCard: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ordersCard: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 140,
+  },
+  ordersCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  ordersCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  ordersCardIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ordersCardContent: {
+    flex: 1,
+  },
+  ordersCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  ordersCardItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  ordersCardValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  ordersCardLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    textAlign: 'center',
+  },
+  ordersCardDivider: {
+    width: 1,
+    height: 50,
+    marginHorizontal: 12,
   },
 });
