@@ -159,15 +159,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                     style={[styles.picker, { color: Colors.text.primary }]}
                     dropdownIconColor={Colors.text.primary}
                     itemStyle={[styles.pickerItem, { 
-                      color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                      color: Colors.text.primary 
                     }]}>
-                    <Picker.Item label="Seleccione una categoría" value="" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+                    <Picker.Item label="Seleccione una categoría" value="" color={Colors.text.primary} />
                     {categories.map((category) => (
                       <Picker.Item
                         key={category.id}
                         label={category.name}
                         value={category.id}
-                        color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
+                        color={Colors.text.primary}
                       />
                     ))}
                   </Picker>
@@ -189,15 +189,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
                     style={[styles.picker, { color: Colors.text.primary }]}
                     dropdownIconColor={Colors.text.primary}
                     itemStyle={[styles.pickerItem, { 
-                      color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+                      color: Colors.text.primary 
                     }]}>
-                    <Picker.Item label="Seleccione una marca" value="" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+                    <Picker.Item label="Seleccione una marca" value="" color={Colors.text.primary} />
                     {brands.map((brand) => (
                       <Picker.Item
                         key={brand.id}
                         label={brand.name || 'Sin nombre'}
                         value={brand.id}
-                        color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
+                        color={Colors.text.primary}
                       />
                     ))}
                   </Picker>

@@ -1,15 +1,16 @@
-import { useExitsStore, type ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
+import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
+import { ExitModePickerField } from './ExitModePickerField';
+import { UserSelectField } from './UserSelectField';
 
 export function SetupForm() {
   const {
@@ -37,6 +38,7 @@ export function SetupForm() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
+  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
 
   useEffect(() => {
@@ -84,12 +86,7 @@ export function SetupForm() {
     }
   }, [customers.length, loading, searchInput.length]);
 
-  // Buscar remisiones cuando se selecciona un usuario
-  useEffect(() => {
-    if (exitMode === 'direct_user' && selectedUserId) {
-      searchDeliveryOrdersByUser(selectedUserId);
-    }
-  }, [exitMode, selectedUserId, searchDeliveryOrdersByUser]);
+  // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
   // Verificar si la orden está completa
   const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
@@ -130,26 +127,12 @@ export function SetupForm() {
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
             <Text style={[styles.label, { color: Colors.text.primary }]}>Tipo de Salida *</Text>
-            <View style={[styles.pickerContainer, {
-              backgroundColor: Colors.background.paper,
-              borderColor: Colors.divider
-            }]}>
-              <Picker
-                selectedValue={exitMode}
-                onValueChange={(value) => setExitMode(value as ExitMode)}
-                style={[styles.picker, { 
-                  color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
-                  fontWeight: '500'
-                }]}
-                dropdownIconColor={Colors.text.primary}
-                itemStyle={[styles.pickerItem, { 
-                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                }]}>
-                <Picker.Item label="Seleccione el tipo de salida" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                <Picker.Item label="Remisión" value="direct_user" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                <Picker.Item label="Entrega a Cliente" value="direct_customer" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-              </Picker>
-            </View>
+            <ExitModePickerField
+              exitMode={exitMode}
+              onExitModeChange={setExitMode}
+              colors={Colors}
+              colorScheme={uiColorScheme}
+            />
           </View>
 
           {/* Bodega - Solo se muestra info cuando hay orden seleccionada */}
@@ -186,32 +169,13 @@ export function SetupForm() {
                   />
                 </TouchableOpacity>
               </View>
-              <View style={[styles.pickerContainer, {
-                backgroundColor: Colors.background.paper,
-                borderColor: Colors.divider
-              }]}>
-                <Picker
-                  selectedValue={selectedUserId}
-                  onValueChange={(value) => setSelectedUser(value)}
-                  style={[styles.picker, { 
-                    color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
-                    fontWeight: '500'
-                  }]}
-                  dropdownIconColor={Colors.text.primary}
-                  itemStyle={[styles.pickerItem, { 
-                    color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                  }]}>
-                  <Picker.Item label="Seleccione un usuario" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                  {users.map((user) => (
-                    <Picker.Item
-                      key={user.id}
-                      label={user.full_name || user.email || 'Usuario sin nombre'}
-                      value={user.id}
-                      color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-                    />
-                  ))}
-                </Picker>
-              </View>
+              <UserSelectField
+                users={users}
+                selectedUserId={selectedUserId}
+                onUserChange={setSelectedUser}
+                colors={Colors}
+                colorScheme={uiColorScheme}
+              />
             </View>
           )}
 
@@ -436,17 +400,6 @@ const styles = StyleSheet.create({
   refreshText: {
     fontSize: 14,
     fontWeight: '500',
-  },
-  pickerContainer: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  picker: {
-    height: 52,
-  },
-  pickerItem: {
-    fontSize: 16,
   },
   input: {
     borderWidth: 1.5,

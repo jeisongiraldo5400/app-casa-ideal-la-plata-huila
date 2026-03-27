@@ -165,15 +165,15 @@ export function SetupForm() {
             style={[styles.picker, { color: Colors.text.primary }]}
             dropdownIconColor={Colors.text.primary}
             itemStyle={[styles.pickerItem, { 
-              color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+              color: Colors.text.primary 
             }]}>
-            <Picker.Item label="Seleccione un proveedor" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+            <Picker.Item label="Seleccione un proveedor" value={null} color={Colors.text.primary} />
             {filteredSuppliers.map((supplier) => (
               <Picker.Item
                 key={supplier.id}
                 label={`${supplier.name || 'Sin nombre'}${supplier.nit ? ` - NIT: ${supplier.nit}` : ''}`}
                 value={supplier.id}
-                color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
+                color={Colors.text.primary}
               />
             ))}
           </Picker>
@@ -328,15 +328,15 @@ export function SetupForm() {
               style={[styles.picker, { color: Colors.text.primary }]}
               dropdownIconColor={Colors.text.primary}
               itemStyle={[styles.pickerItem, {
-                color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary
+                color: Colors.text.primary
               }]}>
-              <Picker.Item label="Seleccione una bodega" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+              <Picker.Item label="Seleccione una bodega" value={null} color={Colors.text.primary} />
               {warehouses.map((warehouse) => (
                 <Picker.Item
                   key={warehouse.id}
                   label={warehouse.name}
                   value={warehouse.id}
-                  color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
+                  color={Colors.text.primary}
                 />
               ))}
             </Picker>

@@ -33,15 +33,15 @@ export function WarehouseFilter() {
           style={[styles.picker, { color: Colors.text.primary }]}
           dropdownIconColor={Colors.text.primary}
           itemStyle={[styles.pickerItem, { 
-            color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
+            color: Colors.text.primary 
           }]}>
-          <Picker.Item label="Todas las bodegas" value="all" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
+          <Picker.Item label="Todas las bodegas" value="all" color={Colors.text.primary} />
           {warehouses.map((warehouse) => (
             <Picker.Item
               key={warehouse.id}
               label={warehouse.name}
               value={warehouse.id}
-              color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
+              color={Colors.text.primary}
             />
           ))}
         </Picker>
