@@ -59,6 +59,107 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 
+CREATE OR REPLACE FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") RETURNS json
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    v_current_user_id   UUID;
+    v_previous_quantity NUMERIC(12,2);
+    v_log_id            UUID;
+BEGIN
+    -- Obtener el usuario autenticado actual
+    v_current_user_id := auth.uid();
+
+    -- Validar cantidad >= 0
+    IF p_new_quantity < 0 THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'La cantidad no puede ser negativa'
+        );
+    END IF;
+
+    -- Validar longitud mínima del motivo
+    IF p_reason IS NULL OR length(trim(p_reason)) < 10 THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'El motivo debe tener al menos 10 caracteres'
+        );
+    END IF;
+
+    -- Validar longitud máxima del motivo
+    IF length(trim(p_reason)) > 500 THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'El motivo no puede exceder 500 caracteres'
+        );
+    END IF;
+
+    -- Bloquear la fila de warehouse_stock y leer la cantidad actual
+    -- FOR UPDATE previene condiciones de carrera en ajustes simultáneos
+    SELECT quantity
+    INTO v_previous_quantity
+    FROM public.warehouse_stock
+    WHERE product_id = p_product_id
+      AND warehouse_id = p_warehouse_id
+    FOR UPDATE;
+
+    -- Si no existe fila, tratar la cantidad anterior como 0
+    IF v_previous_quantity IS NULL THEN
+        v_previous_quantity := 0;
+    END IF;
+
+    -- Establecer la nueva cantidad (UPSERT)
+    INSERT INTO public.warehouse_stock (product_id, warehouse_id, quantity, updated_at)
+    VALUES (p_product_id, p_warehouse_id, p_new_quantity, NOW())
+    ON CONFLICT (product_id, warehouse_id)
+    DO UPDATE SET
+        quantity   = p_new_quantity,
+        updated_at = NOW();
+
+    -- Registrar el ajuste en el log de auditoría
+    INSERT INTO public.stock_adjustment_logs (
+        product_id,
+        warehouse_id,
+        previous_quantity,
+        new_quantity,
+        reason,
+        created_by
+    )
+    VALUES (
+        p_product_id,
+        p_warehouse_id,
+        v_previous_quantity,
+        p_new_quantity,
+        trim(p_reason),
+        v_current_user_id
+    )
+    RETURNING id INTO v_log_id;
+
+    RETURN json_build_object(
+        'success',           true,
+        'message',           'Ajuste de stock realizado exitosamente',
+        'log_id',            v_log_id,
+        'previous_quantity', v_previous_quantity,
+        'new_quantity',      p_new_quantity
+    );
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', format('Error al ajustar el stock: %s', SQLERRM)
+        );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") IS 'Actualiza atómicamente warehouse_stock.quantity para un par producto+bodega y registra el cambio en stock_adjustment_logs. Usa SELECT FOR UPDATE para prevenir race conditions. Retorna JSON con success, message, log_id, previous_quantity y new_quantity.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uuid", "p_order_ids" "uuid"[]) RETURNS TABLE("order_id" "uuid", "success" boolean, "error_message" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -180,6 +281,35 @@ ALTER FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uui
 
 
 COMMENT ON FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uuid", "p_order_ids" "uuid"[]) IS 'Asigna múltiples órdenes de entrega a una remisión en una sola transacción. Valida la remisión una vez y procesa cada orden individualmente, retornando el resultado de cada asignación. Optimizado para reducir N+1 queries.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone DEFAULT "now"()) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  -- Update order status to cancelled
+  UPDATE public.delivery_orders
+  SET
+    status     = 'cancelled',
+    updated_at = p_cancelled_at
+  WHERE id = p_order_id;
+
+  -- Soft-delete all active items of the order.
+  -- The trigger fn_revert_stock_on_delivery_order_item_soft_delete
+  -- will automatically restore the reserved warehouse stock for each item.
+  UPDATE public.delivery_order_items
+  SET deleted_at = p_cancelled_at
+  WHERE delivery_order_id = p_order_id
+    AND deleted_at IS NULL;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone) IS 'Atomically cancels a delivery order and soft-deletes all its active items in a single transaction. Stock restoration is handled automatically by the fn_revert_stock_on_delivery_order_item_soft_delete trigger.';
 
 
 
@@ -561,6 +691,23 @@ COMMENT ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() IS 
 
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  UPDATE public.inventory_entries
+  SET deleted_at = NOW()
+  WHERE id = NEW.inventory_entry_id
+    AND deleted_at IS NULL;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_log_delivery_order_delivered"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -595,6 +742,50 @@ ALTER FUNCTION "public"."fn_log_delivery_order_delivered"() OWNER TO "postgres";
 
 COMMENT ON FUNCTION "public"."fn_log_delivery_order_delivered"() IS 'Registra automáticamente en el historial cuando una orden cambia a estado delivered desde la app móvil';
 
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_process_delivery_order_return"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  new_entry_id UUID;
+BEGIN
+  -- Create inventory entry; entry_type != 'return' so fn_update_stock_on_entry
+  -- will add to warehouse_stock via its existing trigger.
+  INSERT INTO public.inventory_entries (
+    product_id,
+    warehouse_id,
+    quantity,
+    entry_type,
+    created_by
+  ) VALUES (
+    NEW.product_id,
+    NEW.warehouse_id,
+    NEW.quantity,
+    'delivery_return',
+    NEW.created_by
+  )
+  RETURNING id INTO new_entry_id;
+
+  -- Link the new inventory entry back to this return record.
+  UPDATE public.delivery_order_returns
+  SET inventory_entry_id = new_entry_id
+  WHERE id = NEW.id;
+
+  -- Reduce delivered_quantity on the matching DOI (product came back to warehouse).
+  UPDATE public.delivery_order_items
+  SET delivered_quantity = GREATEST(0, delivered_quantity - NEW.quantity)
+  WHERE delivery_order_id = NEW.delivery_order_id
+    AND product_id = NEW.product_id
+    AND warehouse_id = NEW.warehouse_id
+    AND deleted_at IS NULL;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_process_delivery_order_return"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_reserve_stock_on_delivery_order_item"() RETURNS "trigger"
@@ -764,6 +955,60 @@ ALTER FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"() O
 
 COMMENT ON FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"() IS 'Reverts warehouse stock when a delivery order item is soft-deleted (deleted_at set). Skips items with source_delivery_order_id. Only reverts reserved stock (qty - delivered).';
 
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  exit_record RECORD;
+  doi_record  RECORD;
+BEGIN
+  SELECT product_id, warehouse_id, quantity, delivery_order_id
+  INTO exit_record
+  FROM public.inventory_exits
+  WHERE id = NEW.inventory_exit_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF exit_record.delivery_order_id IS NULL THEN
+    -- Direct exit: always restore warehouse_stock
+    INSERT INTO public.warehouse_stock (product_id, warehouse_id, quantity, updated_at)
+    VALUES (exit_record.product_id, exit_record.warehouse_id, exit_record.quantity, NOW())
+    ON CONFLICT (product_id, warehouse_id)
+    DO UPDATE SET
+        quantity = warehouse_stock.quantity + EXCLUDED.quantity,
+        updated_at = NOW();
+
+  ELSE
+    -- Order exit: check if delivered_quantity was already updated (Scenario B)
+    SELECT * INTO doi_record
+    FROM public.delivery_order_items
+    WHERE delivery_order_id = exit_record.delivery_order_id
+      AND product_id = exit_record.product_id
+      AND warehouse_id = exit_record.warehouse_id
+      AND deleted_at IS NULL
+    LIMIT 1;
+
+    IF FOUND AND doi_record.delivered_quantity >= exit_record.quantity THEN
+      -- Scenario B: exit did decrease warehouse_stock; revert delivered_quantity.
+      -- warehouse_stock adjustment is handled by the DOI update trigger.
+      UPDATE public.delivery_order_items
+      SET delivered_quantity = GREATEST(0, delivered_quantity - exit_record.quantity)
+      WHERE id = doi_record.id;
+    END IF;
+    -- Scenario A (delivered_quantity < exit.quantity): exit was skipped by the
+    -- original trigger; DOI reservation still holds → no direct warehouse_stock change.
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_revert_stock_on_inventory_entry_soft_delete"() RETURNS "trigger"
@@ -1725,6 +1970,128 @@ COMMENT ON FUNCTION "public"."get_customers_stats"() IS 'Calcula estadísticas g
 
 
 
+CREATE OR REPLACE FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text" DEFAULT ''::"text", "page" integer DEFAULT 1, "page_size" integer DEFAULT 50, "order_type_filter" "text" DEFAULT 'all'::"text", "status_filter" "text" DEFAULT 'all'::"text", "start_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone, "end_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE("id" "uuid", "order_type" "text", "customer_id" "uuid", "assigned_to_user_id" "uuid", "order_number" "text", "status" "text", "notes" "text", "delivery_address" "text", "created_at" timestamp with time zone, "zone_id" "uuid", "zone_name" "text", "customer_name" "text", "assigned_user_name" "text", "pickup_assigned_user_id" "uuid", "pickup_assigned_user_name" "text", "total_items" bigint, "total_quantity" numeric, "delivered_quantity" numeric, "total_count" bigint)
+    LANGUAGE "plpgsql" STABLE
+    AS $$
+DECLARE
+  _limit  integer := GREATEST(COALESCE(page_size, 50), 1);
+  _offset integer := GREATEST((COALESCE(page, 1) - 1) * _limit, 0);
+  _search text    := COALESCE(LOWER(TRIM(search_term)), '');
+  _otf    text    := COALESCE(NULLIF(LOWER(TRIM(order_type_filter)), ''), 'all');
+  _sf     text    := COALESCE(NULLIF(LOWER(TRIM(status_filter)), ''), 'all');
+BEGIN
+  RETURN QUERY
+  WITH pickup_agg AS (
+    -- Agrega todos los usuarios activos de retiro por orden en un solo string y
+    -- expone el UUID del primero (para compatibilidad con el campo pickup_assigned_user_id).
+    SELECT
+      pua.delivery_order_id,
+      (ARRAY_AGG(pp.id ORDER BY pua.created_at))[1]                          AS first_user_id,
+      STRING_AGG(pp.full_name, ', ' ORDER BY pua.created_at)                 AS all_user_names
+    FROM public.delivery_order_pickup_assignments pua
+    JOIN public.profiles pp ON pp.id = pua.user_id
+    WHERE pua.deleted_at IS NULL
+    GROUP BY pua.delivery_order_id
+  ),
+  filtered AS (
+    SELECT
+      dord.id,
+      dord.order_type,
+      dord.customer_id,
+      dord.assigned_to_user_id,
+      dord.order_number,
+      dord.status,
+      dord.notes,
+      dord.delivery_address,
+      dord.created_at,
+      dord.zone_id,
+      z.name          AS zone_name,
+      c.name          AS customer_name,
+      pa.full_name    AS assigned_user_name,
+      pagg.first_user_id    AS pickup_assigned_user_id,
+      pagg.all_user_names   AS pickup_assigned_user_name
+    FROM public.delivery_orders dord
+    LEFT JOIN public.customers c   ON c.id  = dord.customer_id
+    LEFT JOIN public.profiles  pa  ON pa.id = dord.assigned_to_user_id
+    LEFT JOIN public.zones     z   ON z.id  = dord.zone_id
+    LEFT JOIN pickup_agg pagg      ON pagg.delivery_order_id = dord.id
+    WHERE dord.deleted_at IS NULL
+      AND (_otf = 'all' OR dord.order_type = _otf)
+      AND (_sf  = 'all' OR dord.status     = _sf)
+      AND (start_ts IS NULL OR dord.created_at >= start_ts)
+      AND (end_ts   IS NULL OR dord.created_at <= end_ts)
+      AND (
+        _search = ''
+        OR dord.order_number ILIKE '%' || _search || '%'
+        OR dord.id::text     ILIKE '%' || _search || '%'
+        OR LOWER(COALESCE(c.name,           ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(c.id_number,      ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(pa.full_name,     ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(pa.email,         ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(pagg.all_user_names, ''::text)) LIKE '%' || _search || '%'
+      )
+  ),
+  items_agg AS (
+    SELECT
+      doi.delivery_order_id,
+      COUNT(*)::bigint     AS total_items,
+      SUM(doi.quantity)    AS total_quantity,
+      SUM(doi.delivered_quantity) AS delivered_quantity
+    FROM public.delivery_order_items doi
+    WHERE doi.deleted_at IS NULL
+    GROUP BY doi.delivery_order_id
+  ),
+  enriched AS (
+    SELECT
+      f.*,
+      COALESCE(ia.total_items,        0)::bigint  AS total_items,
+      COALESCE(ia.total_quantity,     0)::numeric AS total_quantity,
+      COALESCE(ia.delivered_quantity, 0)::numeric AS delivered_quantity
+    FROM filtered f
+    LEFT JOIN items_agg ia ON ia.delivery_order_id = f.id
+  ),
+  numbered AS (
+    SELECT
+      e.*,
+      COUNT(*) OVER ()                              AS total_count,
+      ROW_NUMBER() OVER (ORDER BY e.created_at DESC) AS row_number
+    FROM enriched e
+  )
+  SELECT
+    n.id,
+    n.order_type::text,
+    n.customer_id,
+    n.assigned_to_user_id,
+    n.order_number::text,
+    n.status::text,
+    n.notes::text,
+    n.delivery_address::text,
+    n.created_at,
+    n.zone_id,
+    n.zone_name::text,
+    n.customer_name::text,
+    n.assigned_user_name::text,
+    n.pickup_assigned_user_id,
+    n.pickup_assigned_user_name::text,
+    n.total_items,
+    n.total_quantity,
+    n.delivered_quantity,
+    n.total_count
+  FROM numbered n
+  WHERE n.row_number > _offset
+  ORDER BY n.row_number
+  LIMIT _limit;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) IS 'Listado paginado de órdenes de entrega (admin) con filtros, búsqueda y usuarios autorizados de retiro (múltiples, concatenados).';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."get_delivery_orders_dashboard"("search_term" "text" DEFAULT ''::"text", "page" integer DEFAULT 1, "page_size" integer DEFAULT 5) RETURNS TABLE("id" "uuid", "customer_id" "uuid", "customer_name" "text", "customer_id_number" "text", "status" "text", "notes" "text", "delivery_address" "text", "created_at" timestamp with time zone, "created_by" "uuid", "created_by_name" "text", "total_items" bigint, "total_quantity" numeric, "delivered_items" bigint, "delivered_quantity" numeric, "items" "jsonb", "total_count" bigint)
     LANGUAGE "plpgsql" STABLE
     AS $$
@@ -2489,7 +2856,7 @@ BEGIN
 
     -- Si no se especifican tipos, incluir todos
     IF p_movement_types IS NULL OR array_length(p_movement_types, 1) IS NULL THEN
-        _types := ARRAY['entry', 'exit', 'return', 'transfer', 'entry_cancellation', 'exit_cancellation'];
+        _types := ARRAY['entry', 'exit', 'return', 'transfer', 'entry_cancellation', 'exit_cancellation', 'reserved'];
     ELSE
         _types := p_movement_types;
     END IF;
@@ -2662,6 +3029,44 @@ BEGIN
         WHERE iex.product_id = p_product_id
           AND 'exit_cancellation' = ANY(_types)
           AND iecx.deleted_at IS NULL
+
+        UNION ALL
+
+        -- 7. Separados: DOI activos sin inventory_exit registrado
+        SELECT
+            doi.id,
+            'reserved'::text AS movement_type,
+            doi.created_at AS movement_date,
+            'Separado en orden de entrega' AS description,
+            (doi.quantity - COALESCE(doi.delivered_quantity, 0))::numeric AS quantity,
+            w.name AS warehouse_name,
+            NULL::text AS secondary_warehouse_name,
+            pr.full_name AS user_name,
+            doi.delivery_order_id AS related_order_id,
+            'delivery_order'::text AS related_order_type,
+            dord.order_number AS related_order_number,
+            NULL::text AS observations,
+            false AS is_cancelled
+        FROM public.delivery_order_items doi
+        JOIN public.delivery_orders dord ON dord.id = doi.delivery_order_id
+        LEFT JOIN public.warehouses w ON w.id = doi.warehouse_id
+        LEFT JOIN public.profiles pr ON pr.id = dord.created_by
+        WHERE doi.product_id = p_product_id
+          AND doi.deleted_at IS NULL
+          AND dord.deleted_at IS NULL
+          AND doi.source_delivery_order_id IS NULL
+          AND (doi.quantity - COALESCE(doi.delivered_quantity, 0)) > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_exits iex
+              WHERE iex.delivery_order_id = doi.delivery_order_id
+                AND iex.product_id = doi.product_id
+                AND iex.warehouse_id = doi.warehouse_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM public.inventory_exit_cancellations iec
+                    WHERE iec.inventory_exit_id = iex.id AND iec.deleted_at IS NULL
+                )
+          )
+          AND 'reserved' = ANY(_types)
     ),
     filtered_movements AS (
         SELECT am.*
@@ -2699,7 +3104,7 @@ COMMENT ON FUNCTION "public"."get_product_movement_timeline"("p_product_id" "uui
 
 
 
-CREATE OR REPLACE FUNCTION "public"."get_product_timeline_summary"("p_product_id" "uuid") RETURNS TABLE("product_name" "text", "product_sku" "text", "product_barcode" "text", "total_entries" bigint, "total_exits" bigint, "total_returns" bigint, "total_transfers" bigint, "total_cancellations" bigint, "current_stock" "jsonb")
+CREATE OR REPLACE FUNCTION "public"."get_product_timeline_summary"("p_product_id" "uuid") RETURNS TABLE("product_name" "text", "product_sku" "text", "product_barcode" "text", "total_entries" bigint, "total_exits" bigint, "total_returns" bigint, "total_transfers" bigint, "total_cancellations" bigint, "total_reserved" bigint, "current_stock" "jsonb")
     LANGUAGE "plpgsql" STABLE
     AS $$
 BEGIN
@@ -2736,6 +3141,26 @@ BEGIN
              WHERE iex.product_id = p_product_id AND iecx.deleted_at IS NULL)
         ) AS cnt
     ),
+    reserved_stats AS (
+        SELECT COUNT(*) AS cnt
+        FROM public.delivery_order_items doi
+        JOIN public.delivery_orders dord ON dord.id = doi.delivery_order_id
+        WHERE doi.product_id = p_product_id
+          AND doi.deleted_at IS NULL
+          AND dord.deleted_at IS NULL
+          AND doi.source_delivery_order_id IS NULL
+          AND (doi.quantity - COALESCE(doi.delivered_quantity, 0)) > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_exits iex
+              WHERE iex.delivery_order_id = doi.delivery_order_id
+                AND iex.product_id = doi.product_id
+                AND iex.warehouse_id = doi.warehouse_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM public.inventory_exit_cancellations iec
+                    WHERE iec.inventory_exit_id = iex.id AND iec.deleted_at IS NULL
+                )
+          )
+    ),
     stock_by_warehouse AS (
         SELECT jsonb_agg(
             jsonb_build_object(
@@ -2757,6 +3182,7 @@ BEGIN
         rs.cnt AS total_returns,
         ts.cnt AS total_transfers,
         cs.cnt AS total_cancellations,
+        rs2.cnt AS total_reserved,
         COALESCE(sbw.stock, '[]'::jsonb) AS current_stock
     FROM public.products p
     CROSS JOIN entry_stats es
@@ -2764,6 +3190,7 @@ BEGIN
     CROSS JOIN return_stats rs
     CROSS JOIN transfer_stats ts
     CROSS JOIN cancellation_stats cs
+    CROSS JOIN reserved_stats rs2
     CROSS JOIN stock_by_warehouse sbw
     WHERE p.id = p_product_id
       AND p.deleted_at IS NULL;
@@ -2772,10 +3199,6 @@ $$;
 
 
 ALTER FUNCTION "public"."get_product_timeline_summary"("p_product_id" "uuid") OWNER TO "postgres";
-
-
-COMMENT ON FUNCTION "public"."get_product_timeline_summary"("p_product_id" "uuid") IS 'Retorna resumen estadístico de un producto: totales de entradas, salidas, devoluciones, transferencias, cancelaciones y stock actual por bodega.';
-
 
 
 CREATE OR REPLACE FUNCTION "public"."get_product_traceability"("product_ids" "uuid"[] DEFAULT NULL::"uuid"[], "search_term" "text" DEFAULT NULL::"text", "products_limit" integer DEFAULT 5, "events_limit" integer DEFAULT 5) RETURNS TABLE("product_id" "uuid", "product_name" "text", "product_sku" "text", "product_barcode" "text", "events" "jsonb")
@@ -2968,7 +3391,7 @@ BEGIN
             f.color_id,
             f.color_name,
             COALESCE(
-                SUM(ws.quantity) FILTER (WHERE w.is_active AND ws.quantity > 0)::numeric,
+                SUM(ws.quantity) FILTER (WHERE ws.quantity > 0)::numeric,
                 0::numeric
             ) AS total_stock,
             COALESCE(
@@ -2978,7 +3401,7 @@ BEGIN
                         'warehouseName', w.name,
                         'quantity', ws.quantity
                     )
-                ) FILTER (WHERE w.is_active AND ws.quantity > 0),
+                ) FILTER (WHERE ws.quantity > 0),
                 '[]'::jsonb
             ) AS stock_by_warehouse
         FROM filtered f
@@ -3173,6 +3596,57 @@ ALTER FUNCTION "public"."get_products_stats"() OWNER TO "postgres";
 
 
 COMMENT ON FUNCTION "public"."get_products_stats"() IS 'Retorna totales globales del módulo de productos sin traer todas las filas.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text" DEFAULT ''::"text") RETURNS TABLE("product_id" "uuid", "product_name" "text", "product_sku" "text", "product_barcode" "text", "stock_by_warehouse" "jsonb")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    AS $$
+DECLARE
+    _search text := COALESCE(TRIM(search_term), '');
+BEGIN
+    RETURN QUERY
+    SELECT
+        p.id                                AS product_id,
+        p.name                              AS product_name,
+        COALESCE(p.sku, '')                 AS product_sku,
+        COALESCE(p.barcode, '')             AS product_barcode,
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'warehouseId',   ws.warehouse_id,
+                    'warehouseName', w.name,
+                    'quantity',      ws.quantity
+                )
+                ORDER BY w.name
+            ) FILTER (WHERE ws.quantity > 0 AND w.is_active = true),
+            '[]'::jsonb
+        )                                   AS stock_by_warehouse
+    FROM public.products p
+    LEFT JOIN public.warehouse_stock ws ON ws.product_id = p.id
+    LEFT JOIN public.warehouses w       ON w.id = ws.warehouse_id
+    WHERE p.deleted_at IS NULL
+      AND (
+            _search = ''
+            OR p.name    ILIKE '%' || _search || '%'
+            OR p.sku     ILIKE '%' || _search || '%'
+            OR p.barcode ILIKE '%' || _search || '%'
+          )
+    GROUP BY p.id, p.name, p.sku, p.barcode
+    HAVING
+        COALESCE(
+            SUM(ws.quantity) FILTER (WHERE ws.quantity > 0 AND w.is_active = true),
+            0
+        ) > 0
+    ORDER BY p.name;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text") IS 'Devuelve productos que tienen stock > 0 en al menos una bodega activa, con detalle de stock por bodega. Filtra por nombre, SKU o código de barras. No usa status del producto como criterio — el stock real es suficiente.';
 
 
 
@@ -3656,6 +4130,265 @@ COMMENT ON FUNCTION "public"."get_returns_dashboard"("search_term" "text", "page
 
 
 
+CREATE OR REPLACE FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") RETURNS TABLE("warehouse_id" "uuid", "warehouse_name" "text", "available_quantity" integer)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        w.id                    AS warehouse_id,
+        w.name                  AS warehouse_name,
+        ws.quantity::integer    AS available_quantity
+    FROM public.warehouse_stock ws
+    JOIN public.warehouses w ON w.id = ws.warehouse_id
+    WHERE ws.product_id  = p_product_id
+      AND ws.quantity    > 0
+      AND w.is_active    = true
+      AND w.deleted_at   IS NULL
+    ORDER BY w.name;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") IS 'Dado un producto, devuelve las bodegas activas donde tiene stock disponible (quantity > 0).
+Usado en el paso 2 del flujo de creación de órdenes de entrega.
+Exclusivo para el módulo de órdenes de entrega.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."get_stock_validation"("p_search_term" "text" DEFAULT ''::"text", "p_page" integer DEFAULT 1, "p_page_size" integer DEFAULT 50) RETURNS TABLE("product_id" "uuid", "producto" "text", "sku" "text", "codigo_barras" "text", "estado_producto" "text", "bodega_id" "uuid", "bodega" "text", "entradas_validas" numeric, "salidas_directas" numeric, "salidas_ordenes_entrega" numeric, "reservado_sin_exit" numeric, "transferencias_entrada" numeric, "transferencias_salida" numeric, "stock_teorico" numeric, "stock_actual" numeric, "diferencia" numeric, "diagnostico" "text", "total_count" bigint)
+    LANGUAGE "plpgsql" STABLE
+    AS $$
+#variable_conflict use_column
+BEGIN
+    RETURN QUERY
+    WITH entradas AS (
+        -- Valid inventory entries (not soft-deleted, not cancelled)
+        SELECT
+            ie.product_id,
+            ie.warehouse_id,
+            COALESCE(SUM(ie.quantity), 0) AS total_entradas
+        FROM public.inventory_entries ie
+        WHERE ie.deleted_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_entry_cancellations iec
+              WHERE iec.inventory_entry_id = ie.id
+                AND iec.deleted_at IS NULL
+          )
+        GROUP BY ie.product_id, ie.warehouse_id
+    ),
+    salidas_directas AS (
+        -- Direct exits (not linked to a delivery order, not cancelled)
+        SELECT
+            iex.product_id,
+            iex.warehouse_id,
+            COALESCE(SUM(iex.quantity), 0) AS total_salidas_directas
+        FROM public.inventory_exits iex
+        WHERE iex.delivery_order_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_exit_cancellations iec
+              WHERE iec.inventory_exit_id = iex.id
+                AND iec.deleted_at IS NULL
+          )
+        GROUP BY iex.product_id, iex.warehouse_id
+    ),
+    salidas_ordenes AS (
+        -- Exits linked to delivery orders, not cancelled
+        SELECT
+            iex.product_id,
+            iex.warehouse_id,
+            COALESCE(SUM(iex.quantity), 0) AS total_salidas_ordenes
+        FROM public.inventory_exits iex
+        WHERE iex.delivery_order_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_exit_cancellations iec
+              WHERE iec.inventory_exit_id = iex.id
+                AND iec.deleted_at IS NULL
+          )
+        GROUP BY iex.product_id, iex.warehouse_id
+    ),
+    reservas_doi AS (
+        -- Items reserved in delivery orders but without a corresponding exit yet
+        SELECT
+            doi.product_id,
+            doi.warehouse_id,
+            COALESCE(SUM(doi.quantity - COALESCE(doi.delivered_quantity, 0)), 0) AS total_reservado
+        FROM public.delivery_order_items doi
+        JOIN public.delivery_orders dord ON dord.id = doi.delivery_order_id
+        WHERE doi.deleted_at IS NULL
+          AND dord.deleted_at IS NULL
+          AND doi.source_delivery_order_id IS NULL
+          AND (doi.quantity - COALESCE(doi.delivered_quantity, 0)) > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM public.inventory_exits iex
+              WHERE iex.delivery_order_id = doi.delivery_order_id
+                AND iex.product_id = doi.product_id
+                AND iex.warehouse_id = doi.warehouse_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM public.inventory_exit_cancellations iec
+                    WHERE iec.inventory_exit_id = iex.id
+                      AND iec.deleted_at IS NULL
+                )
+          )
+        GROUP BY doi.product_id, doi.warehouse_id
+    ),
+    transferencias_entrada AS (
+        -- Incoming stock transfers by destination warehouse
+        SELECT
+            st.product_id,
+            st.destination_warehouse_id AS warehouse_id,
+            COALESCE(SUM(st.quantity), 0)::numeric AS total_transferencias_entrada
+        FROM public.stock_transfers st
+        GROUP BY st.product_id, st.destination_warehouse_id
+    ),
+    transferencias_salida AS (
+        -- Outgoing stock transfers by source warehouse
+        SELECT
+            st.product_id,
+            st.source_warehouse_id AS warehouse_id,
+            COALESCE(SUM(st.quantity), 0)::numeric AS total_transferencias_salida
+        FROM public.stock_transfers st
+        GROUP BY st.product_id, st.source_warehouse_id
+    ),
+    todos_pares AS (
+        -- All unique product-warehouse combinations from any movement source
+        SELECT product_id, warehouse_id FROM entradas
+        UNION
+        SELECT product_id, warehouse_id FROM salidas_directas
+        UNION
+        SELECT product_id, warehouse_id FROM salidas_ordenes
+        UNION
+        SELECT product_id, warehouse_id FROM reservas_doi
+        UNION
+        SELECT product_id, warehouse_id FROM transferencias_entrada
+        UNION
+        SELECT product_id, warehouse_id FROM transferencias_salida
+        UNION
+        SELECT product_id, warehouse_id FROM public.warehouse_stock
+    ),
+    resultado AS (
+        SELECT
+            p.id                                                                AS product_id,
+            p.name                                                              AS producto,
+            p.sku                                                               AS sku,
+            p.barcode                                                           AS codigo_barras,
+            CASE WHEN p.status THEN 'Activo' ELSE 'Inactivo' END               AS estado_producto,
+            w.id                                                                AS bodega_id,
+            w.name                                                              AS bodega,
+            COALESCE(e.total_entradas, 0)                                       AS entradas_validas,
+            COALESCE(sd.total_salidas_directas, 0)                             AS salidas_directas,
+            COALESCE(so.total_salidas_ordenes, 0)                              AS salidas_ordenes_entrega,
+            COALESCE(rdoi.total_reservado, 0)                                  AS reservado_sin_exit,
+            COALESCE(te.total_transferencias_entrada, 0)                       AS transferencias_entrada,
+            COALESCE(ts.total_transferencias_salida, 0)                        AS transferencias_salida,
+            (
+                COALESCE(e.total_entradas, 0)
+                - COALESCE(sd.total_salidas_directas, 0)
+                - COALESCE(so.total_salidas_ordenes, 0)
+                + COALESCE(te.total_transferencias_entrada, 0)
+                - COALESCE(ts.total_transferencias_salida, 0)
+            )                                                                   AS stock_teorico,
+            COALESCE(ws.quantity, 0)                                           AS stock_actual,
+            (
+                COALESCE(ws.quantity, 0)
+                - (
+                    COALESCE(e.total_entradas, 0)
+                    - COALESCE(sd.total_salidas_directas, 0)
+                    - COALESCE(so.total_salidas_ordenes, 0)
+                    + COALESCE(te.total_transferencias_entrada, 0)
+                    - COALESCE(ts.total_transferencias_salida, 0)
+                )
+            )                                                                   AS diferencia,
+            CASE
+                WHEN COALESCE(ws.quantity, 0) < 0
+                    THEN '🔴 STOCK NEGATIVO'
+                WHEN COALESCE(ws.quantity, 0) = (
+                    COALESCE(e.total_entradas, 0)
+                    - COALESCE(sd.total_salidas_directas, 0)
+                    - COALESCE(so.total_salidas_ordenes, 0)
+                    + COALESCE(te.total_transferencias_entrada, 0)
+                    - COALESCE(ts.total_transferencias_salida, 0)
+                )
+                    THEN '✅ OK'
+                WHEN COALESCE(ws.quantity, 0) > (
+                    COALESCE(e.total_entradas, 0)
+                    - COALESCE(sd.total_salidas_directas, 0)
+                    - COALESCE(so.total_salidas_ordenes, 0)
+                    + COALESCE(te.total_transferencias_entrada, 0)
+                    - COALESCE(ts.total_transferencias_salida, 0)
+                )
+                    THEN '⬆️ FALTA EN TABLA'
+                ELSE '⬇️ EXCEDE'
+            END                                                                 AS diagnostico,
+            COUNT(*) OVER()                                                     AS total_count
+        FROM todos_pares tp
+        JOIN public.products p
+            ON p.id = tp.product_id
+            AND p.deleted_at IS NULL
+        JOIN public.warehouses w
+            ON w.id = tp.warehouse_id
+            AND w.deleted_at IS NULL
+            AND w.is_active = true
+        LEFT JOIN entradas e
+            ON e.product_id = tp.product_id AND e.warehouse_id = tp.warehouse_id
+        LEFT JOIN salidas_directas sd
+            ON sd.product_id = tp.product_id AND sd.warehouse_id = tp.warehouse_id
+        LEFT JOIN salidas_ordenes so
+            ON so.product_id = tp.product_id AND so.warehouse_id = tp.warehouse_id
+        LEFT JOIN reservas_doi rdoi
+            ON rdoi.product_id = tp.product_id AND rdoi.warehouse_id = tp.warehouse_id
+        LEFT JOIN transferencias_entrada te
+            ON te.product_id = tp.product_id AND te.warehouse_id = tp.warehouse_id
+        LEFT JOIN transferencias_salida ts
+            ON ts.product_id = tp.product_id AND ts.warehouse_id = tp.warehouse_id
+        LEFT JOIN public.warehouse_stock ws
+            ON ws.product_id = tp.product_id AND ws.warehouse_id = tp.warehouse_id
+        WHERE
+            p_search_term = ''
+            OR p.name ILIKE '%' || p_search_term || '%'
+            OR p.id::text = p_search_term
+            OR p.barcode ILIKE '%' || p_search_term || '%'
+    )
+    SELECT
+        r.product_id,
+        r.producto,
+        r.sku,
+        r.codigo_barras,
+        r.estado_producto,
+        r.bodega_id,
+        r.bodega,
+        r.entradas_validas,
+        r.salidas_directas,
+        r.salidas_ordenes_entrega,
+        r.reservado_sin_exit,
+        r.transferencias_entrada,
+        r.transferencias_salida,
+        r.stock_teorico,
+        r.stock_actual,
+        r.diferencia,
+        r.diagnostico,
+        r.total_count
+    FROM resultado r
+    ORDER BY r.producto, r.bodega
+    LIMIT p_page_size
+    OFFSET (GREATEST(p_page, 1) - 1) * p_page_size;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_stock_validation"("p_search_term" "text", "p_page" integer, "p_page_size" integer) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."get_stock_validation"("p_search_term" "text", "p_page" integer, "p_page_size" integer) IS 'Validates theoretical stock (computed from movement records) against actual stock
+    (warehouse_stock table) per product-warehouse pair.
+    Supports full-text search by product name, product UUID, or barcode.
+    Returns paginated results with a total_count window column.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."get_user_activities_today"() RETURNS TABLE("user_id" "uuid", "user_name" "text", "user_email" "text", "entries_count" bigint, "exits_count" bigint, "total_movements" bigint)
     LANGUAGE "sql" STABLE
     AS $$
@@ -3719,84 +4452,162 @@ COMMENT ON FUNCTION "public"."get_user_activities_today"() IS 'Retorna top 10 us
 
 CREATE OR REPLACE FUNCTION "public"."get_user_delivery_orders_expanded"("p_user_id" "uuid") RETURNS TABLE("id" "uuid", "order_number" "text", "order_type" "text", "customer_id" "uuid", "customer_name" "text", "customer_id_number" "text", "assigned_to_user_id" "uuid", "assigned_to_user_name" "text", "status" "text", "notes" "text", "delivery_address" "text", "created_at" timestamp with time zone, "is_from_remission" boolean, "remission_id" "uuid", "total_items" bigint, "total_quantity" numeric)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
     AS $$
 BEGIN
   RETURN QUERY
-  -- 1. Órdenes de cliente asignadas a remisiones del usuario
-  SELECT 
+  SELECT
     delivery_order.id,
-    delivery_order.order_number::TEXT,
-    delivery_order.order_type::TEXT,
+    delivery_order.order_number::text,
+    delivery_order.order_type::text,
     delivery_order.customer_id,
-    c.name::TEXT AS customer_name,
-    c.id_number::TEXT AS customer_id_number,
+    c.name::text AS customer_name,
+    c.id_number::text AS customer_id_number,
     delivery_order.assigned_to_user_id,
-    NULL::TEXT AS assigned_to_user_name,
-    delivery_order.status::TEXT,
-    delivery_order.notes::TEXT,
-    delivery_order.delivery_address::TEXT,
+    NULL::text AS assigned_to_user_name,
+    delivery_order.status::text,
+    delivery_order.notes::text,
+    delivery_order.delivery_address::text,
     delivery_order.created_at,
     TRUE AS is_from_remission,
     rdo.remission_id,
     COUNT(DISTINCT doi.id) AS total_items,
     COALESCE(SUM(doi.quantity), 0) AS total_quantity
   FROM public.delivery_orders AS delivery_order
-  INNER JOIN public.remission_delivery_orders rdo 
+  INNER JOIN public.remission_delivery_orders rdo
     ON rdo.source_delivery_order_id = delivery_order.id
     AND rdo.deleted_at IS NULL
-  INNER JOIN public.delivery_orders remission 
+  INNER JOIN public.delivery_orders remission
     ON remission.id = rdo.remission_id
     AND remission.assigned_to_user_id = p_user_id
     AND remission.order_type = 'remission'
     AND remission.status IN ('pending', 'approved')
     AND remission.deleted_at IS NULL
   LEFT JOIN public.customers c ON c.id = delivery_order.customer_id
-  LEFT JOIN public.delivery_order_items doi 
-    ON doi.delivery_order_id = delivery_order.id
+  LEFT JOIN public.delivery_order_items doi ON doi.delivery_order_id = delivery_order.id
   WHERE delivery_order.deleted_at IS NULL
-  GROUP BY 
-    delivery_order.id, delivery_order.order_number, delivery_order.order_type, delivery_order.customer_id, 
-    c.name, c.id_number, delivery_order.assigned_to_user_id, delivery_order.status, 
-    delivery_order.notes, delivery_order.delivery_address, delivery_order.created_at, rdo.remission_id
+  GROUP BY
+    delivery_order.id,
+    delivery_order.order_number,
+    delivery_order.order_type,
+    delivery_order.customer_id,
+    c.name,
+    c.id_number,
+    delivery_order.assigned_to_user_id,
+    delivery_order.status,
+    delivery_order.notes,
+    delivery_order.delivery_address,
+    delivery_order.created_at,
+    rdo.remission_id
 
   UNION ALL
 
-  -- 2. Remisiones con productos directos (source_delivery_order_id IS NULL)
-  SELECT 
+  SELECT
     delivery_order.id,
-    delivery_order.order_number::TEXT,
-    delivery_order.order_type::TEXT,
-    NULL AS customer_id,
-    NULL::TEXT AS customer_name,
-    NULL::TEXT AS customer_id_number,
+    delivery_order.order_number::text,
+    delivery_order.order_type::text,
+    NULL::uuid AS customer_id,
+    NULL::text AS customer_name,
+    NULL::text AS customer_id_number,
     delivery_order.assigned_to_user_id,
-    p.full_name::TEXT AS assigned_to_user_name,
-    delivery_order.status::TEXT,
-    delivery_order.notes::TEXT,
-    delivery_order.delivery_address::TEXT,
+    p.full_name::text AS assigned_to_user_name,
+    delivery_order.status::text,
+    delivery_order.notes::text,
+    delivery_order.delivery_address::text,
     delivery_order.created_at,
     FALSE AS is_from_remission,
-    NULL AS remission_id,
+    NULL::uuid AS remission_id,
     COUNT(DISTINCT doi.id) AS total_items,
     COALESCE(SUM(doi.quantity), 0) AS total_quantity
   FROM public.delivery_orders AS delivery_order
   LEFT JOIN public.profiles p ON p.id = delivery_order.assigned_to_user_id
-  LEFT JOIN public.delivery_order_items doi 
+  LEFT JOIN public.delivery_order_items doi
     ON doi.delivery_order_id = delivery_order.id
-    AND doi.source_delivery_order_id IS NULL  -- Solo productos directos
+    AND doi.source_delivery_order_id IS NULL
   WHERE delivery_order.assigned_to_user_id = p_user_id
     AND delivery_order.order_type = 'remission'
     AND delivery_order.status IN ('pending', 'approved')
     AND delivery_order.deleted_at IS NULL
     AND EXISTS (
-      SELECT 1 FROM public.delivery_order_items doi_check
+      SELECT 1
+      FROM public.delivery_order_items doi_check
       WHERE doi_check.delivery_order_id = delivery_order.id
         AND doi_check.source_delivery_order_id IS NULL
     )
-  GROUP BY 
-    delivery_order.id, delivery_order.order_number, delivery_order.order_type, delivery_order.assigned_to_user_id,
-    p.full_name, delivery_order.status, delivery_order.notes, delivery_order.delivery_address, delivery_order.created_at
-  
+  GROUP BY
+    delivery_order.id,
+    delivery_order.order_number,
+    delivery_order.order_type,
+    delivery_order.assigned_to_user_id,
+    p.full_name,
+    delivery_order.status,
+    delivery_order.notes,
+    delivery_order.delivery_address,
+    delivery_order.created_at
+
+  UNION ALL
+
+  SELECT
+    delivery_order.id,
+    delivery_order.order_number::text,
+    delivery_order.order_type::text,
+    delivery_order.customer_id,
+    c.name::text AS customer_name,
+    c.id_number::text AS customer_id_number,
+    delivery_order.assigned_to_user_id,
+    pp.full_name::text AS assigned_to_user_name,
+    delivery_order.status::text,
+    delivery_order.notes::text,
+    delivery_order.delivery_address::text,
+    delivery_order.created_at,
+    FALSE AS is_from_remission,
+    NULL::uuid AS remission_id,
+    COUNT(DISTINCT doi.id) AS total_items,
+    COALESCE(SUM(doi.quantity), 0) AS total_quantity
+  FROM public.delivery_orders AS delivery_order
+  INNER JOIN public.delivery_order_pickup_assignments pua
+    ON pua.delivery_order_id = delivery_order.id
+    AND pua.user_id = p_user_id
+    AND pua.deleted_at IS NULL
+  LEFT JOIN public.profiles pp ON pp.id = pua.user_id
+  LEFT JOIN public.customers c ON c.id = delivery_order.customer_id
+  LEFT JOIN public.delivery_order_items doi
+    ON doi.delivery_order_id = delivery_order.id
+    AND doi.deleted_at IS NULL
+    AND (
+      delivery_order.order_type IS DISTINCT FROM 'remission'
+      OR doi.source_delivery_order_id IS NULL
+    )
+  WHERE delivery_order.deleted_at IS NULL
+    AND delivery_order.status IN ('pending', 'approved', 'sent_by_remission')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.remission_delivery_orders rdo
+      INNER JOIN public.delivery_orders rem ON rem.id = rdo.remission_id
+      WHERE rdo.source_delivery_order_id = delivery_order.id
+        AND rdo.deleted_at IS NULL
+        AND rem.assigned_to_user_id IS NOT DISTINCT FROM p_user_id
+        AND rem.order_type = 'remission'
+        AND rem.deleted_at IS NULL
+    )
+    AND NOT (
+      delivery_order.order_type = 'remission'
+      AND delivery_order.assigned_to_user_id IS NOT DISTINCT FROM p_user_id
+    )
+  GROUP BY
+    delivery_order.id,
+    delivery_order.order_number,
+    delivery_order.order_type,
+    delivery_order.customer_id,
+    c.name,
+    c.id_number,
+    delivery_order.assigned_to_user_id,
+    pp.full_name,
+    delivery_order.status,
+    delivery_order.notes,
+    delivery_order.delivery_address,
+    delivery_order.created_at
+
   ORDER BY created_at DESC;
 END;
 $$;
@@ -3805,7 +4616,7 @@ $$;
 ALTER FUNCTION "public"."get_user_delivery_orders_expanded"("p_user_id" "uuid") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."get_user_delivery_orders_expanded"("p_user_id" "uuid") IS 'Returns delivery orders for a user, expanding remissions into independent items. Each customer order assigned to a remission appears separately, plus the remission itself if it has direct products. Used by mobile app exits module.';
+COMMENT ON FUNCTION "public"."get_user_delivery_orders_expanded"("p_user_id" "uuid") IS 'Órdenes para app móvil: remisiones, órdenes cliente en remisión, y órdenes con asignación explícita de retiro (cualquier tipo).';
 
 
 
@@ -4074,6 +4885,47 @@ COMMENT ON FUNCTION "public"."search_customers"("search_term" "text", "limit_cou
 
 
 
+CREATE OR REPLACE FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text" DEFAULT ''::"text") RETURNS TABLE("product_id" "uuid", "product_name" "text", "product_sku" "text", "product_barcode" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    AS $$
+DECLARE
+    _search text := COALESCE(TRIM(p_search_term), '');
+BEGIN
+    -- Require at least 2 characters to avoid full-table scans on every
+    -- keystroke; the frontend also enforces this.
+    IF char_length(_search) < 2 THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        p.id                        AS product_id,
+        p.name                      AS product_name,
+        COALESCE(p.sku, '')         AS product_sku,
+        COALESCE(p.barcode, '')     AS product_barcode
+    FROM public.products p
+    WHERE p.deleted_at IS NULL
+      AND (
+            p.name    ILIKE '%' || _search || '%'
+         OR p.sku     ILIKE '%' || _search || '%'
+         OR p.barcode ILIKE '%' || _search || '%'
+          )
+    ORDER BY p.name
+    LIMIT 50;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text") IS 'Búsqueda de productos para el paso 1 del flujo de creación de órdenes de entrega.
+Devuelve todos los productos no eliminados que coincidan con nombre, SKU o código de barras.
+No filtra por stock — eso se delega a get_stock_by_product_for_delivery.
+Exclusivo para el módulo de órdenes de entrega.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."transfer_product_between_warehouses"("p_product_id" "uuid", "p_source_warehouse_id" "uuid", "p_destination_warehouse_id" "uuid", "p_quantity" integer, "p_observations" "text") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -4303,6 +5155,127 @@ ALTER FUNCTION "public"."update_delivery_order_progress"("order_id_param" "uuid"
 
 COMMENT ON FUNCTION "public"."update_delivery_order_progress"("order_id_param" "uuid", "product_id_param" "uuid", "warehouse_id_param" "uuid", "quantity_delivered_param" integer) IS 'Updates the delivered quantity for a specific product+warehouse in a delivery order. Automatically marks order as delivered when all items are complete. Now correctly filters by warehouse_id to prevent incorrect updates when the same product exists in multiple warehouses.';
 
+
+
+CREATE OR REPLACE FUNCTION "public"."update_delivery_order_progress_batch"("order_id_param" "uuid", "items_param" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  item JSONB;
+  item_product_id UUID;
+  item_warehouse_id UUID;
+  item_quantity INTEGER;
+  current_delivered INTEGER;
+  total_quantity INTEGER;
+  item_exists BOOLEAN;
+  all_items_delivered BOOLEAN;
+  current_status TEXT;
+  results JSONB := '[]'::JSONB;
+  failed_items JSONB := '[]'::JSONB;
+  success_count INTEGER := 0;
+  fail_count INTEGER := 0;
+BEGIN
+  -- Iterate over each item in the array
+  FOR item IN SELECT * FROM jsonb_array_elements(items_param)
+  LOOP
+    item_product_id := (item ->> 'product_id')::UUID;
+    item_warehouse_id := (item ->> 'warehouse_id')::UUID;
+    item_quantity := (item ->> 'quantity_delivered')::INTEGER;
+
+    -- Verify item exists in the order for the specified warehouse
+    SELECT EXISTS (
+      SELECT 1 FROM delivery_order_items
+      WHERE delivery_order_id = order_id_param
+        AND product_id = item_product_id
+        AND warehouse_id = item_warehouse_id
+        AND deleted_at IS NULL
+    ) INTO item_exists;
+
+    IF NOT item_exists THEN
+      fail_count := fail_count + 1;
+      failed_items := failed_items || jsonb_build_object(
+        'product_id', item_product_id,
+        'warehouse_id', item_warehouse_id,
+        'error', 'Product not found in delivery order for the specified warehouse'
+      );
+      CONTINUE;
+    END IF;
+
+    -- Update delivered_quantity for the specific product+warehouse item
+    UPDATE delivery_order_items
+    SET delivered_quantity = delivered_quantity + item_quantity
+    WHERE delivery_order_id = order_id_param
+      AND product_id = item_product_id
+      AND warehouse_id = item_warehouse_id
+      AND deleted_at IS NULL
+    RETURNING delivered_quantity, quantity INTO current_delivered, total_quantity;
+
+    -- Check if exceeds total quantity
+    IF current_delivered > total_quantity THEN
+      -- Revert the change
+      UPDATE delivery_order_items
+      SET delivered_quantity = delivered_quantity - item_quantity
+      WHERE delivery_order_id = order_id_param
+        AND product_id = item_product_id
+        AND warehouse_id = item_warehouse_id
+        AND deleted_at IS NULL;
+
+      fail_count := fail_count + 1;
+      failed_items := failed_items || jsonb_build_object(
+        'product_id', item_product_id,
+        'warehouse_id', item_warehouse_id,
+        'error', 'Delivered quantity exceeds total quantity',
+        'current_delivered', current_delivered - item_quantity,
+        'total_quantity', total_quantity
+      );
+      CONTINUE;
+    END IF;
+
+    success_count := success_count + 1;
+    results := results || jsonb_build_object(
+      'product_id', item_product_id,
+      'warehouse_id', item_warehouse_id,
+      'current_delivered', current_delivered,
+      'total_quantity', total_quantity,
+      'pending_quantity', total_quantity - current_delivered
+    );
+  END LOOP;
+
+  -- After all updates, check if ALL items in the order are fully delivered
+  SELECT NOT EXISTS (
+    SELECT 1 FROM delivery_order_items
+    WHERE delivery_order_id = order_id_param
+      AND delivered_quantity < quantity
+      AND deleted_at IS NULL
+  ) INTO all_items_delivered;
+
+  -- Auto-complete order if all delivered
+  IF all_items_delivered THEN
+    SELECT status INTO current_status
+    FROM delivery_orders
+    WHERE id = order_id_param;
+
+    IF current_status IN ('pending', 'approved', 'sent_by_remission') THEN
+      UPDATE delivery_orders
+      SET status = 'delivered', updated_at = NOW()
+      WHERE id = order_id_param
+        AND status IN ('pending', 'approved', 'sent_by_remission');
+    END IF;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', fail_count = 0,
+    'all_delivered', all_items_delivered,
+    'success_count', success_count,
+    'fail_count', fail_count,
+    'results', results,
+    'failed_items', failed_items
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_delivery_order_progress_batch"("order_id_param" "uuid", "items_param" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."update_delivery_order_return_updated_at"() RETURNS "trigger"
@@ -4580,146 +5553,108 @@ COMMENT ON FUNCTION "public"."validate_inventory_entry_quantity"() IS 'Validates
 CREATE OR REPLACE FUNCTION "public"."validate_inventory_exit_quantity"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
-
 DECLARE
-
-  order_item_quantity NUMERIC;
-
-  total_dispatched NUMERIC;
-
-  order_status TEXT;
-
-  order_exists BOOLEAN;
-
+  order_item_quantity numeric;
+  total_dispatched    numeric;
+  order_status        text;
+  order_exists        boolean;
+  has_any_assignment  boolean;
 BEGIN
-
-  -- Solo validar si hay una orden de entrega asociada
-
   IF NEW.delivery_order_id IS NULL THEN
-
     RETURN NEW;
-
   END IF;
 
-
-
-  -- Verificar que la orden existe y obtener su estado
-
-  SELECT 
-
+  SELECT
     dord.status,
-
-    EXISTS(SELECT 1 FROM delivery_orders WHERE id = NEW.delivery_order_id AND deleted_at IS NULL)
-
+    EXISTS (
+      SELECT 1
+      FROM public.delivery_orders
+      WHERE id = NEW.delivery_order_id
+        AND deleted_at IS NULL
+    )
   INTO order_status, order_exists
-
-  FROM delivery_orders dord
-
+  FROM public.delivery_orders dord
   WHERE dord.id = NEW.delivery_order_id
-
     AND dord.deleted_at IS NULL;
 
-
-
   IF NOT order_exists THEN
-
     RAISE EXCEPTION 'La orden de entrega % no existe o ha sido eliminada', NEW.delivery_order_id;
-
   END IF;
-
-
-
-  -- Verificar que la orden esté en estado válido (no cancelada)
 
   IF order_status = 'cancelled' THEN
-
-    RAISE EXCEPTION 'La orden de entrega % está cancelada. No se pueden registrar más salidas.', 
-
-      NEW.delivery_order_id;
-
+    RAISE EXCEPTION 'La orden de entrega % está cancelada. No se pueden registrar más salidas.', NEW.delivery_order_id;
   END IF;
 
+  -- Verificar si la orden tiene algún usuario autorizado asignado
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.delivery_order_pickup_assignments
+    WHERE delivery_order_id = NEW.delivery_order_id
+      AND deleted_at IS NULL
+  ) INTO has_any_assignment;
 
-
-  -- Obtener la cantidad solicitada para este producto en la orden y bodega específica
+  IF has_any_assignment THEN
+    -- Si hay asignaciones, el usuario debe ser uno de ellos, ser admin, o service_role
+    IF COALESCE(auth.role(), ''::text) = 'service_role'
+      OR EXISTS (
+        SELECT 1
+        FROM public.user_roles ur
+        JOIN public.roles r ON r.id = ur.role_id
+        WHERE ur.user_id = auth.uid()
+          AND r.nombre = 'admin'::text
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.delivery_order_pickup_assignments
+        WHERE delivery_order_id = NEW.delivery_order_id
+          AND user_id = auth.uid()
+          AND deleted_at IS NULL
+      ) THEN
+      -- permitido
+    ELSE
+      RAISE EXCEPTION 'Solo un usuario autorizado para retiro o un administrador puede registrar salidas para esta orden';
+    END IF;
+  END IF;
 
   SELECT quantity
-
   INTO order_item_quantity
-
-  FROM delivery_order_items
-
+  FROM public.delivery_order_items
   WHERE delivery_order_id = NEW.delivery_order_id
-
     AND product_id = NEW.product_id
-
-    AND warehouse_id = NEW.warehouse_id;
-
-
-
-  -- Si no hay item en la orden para este producto en esta bodega, rechazar
+    AND warehouse_id = NEW.warehouse_id
+    AND deleted_at IS NULL;
 
   IF order_item_quantity IS NULL THEN
-
-    RAISE EXCEPTION 'El producto % no está incluido en la orden de entrega % para la bodega %', 
-
+    RAISE EXCEPTION 'El producto % no está incluido en la orden de entrega % para la bodega %',
       NEW.product_id, NEW.delivery_order_id, NEW.warehouse_id;
-
   END IF;
-
-
-
-  -- Calcular la cantidad total ya despachada para este producto en esta orden y bodega
-
-  -- Sumar todas las salidas existentes (excluyendo la actual si es un UPDATE)
 
   SELECT COALESCE(SUM(quantity), 0)
-
   INTO total_dispatched
-
-  FROM inventory_exits
-
+  FROM public.inventory_exits
   WHERE delivery_order_id = NEW.delivery_order_id
-
     AND product_id = NEW.product_id
-
     AND warehouse_id = NEW.warehouse_id
-
-    AND (TG_OP = 'INSERT' OR id != NEW.id); -- Excluir la fila actual si es UPDATE
-
-
-
-  -- Verificar que la cantidad total (incluyendo la nueva salida) no exceda la solicitada
+    AND (TG_OP = 'INSERT' OR id <> NEW.id);
 
   IF (total_dispatched + NEW.quantity) > order_item_quantity THEN
-
-    RAISE EXCEPTION 
-
+    RAISE EXCEPTION
       'La cantidad excede lo permitido para este producto en la orden de entrega. Cantidad en orden: %, Ya despachado: %, Intentando despachar: %, Total después de esta salida: %',
-
-      order_item_quantity, 
-
-      total_dispatched, 
-
+      order_item_quantity,
+      total_dispatched,
       NEW.quantity,
-
       total_dispatched + NEW.quantity;
-
   END IF;
 
-
-
   RETURN NEW;
-
 END;
-
 $$;
 
 
 ALTER FUNCTION "public"."validate_inventory_exit_quantity"() OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."validate_inventory_exit_quantity"() IS 'Validates that inventory exits do not exceed delivery order quantities. Called by trigger before insert/update.';
+COMMENT ON FUNCTION "public"."validate_inventory_exit_quantity"() IS 'Validates inventory exits against delivery orders and pickup assignments (multiple authorized users). Called by trigger before insert/update.';
 
 
 
@@ -5065,6 +6000,31 @@ COMMENT ON COLUMN "public"."delivery_order_items"."source_delivery_order_id" IS 
 
 
 COMMENT ON COLUMN "public"."delivery_order_items"."approval_id" IS 'Referencia a la aprobación grupal a la que pertenece este item';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."delivery_order_pickup_assignments" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "delivery_order_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid",
+    "deleted_at" timestamp with time zone
+);
+
+
+ALTER TABLE "public"."delivery_order_pickup_assignments" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."delivery_order_pickup_assignments" IS 'Usuario de la plataforma (profiles) autorizado a registrar salidas de inventario para la orden (cliente o remisión).';
+
+
+
+COMMENT ON COLUMN "public"."delivery_order_pickup_assignments"."user_id" IS 'Perfil en profiles del operador autorizado; no es el cliente final.';
+
+
+
+COMMENT ON COLUMN "public"."delivery_order_pickup_assignments"."deleted_at" IS 'Soft delete; al reasignar se marca la fila anterior y se inserta una nueva.';
 
 
 
@@ -5644,6 +6604,27 @@ CREATE TABLE IF NOT EXISTS "public"."roles_permisos" (
 ALTER TABLE "public"."roles_permisos" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."stock_adjustment_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "product_id" "uuid" NOT NULL,
+    "warehouse_id" "uuid" NOT NULL,
+    "previous_quantity" numeric(12,2) NOT NULL,
+    "new_quantity" numeric(12,2) NOT NULL,
+    "reason" "text" NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "stock_adjustment_logs_new_qty_check" CHECK (("new_quantity" >= (0)::numeric)),
+    CONSTRAINT "stock_adjustment_logs_reason_check" CHECK (("length"(TRIM(BOTH FROM "reason")) >= 10))
+);
+
+
+ALTER TABLE "public"."stock_adjustment_logs" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."stock_adjustment_logs" IS 'Registro de auditoría para ajustes manuales de stock. Cada fila registra la cantidad anterior y nueva de un producto en una bodega específica, junto con el motivo y el usuario que realizó el cambio.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."stock_transfers" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "product_id" "uuid" NOT NULL,
@@ -5872,6 +6853,11 @@ ALTER TABLE ONLY "public"."delivery_order_items"
 
 
 
+ALTER TABLE ONLY "public"."delivery_order_pickup_assignments"
+    ADD CONSTRAINT "delivery_order_pickup_assignments_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."delivery_order_returns"
     ADD CONSTRAINT "delivery_order_returns_pkey" PRIMARY KEY ("id");
 
@@ -5989,6 +6975,11 @@ ALTER TABLE ONLY "public"."roles_permisos"
 
 ALTER TABLE ONLY "public"."roles"
     ADD CONSTRAINT "roles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."stock_adjustment_logs"
+    ADD CONSTRAINT "stock_adjustment_logs_pkey" PRIMARY KEY ("id");
 
 
 
@@ -6131,6 +7122,14 @@ CREATE INDEX "idx_delivery_order_items_source_id" ON "public"."delivery_order_it
 
 
 CREATE INDEX "idx_delivery_order_items_warehouse_id" ON "public"."delivery_order_items" USING "btree" ("warehouse_id");
+
+
+
+CREATE UNIQUE INDEX "idx_delivery_order_pickup_assignments_per_user" ON "public"."delivery_order_pickup_assignments" USING "btree" ("delivery_order_id", "user_id") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_delivery_order_pickup_assignments_user_id" ON "public"."delivery_order_pickup_assignments" USING "btree" ("user_id") WHERE ("deleted_at" IS NULL);
 
 
 
@@ -6522,6 +7521,26 @@ CREATE INDEX "idx_status_observations_order_id" ON "public"."purchase_order_stat
 
 
 
+CREATE INDEX "idx_stock_adjustment_logs_created_at" ON "public"."stock_adjustment_logs" USING "btree" ("created_at" DESC);
+
+
+
+COMMENT ON INDEX "public"."idx_stock_adjustment_logs_created_at" IS 'Optimiza ordenamiento descendente del historial';
+
+
+
+CREATE INDEX "idx_stock_adjustment_logs_product_id" ON "public"."stock_adjustment_logs" USING "btree" ("product_id");
+
+
+
+COMMENT ON INDEX "public"."idx_stock_adjustment_logs_product_id" IS 'Optimiza consultas de historial por producto';
+
+
+
+CREATE INDEX "idx_stock_adjustment_logs_warehouse_id" ON "public"."stock_adjustment_logs" USING "btree" ("warehouse_id");
+
+
+
 CREATE INDEX "idx_stock_transfers_created_at" ON "public"."stock_transfers" USING "btree" ("created_at");
 
 
@@ -6614,6 +7633,14 @@ COMMENT ON TRIGGER "trg_adjust_stock_on_delivery_order_item_update" ON "public".
 
 
 
+CREATE OR REPLACE TRIGGER "trg_cancel_inventory_entry_on_cancellation" AFTER INSERT ON "public"."inventory_entry_cancellations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_process_delivery_order_return" AFTER INSERT ON "public"."delivery_order_returns" FOR EACH ROW EXECUTE FUNCTION "public"."fn_process_delivery_order_return"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_process_return_inventory" AFTER INSERT ON "public"."returns" FOR EACH ROW EXECUTE FUNCTION "public"."process_return_inventory"();
 
 
@@ -6643,6 +7670,10 @@ COMMENT ON TRIGGER "trg_revert_stock_on_delivery_order_item_delete" ON "public".
 
 
 CREATE OR REPLACE TRIGGER "trg_revert_stock_on_delivery_order_item_soft_delete" AFTER UPDATE ON "public"."delivery_order_items" FOR EACH ROW WHEN ((("old"."deleted_at" IS NULL) AND ("new"."deleted_at" IS NOT NULL))) EXECUTE FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_revert_stock_on_exit_cancellation" AFTER INSERT ON "public"."inventory_exit_cancellations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_revert_stock_on_exit_cancellation"();
 
 
 
@@ -6816,6 +7847,21 @@ ALTER TABLE ONLY "public"."delivery_order_item_approvals"
 
 ALTER TABLE ONLY "public"."delivery_order_items"
     ADD CONSTRAINT "delivery_order_items_approval_id_fkey" FOREIGN KEY ("approval_id") REFERENCES "public"."delivery_order_item_approvals"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."delivery_order_pickup_assignments"
+    ADD CONSTRAINT "delivery_order_pickup_assignments_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."delivery_order_pickup_assignments"
+    ADD CONSTRAINT "delivery_order_pickup_assignments_delivery_order_id_fkey" FOREIGN KEY ("delivery_order_id") REFERENCES "public"."delivery_orders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."delivery_order_pickup_assignments"
+    ADD CONSTRAINT "delivery_order_pickup_assignments_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
 
 
 
@@ -7124,6 +8170,21 @@ ALTER TABLE ONLY "public"."roles_permisos"
 
 
 
+ALTER TABLE ONLY "public"."stock_adjustment_logs"
+    ADD CONSTRAINT "stock_adjustment_logs_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."stock_adjustment_logs"
+    ADD CONSTRAINT "stock_adjustment_logs_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."stock_adjustment_logs"
+    ADD CONSTRAINT "stock_adjustment_logs_warehouse_id_fkey" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."stock_transfers"
     ADD CONSTRAINT "stock_transfers_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id");
 
@@ -7417,7 +8478,15 @@ CREATE POLICY "Users can create status observations" ON "public"."purchase_order
 
 
 
+CREATE POLICY "Users can insert delivery order pickup assignments" ON "public"."delivery_order_pickup_assignments" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
 CREATE POLICY "Users can update delivery order items" ON "public"."delivery_order_items" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Users can update delivery order pickup assignments" ON "public"."delivery_order_pickup_assignments" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
 
 
 
@@ -7466,6 +8535,10 @@ CREATE POLICY "Users can view delivery edit observations" ON "public"."delivery_
 
 
 CREATE POLICY "Users can view delivery order items" ON "public"."delivery_order_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can view delivery order pickup assignments" ON "public"."delivery_order_pickup_assignments" FOR SELECT TO "authenticated" USING (true);
 
 
 
@@ -7598,6 +8671,9 @@ ALTER TABLE "public"."delivery_order_item_approvals" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."delivery_order_items" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."delivery_order_pickup_assignments" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."delivery_order_returns" ENABLE ROW LEVEL SECURITY;
 
 
@@ -7683,6 +8759,17 @@ CREATE POLICY "selected all colors" ON "public"."colors" FOR SELECT TO "authenti
 
 
 CREATE POLICY "selected all users" ON "public"."profiles" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+ALTER TABLE "public"."stock_adjustment_logs" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "stock_adjustment_logs_insert" ON "public"."stock_adjustment_logs" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
+CREATE POLICY "stock_adjustment_logs_select" ON "public"."stock_adjustment_logs" FOR SELECT TO "authenticated" USING (true);
 
 
 
@@ -7914,9 +9001,21 @@ GRANT ALL ON FUNCTION "public"."gtrgm_out"("public"."gtrgm") TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."adjust_product_stock"("p_product_id" "uuid", "p_warehouse_id" "uuid", "p_new_quantity" numeric, "p_reason" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uuid", "p_order_ids" "uuid"[]) TO "anon";
 GRANT ALL ON FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uuid", "p_order_ids" "uuid"[]) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."assign_orders_to_remission_batch"("p_remission_id" "uuid", "p_order_ids" "uuid"[]) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone) TO "anon";
+GRANT ALL ON FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cancel_delivery_order_with_items"("p_order_id" "uuid", "p_cancelled_at" timestamp with time zone) TO "service_role";
 
 
 
@@ -7944,9 +9043,21 @@ GRANT ALL ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() T
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."fn_log_delivery_order_delivered"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_log_delivery_order_delivered"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_log_delivery_order_delivered"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_process_delivery_order_return"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_process_delivery_order_return"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_process_delivery_order_return"() TO "service_role";
 
 
 
@@ -7971,6 +9082,12 @@ GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_delivery_order_item"() TO "se
 GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_delivery_order_item_soft_delete"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() TO "service_role";
 
 
 
@@ -8076,6 +9193,12 @@ GRANT ALL ON FUNCTION "public"."get_customers_stats"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) TO "anon";
+GRANT ALL ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."get_delivery_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."get_delivery_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_delivery_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "service_role";
@@ -8172,6 +9295,12 @@ GRANT ALL ON FUNCTION "public"."get_products_stats"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_products_with_stock_for_delivery"("search_term" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."get_purchase_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."get_purchase_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_purchase_orders_dashboard"("search_term" "text", "page" integer, "page_size" integer) TO "service_role";
@@ -8199,6 +9328,18 @@ GRANT ALL ON FUNCTION "public"."get_reports_stats_today"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."get_returns_dashboard"("search_term" "text", "page" integer, "page_size" integer, "return_type_filter" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_returns_dashboard"("search_term" "text", "page" integer, "page_size" integer, "return_type_filter" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_returns_dashboard"("search_term" "text", "page" integer, "page_size" integer, "return_type_filter" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_stock_by_product_for_delivery"("p_product_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_stock_validation"("p_search_term" "text", "p_page" integer, "p_page_size" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."get_stock_validation"("p_search_term" "text", "p_page" integer, "p_page_size" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_stock_validation"("p_search_term" "text", "p_page" integer, "p_page_size" integer) TO "service_role";
 
 
 
@@ -8341,6 +9482,12 @@ GRANT ALL ON FUNCTION "public"."search_customers"("search_term" "text", "limit_c
 
 
 
+GRANT ALL ON FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."search_products_for_delivery_order"("p_search_term" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "postgres";
 GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "anon";
 GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "authenticated";
@@ -8439,6 +9586,12 @@ GRANT ALL ON FUNCTION "public"."update_delivery_order_edit_observation_updated_a
 GRANT ALL ON FUNCTION "public"."update_delivery_order_progress"("order_id_param" "uuid", "product_id_param" "uuid", "warehouse_id_param" "uuid", "quantity_delivered_param" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."update_delivery_order_progress"("order_id_param" "uuid", "product_id_param" "uuid", "warehouse_id_param" "uuid", "quantity_delivered_param" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_delivery_order_progress"("order_id_param" "uuid", "product_id_param" "uuid", "warehouse_id_param" "uuid", "quantity_delivered_param" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_delivery_order_progress_batch"("order_id_param" "uuid", "items_param" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."update_delivery_order_progress_batch"("order_id_param" "uuid", "items_param" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_delivery_order_progress_batch"("order_id_param" "uuid", "items_param" "jsonb") TO "service_role";
 
 
 
@@ -8612,6 +9765,12 @@ GRANT ALL ON TABLE "public"."delivery_order_items" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."delivery_order_pickup_assignments" TO "anon";
+GRANT ALL ON TABLE "public"."delivery_order_pickup_assignments" TO "authenticated";
+GRANT ALL ON TABLE "public"."delivery_order_pickup_assignments" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."delivery_order_returns" TO "anon";
 GRANT ALL ON TABLE "public"."delivery_order_returns" TO "authenticated";
 GRANT ALL ON TABLE "public"."delivery_order_returns" TO "service_role";
@@ -8729,6 +9888,12 @@ GRANT ALL ON TABLE "public"."roles" TO "service_role";
 GRANT ALL ON TABLE "public"."roles_permisos" TO "anon";
 GRANT ALL ON TABLE "public"."roles_permisos" TO "authenticated";
 GRANT ALL ON TABLE "public"."roles_permisos" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."stock_adjustment_logs" TO "anon";
+GRANT ALL ON TABLE "public"."stock_adjustment_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."stock_adjustment_logs" TO "service_role";
 
 
 
