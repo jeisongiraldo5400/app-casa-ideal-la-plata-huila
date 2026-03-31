@@ -325,6 +325,55 @@ export type Database = {
           },
         ]
       }
+      delivery_order_pickup_assignments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          delivery_order_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          delivery_order_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          delivery_order_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_order_pickup_assignments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_order_pickup_assignments_delivery_order_id_fkey"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_order_pickup_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_order_returns: {
         Row: {
           created_at: string
@@ -1326,6 +1375,61 @@ export type Database = {
           },
         ]
       }
+      stock_adjustment_logs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          new_quantity: number
+          previous_quantity: number
+          product_id: string
+          reason: string
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_quantity: number
+          previous_quantity: number
+          product_id: string
+          reason: string
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          new_quantity?: number
+          previous_quantity?: number
+          product_id?: string
+          reason?: string
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustment_logs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_logs_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_transfers: {
         Row: {
           created_at: string | null
@@ -1675,6 +1779,15 @@ export type Database = {
       }
     }
     Functions: {
+      adjust_product_stock: {
+        Args: {
+          p_new_quantity: number
+          p_product_id: string
+          p_reason: string
+          p_warehouse_id: string
+        }
+        Returns: Json
+      }
       assign_orders_to_remission_batch: {
         Args: { p_order_ids: string[]; p_remission_id: string }
         Returns: {
@@ -1682,6 +1795,10 @@ export type Database = {
           order_id: string
           success: boolean
         }[]
+      }
+      cancel_delivery_order_with_items: {
+        Args: { p_cancelled_at?: string; p_order_id: string }
+        Returns: undefined
       }
       edit_delivery_order_items: {
         Args: {
@@ -1771,6 +1888,38 @@ export type Database = {
           customers_without_exits: number
           total_customers: number
           total_exits_to_customers: number
+        }[]
+      }
+      get_delivery_orders_admin_list: {
+        Args: {
+          end_ts?: string
+          order_type_filter?: string
+          page?: number
+          page_size?: number
+          search_term?: string
+          start_ts?: string
+          status_filter?: string
+        }
+        Returns: {
+          assigned_to_user_id: string
+          assigned_user_name: string
+          created_at: string
+          customer_id: string
+          customer_name: string
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          notes: string
+          order_number: string
+          order_type: string
+          pickup_assigned_user_id: string
+          pickup_assigned_user_name: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+          zone_id: string
+          zone_name: string
         }[]
       }
       get_delivery_orders_dashboard: {
@@ -1952,6 +2101,47 @@ export type Database = {
           period_label: string
         }[]
       }
+      get_product_movement_timeline: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_movement_types?: string[]
+          p_page?: number
+          p_page_size?: number
+          p_product_id: string
+        }
+        Returns: {
+          description: string
+          id: string
+          is_cancelled: boolean
+          movement_date: string
+          movement_type: string
+          observations: string
+          quantity: number
+          related_order_id: string
+          related_order_number: string
+          related_order_type: string
+          secondary_warehouse_name: string
+          total_count: number
+          user_name: string
+          warehouse_name: string
+        }[]
+      }
+      get_product_timeline_summary: {
+        Args: { p_product_id: string }
+        Returns: {
+          current_stock: Json
+          product_barcode: string
+          product_name: string
+          product_sku: string
+          total_cancellations: number
+          total_entries: number
+          total_exits: number
+          total_reserved: number
+          total_returns: number
+          total_transfers: number
+        }[]
+      }
       get_product_traceability: {
         Args: {
           events_limit?: number
@@ -2006,6 +2196,16 @@ export type Database = {
           products_with_internal_barcode: number
           total_products: number
           unique_categories: number
+        }[]
+      }
+      get_products_with_stock_for_delivery: {
+        Args: { search_term?: string }
+        Returns: {
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+          stock_by_warehouse: Json
         }[]
       }
       get_purchase_orders_dashboard:
@@ -2101,6 +2301,37 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_stock_by_product_for_delivery: {
+        Args: { p_product_id: string }
+        Returns: {
+          available_quantity: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_stock_validation: {
+        Args: { p_page?: number; p_page_size?: number; p_search_term?: string }
+        Returns: {
+          bodega: string
+          bodega_id: string
+          codigo_barras: string
+          diagnostico: string
+          diferencia: number
+          entradas_validas: number
+          estado_producto: string
+          product_id: string
+          producto: string
+          reservado_sin_exit: number
+          salidas_directas: number
+          salidas_ordenes_entrega: number
+          sku: string
+          stock_actual: number
+          stock_teorico: number
+          total_count: number
+          transferencias_entrada: number
+          transferencias_salida: number
+        }[]
+      }
       get_user_activities_today: {
         Args: never
         Returns: {
@@ -2178,6 +2409,15 @@ export type Database = {
           name: string
         }[]
       }
+      search_products_for_delivery_order: {
+        Args: { p_search_term?: string }
+        Returns: {
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       transfer_product_between_warehouses: {
@@ -2197,6 +2437,10 @@ export type Database = {
           quantity_delivered_param: number
           warehouse_id_param: string
         }
+        Returns: Json
+      }
+      update_delivery_order_progress_batch: {
+        Args: { items_param: Json; order_id_param: string }
         Returns: Json
       }
       update_purchase_order_progress: {
