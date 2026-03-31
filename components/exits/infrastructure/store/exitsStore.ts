@@ -90,6 +90,7 @@ interface ExitsState {
 
   // Estado de UI
   loading: boolean;
+  customersLoading: boolean;
   loadingMessage: string | null;
   error: string | null;
   step: "setup" | "scanning";
@@ -178,6 +179,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // UI
   loading: false,
+  customersLoading: false,
   loadingMessage: null,
   error: null,
   step: "setup",
@@ -380,7 +382,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchCustomers: async (searchTerm: string) => {
-    set({ customerSearchTerm: searchTerm, loading: true, loadingMessage: 'Buscando clientes...' });
+    set({ customerSearchTerm: searchTerm, customersLoading: true });
 
     try {
       // Buscar directamente en la tabla customers
@@ -397,15 +399,22 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       const { data, error } = await query.limit(50);
 
-      if (error) {
-        console.error("Error searching customers:", error);
-        set({ customers: [], loading: false, loadingMessage: null });
+      // Evitar que respuestas antiguas sobrescriban resultados recientes
+      if (get().customerSearchTerm !== searchTerm) {
         return;
       }
-      set({ customers: data || [], loading: false, loadingMessage: null });
+
+      if (error) {
+        console.error("Error searching customers:", error);
+        set({ customers: [], customersLoading: false });
+        return;
+      }
+      set({ customers: data || [], customersLoading: false });
     } catch (error: any) {
       console.error("Error searching customers:", error);
-      set({ customers: [], loading: false, loadingMessage: null });
+      if (get().customerSearchTerm === searchTerm) {
+        set({ customers: [], customersLoading: false });
+      }
     }
   },
 
@@ -1686,6 +1695,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       step: "setup",
       error: null,
       loading: false,
+      customersLoading: false,
       loadingMessage: null,
       exitMode: null,
       selectedUserId: null,
@@ -1714,6 +1724,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       step: "setup",
       error: null,
       loading: false,
+      customersLoading: false,
       loadingMessage: null,
       exitMode: null,
       selectedUserId: null,

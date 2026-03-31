@@ -6,7 +6,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
@@ -22,6 +22,7 @@ export function SetupForm() {
     users,
     customers,
     loading,
+    customersLoading,
     loadUsers,
     searchCustomers,
     searchDeliveryOrdersByUser,
@@ -42,6 +43,35 @@ export function SetupForm() {
   const Colors = getColors(colorScheme === 'dark');
   const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
+  const skipNextCustomerSearchRef = useRef(false);
+  const lastSearchedTermRef = useRef('');
+  const selectedCustomerNameRef = useRef('');
+
+  const handleCustomerInputChange = useCallback((text: string) => {
+    setSearchInput(text);
+
+    // Si el usuario cambia manualmente el nombre, invalidar la selección previa
+    if (!selectedCustomerId) {
+      return;
+    }
+
+    const normalizedTyped = text.trim().toLowerCase();
+    const normalizedSelectedName = selectedCustomerNameRef.current.trim().toLowerCase();
+    if (normalizedTyped !== normalizedSelectedName) {
+      selectedCustomerNameRef.current = '';
+      setSelectedCustomer(null);
+    }
+  }, [selectedCustomerId, setSelectedCustomer]);
+
+  const handleClearCustomerSearch = useCallback(() => {
+    skipNextCustomerSearchRef.current = true;
+    lastSearchedTermRef.current = '';
+    selectedCustomerNameRef.current = '';
+    setSelectedCustomer(null);
+    setSearchInput('');
+    searchCustomers('');
+    Keyboard.dismiss();
+  }, [searchCustomers, setSelectedCustomer]);
 
   useEffect(() => {
     loadUsers();
@@ -69,10 +99,22 @@ export function SetupForm() {
   // Debounce customer search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchInput.length >= 4) {
-        searchCustomers(searchInput);
-      } else if (searchInput.length === 0) {
+      const normalizedSearchTerm = searchInput.trim();
+
+      if (skipNextCustomerSearchRef.current) {
+        skipNextCustomerSearchRef.current = false;
+        lastSearchedTermRef.current = normalizedSearchTerm;
+        return;
+      }
+
+      if (normalizedSearchTerm.length >= 4) {
+        if (normalizedSearchTerm !== lastSearchedTermRef.current) {
+          lastSearchedTermRef.current = normalizedSearchTerm;
+          searchCustomers(normalizedSearchTerm);
+        }
+      } else if (normalizedSearchTerm.length === 0) {
         // Limpiar resultados cuando el input está vacío
+        lastSearchedTermRef.current = '';
         searchCustomers('');
       }
     }, 500);
@@ -82,11 +124,11 @@ export function SetupForm() {
 
   // Ocultar teclado automáticamente cuando se encuentran clientes
   useEffect(() => {
-    if (!loading && searchInput.length >= 4 && customers.length > 0) {
+    if (!customersLoading && searchInput.length >= 4 && customers.length > 0) {
       // Ocultar teclado para que los resultados sean visibles
       Keyboard.dismiss();
     }
-  }, [customers.length, loading, searchInput.length]);
+  }, [customers.length, customersLoading, searchInput.length]);
 
   // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
@@ -208,26 +250,38 @@ export function SetupForm() {
           {exitMode === 'direct_customer' && (
             <View style={styles.formGroup}>
               <Text style={[styles.label, { color: Colors.text.primary }]}>Cliente *</Text>
-              <TextInput
-                style={[styles.input, {
-                  backgroundColor: Colors.background.paper,
-                  borderColor: Colors.divider,
-                  color: Colors.text.primary
-                }]}
-                placeholder="Buscar por nombre o número de identificación"
-                placeholderTextColor={Colors.text.secondary}
-                value={searchInput}
-                onChangeText={setSearchInput}
-              />
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={[styles.input, styles.inputWithClearButton, {
+                    backgroundColor: Colors.background.paper,
+                    borderColor: Colors.divider,
+                    color: Colors.text.primary
+                  }]}
+                  placeholder="Buscar por nombre o número de identificación"
+                  placeholderTextColor={Colors.text.secondary}
+                  value={searchInput}
+                  onChangeText={handleCustomerInputChange}
+                />
+                {(searchInput.trim().length > 0 || selectedCustomerId) && (
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={handleClearCustomerSearch}
+                    accessibilityRole="button"
+                    accessibilityLabel="Limpiar búsqueda de cliente"
+                  >
+                    <MaterialIcons name="close" size={18} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
 
-              {loading && (
+              {customersLoading && (
                 <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
                   <ActivityIndicator size="small" color={Colors.primary.main} />
                   <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
                 </View>
               )}
 
-              {!loading && searchInput.length >= 4 && customers.length > 0 && (
+              {searchInput.trim().length >= 4 && customers.length > 0 && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -242,6 +296,8 @@ export function SetupForm() {
                       ]}
                       onPress={() => {
                         setSelectedCustomer(customer.id);
+                        skipNextCustomerSearchRef.current = true;
+                        selectedCustomerNameRef.current = customer.name;
                         setSearchInput(customer.name);
                         Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                       }}>
@@ -252,7 +308,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!loading && searchInput.length >= 4 && customers.length === 0 && (
+              {!customersLoading && searchInput.trim().length >= 4 && customers.length === 0 && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
@@ -421,6 +477,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  inputContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputWithClearButton: {
+    paddingRight: 48,
+  },
+  clearButton: {
+    position: 'absolute',
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textArea: {
     height: 96,
