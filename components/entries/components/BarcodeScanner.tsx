@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
 
@@ -12,8 +12,17 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** iOS: never attach onBarcodeScanned until native session is ready (avoids crashes). */
+  const [cameraReady, setCameraReady] = useState(false);
+  /** iOS: defer mounting CameraView slightly so it does not race with screen transition (expo/expo#35386). */
+  const [deferMountCamera, setDeferMountCamera] = useState(Platform.OS !== 'ios');
   const isProcessingRef = useRef(false);
+  const scannedRef = useRef(false);
   const mountedRef = useRef(true);
+
+  useEffect(() => {
+    scannedRef.current = scanned;
+  }, [scanned]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -23,19 +32,26 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const t = setTimeout(() => setDeferMountCamera(true), 250);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
     if (permission && !permission.granted) {
       requestPermission();
     }
   }, [permission, requestPermission]);
 
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    // Prevenir múltiples escaneos simultáneos
-    if (isProcessingRef.current || scanned || !data || !mountedRef.current) {
+  const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
+    // Prevenir múltiples escaneos simultáneos (use ref so callback stays stable for iOS)
+    if (isProcessingRef.current || scannedRef.current || !data || !mountedRef.current) {
       return;
     }
 
     try {
       isProcessingRef.current = true;
+      scannedRef.current = true;
       setScanned(true);
       setError(null);
 
@@ -53,6 +69,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       // Cerrar el scanner después de un breve delay para asegurar que el estado se actualizó
       setTimeout(() => {
         if (mountedRef.current) {
+          scannedRef.current = false;
           setScanned(false);
           isProcessingRef.current = false;
         }
@@ -60,18 +77,24 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     } catch (error: any) {
       console.error('Error processing barcode:', error);
       setError(error?.message || 'Error al procesar el código de barras');
+      scannedRef.current = false;
       setScanned(false);
       isProcessingRef.current = false;
       
       // Permitir reintentar después de 2 segundos
       setTimeout(() => {
         if (mountedRef.current) {
+          scannedRef.current = false;
           setScanned(false);
           isProcessingRef.current = false;
         }
       }, 2000);
     }
-  };
+  }, [onScan]);
+
+  const onCameraReady = useCallback(() => {
+    setCameraReady(true);
+  }, []);
 
   if (!permission) {
     return (
@@ -95,13 +118,18 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     );
   }
 
+  // Keep a stable function reference for onBarcodeScanned when enabled — toggling undefined/function on iOS can crash (expo/expo#35386).
+  const barcodeHandler =
+    permission?.granted && cameraReady && deferMountCamera ? handleBarCodeScanned : undefined;
+
   return (
     <View style={styles.container}>
-      {permission?.granted && (
+      {permission?.granted && deferMountCamera && (
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
-          onBarcodeScanned={scanned || isProcessingRef.current ? undefined : handleBarCodeScanned}
+          onCameraReady={onCameraReady}
+          onBarcodeScanned={barcodeHandler}
           barcodeScannerSettings={{
             barcodeTypes: ['ean13', 'ean8', 'code128'],
           }}
@@ -128,6 +156,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
         style={styles.closeButton} 
         onPress={() => {
           isProcessingRef.current = false;
+          scannedRef.current = false;
           setScanned(false);
           onClose();
         }}

@@ -19,7 +19,8 @@
       "bundleIdentifier": "com.casaideal.laplatahuila",
       "icon": "./assets/images/icono.png",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras."
       }
     },
     "android": {

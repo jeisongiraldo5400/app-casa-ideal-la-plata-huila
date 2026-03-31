@@ -2,7 +2,7 @@ import { useInventory } from '@/components/inventory/infrastructure/hooks/useInv
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function InventoryList() {
   const {
@@ -57,7 +57,7 @@ export function InventoryList() {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
       {inventory.map((item) => {
         // Si hay bodega seleccionada, mostrar solo el stock de esa bodega
         const warehouseStock = selectedWarehouseId
@@ -129,7 +129,7 @@ export function InventoryList() {
       )}
 
       <View style={styles.bottomPadding} />
-    </ScrollView>
+    </View>
   );
 }
 
