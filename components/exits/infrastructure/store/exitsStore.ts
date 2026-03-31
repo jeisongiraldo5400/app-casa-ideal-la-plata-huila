@@ -63,6 +63,14 @@ export interface SelectedDeliveryOrderProgress {
   totalCompleted: number;
 }
 
+const UNAUTHORIZED_EXIT_MESSAGE =
+  "No estás autorizado para registrar la salida de inventario de esta orden.";
+
+type ExitAuthorizationResult = {
+  canRegister: boolean;
+  message: string | null;
+};
+
 interface ExitsState {
   // Sesión de salida
   warehouseId: string | null;
@@ -99,6 +107,8 @@ interface ExitsState {
   deliveryOrders: DeliveryOrder[];
   selectedDeliveryOrder: DeliveryOrder | null;
   scannedItemsProgress: Map<string, number>; // compositeKey(product_id, warehouse_id) -> cantidad escaneada
+  canRegisterExit: boolean;
+  authorizationMessage: string | null;
 
   // Cache de salidas registradas por orden y producto+bodega (para evitar consultas redundantes)
   registeredExitsCache: Record<string, Record<string, number>>; // orderId -> compositeKey(product_id, warehouse_id) -> quantity
@@ -118,6 +128,7 @@ interface ExitsState {
   searchDeliveryOrdersByCustomer: (customerId: string) => Promise<void>;
   searchDeliveryOrdersByUser: (userId: string) => Promise<void>;
   selectDeliveryOrder: (orderId: string) => Promise<void>;
+  validateCurrentUserAuthorizationForOrder: (orderId: string) => Promise<ExitAuthorizationResult>;
   validateProductAgainstOrder: (productId: string, warehouseId: string, quantity: number) => {
     valid: boolean;
     error?: string;
@@ -179,6 +190,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   deliveryOrders: [],
   selectedDeliveryOrder: null,
   scannedItemsProgress: new Map(),
+  canRegisterExit: true,
+  authorizationMessage: null,
   registeredExitsCache: {},
   deliveryObservations: "",
 
@@ -198,6 +211,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
       registeredExitsCache: {},
+      canRegisterExit: true,
+      authorizationMessage: null,
     });
   },
 
@@ -208,6 +223,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrderId: null,
       selectedDeliveryOrder: null,
       deliveryOrders: [],
+      canRegisterExit: true,
+      authorizationMessage: null,
     });
   },
 
@@ -218,7 +235,104 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrderId: null,
       selectedDeliveryOrder: null,
       deliveryOrders: [],
+      canRegisterExit: true,
+      authorizationMessage: null,
     });
+  },
+
+  validateCurrentUserAuthorizationForOrder: async (
+    orderId: string
+  ): Promise<ExitAuthorizationResult> => {
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE,
+        };
+      }
+
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("delivery_order_pickup_assignments")
+        .select("user_id")
+        .eq("delivery_order_id", orderId)
+        .is("deleted_at", null);
+
+      if (assignmentsError) {
+        console.error("Error loading pickup assignments:", assignmentsError);
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE,
+        };
+      }
+
+      const hasAssignments = (assignments || []).length > 0;
+      if (!hasAssignments) {
+        return { canRegister: true, message: null };
+      }
+
+      const isAssignedUser = (assignments || []).some(
+        (assignment) => assignment.user_id === user.id
+      );
+
+      if (isAssignedUser) {
+        return { canRegister: true, message: null };
+      }
+
+      const { data: userRolesData, error: userRolesError } = await supabase
+        .from("user_roles")
+        .select("role_id")
+        .eq("user_id", user.id);
+
+      if (userRolesError) {
+        console.error("Error loading user roles:", userRolesError);
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE,
+        };
+      }
+
+      if (!userRolesData || userRolesData.length === 0) {
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE,
+        };
+      }
+
+      const roleIds = userRolesData.map((role) => role.role_id);
+      const { data: rolesData, error: rolesError } = await supabase
+        .from("roles")
+        .select("nombre")
+        .in("id", roleIds)
+        .is("deleted_at", null);
+
+      if (rolesError) {
+        console.error("Error loading role names:", rolesError);
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE,
+        };
+      }
+
+      const isBodeguero = (rolesData || []).some(
+        (role) => role.nombre?.toLowerCase() === "bodeguero"
+      );
+
+      return {
+        canRegister: isBodeguero,
+        message: isBodeguero ? null : UNAUTHORIZED_EXIT_MESSAGE,
+      };
+    } catch (error) {
+      console.error("Error validating exit authorization:", error);
+      return {
+        canRegister: false,
+        message: UNAUTHORIZED_EXIT_MESSAGE,
+      };
+    }
   },
 
   setDeliveryObservations: (observations) => {
@@ -665,6 +779,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         }),
       };
 
+      const authorizationResult = await get().validateCurrentUserAuthorizationForOrder(
+        orderId
+      );
+
       // Actualizar el cache de salidas registradas desde inventory_exits
       const { registeredExitsCache } = get();
       const updatedCache = { ...registeredExitsCache };
@@ -687,6 +805,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         selectedDeliveryOrderId: orderId,
         scannedItemsProgress: new Map(),
         registeredExitsCache: updatedCache,
+        canRegisterExit: authorizationResult.canRegister,
+        authorizationMessage: authorizationResult.message,
         loading: false,
         loadingMessage: null
       });
@@ -695,6 +815,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({
         selectedDeliveryOrder: null,
         selectedDeliveryOrderId: null,
+        canRegisterExit: true,
+        authorizationMessage: null,
         loading: false,
         loadingMessage: null,
         error: error.message
@@ -830,7 +952,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     },
 
   startExit: () => {
-    const { warehouseId, exitMode, selectedUserId, selectedCustomerId, selectedDeliveryOrderId, selectedDeliveryOrder } = get();
+    const {
+      warehouseId,
+      exitMode,
+      selectedUserId,
+      selectedCustomerId,
+      selectedDeliveryOrderId,
+      selectedDeliveryOrder,
+      canRegisterExit,
+      authorizationMessage,
+    } = get();
 
     if (!exitMode) {
       set({ error: "Debe seleccionar un modo de salida" });
@@ -841,6 +972,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     if (exitMode === 'direct_user') {
       if (!selectedUserId) {
         set({ error: "Debe seleccionar un usuario destinatario" });
+        return;
+      }
+
+      if (!canRegisterExit) {
+        set({ error: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
         return;
       }
 
@@ -863,6 +999,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     if (exitMode === 'direct_customer') {
       if (!selectedCustomerId) {
         set({ error: "Debe seleccionar un cliente destinatario" });
+        return;
+      }
+
+      if (!canRegisterExit) {
+        set({ error: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
         return;
       }
 
@@ -1201,6 +1342,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrderId,
       selectedDeliveryOrder,
       deliveryObservations,
+      canRegisterExit,
+      authorizationMessage,
     } = get();
 
     if (exitItems.length === 0) {
@@ -1209,6 +1352,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     if (!exitMode) {
       return { error: { message: "Debe seleccionar un modo de salida" } };
+    }
+
+    if (selectedDeliveryOrderId && !canRegisterExit) {
+      return {
+        error: { message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE },
+      };
     }
 
     // Verificar que todos los items tengan warehouseId (resuelto desde la orden)
@@ -1221,6 +1370,31 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({ loading: true, loadingMessage: 'Registrando salida...' });
 
     try {
+      if (selectedDeliveryOrderId) {
+        const authorizationResult =
+          await get().validateCurrentUserAuthorizationForOrder(
+            selectedDeliveryOrderId
+          );
+
+        if (!authorizationResult.canRegister) {
+          set({
+            loading: false,
+            loadingMessage: null,
+            canRegisterExit: false,
+            authorizationMessage:
+              authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE,
+          });
+          return {
+            error: {
+              message:
+                authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE,
+            },
+          };
+        }
+
+        set({ canRegisterExit: true, authorizationMessage: null });
+      }
+
       // Preparar datos según el modo de salida (cada item usa su propia bodega)
       const exits: InventoryExit[] = exitItems.map((item) => {
         const baseExit: InventoryExit = {
@@ -1261,6 +1435,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .select();
 
       if (exitsError) {
+        const backendDeniedMessage =
+          exitsError.message?.toLowerCase().includes("autorizado") ||
+          exitsError.message?.toLowerCase().includes("authorized")
+            ? UNAUTHORIZED_EXIT_MESSAGE
+            : null;
+
+        if (backendDeniedMessage) {
+          set({
+            canRegisterExit: false,
+            authorizationMessage: backendDeniedMessage,
+          });
+        }
+
         console.error("Error inserting exits:", exitsError);
         logOperationError({
           error_code: "EXIT_INSERT_FAILED",
@@ -1278,7 +1465,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             deliveryOrderId: selectedDeliveryOrderId,
           },
         });
-        return { error: exitsError };
+        return {
+          error: {
+            ...exitsError,
+            message: backendDeniedMessage || exitsError.message,
+          },
+        };
       }
 
       // Verificar que se insertaron correctamente
@@ -1502,6 +1694,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
+      canRegisterExit: true,
+      authorizationMessage: null,
       // registeredExitsCache se mantiene - NO resetear
       customerSearchTerm: "",
       deliveryObservations: "",
@@ -1529,6 +1723,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrders: [],
       scannedItemsProgress: new Map(),
       registeredExitsCache: {},
+      canRegisterExit: true,
+      authorizationMessage: null,
       customerSearchTerm: "",
       deliveryObservations: "",
     });
@@ -1557,6 +1753,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       error: null,
       exitItems: [], // Limpiar items de salida
       scannedItemsProgress: new Map(), // Limpiar progreso de escaneo
+      canRegisterExit: true,
+      authorizationMessage: null,
     });
   },
 }));

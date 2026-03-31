@@ -12,6 +12,8 @@ export function ExitItemsList() {
     removeProductFromExit,
     finalizeExit,
     loading,
+    canRegisterExit,
+    authorizationMessage,
   } = useExitsStore();
 
   const { user } = useAuth();
@@ -19,6 +21,14 @@ export function ExitItemsList() {
   const handleFinalize = async () => {
     if (!user) {
       Alert.alert('Error', 'Usuario no autenticado');
+      return;
+    }
+
+    if (!canRegisterExit) {
+      Alert.alert(
+        'Sin autorización',
+        authorizationMessage || 'No estás autorizado para registrar la salida de inventario de esta orden.'
+      );
       return;
     }
 
@@ -84,8 +94,15 @@ export function ExitItemsList() {
           title={`Finalizar Salida (${totalItems} unidades)`}
           onPress={handleFinalize}
           loading={loading}
+          disabled={!canRegisterExit}
           style={styles.finalizeButton}
         />
+
+        {!canRegisterExit && (
+          <Text style={styles.unauthorizedText}>
+            {authorizationMessage || 'No estás autorizado para registrar la salida de inventario de esta orden.'}
+          </Text>
+        )}
       </Card>
     </View>
   );
@@ -186,6 +203,12 @@ const styles = StyleSheet.create({
   },
   finalizeButton: {
     marginTop: 16,
+  },
+  unauthorizedText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: Colors.error.main,
+    fontWeight: '500',
   },
 });
 

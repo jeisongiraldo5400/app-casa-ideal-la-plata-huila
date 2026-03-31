@@ -33,6 +33,8 @@ export function SetupForm() {
     reset,
     error,
     getSelectedDeliveryOrderProgress,
+    canRegisterExit,
+    authorizationMessage,
   } = useExitsStore();
 
   const router = useRouter();
@@ -97,6 +99,7 @@ export function SetupForm() {
   // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
   const canStart =
     exitMode !== null &&
+    canRegisterExit &&
     (
       (exitMode === 'direct_user' && selectedUserId !== null && selectedDeliveryOrderId !== null && !isOrderComplete) ||
       (exitMode === 'direct_customer' && selectedCustomerId !== null && selectedDeliveryOrderId !== null && !isOrderComplete)
@@ -287,6 +290,17 @@ export function SetupForm() {
               borderColor: Colors.error.main
             }]}>
               <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
+            </View>
+          )}
+
+          {selectedDeliveryOrderId && !canRegisterExit && (
+            <View style={[styles.errorContainer, {
+              backgroundColor: Colors.error.light + '20',
+              borderColor: Colors.error.main
+            }]}> 
+              <Text style={[styles.errorText, { color: Colors.error.main }]}>
+                {authorizationMessage || 'No estás autorizado para registrar la salida de inventario de esta orden.'}
+              </Text>
             </View>
           )}
 
