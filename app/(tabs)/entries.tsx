@@ -119,9 +119,9 @@ export default function EntriesScreen() {
 
   return (
     <>
-      {/* Modal de loading: no bloquear durante configuración (setup / flow-selection) */}
+      {/* Modal de loading: no bloquear durante configuración (setup) */}
       <Modal
-        visible={loading && step !== 'setup' && step !== 'flow-selection'}
+        visible={loading && step !== 'setup'}
         transparent={true}
         animationType="fade"
         onRequestClose={() => {}} // Bloquear cierre durante loading
@@ -159,7 +159,7 @@ export default function EntriesScreen() {
           </View>
         </View>
 
-        {(step === 'setup' || step === 'flow-selection') && <SetupForm />}
+        {step === 'setup' && <SetupForm />}
 
         {error && (
           <View style={[styles.errorContainer, {

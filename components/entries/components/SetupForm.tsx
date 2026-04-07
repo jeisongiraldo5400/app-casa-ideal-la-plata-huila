@@ -22,6 +22,7 @@ export function SetupForm() {
   const {
     supplierId,
     purchaseOrderId,
+    selectedPurchaseOrder,
     warehouseId,
     suppliers,
     purchaseOrders,
@@ -37,8 +38,6 @@ export function SetupForm() {
     setSetupStep,
     setSupplierSearchQuery,
     startEntry,
-    entryType,
-    setEntryType,
     purchaseOrderValidations,
   } = useEntriesStore();
 
@@ -49,28 +48,25 @@ export function SetupForm() {
   useEffect(() => {
     loadSuppliers();
     loadWarehouses();
-  }, []);
+  }, [loadSuppliers, loadWarehouses]);
 
   // Refrescar datos cuando la pantalla recibe foco
   useFocusEffect(
     useCallback(() => {
       loadSuppliers();
       loadWarehouses();
-      // Refrescar órdenes de compra si hay un proveedor seleccionado
       if (supplierId) {
         setSupplier(supplierId);
       }
     }, [loadSuppliers, loadWarehouses, supplierId, setSupplier])
   );
 
-  // Refrescar órdenes de compra cuando se vuelve al paso de purchase-order
   useEffect(() => {
     if (setupStep === 'purchase-order' && supplierId) {
-      setSupplier(supplierId); // Esto dispara loadPurchaseOrders
+      setSupplier(supplierId);
     }
   }, [setupStep, supplierId, setSupplier]);
 
-  // Filtrar proveedores por búsqueda (nombre o NIT)
   const filteredSuppliers = useMemo(() => {
     if (!supplierSearchQuery) return suppliers;
     const query = supplierSearchQuery.toLowerCase();
@@ -81,45 +77,13 @@ export function SetupForm() {
     );
   }, [suppliers, supplierSearchQuery]);
 
-  const renderFlowSelectionStep = () => (
-    <View>
-      <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>¿Qué deseas registrar?</Text>
-      <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-        Seleccione el tipo de entrada de inventario que va a realizar
-      </Text>
-
-      <Button
-        title="Registrar entrada con Orden de Compra"
-        onPress={() => setEntryType('PO_ENTRY')}
-        style={styles.flowButton}
-      />
-
-      <Button
-        title="Registrar entrada manual"
-        onPress={() => setEntryType('ENTRY')}
-        style={styles.flowButton}
-        variant="secondary"
-      />
-
-      <Button
-        title="Realizar carga inicial"
-        onPress={() => setEntryType('INITIAL_LOAD')}
-        style={styles.flowButton}
-        variant="outline"
-      />
-    </View>
-  );
-
   const renderSupplierStep = () => (
     <View>
       <View style={styles.stepHeader}>
-        <TouchableOpacity onPress={() => setEntryType(null as any)} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
-        </TouchableOpacity>
         <View style={styles.stepHeaderText}>
-          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 1: Seleccionar Proveedor</Text>
+          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 1: Seleccionar proveedor</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            {entryType === 'ENTRY' ? 'Seleccione el proveedor (Opcional)' : 'Busque y seleccione el proveedor por nombre o NIT'}
+            Busque y seleccione el proveedor de la orden de compra (obligatorio)
           </Text>
         </View>
       </View>
@@ -145,7 +109,7 @@ export function SetupForm() {
 
       <View style={styles.field}>
         <View style={styles.fieldHeader}>
-          <Text style={[styles.label, { color: Colors.text.primary }]}>Proveedor {entryType === 'PO_ENTRY' ? '*' : '(Opcional)'}</Text>
+          <Text style={[styles.label, { color: Colors.text.primary }]}>Proveedor *</Text>
           <TouchableOpacity
             onPress={() => loadSuppliers()}
             style={styles.refreshButton}
@@ -166,27 +130,20 @@ export function SetupForm() {
         />
       </View>
 
-      {(supplierId || entryType === 'ENTRY') && (
+      {supplierId ? (
         <View style={styles.supplierActions}>
-          {entryType === 'PO_ENTRY' && (
-            <Button
-              title="Continuar con orden de compra"
-              onPress={() => setSetupStep('purchase-order')}
-              style={styles.continueButton}
-            />
-          )}
-
-          {entryType === 'ENTRY' && (
-            <Button
-              title="Continuar a bodega"
-              onPress={() => setSetupStep('warehouse')}
-              style={styles.continueButton}
-            />
-          )}
+          <Button
+            title="Continuar a orden de compra"
+            onPress={() => setSetupStep('purchase-order')}
+            style={styles.continueButton}
+          />
         </View>
-      )}
+      ) : null}
     </View>
   );
+
+  const canContinueToWarehouse =
+    Boolean(purchaseOrderId && selectedPurchaseOrder && !loading);
 
   const renderPurchaseOrderStep = () => (
     <View>
@@ -195,9 +152,9 @@ export function SetupForm() {
           <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
         </TouchableOpacity>
         <View style={styles.stepHeaderText}>
-          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Seleccionar Orden de Compra (Opcional)</Text>
+          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Seleccionar orden de compra</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            Seleccione la orden de compra pendiente del proveedor o continúe sin orden
+            Elija una orden pendiente del proveedor. Es obligatorio vincular la entrada a una OC.
           </Text>
         </View>
       </View>
@@ -235,16 +192,16 @@ export function SetupForm() {
 
       <View style={styles.purchaseOrderActions}>
         <Button
-          title={purchaseOrderId ? "Continuar" : "Continuar sin orden"}
+          title="Continuar a bodega"
           onPress={() => setSetupStep('warehouse')}
           style={styles.continueButton}
+          disabled={!canContinueToWarehouse}
         />
       </View>
     </View>
   );
 
   const renderWarehouseStep = () => {
-    // Obtener la orden seleccionada para mostrar información
     const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
     const orderItemsCount = selectedOrder?.items?.length || 0;
     const totalUnits = selectedOrder?.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
@@ -253,21 +210,13 @@ export function SetupForm() {
       <View>
         <View style={styles.stepHeader}>
           <TouchableOpacity
-            onPress={() => {
-              if (entryType === 'INITIAL_LOAD') {
-                setEntryType(null as any); // Volver a selección de flujo
-              } else if (entryType === 'ENTRY') {
-                setSetupStep('supplier');
-              } else {
-                setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
-              }
-            }}
+            onPress={() => setSetupStep('purchase-order')}
             style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
             <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>
-              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar Bodega
+              Paso 3: Seleccionar bodega
             </Text>
             <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
               Seleccione la bodega de destino para la entrada
@@ -275,8 +224,7 @@ export function SetupForm() {
           </View>
         </View>
 
-        {/* Mostrar resumen de la orden seleccionada si existe */}
-        {entryType === 'PO_ENTRY' && purchaseOrderId && selectedOrder && (
+        {purchaseOrderId && selectedOrder && (
           <View style={[styles.orderSummary, { backgroundColor: Colors.primary.main + '10', borderColor: Colors.primary.main }]}>
             <MaterialIcons name="inventory-2" size={24} color={Colors.primary.main} />
             <View style={styles.orderSummaryText}>
@@ -313,8 +261,7 @@ export function SetupForm() {
           />
         </View>
 
-        {/* Nota informativa para OC */}
-        {entryType === 'PO_ENTRY' && purchaseOrderId && (
+        {purchaseOrderId && (
           <View style={[styles.infoNote, { backgroundColor: Colors.info?.light + '20' || Colors.primary.light + '20' }]}>
             <MaterialIcons name="info-outline" size={20} color={Colors.info?.main || Colors.primary.main} />
             <Text style={[styles.infoNoteText, { color: Colors.text.secondary }]}>
@@ -324,19 +271,17 @@ export function SetupForm() {
         )}
 
         {(() => {
-          // Verificar si la orden está completa
           let isOrderComplete = false;
-          if (entryType === 'PO_ENTRY' && purchaseOrderId) {
+          if (purchaseOrderId) {
             const validation = purchaseOrderValidations[purchaseOrderId];
             isOrderComplete = validation?.isComplete || false;
           }
 
-          // Simplificado: solo necesita bodega y que la orden no esté completa
           const canStart = warehouseId && !isOrderComplete;
 
           return (
             <Button
-              title={isOrderComplete ? "Orden Completa - No se puede escanear" : "Comenzar Entrada"}
+              title={isOrderComplete ? "Orden completa — no se puede escanear" : "Comenzar entrada"}
               onPress={startEntry}
               disabled={!canStart}
               style={styles.button}
@@ -350,20 +295,14 @@ export function SetupForm() {
   return (
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
-        <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar Entrada</Text>
+        <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar entrada</Text>
         <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
-          Complete los pasos para configurar la entrada de productos
+          Registro vinculado a orden de compra: proveedor, OC y bodega
         </Text>
 
-        {!entryType ? (
-          renderFlowSelectionStep()
-        ) : (
-          <>
-            {setupStep === 'supplier' && renderSupplierStep()}
-            {entryType === 'PO_ENTRY' && setupStep === 'purchase-order' && renderPurchaseOrderStep()}
-            {setupStep === 'warehouse' && renderWarehouseStep()}
-          </>
-        )}
+        {setupStep === 'supplier' && renderSupplierStep()}
+        {setupStep === 'purchase-order' && renderPurchaseOrderStep()}
+        {setupStep === 'warehouse' && renderWarehouseStep()}
       </Card>
     </ScrollView>
   );
@@ -484,9 +423,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
-  flowButton: {
-    marginBottom: 16,
-  },
   orderSummary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,4 +457,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

@@ -27,14 +27,14 @@ describe('entriesStore', () => {
       expect(state.setupStep).toBe('supplier');
     });
 
-    it('should set setupStep to warehouse for INITIAL_LOAD', () => {
+    it('should start setup at supplier step for any entry type', () => {
       const { setEntryType } = useEntriesStore.getState();
-      
+
       setEntryType('INITIAL_LOAD');
-      
+
       const state = useEntriesStore.getState();
       expect(state.entryType).toBe('INITIAL_LOAD');
-      expect(state.setupStep).toBe('warehouse');
+      expect(state.setupStep).toBe('supplier');
     });
   });
 
@@ -68,11 +68,25 @@ describe('entriesStore', () => {
       reset();
       
       const state = useEntriesStore.getState();
-      expect(state.entryType).toBeNull();
+      expect(state.entryType).toBe('PO_ENTRY');
       expect(state.currentQuantity).toBe(1);
-      expect(state.step).toBe('flow-selection');
+      expect(state.step).toBe('setup');
       expect(state.entryItems).toEqual([]);
       expect(state.scannedItemsProgress.size).toBe(0);
+    });
+  });
+
+  describe('startEntry', () => {
+    it('should not go to scanning without purchase order', () => {
+      const { setSupplier, setWarehouse, startEntry } = useEntriesStore.getState();
+
+      setSupplier('supplier-1');
+      setWarehouse('warehouse-1');
+      startEntry();
+
+      const state = useEntriesStore.getState();
+      expect(state.step).toBe('setup');
+      expect(state.error).toMatch(/orden de compra/i);
     });
   });
 
@@ -83,48 +97,39 @@ describe('entriesStore', () => {
     });
 
     it('should update cache when entries are registered', async () => {
-      // Mock de supabase para la orden de compra
-      const mockSelectOrder = jest.fn(() => ({
-        eq: jest.fn(() => ({
-          single: jest.fn(() => Promise.resolve({
-            data: {
-              id: 'order-1',
-              items: [],
-              supplier: { id: 'supplier-1', name: 'Test Supplier' },
-            },
-            error: null,
-          })),
-        })),
-      }));
+      const mockOrder = {
+        id: 'order-1',
+        order_number: 'OC-1',
+        supplier_id: 'supplier-1',
+        status: 'pending' as const,
+        items: [],
+        supplier: { id: 'supplier-1', name: 'Test Supplier' },
+      };
 
-      // Mock de supabase para inventory entries
-      const mockSelectEntries = jest.fn(() => ({
-        eq: jest.fn(() => Promise.resolve({
-          data: [
-            { product_id: 'product-1', quantity: 10 },
-            { product_id: 'product-1', quantity: 5 },
-          ],
-          error: null,
-        })),
-      }));
+      useEntriesStore.setState({ purchaseOrders: [mockOrder as any] });
 
-      // Configurar mocks secuenciales
-      (supabase.from as jest.Mock)
-        .mockImplementationOnce(() => ({
-          select: mockSelectOrder,
-        }))
-        .mockImplementationOnce(() => ({
-          select: mockSelectEntries,
-        }));
+      (supabase.from as jest.Mock).mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            is: () =>
+              Promise.resolve({
+                data: [
+                  { product_id: 'product-1', quantity: 10 },
+                  { product_id: 'product-1', quantity: 5 },
+                ],
+                error: null,
+              }),
+          }),
+        }),
+      }));
 
       const { selectPurchaseOrder } = useEntriesStore.getState();
-      
+
       await selectPurchaseOrder('order-1');
-      
+
       const state = useEntriesStore.getState();
-      // El cache debería tener los productos agrupados
       expect(state.registeredEntriesCache['order-1']).toBeDefined();
-      expect(state.registeredEntriesCache['order-1']['product-1']).toBe(15); // 10 + 5
+      expect(state.registeredEntriesCache['order-1']['product-1']).toBe(15);
     });
   });
 
@@ -146,12 +151,8 @@ describe('entriesStore', () => {
     });
 
     it('should update when product is added to entry', async () => {
-      const { setEntryType, addProductToEntry } = useEntriesStore.getState();
-      
-      // Configurar tipo de entrada
-      setEntryType('PO_ENTRY');
-      
-      // Mock de producto
+      const { addProductToEntry } = useEntriesStore.getState();
+
       const mockProduct = {
         id: 'product-1',
         name: 'Test Product',
@@ -159,16 +160,26 @@ describe('entriesStore', () => {
         sku: 'SKU-001',
       } as any;
 
-      // Mock de validación
-      const mockValidate = jest.fn(() => ({ valid: true }));
-      useEntriesStore.getState().validateProductAgainstOrder = mockValidate;
+      useEntriesStore.setState({
+        entryType: 'PO_ENTRY',
+        purchaseOrderId: 'order-1',
+        currentProduct: mockProduct,
+        selectedPurchaseOrder: {
+          id: 'order-1',
+          items: [
+            {
+              product_id: 'product-1',
+              quantity: 100,
+              product: mockProduct,
+            },
+          ],
+        } as any,
+        registeredEntriesCache: { 'order-1': {} },
+      });
 
-      // Agregar producto (esto actualizará scannedItemsProgress)
       await addProductToEntry(mockProduct, 5, '123456');
-      
+
       const state = useEntriesStore.getState();
-      // Nota: scannedItemsProgress solo se actualiza si hay purchaseOrderId y entryType es PO_ENTRY
-      // Para un test completo, necesitaríamos configurar más estado
       expect(state.entryItems.length).toBe(1);
     });
   });
