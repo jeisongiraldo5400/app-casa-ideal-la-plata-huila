@@ -27,14 +27,14 @@ describe('entriesStore', () => {
       expect(state.setupStep).toBe('supplier');
     });
 
-    it('should start setup at supplier step for any entry type', () => {
+    it('should start at warehouse step for INITIAL_LOAD', () => {
       const { setEntryType } = useEntriesStore.getState();
 
       setEntryType('INITIAL_LOAD');
 
       const state = useEntriesStore.getState();
       expect(state.entryType).toBe('INITIAL_LOAD');
-      expect(state.setupStep).toBe('supplier');
+      expect(state.setupStep).toBe('warehouse');
     });
   });
 
@@ -68,18 +68,20 @@ describe('entriesStore', () => {
       reset();
       
       const state = useEntriesStore.getState();
-      expect(state.entryType).toBe('PO_ENTRY');
+      expect(state.entryType).toBeNull();
       expect(state.currentQuantity).toBe(1);
-      expect(state.step).toBe('setup');
+      expect(state.step).toBe('flow-selection');
       expect(state.entryItems).toEqual([]);
       expect(state.scannedItemsProgress.size).toBe(0);
     });
   });
 
   describe('startEntry', () => {
-    it('should not go to scanning without purchase order', () => {
-      const { setSupplier, setWarehouse, startEntry } = useEntriesStore.getState();
+    it('should not go to scanning without purchase order when PO_ENTRY', () => {
+      const { setEntryType, setSupplier, setWarehouse, startEntry } =
+        useEntriesStore.getState();
 
+      setEntryType('PO_ENTRY');
       setSupplier('supplier-1');
       setWarehouse('warehouse-1');
       startEntry();
@@ -87,6 +89,24 @@ describe('entriesStore', () => {
       const state = useEntriesStore.getState();
       expect(state.step).toBe('setup');
       expect(state.error).toMatch(/orden de compra/i);
+    });
+  });
+
+  describe('finalizeEntry', () => {
+    it('should return error for PO_ENTRY without purchase order before insert', async () => {
+      const mockProduct = { id: 'product-1', name: 'P' } as any;
+      useEntriesStore.setState({
+        entryType: 'PO_ENTRY',
+        supplierId: 'supplier-1',
+        warehouseId: 'warehouse-1',
+        purchaseOrderId: null,
+        entryItems: [{ product: mockProduct, quantity: 1, barcode: 'x' }],
+      });
+
+      const { finalizeEntry } = useEntriesStore.getState();
+      const { error } = await finalizeEntry('user-1');
+
+      expect(error?.message).toMatch(/orden de compra/i);
     });
   });
 

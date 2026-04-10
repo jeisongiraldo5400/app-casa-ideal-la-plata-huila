@@ -63,8 +63,8 @@ export interface SelectedPurchaseOrderProgress {
 }
 
 interface EntriesState {
-  // Sesión de entrada (pantalla Entradas: solo flujo orden de compra)
-  entryType: EntryType;
+  // Sesión de entrada (null hasta elegir tipo en flow-selection)
+  entryType: EntryType | null;
   supplierId: string | null;
   purchaseOrderId: string | null;
   selectedPurchaseOrder: PurchaseOrderWithItems | null; // Orden completa seleccionada
@@ -84,7 +84,7 @@ interface EntriesState {
   loading: boolean;
   loadingMessage: string | null;
   error: string | null;
-  step: "setup" | "scanning" | "product-form"; // setup: supplier/PO/warehouse, scanning, product-form: crear producto
+  step: "flow-selection" | "setup" | "scanning" | "product-form";
   setupStep: "supplier" | "purchase-order" | "warehouse"; // Paso actual en el setup
 
   // Datos para formularios
@@ -111,7 +111,7 @@ interface EntriesState {
   registeredEntriesCache: Record<string, Record<string, number>>; // orderId -> productId -> quantity
 
   // Actions - Setup
-  setEntryType: (type: EntryType) => void;
+  setEntryType: (type: EntryType | null) => void;
   setSupplier: (supplierId: string | null) => void;
   setPurchaseOrder: (purchaseOrderId: string | null) => Promise<void>;
   selectPurchaseOrder: (purchaseOrderId: string) => Promise<void>;
@@ -166,7 +166,7 @@ interface EntriesState {
 
 export const useEntriesStore = create<EntriesState>((set, get) => ({
   // Initial state
-  entryType: "PO_ENTRY",
+  entryType: null,
   supplierId: null,
   purchaseOrderId: null,
   selectedPurchaseOrder: null,
@@ -180,7 +180,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   loading: false,
   loadingMessage: null,
   error: null,
-  step: "setup",
+  step: "flow-selection",
   setupStep: "supplier",
   suppliers: [],
   purchaseOrders: [],
@@ -193,10 +193,22 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Setup actions
   setEntryType: (type) => {
+    if (type === null) {
+      set({
+        entryType: null,
+        step: "flow-selection",
+        setupStep: "supplier",
+        purchaseOrderId: null,
+        selectedPurchaseOrder: null,
+        scannedItemsProgress: new Map(),
+        selectedOrderProductId: null,
+      });
+      return;
+    }
     set({
       entryType: type,
       step: "setup",
-      setupStep: "supplier",
+      setupStep: type === "INITIAL_LOAD" ? "warehouse" : "supplier",
       purchaseOrderId: null,
       selectedPurchaseOrder: null,
       scannedItemsProgress: new Map(),
@@ -220,6 +232,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }); // Resetear producto seleccionado y progreso
     if (purchaseOrderId) {
       await get().selectPurchaseOrder(purchaseOrderId);
+      get().setSetupStep("warehouse");
     } else {
       set({ selectedPurchaseOrder: null });
     }
@@ -853,6 +866,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return;
     }
 
+    if (!entryType) {
+      set({ error: "Debe seleccionar un tipo de entrada" });
+      return;
+    }
+
     if (entryType === "PO_ENTRY" && !supplierId) {
       set({
         error: "Debe seleccionar un proveedor para entrada con orden de compra",
@@ -1179,6 +1197,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     if (!warehouseId) {
       return { error: { message: "Debe seleccionar una bodega" } };
+    }
+
+    if (!entryType) {
+      return { error: { message: "Tipo de entrada no definido" } };
     }
 
     if (!userId) {
@@ -1560,9 +1582,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       error: null,
       loading: false,
       loadingMessage: null,
-      step: "setup",
+      step: "flow-selection",
       setupStep: "supplier",
-      entryType: "PO_ENTRY",
+      entryType: null,
       supplierId: null,
       purchaseOrderId: null,
       selectedPurchaseOrder: null,
@@ -1585,9 +1607,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       error: null,
       loading: false,
       loadingMessage: null,
-      step: "setup",
+      step: "flow-selection",
       setupStep: "supplier",
-      entryType: "PO_ENTRY",
+      entryType: null,
       supplierId: null,
       purchaseOrderId: null,
       selectedPurchaseOrder: null,

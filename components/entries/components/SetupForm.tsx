@@ -38,6 +38,8 @@ export function SetupForm() {
     setSetupStep,
     setSupplierSearchQuery,
     startEntry,
+    entryType,
+    setEntryType,
     purchaseOrderValidations,
   } = useEntriesStore();
 
@@ -50,7 +52,6 @@ export function SetupForm() {
     loadWarehouses();
   }, [loadSuppliers, loadWarehouses]);
 
-  // Refrescar datos cuando la pantalla recibe foco
   useFocusEffect(
     useCallback(() => {
       loadSuppliers();
@@ -77,13 +78,52 @@ export function SetupForm() {
     );
   }, [suppliers, supplierSearchQuery]);
 
+  const handleContinueAsManualEntry = () => {
+    setEntryType('ENTRY');
+    setSetupStep('warehouse');
+  };
+
+  const renderFlowSelectionStep = () => (
+    <View>
+      <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>¿Qué deseas registrar?</Text>
+      <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
+        Seleccione el tipo de entrada de inventario que va a realizar
+      </Text>
+
+      <Button
+        title="Registrar entrada con orden de compra"
+        onPress={() => setEntryType('PO_ENTRY')}
+        style={styles.flowButton}
+      />
+
+      <Button
+        title="Registrar entrada manual"
+        onPress={() => setEntryType('ENTRY')}
+        style={styles.flowButton}
+        variant="secondary"
+      />
+
+      <Button
+        title="Realizar carga inicial"
+        onPress={() => setEntryType('INITIAL_LOAD')}
+        style={styles.flowButton}
+        variant="outline"
+      />
+    </View>
+  );
+
   const renderSupplierStep = () => (
     <View>
       <View style={styles.stepHeader}>
+        <TouchableOpacity onPress={() => setEntryType(null)} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
+        </TouchableOpacity>
         <View style={styles.stepHeaderText}>
           <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 1: Seleccionar proveedor</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            Busque y seleccione el proveedor de la orden de compra (obligatorio)
+            {entryType === 'ENTRY'
+              ? 'Seleccione el proveedor (opcional)'
+              : 'Busque y seleccione el proveedor por nombre o NIT'}
           </Text>
         </View>
       </View>
@@ -109,7 +149,9 @@ export function SetupForm() {
 
       <View style={styles.field}>
         <View style={styles.fieldHeader}>
-          <Text style={[styles.label, { color: Colors.text.primary }]}>Proveedor *</Text>
+          <Text style={[styles.label, { color: Colors.text.primary }]}>
+            Proveedor {entryType === 'PO_ENTRY' ? '*' : '(opcional)'}
+          </Text>
           <TouchableOpacity
             onPress={() => loadSuppliers()}
             style={styles.refreshButton}
@@ -130,19 +172,29 @@ export function SetupForm() {
         />
       </View>
 
-      {supplierId ? (
+      {(supplierId || entryType === 'ENTRY') && (
         <View style={styles.supplierActions}>
-          <Button
-            title="Continuar a orden de compra"
-            onPress={() => setSetupStep('purchase-order')}
-            style={styles.continueButton}
-          />
+          {entryType === 'PO_ENTRY' && (
+            <Button
+              title="Continuar con orden de compra"
+              onPress={() => setSetupStep('purchase-order')}
+              style={styles.continueButton}
+            />
+          )}
+
+          {entryType === 'ENTRY' && (
+            <Button
+              title="Continuar a bodega"
+              onPress={() => setSetupStep('warehouse')}
+              style={styles.continueButton}
+            />
+          )}
         </View>
-      ) : null}
+      )}
     </View>
   );
 
-  const canContinueToWarehouse =
+  const canContinuePoToWarehouse =
     Boolean(purchaseOrderId && selectedPurchaseOrder && !loading);
 
   const renderPurchaseOrderStep = () => (
@@ -152,9 +204,9 @@ export function SetupForm() {
           <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
         </TouchableOpacity>
         <View style={styles.stepHeaderText}>
-          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Seleccionar orden de compra</Text>
+          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Orden de compra</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            Elija una orden pendiente del proveedor. Es obligatorio vincular la entrada a una OC.
+            Seleccione una orden pendiente del proveedor, o continúe como entrada manual sin OC.
           </Text>
         </View>
       </View>
@@ -195,7 +247,13 @@ export function SetupForm() {
           title="Continuar a bodega"
           onPress={() => setSetupStep('warehouse')}
           style={styles.continueButton}
-          disabled={!canContinueToWarehouse}
+          disabled={!canContinuePoToWarehouse}
+        />
+        <Button
+          title="Continuar como entrada manual (sin OC)"
+          onPress={handleContinueAsManualEntry}
+          style={styles.skipButton}
+          variant="outline"
         />
       </View>
     </View>
@@ -210,13 +268,21 @@ export function SetupForm() {
       <View>
         <View style={styles.stepHeader}>
           <TouchableOpacity
-            onPress={() => setSetupStep('purchase-order')}
+            onPress={() => {
+              if (entryType === 'INITIAL_LOAD') {
+                setEntryType(null);
+              } else if (entryType === 'ENTRY') {
+                setSetupStep('supplier');
+              } else {
+                setSetupStep(purchaseOrderId ? 'purchase-order' : 'supplier');
+              }
+            }}
             style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
             <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>
-              Paso 3: Seleccionar bodega
+              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar bodega
             </Text>
             <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
               Seleccione la bodega de destino para la entrada
@@ -224,7 +290,7 @@ export function SetupForm() {
           </View>
         </View>
 
-        {purchaseOrderId && selectedOrder && (
+        {entryType === 'PO_ENTRY' && purchaseOrderId && selectedOrder && (
           <View style={[styles.orderSummary, { backgroundColor: Colors.primary.main + '10', borderColor: Colors.primary.main }]}>
             <MaterialIcons name="inventory-2" size={24} color={Colors.primary.main} />
             <View style={styles.orderSummaryText}>
@@ -261,7 +327,7 @@ export function SetupForm() {
           />
         </View>
 
-        {purchaseOrderId && (
+        {entryType === 'PO_ENTRY' && purchaseOrderId && (
           <View style={[styles.infoNote, { backgroundColor: Colors.info?.light + '20' || Colors.primary.light + '20' }]}>
             <MaterialIcons name="info-outline" size={20} color={Colors.info?.main || Colors.primary.main} />
             <Text style={[styles.infoNoteText, { color: Colors.text.secondary }]}>
@@ -272,16 +338,19 @@ export function SetupForm() {
 
         {(() => {
           let isOrderComplete = false;
-          if (purchaseOrderId) {
+          if (entryType === 'PO_ENTRY' && purchaseOrderId) {
             const validation = purchaseOrderValidations[purchaseOrderId];
             isOrderComplete = validation?.isComplete || false;
           }
 
-          const canStart = warehouseId && !isOrderComplete;
+          const canStart =
+            warehouseId &&
+            !isOrderComplete &&
+            (entryType !== 'PO_ENTRY' || Boolean(purchaseOrderId));
 
           return (
             <Button
-              title={isOrderComplete ? "Orden completa — no se puede escanear" : "Comenzar entrada"}
+              title={isOrderComplete ? 'Orden completa — no se puede escanear' : 'Comenzar entrada'}
               onPress={startEntry}
               disabled={!canStart}
               style={styles.button}
@@ -297,12 +366,18 @@ export function SetupForm() {
       <Card style={styles.card}>
         <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar entrada</Text>
         <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
-          Registro vinculado a orden de compra: proveedor, OC y bodega
+          Complete los pasos para configurar la entrada de productos
         </Text>
 
-        {setupStep === 'supplier' && renderSupplierStep()}
-        {setupStep === 'purchase-order' && renderPurchaseOrderStep()}
-        {setupStep === 'warehouse' && renderWarehouseStep()}
+        {!entryType ? (
+          renderFlowSelectionStep()
+        ) : (
+          <>
+            {setupStep === 'supplier' && renderSupplierStep()}
+            {entryType === 'PO_ENTRY' && setupStep === 'purchase-order' && renderPurchaseOrderStep()}
+            {setupStep === 'warehouse' && renderWarehouseStep()}
+          </>
+        )}
       </Card>
     </ScrollView>
   );
@@ -422,6 +497,9 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
+  },
+  flowButton: {
+    marginBottom: 16,
   },
   orderSummary: {
     flexDirection: 'row',
