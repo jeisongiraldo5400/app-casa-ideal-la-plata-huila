@@ -1349,7 +1349,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedUserId,
       selectedCustomerId,
       selectedDeliveryOrderId,
-      selectedDeliveryOrder,
       deliveryObservations,
       canRegisterExit,
       authorizationMessage,
@@ -1492,97 +1491,20 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         console.warn(`Se insertaron ${insertedExits.length} de ${exits.length} salidas`);
       }
 
-      // Si hay una orden de entrega seleccionada, actualizar el progreso con batch RPC
-      if (selectedDeliveryOrderId && selectedDeliveryOrder) {
-        set({ loadingMessage: 'Actualizando progreso de la orden...' });
+      // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
+      // Refrescar caché local desde inventory_exits + delivery_order_items.
+      if (selectedDeliveryOrderId) {
+        set({ loadingMessage: 'Sincronizando orden...' });
 
         const orderIdToRefresh = selectedDeliveryOrderId;
         const { registeredExitsCache } = get();
-        let updatedCache = { ...registeredExitsCache };
-
-        if (!updatedCache[selectedDeliveryOrderId]) {
-          updatedCache[selectedDeliveryOrderId] = {};
+        const finalCache = { ...registeredExitsCache };
+        if (!finalCache[orderIdToRefresh]) {
+          finalCache[orderIdToRefresh] = {};
         }
 
         let orderCompleted = false;
-        const failedProgressUpdates: string[] = [];
 
-        // Usar batch RPC para actualizar todos los items en UNA sola transacción
-        const batchItems = exitItems.map((item) => ({
-          product_id: item.product.id,
-          warehouse_id: item.warehouseId!,
-          quantity_delivered: item.quantity,
-        }));
-
-        const { data: batchData, error: batchError } = await supabase.rpc(
-          'update_delivery_order_progress_batch',
-          {
-            order_id_param: selectedDeliveryOrderId,
-            items_param: batchItems,
-          }
-        );
-
-        if (batchError) {
-          console.error("Error updating delivery order progress (batch):", batchError);
-          logOperationError({
-            error_code: "DELIVERY_PROGRESS_BATCH_FAILED",
-            error_message: batchError.message || String(batchError),
-            module: "exits",
-            operation: "finalize_exit",
-            step: "rpc_update_progress_batch",
-            entity_type: "delivery_order",
-            entity_id: selectedDeliveryOrderId,
-            context: {
-              itemCount: exitItems.length,
-              exitMode,
-              deliveryOrderId: selectedDeliveryOrderId,
-            },
-          });
-          exitItems.forEach((item) => {
-            failedProgressUpdates.push(item.product.name || item.product.id);
-          });
-        } else if (batchData) {
-          if (batchData.all_delivered) {
-            orderCompleted = true;
-            console.log("Orden de entrega completada y marcada automáticamente como 'delivered':", selectedDeliveryOrderId);
-          }
-
-          // Actualizar cache desde resultados exitosos
-          if (batchData.results && Array.isArray(batchData.results)) {
-            for (const result of batchData.results) {
-              const key = compositeKey(result.product_id, result.warehouse_id);
-              updatedCache[selectedDeliveryOrderId][key] = result.current_delivered || 0;
-              console.log(`[finalizeExit] ${key}: Updated cache to ${result.current_delivered}`);
-            }
-          }
-
-          // Reportar items fallidos
-          if (batchData.failed_items && Array.isArray(batchData.failed_items)) {
-            for (const failed of batchData.failed_items) {
-              const failedProduct = exitItems.find(
-                (item) => item.product.id === failed.product_id
-              );
-              failedProgressUpdates.push(failedProduct?.product.name || failed.product_id);
-              console.error(`[finalizeExit] Failed: ${failed.product_id} - ${failed.error}`);
-            }
-          }
-        }
-
-        // Notificar al usuario si hubo errores
-        if (failedProgressUpdates.length > 0) {
-          console.warn(`[finalizeExit] Failed to update delivered_quantity for ${failedProgressUpdates.length} products: ${failedProgressUpdates.join(', ')}`);
-          set({
-            error: `Las salidas se registraron correctamente, pero no se pudo actualizar el progreso de entrega para: ${failedProgressUpdates.join(', ')}. Por favor verifique la orden.`
-          });
-        }
-
-        // Si la orden fue completada, recargar la información
-        if (orderCompleted) {
-          set({ loadingMessage: 'Actualizando estado de la orden...' });
-          await get().selectDeliveryOrder(orderIdToRefresh);
-        }
-
-        // Recargar desde inventory_exits para sincronizar el cache (fuente de verdad)
         try {
           const { data: cancelledExits } = await supabase
             .from("inventory_exit_cancellations")
@@ -1598,7 +1520,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             .eq("delivery_order_id", orderIdToRefresh);
 
           if (!exitsRefreshError && exitsData) {
-            // Calcular cantidades por compositeKey (excluyendo canceladas)
             const registeredByProduct: Record<string, number> = {};
             exitsData.forEach((exit: any) => {
               if (cancelledExitIds.has(exit.id)) return;
@@ -1608,7 +1529,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
                 (registeredByProduct[key] || 0) + (exit.quantity || 0);
             });
 
-            // Obtener los items de la orden para reconciliar
             const { data: orderData } = await supabase
               .from('delivery_orders')
               .select(`
@@ -1623,11 +1543,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
               .eq('id', orderIdToRefresh)
               .is('items.deleted_at', null)
               .single();
-
-            const finalCache = { ...updatedCache };
-            if (!finalCache[orderIdToRefresh]) {
-              finalCache[orderIdToRefresh] = {};
-            }
 
             if (orderData?.items) {
               orderData.items.forEach((item: any) => {
@@ -1644,6 +1559,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
                 }
                 console.log(`[finalizeExit] ${key}: Refreshed cache: registered=${clampedRegistered} (fromExits=${fromExits}, fromDB=${fromDB}, max=${item.quantity})`);
               });
+
+              orderCompleted =
+                orderData.items.length > 0 &&
+                orderData.items.every(
+                  (item: any) =>
+                    (item.delivered_quantity || 0) >= (item.quantity || 0)
+                );
             }
 
             set({ registeredExitsCache: finalCache });
@@ -1664,6 +1586,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
               deliveryOrderId: orderIdToRefresh,
             },
           });
+        }
+
+        if (orderCompleted) {
+          set({ loadingMessage: 'Actualizando estado de la orden...' });
+          await get().selectDeliveryOrder(orderIdToRefresh);
         }
       }
 
