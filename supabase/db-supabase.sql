@@ -1196,6 +1196,85 @@ COMMENT ON FUNCTION "public"."fn_sync_remission_items_on_order_edit"() IS 'Synch
 
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  v_item_quantity numeric;
+  v_delivered numeric;
+  v_new_delivered numeric;
+  v_all_delivered boolean;
+  v_current_status text;
+BEGIN
+  IF NEW.delivery_order_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT doi.quantity, doi.delivered_quantity
+  INTO v_item_quantity, v_delivered
+  FROM public.delivery_order_items doi
+  WHERE doi.delivery_order_id = NEW.delivery_order_id
+    AND doi.product_id = NEW.product_id
+    AND doi.warehouse_id = NEW.warehouse_id
+    AND doi.deleted_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'El producto % no está incluido en la orden de entrega % para la bodega % (ítem inexistente o eliminado)',
+      NEW.product_id, NEW.delivery_order_id, NEW.warehouse_id;
+  END IF;
+
+  v_new_delivered := v_delivered + NEW.quantity;
+
+  IF v_new_delivered > v_item_quantity THEN
+    RAISE EXCEPTION
+      'La cantidad entregada excede la ordenada. Ordenado: %, Ya entregado: %, Esta salida: %',
+      v_item_quantity, v_delivered, NEW.quantity;
+  END IF;
+
+  UPDATE public.delivery_order_items
+  SET delivered_quantity = v_new_delivered
+  WHERE delivery_order_id = NEW.delivery_order_id
+    AND product_id = NEW.product_id
+    AND warehouse_id = NEW.warehouse_id
+    AND deleted_at IS NULL;
+
+  SELECT NOT EXISTS (
+    SELECT 1
+    FROM public.delivery_order_items doi2
+    WHERE doi2.delivery_order_id = NEW.delivery_order_id
+      AND doi2.deleted_at IS NULL
+      AND doi2.delivered_quantity < doi2.quantity
+  ) INTO v_all_delivered;
+
+  IF v_all_delivered THEN
+    SELECT d.status INTO v_current_status
+    FROM public.delivery_orders d
+    WHERE d.id = NEW.delivery_order_id
+      AND d.deleted_at IS NULL;
+
+    IF FOUND AND v_current_status IN ('pending', 'approved', 'sent_by_remission') THEN
+      UPDATE public.delivery_orders
+      SET status = 'delivered',
+          updated_at = NOW()
+      WHERE id = NEW.delivery_order_id
+        AND status IN ('pending', 'approved', 'sent_by_remission');
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() IS 'Increments delivery_order_items.delivered_quantity when an inventory exit is linked to a delivery order, and sets delivery_orders.status to delivered when all active items are complete. Runs AFTER fn_update_stock_on_exit (trigger name trg_z_*). Replaces client-side update_delivery_order_progress_batch for new exits.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_update_order_status_on_remission_assignment"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -7757,6 +7836,14 @@ CREATE OR REPLACE TRIGGER "trg_validate_return_quantity" BEFORE INSERT OR UPDATE
 
 
 
+CREATE OR REPLACE TRIGGER "trg_z_update_delivery_progress_on_inventory_exit" AFTER INSERT ON "public"."inventory_exits" FOR EACH ROW WHEN (("new"."delivery_order_id" IS NOT NULL)) EXECUTE FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"();
+
+
+
+COMMENT ON TRIGGER "trg_z_update_delivery_progress_on_inventory_exit" ON "public"."inventory_exits" IS 'Syncs delivered_quantity and order completion with each exit row; runs after trg_update_stock_on_exit (alphabetical trigger order).';
+
+
+
 CREATE OR REPLACE TRIGGER "trigger_auto_update_remission_status_on_delivery" AFTER UPDATE OF "status" ON "public"."delivery_orders" FOR EACH ROW EXECUTE FUNCTION "public"."fn_auto_update_remission_status_on_delivery"();
 
 
@@ -9106,6 +9193,12 @@ GRANT ALL ON FUNCTION "public"."fn_soft_delete_remission_relationships"() TO "se
 GRANT ALL ON FUNCTION "public"."fn_sync_remission_items_on_order_edit"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_sync_remission_items_on_order_edit"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_sync_remission_items_on_order_edit"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() TO "service_role";
 
 
 
