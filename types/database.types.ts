@@ -1904,6 +1904,8 @@ export type Database = {
           assigned_to_user_id: string
           assigned_user_name: string
           created_at: string
+          created_by: string
+          created_by_name: string
           customer_id: string
           customer_name: string
           delivered_quantity: number
