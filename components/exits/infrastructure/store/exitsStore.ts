@@ -1,14 +1,14 @@
-import { supabase } from "@/lib/supabase";
-import { logOperationError } from "@/lib/operationLogger";
-import { Database } from "@/types/database.types";
-import { compositeKey } from "@/components/exits/infrastructure/utils/compositeKey";
-import { create } from "zustand";
+import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import { logOperationError } from '@/lib/operationLogger';
+import { supabase } from '@/lib/supabase';
+import { Database } from '@/types/database.types';
+import { create } from 'zustand';
 
-type Product = Database["public"]["Tables"]["products"]["Row"];
-type Warehouse = Database["public"]["Tables"]["warehouses"]["Row"];
-type Customer = Database["public"]["Tables"]["customers"]["Row"];
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-type InventoryExit = Database["public"]["Tables"]["inventory_exits"]["Insert"];
+type Product = Database['public']['Tables']['products']['Row'];
+type Warehouse = Database['public']['Tables']['warehouses']['Row'];
+type Customer = Database['public']['Tables']['customers']['Row'];
+type Profile = Database['public']['Tables']['profiles']['Row'];
+type InventoryExit = Database['public']['Tables']['inventory_exits']['Insert'];
 
 export type ExitMode = 'direct_user' | 'direct_customer';
 
@@ -64,7 +64,7 @@ export interface SelectedDeliveryOrderProgress {
 }
 
 const UNAUTHORIZED_EXIT_MESSAGE =
-  "No estás autorizado para registrar la salida de inventario de esta orden.";
+  'No estás autorizado para registrar la salida de inventario de esta orden.';
 
 type ExitAuthorizationResult = {
   canRegister: boolean;
@@ -93,7 +93,7 @@ interface ExitsState {
   customersLoading: boolean;
   loadingMessage: string | null;
   error: string | null;
-  step: "setup" | "scanning";
+  step: 'setup' | 'scanning';
 
   // Datos para formularios
   warehouses: Warehouse[];
@@ -129,8 +129,14 @@ interface ExitsState {
   searchDeliveryOrdersByCustomer: (customerId: string) => Promise<void>;
   searchDeliveryOrdersByUser: (userId: string) => Promise<void>;
   selectDeliveryOrder: (orderId: string) => Promise<void>;
-  validateCurrentUserAuthorizationForOrder: (orderId: string) => Promise<ExitAuthorizationResult>;
-  validateProductAgainstOrder: (productId: string, warehouseId: string, quantity: number) => {
+  validateCurrentUserAuthorizationForOrder: (
+    orderId: string
+  ) => Promise<ExitAuthorizationResult>;
+  validateProductAgainstOrder: (
+    productId: string,
+    warehouseId: string,
+    quantity: number
+  ) => {
     valid: boolean;
     error?: string;
     orderItem?: DeliveryOrderItem;
@@ -182,20 +188,20 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   customersLoading: false,
   loadingMessage: null,
   error: null,
-  step: "setup",
+  step: 'setup',
 
   // Datos
   warehouses: [],
   users: [],
   customers: [],
-  customerSearchTerm: "",
+  customerSearchTerm: '',
   deliveryOrders: [],
   selectedDeliveryOrder: null,
   scannedItemsProgress: new Map(),
   canRegisterExit: true,
   authorizationMessage: null,
   registeredExitsCache: {},
-  deliveryObservations: "",
+  deliveryObservations: '',
 
   // Setup actions
   setWarehouse: (warehouseId) => {
@@ -214,7 +220,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       scannedItemsProgress: new Map(),
       registeredExitsCache: {},
       canRegisterExit: true,
-      authorizationMessage: null,
+      authorizationMessage: null
     });
   },
 
@@ -226,7 +232,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       canRegisterExit: true,
-      authorizationMessage: null,
+      authorizationMessage: null
     });
   },
 
@@ -238,7 +244,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       canRegisterExit: true,
-      authorizationMessage: null,
+      authorizationMessage: null
     });
   },
 
@@ -248,91 +254,96 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     try {
       const {
         data: { user },
-        error: authError,
+        error: authError
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
         return {
           canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE,
+          message: UNAUTHORIZED_EXIT_MESSAGE
         };
       }
 
       const { data: assignments, error: assignmentsError } = await supabase
-        .from("delivery_order_pickup_assignments")
-        .select("user_id")
-        .eq("delivery_order_id", orderId)
-        .is("deleted_at", null);
+        .from('delivery_order_pickup_assignments')
+        .select('user_id')
+        .eq('delivery_order_id', orderId)
+        .is('deleted_at', null);
 
       if (assignmentsError) {
-        console.error("Error loading pickup assignments:", assignmentsError);
+        console.error('Error loading pickup assignments:', assignmentsError);
         return {
           canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE,
+          message: UNAUTHORIZED_EXIT_MESSAGE
         };
       }
 
+      // Fetch current user's roles regardless of assignment status.
+      // Bodegueros and admins are always authorized by default.
+      const { data: userRolesData, error: userRolesError } = await supabase
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', user.id);
+
+      if (userRolesError) {
+        console.error('Error loading user roles:', userRolesError);
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE
+        };
+      }
+
+      const roleIds = (userRolesData || []).map((role) => role.role_id);
+      let isDefaultAuthorized = false;
+
+      if (roleIds.length > 0) {
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('roles')
+          .select('nombre')
+          .in('id', roleIds)
+          .is('deleted_at', null);
+
+        if (rolesError) {
+          console.error('Error loading role names:', rolesError);
+          return {
+            canRegister: false,
+            message: UNAUTHORIZED_EXIT_MESSAGE
+          };
+        }
+
+        isDefaultAuthorized = (rolesData || []).some((role) =>
+          ['bodeguero', 'admin'].includes(role.nombre?.toLowerCase())
+        );
+      }
+
+      // Default-authorized users (bodeguero / admin) can always register exits.
+      if (isDefaultAuthorized) {
+        return { canRegister: true, message: null };
+      }
+
+      // For other roles, access is granted only when the order has no explicit
+      // assignments (open order) OR the user is explicitly assigned to the order.
       const hasAssignments = (assignments || []).length > 0;
       if (!hasAssignments) {
-        return { canRegister: true, message: null };
+        return {
+          canRegister: false,
+          message: UNAUTHORIZED_EXIT_MESSAGE
+        };
       }
 
       const isAssignedUser = (assignments || []).some(
         (assignment) => assignment.user_id === user.id
       );
 
-      if (isAssignedUser) {
-        return { canRegister: true, message: null };
-      }
-
-      const { data: userRolesData, error: userRolesError } = await supabase
-        .from("user_roles")
-        .select("role_id")
-        .eq("user_id", user.id);
-
-      if (userRolesError) {
-        console.error("Error loading user roles:", userRolesError);
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE,
-        };
-      }
-
-      if (!userRolesData || userRolesData.length === 0) {
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE,
-        };
-      }
-
-      const roleIds = userRolesData.map((role) => role.role_id);
-      const { data: rolesData, error: rolesError } = await supabase
-        .from("roles")
-        .select("nombre")
-        .in("id", roleIds)
-        .is("deleted_at", null);
-
-      if (rolesError) {
-        console.error("Error loading role names:", rolesError);
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE,
-        };
-      }
-
-      const isBodeguero = (rolesData || []).some(
-        (role) => role.nombre?.toLowerCase() === "bodeguero"
-      );
-
       return {
-        canRegister: isBodeguero,
-        message: isBodeguero ? null : UNAUTHORIZED_EXIT_MESSAGE,
+        canRegister: isAssignedUser,
+        message: isAssignedUser ? null : UNAUTHORIZED_EXIT_MESSAGE
       };
     } catch (error) {
-      console.error("Error validating exit authorization:", error);
+      console.error('Error validating exit authorization:', error);
       return {
         canRegister: false,
-        message: UNAUTHORIZED_EXIT_MESSAGE,
+        message: UNAUTHORIZED_EXIT_MESSAGE
       };
     }
   },
@@ -344,19 +355,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   loadWarehouses: async () => {
     try {
       const { data, error } = await supabase
-        .from("warehouses")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
+        .from('warehouses')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
 
       if (error) {
-        console.error("Error loading warehouses:", error);
+        console.error('Error loading warehouses:', error);
         set({ warehouses: [] });
         return;
       }
       set({ warehouses: data || [] });
     } catch (error: any) {
-      console.error("Error loading warehouses:", error);
+      console.error('Error loading warehouses:', error);
       set({ warehouses: [] });
     }
   },
@@ -370,13 +381,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .order('full_name');
 
       if (error) {
-        console.error("Error loading users:", error);
+        console.error('Error loading users:', error);
         set({ users: [] });
         return;
       }
-      set({ users: data as Profile[] || [] });
+      set({ users: (data as Profile[]) || [] });
     } catch (error: any) {
-      console.error("Error loading users:", error);
+      console.error('Error loading users:', error);
       set({ users: [] });
     }
   },
@@ -394,7 +405,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Si hay término de búsqueda, filtrar por nombre o número de identificación
       if (searchTerm && searchTerm.trim()) {
-        query = query.or(`name.ilike.%${searchTerm}%,id_number.ilike.%${searchTerm}%`);
+        query = query.or(
+          `name.ilike.%${searchTerm}%,id_number.ilike.%${searchTerm}%`
+        );
       }
 
       const { data, error } = await query.limit(50);
@@ -405,13 +418,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       if (error) {
-        console.error("Error searching customers:", error);
+        console.error('Error searching customers:', error);
         set({ customers: [], customersLoading: false });
         return;
       }
       set({ customers: data || [], customersLoading: false });
     } catch (error: any) {
-      console.error("Error searching customers:", error);
+      console.error('Error searching customers:', error);
       if (get().customerSearchTerm === searchTerm) {
         set({ customers: [], customersLoading: false });
       }
@@ -425,7 +438,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Consulta directa a la tabla delivery_orders con agregación de items
       const { data, error } = await supabase
         .from('delivery_orders')
-        .select(`
+        .select(
+          `
           *,
           items:delivery_order_items!fk_delivery_order_item_order!inner(
             id,
@@ -436,7 +450,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             deleted_at,
             product:products!inner(id, name, barcode, sku, deleted_at)
           )
-        `)
+        `
+        )
         .eq('customer_id', customerId)
         .eq('status', 'pending')
         .is('deleted_at', null)
@@ -446,8 +461,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .limit(50);
 
       if (error) {
-        console.error("Error loading delivery orders:", error);
-        set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
+        console.error('Error loading delivery orders:', error);
+        set({
+          deliveryOrders: [],
+          loading: false,
+          loadingMessage: null,
+          error: error.message
+        });
         return;
       }
 
@@ -461,8 +481,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
-        .from("inventory_exit_cancellations")
-        .select("inventory_exit_id");
+        .from('inventory_exit_cancellations')
+        .select('inventory_exit_id');
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -470,12 +490,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
-        .from("inventory_exits")
-        .select("id, delivery_order_id, product_id, warehouse_id, quantity")
-        .in("delivery_order_id", orderIds);
+        .from('inventory_exits')
+        .select('id, delivery_order_id, product_id, warehouse_id, quantity')
+        .in('delivery_order_id', orderIds);
 
       if (exitsError) {
-        console.error("Error loading inventory exits for delivery orders:", exitsError);
+        console.error(
+          'Error loading inventory exits for delivery orders:',
+          exitsError
+        );
       }
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
@@ -483,58 +506,67 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       (exitsData || []).forEach((exit: any) => {
         // Excluir salidas canceladas
         if (cancelledExitIds.has(exit.id)) return;
-        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id) return;
+        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id)
+          return;
         if (!exitsByOrder.has(exit.delivery_order_id)) {
           exitsByOrder.set(exit.delivery_order_id, new Map());
         }
         const key = compositeKey(exit.product_id, exit.warehouse_id);
         const productMap = exitsByOrder.get(exit.delivery_order_id)!;
-        productMap.set(
-          key,
-          (productMap.get(key) || 0) + (exit.quantity || 0)
-        );
+        productMap.set(key, (productMap.get(key) || 0) + (exit.quantity || 0));
       });
 
       // Transformar los datos para incluir contadores (reconciliando BD con inventory_exits)
       const ordersWithCounts = data.map((order: any) => {
         // Filtrar items eliminados (seguridad adicional)
-        const activeItems = (order.items || []).filter((item: any) =>
-          !item.deleted_at &&
-          item.product &&
-          !item.product.deleted_at
+        const activeItems = (order.items || []).filter(
+          (item: any) =>
+            !item.deleted_at && item.product && !item.product.deleted_at
         );
 
         const orderExits = exitsByOrder.get(order.id) || new Map();
         let totalDelivered = 0;
-        const totalQuantity = activeItems.reduce((sum: number, item: any) => {
-          const key = compositeKey(item.product_id, item.warehouse_id);
-          const fromExits = orderExits.get(key) || 0;
-          const fromDB = item.delivered_quantity || 0;
-          const bestEstimate = Math.max(fromExits, fromDB);
-          const clampedDelivered = Math.min(bestEstimate, item.quantity);
-          totalDelivered += clampedDelivered;
-          return sum + item.quantity;
-        }, 0) || 0;
+        const totalQuantity =
+          activeItems.reduce((sum: number, item: any) => {
+            const key = compositeKey(item.product_id, item.warehouse_id);
+            const fromExits = orderExits.get(key) || 0;
+            const fromDB = item.delivered_quantity || 0;
+            const bestEstimate = Math.max(fromExits, fromDB);
+            const clampedDelivered = Math.min(bestEstimate, item.quantity);
+            totalDelivered += clampedDelivered;
+            return sum + item.quantity;
+          }, 0) || 0;
 
         return {
           ...order,
           items: activeItems, // Guardar solo items activos
           total_items: activeItems.length,
           total_quantity: totalQuantity,
-          delivered_quantity: totalDelivered,
+          delivered_quantity: totalDelivered
         };
       });
 
       // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
       // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
-      const incompleteOrders = ordersWithCounts.filter((order: any) =>
-        order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
+      const incompleteOrders = ordersWithCounts.filter(
+        (order: any) =>
+          order.total_quantity > 0 &&
+          order.delivered_quantity < order.total_quantity
       );
 
-      set({ deliveryOrders: incompleteOrders, loading: false, loadingMessage: null });
+      set({
+        deliveryOrders: incompleteOrders,
+        loading: false,
+        loadingMessage: null
+      });
     } catch (error: any) {
-      console.error("Error loading delivery orders:", error);
-      set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
+      console.error('Error loading delivery orders:', error);
+      set({
+        deliveryOrders: [],
+        loading: false,
+        loadingMessage: null,
+        error: error.message
+      });
     }
   },
 
@@ -543,14 +575,21 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     try {
       // Usar RPC que expande remisiones en órdenes independientes
-      const { data, error } = await supabase
-        .rpc('get_user_delivery_orders_expanded', {
+      const { data, error } = await supabase.rpc(
+        'get_user_delivery_orders_expanded',
+        {
           p_user_id: userId
-        });
+        }
+      );
 
       if (error) {
-        console.error("Error loading orders:", error);
-        set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
+        console.error('Error loading orders:', error);
+        set({
+          deliveryOrders: [],
+          loading: false,
+          loadingMessage: null,
+          error: error.message
+        });
         return;
       }
 
@@ -566,8 +605,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
-        .from("inventory_exit_cancellations")
-        .select("inventory_exit_id");
+        .from('inventory_exit_cancellations')
+        .select('inventory_exit_id');
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -575,12 +614,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
-        .from("inventory_exits")
-        .select("id, delivery_order_id, product_id, warehouse_id, quantity")
-        .in("delivery_order_id", orderIds);
+        .from('inventory_exits')
+        .select('id, delivery_order_id, product_id, warehouse_id, quantity')
+        .in('delivery_order_id', orderIds);
 
       if (exitsError) {
-        console.error("Error loading inventory exits for orders:", exitsError);
+        console.error('Error loading inventory exits for orders:', exitsError);
       }
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
@@ -588,31 +627,32 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       (exitsData || []).forEach((exit: any) => {
         // Excluir salidas canceladas
         if (cancelledExitIds.has(exit.id)) return;
-        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id) return;
+        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id)
+          return;
         if (!exitsByOrder.has(exit.delivery_order_id)) {
           exitsByOrder.set(exit.delivery_order_id, new Map());
         }
         const key = compositeKey(exit.product_id, exit.warehouse_id);
         const productMap = exitsByOrder.get(exit.delivery_order_id)!;
-        productMap.set(
-          key,
-          (productMap.get(key) || 0) + (exit.quantity || 0)
-        );
+        productMap.set(key, (productMap.get(key) || 0) + (exit.quantity || 0));
       });
 
       // Obtener delivered_quantity desde delivery_order_items (fuente de verdad en BD)
       const { data: dbItems, error: dbItemsError } = await supabase
-        .from("delivery_order_items")
-        .select("delivery_order_id, delivered_quantity")
-        .in("delivery_order_id", orderIds)
-        .is("deleted_at", null);
+        .from('delivery_order_items')
+        .select('delivery_order_id, delivered_quantity')
+        .in('delivery_order_id', orderIds)
+        .is('deleted_at', null);
 
       // Agrupar delivered_quantity de BD por order_id
       const dbDeliveredByOrder = new Map<string, number>();
       if (!dbItemsError && dbItems) {
         dbItems.forEach((item: any) => {
           const current = dbDeliveredByOrder.get(item.delivery_order_id) || 0;
-          dbDeliveredByOrder.set(item.delivery_order_id, current + (item.delivered_quantity || 0));
+          dbDeliveredByOrder.set(
+            item.delivery_order_id,
+            current + (item.delivered_quantity || 0)
+          );
         });
       }
 
@@ -629,34 +669,53 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         // Usar el mayor entre el valor de BD y el calculado desde inventory_exits
         const totalFromDB = dbDeliveredByOrder.get(order.id) || 0;
         const bestEstimate = Math.max(totalFromExits, totalFromDB);
-        const clampedDelivered = Math.min(bestEstimate, order.total_quantity || 0);
+        const clampedDelivered = Math.min(
+          bestEstimate,
+          order.total_quantity || 0
+        );
 
         return {
           ...order,
-          delivered_quantity: clampedDelivered,
+          delivered_quantity: clampedDelivered
         };
       });
 
       // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
-      const incompleteOrders = ordersWithProgress.filter((order: any) =>
-        order.total_quantity > 0 && order.delivered_quantity < order.total_quantity
+      const incompleteOrders = ordersWithProgress.filter(
+        (order: any) =>
+          order.total_quantity > 0 &&
+          order.delivered_quantity < order.total_quantity
       );
 
-      set({ deliveryOrders: incompleteOrders, loading: false, loadingMessage: null });
+      set({
+        deliveryOrders: incompleteOrders,
+        loading: false,
+        loadingMessage: null
+      });
     } catch (error: any) {
-      console.error("Error loading orders:", error);
-      set({ deliveryOrders: [], loading: false, loadingMessage: null, error: error.message });
+      console.error('Error loading orders:', error);
+      set({
+        deliveryOrders: [],
+        loading: false,
+        loadingMessage: null,
+        error: error.message
+      });
     }
   },
 
   selectDeliveryOrder: async (orderId: string) => {
-    set({ loading: true, loadingMessage: 'Cargando detalles de la orden...', error: null });
+    set({
+      loading: true,
+      loadingMessage: 'Cargando detalles de la orden...',
+      error: null
+    });
 
     try {
       // Consulta directa con joins para obtener todos los detalles
       const { data: orderData, error: orderError } = await supabase
         .from('delivery_orders')
-        .select(`
+        .select(
+          `
           *,
           customer:customers(id, name, id_number),
           assigned_to_user:profiles(id, full_name, email),
@@ -671,22 +730,23 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             product:products!inner(id, name, barcode, sku, deleted_at),
             warehouse:warehouses(id, name)
           )
-        `)
+        `
+        )
         .eq('id', orderId)
         .is('items.deleted_at', null)
         .is('items.product.deleted_at', null)
         .single();
 
       if (orderError) {
-        console.error("Error loading delivery order details:", orderError);
+        console.error('Error loading delivery order details:', orderError);
         logOperationError({
-          error_code: "DELIVERY_ORDER_LOAD_FAILED",
+          error_code: 'DELIVERY_ORDER_LOAD_FAILED',
           error_message: orderError.message || String(orderError),
-          module: "exits",
-          operation: "select_delivery_order",
-          step: "query",
-          entity_type: "delivery_order",
-          entity_id: orderId,
+          module: 'exits',
+          operation: 'select_delivery_order',
+          step: 'query',
+          entity_type: 'delivery_order',
+          entity_id: orderId
         });
         set({
           selectedDeliveryOrder: null,
@@ -704,7 +764,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           selectedDeliveryOrderId: null,
           loading: false,
           loadingMessage: null,
-          error: "Orden de entrega no encontrada"
+          error: 'Orden de entrega no encontrada'
         });
         return;
       }
@@ -712,8 +772,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Obtener las salidas de inventario para esta orden desde inventory_exits
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
-        .from("inventory_exit_cancellations")
-        .select("inventory_exit_id");
+        .from('inventory_exit_cancellations')
+        .select('inventory_exit_id');
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -721,12 +781,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Obtener todas las salidas y filtrar las canceladas
       const { data: exitsData, error: exitsError } = await supabase
-        .from("inventory_exits")
-        .select("id, product_id, warehouse_id, quantity")
-        .eq("delivery_order_id", orderId);
+        .from('inventory_exits')
+        .select('id, product_id, warehouse_id, quantity')
+        .eq('delivery_order_id', orderId);
 
       if (exitsError) {
-        console.error("Error loading inventory exits for delivery order:", exitsError);
+        console.error(
+          'Error loading inventory exits for delivery order:',
+          exitsError
+        );
         // Continuar aunque haya error, pero con cache vacío
       }
 
@@ -744,15 +807,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Transformar los datos al formato esperado
       // Para remisiones (assigned_to_user_id), usar el nombre del usuario asignado
       // Para clientes (customer_id), usar el nombre del cliente
-      const customerName = orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
+      const customerName =
+        orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
       const customerIdNumber = orderData.customer?.id_number || '';
 
       // Incluir TODOS los items (directos + de órdenes asignadas)
       // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
-      const activeItems = (orderData.items || []).filter((item: any) => 
-        !item.deleted_at && 
-        item.product && 
-        !item.product.deleted_at
+      const activeItems = (orderData.items || []).filter(
+        (item: any) =>
+          !item.deleted_at && item.product && !item.product.deleted_at
       );
 
       const deliveryOrder: DeliveryOrder = {
@@ -783,14 +846,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             warehouse_name: item.warehouse?.name || '',
             quantity: item.quantity,
             delivered_quantity: clampedRegistered,
-            pending_quantity: item.quantity - clampedRegistered,
+            pending_quantity: item.quantity - clampedRegistered
           };
-        }),
+        })
       };
 
-      const authorizationResult = await get().validateCurrentUserAuthorizationForOrder(
-        orderId
-      );
+      const authorizationResult =
+        await get().validateCurrentUserAuthorizationForOrder(orderId);
 
       // Actualizar el cache de salidas registradas desde inventory_exits
       const { registeredExitsCache } = get();
@@ -806,7 +868,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         if (item.delivered_quantity > 0) {
           updatedCache[orderId][key] = item.delivered_quantity;
         }
-        console.log(`[selectDeliveryOrder] ${key}: registered=${item.delivered_quantity} (max=${item.quantity})`);
+        console.log(
+          `[selectDeliveryOrder] ${key}: registered=${item.delivered_quantity} (max=${item.quantity})`
+        );
       });
 
       set({
@@ -820,7 +884,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         loadingMessage: null
       });
     } catch (error: any) {
-      console.error("Error loading delivery order details:", error);
+      console.error('Error loading delivery order details:', error);
       set({
         selectedDeliveryOrder: null,
         selectedDeliveryOrderId: null,
@@ -833,28 +897,34 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
-  validateProductAgainstOrder: (productId: string, warehouseId: string, quantity: number) => {
+  validateProductAgainstOrder: (
+    productId: string,
+    warehouseId: string,
+    quantity: number
+  ) => {
     const {
       selectedDeliveryOrder,
       selectedDeliveryOrderId,
       registeredExitsCache,
       scannedItemsProgress,
-      exitItems,
+      exitItems
     } = get();
 
     if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
-      return { valid: false, error: "No hay orden de entrega seleccionada" };
+      return { valid: false, error: 'No hay orden de entrega seleccionada' };
     }
 
     // Buscar el producto en los items de la orden por product_id AND warehouse_id
     const orderItem = selectedDeliveryOrder.items.find(
-      (item) => item.product_id === productId && item.warehouse_id === warehouseId
+      (item) =>
+        item.product_id === productId && item.warehouse_id === warehouseId
     );
 
     if (!orderItem) {
       return {
         valid: false,
-        error: "Este producto no está incluido en la orden de entrega para esta bodega"
+        error:
+          'Este producto no está incluido en la orden de entrega para esta bodega'
       };
     }
 
@@ -865,7 +935,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     // Cantidad ya agregada en esta sesión (en el carrito) para este producto+bodega
     const sessionTotal = exitItems
-      .filter((item) => item.product.id === productId && item.warehouseId === warehouseId)
+      .filter(
+        (item) =>
+          item.product.id === productId && item.warehouseId === warehouseId
+      )
       .reduce((sum, item) => sum + item.quantity, 0);
 
     const newTotal = registeredInBD + sessionTotal + quantity;
@@ -878,7 +951,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       );
       return {
         valid: false,
-        error: `La cantidad excede lo requerido. Requerido: ${orderQuantity}, Ya entregado: ${registeredInBD}, En esta sesión: ${sessionTotal}, Máximo permitido: ${maxAllowable}`,
+        error: `La cantidad excede lo requerido. Requerido: ${orderQuantity}, Ya entregado: ${registeredInBD}, En esta sesión: ${sessionTotal}, Máximo permitido: ${maxAllowable}`
       };
     }
 
@@ -891,7 +964,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         selectedDeliveryOrder,
         selectedDeliveryOrderId,
         registeredExitsCache,
-        scannedItemsProgress,
+        scannedItemsProgress
       } = get();
 
       if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
@@ -911,8 +984,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             orderQuantity - registered,
             0
           );
-          const sessionScannedRaw =
-            scannedItemsProgress.get(key) || 0;
+          const sessionScannedRaw = scannedItemsProgress.get(key) || 0;
           const sessionScanned = Math.min(
             sessionScannedRaw,
             maxPendingAfterRegistered
@@ -929,7 +1001,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             registered,
             sessionScanned,
             pending,
-            isComplete,
+            isComplete
           };
         }
       );
@@ -956,7 +1028,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         totalRequired,
         totalRegistered,
         totalScanned,
-        totalCompleted,
+        totalCompleted
       };
     },
 
@@ -969,18 +1041,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrderId,
       selectedDeliveryOrder,
       canRegisterExit,
-      authorizationMessage,
+      authorizationMessage
     } = get();
 
     if (!exitMode) {
-      set({ error: "Debe seleccionar un modo de salida" });
+      set({ error: 'Debe seleccionar un modo de salida' });
       return;
     }
 
     // Validar según el modo
     if (exitMode === 'direct_user') {
       if (!selectedUserId) {
-        set({ error: "Debe seleccionar un usuario destinatario" });
+        set({ error: 'Debe seleccionar un usuario destinatario' });
         return;
       }
 
@@ -990,16 +1062,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       if (!selectedDeliveryOrderId) {
-        set({ error: "Debe seleccionar una remisión" });
+        set({ error: 'Debe seleccionar una remisión' });
         return;
       }
 
       // Validar que la remisión no esté completa
       const progress = get().getSelectedDeliveryOrderProgress();
       if (progress) {
-        const isOrderComplete = progress.items.every(item => item.isComplete);
+        const isOrderComplete = progress.items.every((item) => item.isComplete);
         if (isOrderComplete) {
-          set({ error: "Esta remisión ya está completa. No se pueden registrar más productos." });
+          set({
+            error:
+              'Esta remisión ya está completa. No se pueden registrar más productos.'
+          });
           return;
         }
       }
@@ -1007,7 +1082,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     if (exitMode === 'direct_customer') {
       if (!selectedCustomerId) {
-        set({ error: "Debe seleccionar un cliente destinatario" });
+        set({ error: 'Debe seleccionar un cliente destinatario' });
         return;
       }
 
@@ -1017,27 +1092,35 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       if (!selectedDeliveryOrderId) {
-        set({ error: "Debe seleccionar una orden de entrega" });
+        set({ error: 'Debe seleccionar una orden de entrega' });
         return;
       }
 
       // Validar que la orden no esté completa
       const progress = get().getSelectedDeliveryOrderProgress();
       if (progress) {
-        const isOrderComplete = progress.items.every(item => item.isComplete);
+        const isOrderComplete = progress.items.every((item) => item.isComplete);
         if (isOrderComplete) {
-          set({ error: "Esta orden de entrega ya está completa. No se pueden registrar más productos." });
+          set({
+            error:
+              'Esta orden de entrega ya está completa. No se pueden registrar más productos.'
+          });
           return;
         }
       }
     }
 
-    set({ step: "scanning", error: null });
+    set({ step: 'scanning', error: null });
   },
 
   // Scanning actions
   scanBarcode: async (barcode: string) => {
-    set({ loading: true, loadingMessage: 'Buscando producto...', error: null, currentScannedBarcode: barcode });
+    set({
+      loading: true,
+      loadingMessage: 'Buscando producto...',
+      error: null,
+      currentScannedBarcode: barcode
+    });
 
     try {
       const product = await get().searchProductByBarcode(barcode);
@@ -1046,23 +1129,30 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         set({
           loading: false,
           loadingMessage: null,
-          error: "Producto no encontrado. Este código de barras no está registrado en el sistema.",
+          error:
+            'Producto no encontrado. Este código de barras no está registrado en el sistema.',
           currentProduct: null,
-          currentScannedBarcode: null,
+          currentScannedBarcode: null
         });
         return;
       }
 
-      const { exitMode, selectedDeliveryOrderId, selectedDeliveryOrder, registeredExitsCache, exitItems } = get();
+      const {
+        exitMode,
+        selectedDeliveryOrderId,
+        selectedDeliveryOrder,
+        registeredExitsCache,
+        exitItems
+      } = get();
 
       // Validar que haya una orden de entrega seleccionada (siempre requerida)
       if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
         set({
           loading: false,
           loadingMessage: null,
-          error: "Debe seleccionar una orden de entrega primero",
+          error: 'Debe seleccionar una orden de entrega primero',
           currentProduct: null,
-          currentScannedBarcode: null,
+          currentScannedBarcode: null
         });
         return;
       }
@@ -1074,9 +1164,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const matchingItems = selectedDeliveryOrder.items.filter((item) => {
         if (item.product_id !== product.id) return false;
         const key = compositeKey(item.product_id, item.warehouse_id);
-        const registered = registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
+        const registered =
+          registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
         const sessionScanned = exitItems
-          .filter(e => e.product.id === item.product_id && e.warehouseId === item.warehouse_id)
+          .filter(
+            (e) =>
+              e.product.id === item.product_id &&
+              e.warehouseId === item.warehouse_id
+          )
           .reduce((sum, e) => sum + e.quantity, 0);
         const pending = item.quantity - registered - sessionScanned;
         return pending > 0;
@@ -1091,17 +1186,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           set({
             loading: false,
             loadingMessage: null,
-            error: "Este producto ya fue entregado completamente en esta orden.",
+            error:
+              'Este producto ya fue entregado completamente en esta orden.',
             currentProduct: null,
-            currentScannedBarcode: null,
+            currentScannedBarcode: null
           });
         } else {
           set({
             loading: false,
             loadingMessage: null,
-            error: "Este producto no está incluido en la orden de entrega.",
+            error: 'Este producto no está incluido en la orden de entrega.',
             currentProduct: null,
-            currentScannedBarcode: null,
+            currentScannedBarcode: null
           });
         }
         return;
@@ -1122,20 +1218,27 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         set({
           loading: false,
           loadingMessage: null,
-          error: validation.error || "Producto no válido para esta orden",
+          error: validation.error || 'Producto no válido para esta orden',
           currentProduct: null,
-          currentScannedBarcode: null,
+          currentScannedBarcode: null
         });
         return;
       }
 
       // Calcular cantidad disponible en la orden para esta bodega específica
       const key = compositeKey(product.id, resolvedWarehouseId);
-      const registeredInBD = registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
+      const registeredInBD =
+        registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
       const sessionScanned = exitItems
-        .filter(e => e.product.id === product.id && e.warehouseId === resolvedWarehouseId)
+        .filter(
+          (e) =>
+            e.product.id === product.id && e.warehouseId === resolvedWarehouseId
+        )
         .reduce((sum, e) => sum + e.quantity, 0);
-      const availableStock = Math.max(selectedItem.quantity - registeredInBD - sessionScanned, 0);
+      const availableStock = Math.max(
+        selectedItem.quantity - registeredInBD - sessionScanned,
+        0
+      );
 
       set({
         loading: false,
@@ -1144,16 +1247,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         currentQuantity: 1,
         currentAvailableStock: availableStock,
         warehouseId: resolvedWarehouseId, // Guardar la bodega resuelta para addProductToExit
-        error: null,
+        error: null
       });
     } catch (error: any) {
-      console.error("Error scanning barcode:", error);
+      console.error('Error scanning barcode:', error);
       set({
         loading: false,
         loadingMessage: null,
-        error: error?.message || error?.toString() || "Error al escanear el código de barras. Por favor intente de nuevo.",
+        error:
+          error?.message ||
+          error?.toString() ||
+          'Error al escanear el código de barras. Por favor intente de nuevo.',
         currentProduct: null,
-        currentScannedBarcode: null,
+        currentScannedBarcode: null
       });
     }
   },
@@ -1166,52 +1272,68 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("barcode", barcode.trim())
-        .is("deleted_at", null)
+        .from('products')
+        .select('*')
+        .eq('barcode', barcode.trim())
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error) {
-        if (error.code === "PGRST116") {
+        if (error.code === 'PGRST116') {
           // Producto no encontrado - esto es normal
           return null;
         }
-        console.error("Error searching product:", error);
+        console.error('Error searching product:', error);
         throw error;
       }
 
       return data as Product | null;
     } catch (error: any) {
-      console.error("Error searching product:", error);
+      console.error('Error searching product:', error);
       // Retornar null en lugar de lanzar error para evitar crashes
       return null;
     }
   },
 
-  addProductToExit: async (product: Product, quantity: number, barcode: string) => {
-    const { exitItems, warehouseId, currentProduct, currentAvailableStock, exitMode, scannedItemsProgress, selectedDeliveryOrderId } = get();
+  addProductToExit: async (
+    product: Product,
+    quantity: number,
+    barcode: string
+  ) => {
+    const {
+      exitItems,
+      warehouseId,
+      currentProduct,
+      currentAvailableStock,
+      exitMode,
+      scannedItemsProgress,
+      selectedDeliveryOrderId
+    } = get();
 
     // warehouseId se resuelve automáticamente desde scanBarcode (de la orden de entrega)
     if (!warehouseId) {
-      set({ error: "No se pudo determinar la bodega del producto" });
+      set({ error: 'No se pudo determinar la bodega del producto' });
       return;
     }
 
     if (quantity <= 0) {
-      set({ error: "La cantidad debe ser mayor a 0" });
+      set({ error: 'La cantidad debe ser mayor a 0' });
       return;
     }
 
     // Validar que haya una orden de entrega seleccionada (siempre requerida)
     const { selectedDeliveryOrder, registeredExitsCache } = get();
     if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
-      set({ error: "Debe seleccionar una orden de entrega primero" });
+      set({ error: 'Debe seleccionar una orden de entrega primero' });
       return;
     }
 
     // Validar contra la orden de entrega (con bodega resuelta)
-    const validation = get().validateProductAgainstOrder(product.id, warehouseId, quantity);
+    const validation = get().validateProductAgainstOrder(
+      product.id,
+      warehouseId,
+      quantity
+    );
     if (!validation.valid) {
       set({ error: validation.error });
       return;
@@ -1220,18 +1342,20 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const orderItem = validation.orderItem!;
     const key = compositeKey(product.id, warehouseId);
 
-    const registeredInBD = registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
+    const registeredInBD =
+      registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
     const availableStock = Math.max(orderItem.quantity - registeredInBD, 0);
 
     // Calcular cantidad total ya agregada en esta salida (para este producto+bodega)
     const existingItem = exitItems.find(
-      (item) => item.product.id === product.id && item.warehouseId === warehouseId
+      (item) =>
+        item.product.id === product.id && item.warehouseId === warehouseId
     );
     const totalQuantityInExit = (existingItem?.quantity || 0) + quantity;
 
     if (totalQuantityInExit > availableStock) {
       set({
-        error: `No hay suficiente stock. Disponible: ${availableStock}, Intentando sacar: ${totalQuantityInExit}`,
+        error: `No hay suficiente stock. Disponible: ${availableStock}, Intentando sacar: ${totalQuantityInExit}`
       });
       return;
     }
@@ -1257,9 +1381,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({
         exitItems: [
           ...exitItems,
-          { product, quantity, barcode, availableStock, warehouseId },
+          { product, quantity, barcode, availableStock, warehouseId }
         ],
-        error: null,
+        error: null
       });
     }
 
@@ -1276,8 +1400,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const updatedItems = exitItems.filter((_, i) => i !== index);
 
     // Si hay una orden de entrega seleccionada, actualizar progreso con clave compuesta
-    if (selectedDeliveryOrderId && itemToRemove.product.id && itemToRemove.warehouseId) {
-      const key = compositeKey(itemToRemove.product.id, itemToRemove.warehouseId);
+    if (
+      selectedDeliveryOrderId &&
+      itemToRemove.product.id &&
+      itemToRemove.warehouseId
+    ) {
+      const key = compositeKey(
+        itemToRemove.product.id,
+        itemToRemove.warehouseId
+      );
       const currentProgress = scannedItemsProgress.get(key) || 0;
       const newProgress = new Map(scannedItemsProgress);
       const newValue = Math.max(0, currentProgress - itemToRemove.quantity);
@@ -1307,7 +1438,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     // Verificar que no exceda el stock disponible
     if (quantity > (item.availableStock || 0)) {
       set({
-        error: `La cantidad no puede exceder el stock disponible: ${item.availableStock || 0}`,
+        error: `La cantidad no puede exceder el stock disponible: ${item.availableStock || 0}`
       });
       return;
     }
@@ -1330,12 +1461,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         newProgress.delete(key);
       }
 
-      set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
+      set({
+        exitItems: updatedItems,
+        scannedItemsProgress: newProgress,
+        error: null
+      });
     } else {
       set({ exitItems: updatedItems, error: null });
     }
   },
-
 
   setQuantity: (quantity: number) => {
     set({ currentQuantity: quantity });
@@ -1351,27 +1485,32 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrderId,
       deliveryObservations,
       canRegisterExit,
-      authorizationMessage,
+      authorizationMessage
     } = get();
 
     if (exitItems.length === 0) {
-      return { error: { message: "No hay productos para registrar" } };
+      return { error: { message: 'No hay productos para registrar' } };
     }
 
     if (!exitMode) {
-      return { error: { message: "Debe seleccionar un modo de salida" } };
+      return { error: { message: 'Debe seleccionar un modo de salida' } };
     }
 
     if (selectedDeliveryOrderId && !canRegisterExit) {
       return {
-        error: { message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE },
+        error: { message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE }
       };
     }
 
     // Verificar que todos los items tengan warehouseId (resuelto desde la orden)
-    const itemsWithoutWarehouse = exitItems.filter(item => !item.warehouseId);
+    const itemsWithoutWarehouse = exitItems.filter((item) => !item.warehouseId);
     if (itemsWithoutWarehouse.length > 0) {
-      return { error: { message: "Algunos productos no tienen bodega asignada. Por favor, vuelva a escanearlos." } };
+      return {
+        error: {
+          message:
+            'Algunos productos no tienen bodega asignada. Por favor, vuelva a escanearlos.'
+        }
+      };
     }
 
     // Establecer loading al inicio del proceso
@@ -1390,13 +1529,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             loadingMessage: null,
             canRegisterExit: false,
             authorizationMessage:
-              authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE,
+              authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
           });
           return {
             error: {
-              message:
-                authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE,
-            },
+              message: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
+            }
           };
         }
 
@@ -1410,7 +1548,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           quantity: item.quantity,
           warehouse_id: item.warehouseId!, // Per-item desde la orden de entrega
           barcode_scanned: item.barcode,
-          created_by: userId,
+          created_by: userId
         };
 
         // Agregar destinatario según el modo
@@ -1438,57 +1576,64 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ loadingMessage: 'Guardando productos en el inventario...' });
 
       const { data: insertedExits, error: exitsError } = await supabase
-        .from("inventory_exits")
+        .from('inventory_exits')
         .insert(exits)
         .select();
 
       if (exitsError) {
         const backendDeniedMessage =
-          exitsError.message?.toLowerCase().includes("autorizado") ||
-          exitsError.message?.toLowerCase().includes("authorized")
+          exitsError.message?.toLowerCase().includes('autorizado') ||
+          exitsError.message?.toLowerCase().includes('authorized')
             ? UNAUTHORIZED_EXIT_MESSAGE
             : null;
 
         if (backendDeniedMessage) {
           set({
             canRegisterExit: false,
-            authorizationMessage: backendDeniedMessage,
+            authorizationMessage: backendDeniedMessage
           });
         }
 
-        console.error("Error inserting exits:", exitsError);
+        console.error('Error inserting exits:', exitsError);
         logOperationError({
-          error_code: "EXIT_INSERT_FAILED",
+          error_code: 'EXIT_INSERT_FAILED',
           error_message: exitsError.message || String(exitsError),
-          module: "exits",
-          operation: "finalize_exit",
-          step: "insert_records",
-          entity_type: selectedDeliveryOrderId ? "delivery_order" : undefined,
+          module: 'exits',
+          operation: 'finalize_exit',
+          step: 'insert_records',
+          entity_type: selectedDeliveryOrderId ? 'delivery_order' : undefined,
           entity_id: selectedDeliveryOrderId || undefined,
           context: {
             productIds: exitItems.map((i) => i.product.id),
             quantities: exitItems.map((i) => i.quantity),
             warehouseIds: exitItems.map((i) => i.warehouseId),
             exitMode,
-            deliveryOrderId: selectedDeliveryOrderId,
-          },
+            deliveryOrderId: selectedDeliveryOrderId
+          }
         });
         return {
           error: {
             ...exitsError,
-            message: backendDeniedMessage || exitsError.message,
-          },
+            message: backendDeniedMessage || exitsError.message
+          }
         };
       }
 
       // Verificar que se insertaron correctamente
       if (!insertedExits || insertedExits.length === 0) {
-        console.error("No se insertaron las salidas correctamente");
-        return { error: { message: "Error al registrar las salidas. No se insertaron registros." } };
+        console.error('No se insertaron las salidas correctamente');
+        return {
+          error: {
+            message:
+              'Error al registrar las salidas. No se insertaron registros.'
+          }
+        };
       }
 
       if (insertedExits.length !== exits.length) {
-        console.warn(`Se insertaron ${insertedExits.length} de ${exits.length} salidas`);
+        console.warn(
+          `Se insertaron ${insertedExits.length} de ${exits.length} salidas`
+        );
       }
 
       // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
@@ -1507,17 +1652,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
         try {
           const { data: cancelledExits } = await supabase
-            .from("inventory_exit_cancellations")
-            .select("inventory_exit_id");
+            .from('inventory_exit_cancellations')
+            .select('inventory_exit_id');
 
           const cancelledExitIds = new Set(
             (cancelledExits || []).map((c: any) => c.inventory_exit_id)
           );
 
           const { data: exitsData, error: exitsRefreshError } = await supabase
-            .from("inventory_exits")
-            .select("id, product_id, warehouse_id, quantity")
-            .eq("delivery_order_id", orderIdToRefresh);
+            .from('inventory_exits')
+            .select('id, product_id, warehouse_id, quantity')
+            .eq('delivery_order_id', orderIdToRefresh);
 
           if (!exitsRefreshError && exitsData) {
             const registeredByProduct: Record<string, number> = {};
@@ -1531,7 +1676,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
             const { data: orderData } = await supabase
               .from('delivery_orders')
-              .select(`
+              .select(
+                `
                 items:delivery_order_items!inner(
                   product_id,
                   warehouse_id,
@@ -1539,7 +1685,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
                   delivered_quantity,
                   deleted_at
                 )
-              `)
+              `
+              )
               .eq('id', orderIdToRefresh)
               .is('items.deleted_at', null)
               .single();
@@ -1557,7 +1704,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
                 } else {
                   delete finalCache[orderIdToRefresh][key];
                 }
-                console.log(`[finalizeExit] ${key}: Refreshed cache: registered=${clampedRegistered} (fromExits=${fromExits}, fromDB=${fromDB}, max=${item.quantity})`);
+                console.log(
+                  `[finalizeExit] ${key}: Refreshed cache: registered=${clampedRegistered} (fromExits=${fromExits}, fromDB=${fromDB}, max=${item.quantity})`
+                );
               });
 
               orderCompleted =
@@ -1571,20 +1720,23 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             set({ registeredExitsCache: finalCache });
           }
         } catch (refreshError: any) {
-          console.error("Error refreshing delivery order cache from inventory_exits:", refreshError);
+          console.error(
+            'Error refreshing delivery order cache from inventory_exits:',
+            refreshError
+          );
           logOperationError({
-            error_code: "EXIT_CACHE_REFRESH_FAILED",
+            error_code: 'EXIT_CACHE_REFRESH_FAILED',
             error_message: refreshError?.message || String(refreshError),
-            module: "exits",
-            operation: "finalize_exit",
-            step: "cache_refresh",
-            severity: "warning",
-            entity_type: "delivery_order",
+            module: 'exits',
+            operation: 'finalize_exit',
+            step: 'cache_refresh',
+            severity: 'warning',
+            entity_type: 'delivery_order',
             entity_id: orderIdToRefresh,
             context: {
               exitMode,
-              deliveryOrderId: orderIdToRefresh,
-            },
+              deliveryOrderId: orderIdToRefresh
+            }
           });
         }
 
@@ -1601,7 +1753,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ loading: false, loadingMessage: null });
       return { error: null };
     } catch (error: any) {
-      console.error("Error finalizing exit:", error);
+      console.error('Error finalizing exit:', error);
       // Limpiar loading en caso de error
       set({ loading: false, loadingMessage: null });
       return { error };
@@ -1619,7 +1771,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      step: "setup",
+      step: 'setup',
       error: null,
       loading: false,
       customersLoading: false,
@@ -1634,8 +1786,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       canRegisterExit: true,
       authorizationMessage: null,
       // registeredExitsCache se mantiene - NO resetear
-      customerSearchTerm: "",
-      deliveryObservations: "",
+      customerSearchTerm: '',
+      deliveryObservations: ''
     });
   },
 
@@ -1648,7 +1800,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      step: "setup",
+      step: 'setup',
       error: null,
       loading: false,
       customersLoading: false,
@@ -1663,8 +1815,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       registeredExitsCache: {},
       canRegisterExit: true,
       authorizationMessage: null,
-      customerSearchTerm: "",
-      deliveryObservations: "",
+      customerSearchTerm: '',
+      deliveryObservations: ''
     });
   },
 
@@ -1677,13 +1829,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
-      currentAvailableStock: 0,
+      currentAvailableStock: 0
     });
   },
 
   goBackToSetup: () => {
     set({
-      step: "setup",
+      step: 'setup',
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
@@ -1692,8 +1844,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       exitItems: [], // Limpiar items de salida
       scannedItemsProgress: new Map(), // Limpiar progreso de escaneo
       canRegisterExit: true,
-      authorizationMessage: null,
+      authorizationMessage: null
     });
-  },
+  }
 }));
-
