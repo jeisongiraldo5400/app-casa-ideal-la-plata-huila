@@ -254,6 +254,7 @@ export type Database = {
           is_approved: boolean
           product_id: string
           quantity: number
+          requested_by_user_id: string | null
           source_delivery_order_id: string | null
           warehouse_id: string
         }
@@ -269,6 +270,7 @@ export type Database = {
           is_approved?: boolean
           product_id: string
           quantity: number
+          requested_by_user_id?: string | null
           source_delivery_order_id?: string | null
           warehouse_id: string
         }
@@ -284,6 +286,7 @@ export type Database = {
           is_approved?: boolean
           product_id?: string
           quantity?: number
+          requested_by_user_id?: string | null
           source_delivery_order_id?: string | null
           warehouse_id?: string
         }
@@ -293,6 +296,13 @@ export type Database = {
             columns: ["approval_id"]
             isOneToOne: false
             referencedRelation: "delivery_order_item_approvals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_order_items_requested_by_user_id_fkey"
+            columns: ["requested_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1903,6 +1913,7 @@ export type Database = {
         Returns: {
           assigned_to_user_id: string
           assigned_user_name: string
+          can_mark_delivered: boolean
           created_at: string
           created_by: string
           created_by_name: string
