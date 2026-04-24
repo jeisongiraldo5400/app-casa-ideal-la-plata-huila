@@ -322,6 +322,7 @@ DECLARE
   v_new_item JSONB;
   v_item_found BOOLEAN;
   v_new_quantity INTEGER;
+  v_new_requested_by UUID;
   v_items_soft_deleted INTEGER := 0;
   v_items_updated INTEGER := 0;
   v_items_inserted INTEGER := 0;
@@ -355,6 +356,7 @@ BEGIN
   WHERE id = p_delivery_order_id;
 
   -- 4. SOFT DELETE items not in the new list
+  --    Match by product_id + warehouse_id + requested_by_user_id (NULL-safe)
   FOR v_existing_item IN
     SELECT doi.*
     FROM public.delivery_order_items doi
@@ -366,6 +368,13 @@ BEGIN
       FROM jsonb_array_elements(p_items) elem
       WHERE (elem->>'product_id') = v_existing_item.product_id::TEXT
         AND (elem->>'warehouse_id') = v_existing_item.warehouse_id::TEXT
+        AND (
+          -- Both NULL
+          (NULLIF(elem->>'requested_by_user_id', '') IS NULL AND v_existing_item.requested_by_user_id IS NULL)
+          OR
+          -- Both non-null and equal
+          (NULLIF(elem->>'requested_by_user_id', '')::UUID = v_existing_item.requested_by_user_id)
+        )
     );
 
     IF NOT v_item_found THEN
@@ -384,18 +393,26 @@ BEGIN
   END LOOP;
 
   -- 5. Update existing or insert new items
+  --    Match by product_id + warehouse_id + requested_by_user_id (NULL-safe)
   FOR v_new_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
     v_new_quantity := (v_new_item->>'quantity')::INTEGER;
+    v_new_requested_by := NULLIF(v_new_item->>'requested_by_user_id', '')::UUID;
 
     SELECT * INTO v_existing_item
     FROM public.delivery_order_items
     WHERE delivery_order_id = p_delivery_order_id
       AND product_id = (v_new_item->>'product_id')::UUID
       AND warehouse_id = (v_new_item->>'warehouse_id')::UUID
-      AND deleted_at IS NULL;
+      AND deleted_at IS NULL
+      AND (
+        (v_new_requested_by IS NULL AND requested_by_user_id IS NULL)
+        OR
+        (requested_by_user_id = v_new_requested_by)
+      );
 
     IF FOUND THEN
+      -- Check if quantity changed
       IF v_existing_item.quantity != v_new_quantity THEN
         IF v_new_quantity < v_existing_item.delivered_quantity THEN
           RAISE EXCEPTION 'No se puede reducir la cantidad a % porque ya se entregaron % unidades del producto (%) en bodega (%)',
@@ -412,7 +429,7 @@ BEGIN
     ELSE
       INSERT INTO public.delivery_order_items (
         delivery_order_id, product_id, quantity, warehouse_id,
-        delivered_quantity, source_delivery_order_id
+        delivered_quantity, source_delivery_order_id, requested_by_user_id
       )
       VALUES (
         p_delivery_order_id,
@@ -420,7 +437,8 @@ BEGIN
         v_new_quantity,
         (v_new_item->>'warehouse_id')::UUID,
         0,
-        NULLIF(v_new_item->>'source_delivery_order_id', '')::UUID
+        NULLIF(v_new_item->>'source_delivery_order_id', '')::UUID,
+        v_new_requested_by
       );
 
       v_items_inserted := v_items_inserted + 1;
@@ -440,7 +458,7 @@ $$;
 ALTER FUNCTION "public"."edit_delivery_order_items"("p_delivery_order_id" "uuid", "p_items" "jsonb", "p_notes" "text", "p_delivery_address" "text", "p_status" "text") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."edit_delivery_order_items"("p_delivery_order_id" "uuid", "p_items" "jsonb", "p_notes" "text", "p_delivery_address" "text", "p_status" "text") IS 'Atomically edits delivery order items using soft delete. Runs in a single transaction. Uses smart diffing: soft-deletes removed items, updates changed quantities, inserts new items. If any step fails, everything is rolled back. Stock handled by triggers.';
+COMMENT ON FUNCTION "public"."edit_delivery_order_items"("p_delivery_order_id" "uuid", "p_items" "jsonb", "p_notes" "text", "p_delivery_address" "text", "p_status" "text") IS 'Atomically edits delivery order items. Matches by product_id + warehouse_id + requested_by_user_id (NULL-safe). Supports multiple rows for the same product+warehouse when requested by different users.';
 
 
 
@@ -712,7 +730,6 @@ CREATE OR REPLACE FUNCTION "public"."fn_log_delivery_order_delivered"() RETURNS 
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 BEGIN
-  -- Solo registrar cuando el estado cambia a "delivered"
   IF OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'delivered' THEN
     INSERT INTO public.delivery_order_status_observations (
       delivery_order_id,
@@ -727,11 +744,11 @@ BEGIN
       'delivered',
       OLD.status,
       NEW.status,
-      'Entrega registrada desde aplicación móvil',
+      'Orden marcada como entregada',
       auth.uid()
     );
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;
@@ -740,7 +757,7 @@ $$;
 ALTER FUNCTION "public"."fn_log_delivery_order_delivered"() OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_log_delivery_order_delivered"() IS 'Registra automáticamente en el historial cuando una orden cambia a estado delivered desde la app móvil';
+COMMENT ON FUNCTION "public"."fn_log_delivery_order_delivered"() IS 'Registra automáticamente en el historial cuando una orden pasa a estado delivered (cualquier origen: app, web o proceso automático)';
 
 
 
@@ -2049,7 +2066,7 @@ COMMENT ON FUNCTION "public"."get_customers_stats"() IS 'Calcula estadísticas g
 
 
 
-CREATE OR REPLACE FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text" DEFAULT ''::"text", "page" integer DEFAULT 1, "page_size" integer DEFAULT 50, "order_type_filter" "text" DEFAULT 'all'::"text", "status_filter" "text" DEFAULT 'all'::"text", "start_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone, "end_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE("id" "uuid", "order_type" "text", "customer_id" "uuid", "assigned_to_user_id" "uuid", "order_number" "text", "status" "text", "notes" "text", "delivery_address" "text", "created_at" timestamp with time zone, "zone_id" "uuid", "zone_name" "text", "customer_name" "text", "assigned_user_name" "text", "pickup_assigned_user_id" "uuid", "pickup_assigned_user_name" "text", "total_items" bigint, "total_quantity" numeric, "delivered_quantity" numeric, "total_count" bigint)
+CREATE OR REPLACE FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text" DEFAULT ''::"text", "page" integer DEFAULT 1, "page_size" integer DEFAULT 50, "order_type_filter" "text" DEFAULT 'all'::"text", "status_filter" "text" DEFAULT 'all'::"text", "start_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone, "end_ts" timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE("id" "uuid", "order_type" "text", "customer_id" "uuid", "assigned_to_user_id" "uuid", "order_number" "text", "status" "text", "notes" "text", "delivery_address" "text", "created_at" timestamp with time zone, "created_by" "uuid", "created_by_name" "text", "zone_id" "uuid", "zone_name" "text", "customer_name" "text", "assigned_user_name" "text", "pickup_assigned_user_id" "uuid", "pickup_assigned_user_name" "text", "total_items" bigint, "total_quantity" numeric, "delivered_quantity" numeric, "can_mark_delivered" boolean, "total_count" bigint)
     LANGUAGE "plpgsql" STABLE
     AS $$
 DECLARE
@@ -2061,8 +2078,6 @@ DECLARE
 BEGIN
   RETURN QUERY
   WITH pickup_agg AS (
-    -- Agrega todos los usuarios activos de retiro por orden en un solo string y
-    -- expone el UUID del primero (para compatibilidad con el campo pickup_assigned_user_id).
     SELECT
       pua.delivery_order_id,
       (ARRAY_AGG(pp.id ORDER BY pua.created_at))[1]                          AS first_user_id,
@@ -2083,6 +2098,8 @@ BEGIN
       dord.notes,
       dord.delivery_address,
       dord.created_at,
+      dord.created_by,
+      pc.full_name    AS created_by_name,
       dord.zone_id,
       z.name          AS zone_name,
       c.name          AS customer_name,
@@ -2092,6 +2109,7 @@ BEGIN
     FROM public.delivery_orders dord
     LEFT JOIN public.customers c   ON c.id  = dord.customer_id
     LEFT JOIN public.profiles  pa  ON pa.id = dord.assigned_to_user_id
+    LEFT JOIN public.profiles  pc  ON pc.id = dord.created_by
     LEFT JOIN public.zones     z   ON z.id  = dord.zone_id
     LEFT JOIN pickup_agg pagg      ON pagg.delivery_order_id = dord.id
     WHERE dord.deleted_at IS NULL
@@ -2108,6 +2126,8 @@ BEGIN
         OR LOWER(COALESCE(pa.full_name,     ''::text)) LIKE '%' || _search || '%'
         OR LOWER(COALESCE(pa.email,         ''::text)) LIKE '%' || _search || '%'
         OR LOWER(COALESCE(pagg.all_user_names, ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(pc.full_name,      ''::text)) LIKE '%' || _search || '%'
+        OR LOWER(COALESCE(pc.email,          ''::text)) LIKE '%' || _search || '%'
       )
   ),
   items_agg AS (
@@ -2120,14 +2140,64 @@ BEGIN
     WHERE doi.deleted_at IS NULL
     GROUP BY doi.delivery_order_id
   ),
+  returns_agg AS (
+    SELECT
+      u.delivery_order_id,
+      u.product_id,
+      u.warehouse_id,
+      SUM(u.quantity)::numeric AS return_qty
+    FROM (
+      SELECT
+        dor.delivery_order_id,
+        dor.product_id,
+        dor.warehouse_id,
+        dor.quantity
+      FROM public.delivery_order_returns dor
+      UNION ALL
+      SELECT
+        r.order_id,
+        r.product_id,
+        r.warehouse_id,
+        r.quantity
+      FROM public.returns r
+      WHERE r.return_type = 'delivery_order'::text
+    ) u
+    GROUP BY u.delivery_order_id, u.product_id, u.warehouse_id
+  ),
+  close_ready AS (
+    SELECT
+      f.id,
+      (
+        COALESCE(ia.total_items, 0) > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.delivery_order_items doi
+          LEFT JOIN returns_agg ra
+            ON ra.delivery_order_id = doi.delivery_order_id
+            AND ra.product_id = doi.product_id
+            AND ra.warehouse_id = doi.warehouse_id
+          WHERE doi.delivery_order_id = f.id
+            AND doi.deleted_at IS NULL
+            AND NOT (
+              COALESCE(doi.delivered_quantity, 0::numeric) >= doi.quantity
+              OR COALESCE(ra.return_qty, 0::numeric)
+                >= (doi.quantity - COALESCE(doi.delivered_quantity, 0::numeric))
+            )
+        )
+      ) AS can_mark_delivered
+    FROM filtered f
+    LEFT JOIN items_agg ia ON ia.delivery_order_id = f.id
+  ),
   enriched AS (
     SELECT
       f.*,
       COALESCE(ia.total_items,        0)::bigint  AS total_items,
       COALESCE(ia.total_quantity,     0)::numeric AS total_quantity,
-      COALESCE(ia.delivered_quantity, 0)::numeric AS delivered_quantity
+      COALESCE(ia.delivered_quantity, 0)::numeric AS delivered_quantity,
+      COALESCE(cr.can_mark_delivered, false) AS can_mark_delivered
     FROM filtered f
     LEFT JOIN items_agg ia ON ia.delivery_order_id = f.id
+    LEFT JOIN close_ready cr ON cr.id = f.id
   ),
   numbered AS (
     SELECT
@@ -2146,6 +2216,8 @@ BEGIN
     n.notes::text,
     n.delivery_address::text,
     n.created_at,
+    n.created_by,
+    n.created_by_name::text,
     n.zone_id,
     n.zone_name::text,
     n.customer_name::text,
@@ -2155,6 +2227,7 @@ BEGIN
     n.total_items,
     n.total_quantity,
     n.delivered_quantity,
+    n.can_mark_delivered,
     n.total_count
   FROM numbered n
   WHERE n.row_number > _offset
@@ -2167,7 +2240,7 @@ $$;
 ALTER FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) IS 'Listado paginado de órdenes de entrega (admin) con filtros, búsqueda y usuarios autorizados de retiro (múltiples, concatenados).';
+COMMENT ON FUNCTION "public"."get_delivery_orders_admin_list"("search_term" "text", "page" integer, "page_size" integer, "order_type_filter" "text", "status_filter" "text", "start_ts" timestamp with time zone, "end_ts" timestamp with time zone) IS 'Listado paginado de órdenes de entrega (admin) con filtros, búsqueda (incl. creador), created_by/created_by_name y usuarios autorizados de retiro (múltiples, concatenados). Incluye can_mark_delivered: ítems resueltos por entrega o devolución que cubre la brecha (producto+bodega).';
 
 
 
@@ -6042,6 +6115,7 @@ CREATE TABLE IF NOT EXISTS "public"."delivery_order_items" (
     "source_delivery_order_id" "uuid",
     "approval_id" "uuid",
     "deleted_at" timestamp with time zone,
+    "requested_by_user_id" "uuid",
     CONSTRAINT "check_delivery_order_item_delivered_quantity" CHECK (("delivered_quantity" >= (0)::numeric)),
     CONSTRAINT "check_delivery_order_item_quantity" CHECK (("quantity" > (0)::numeric))
 );
@@ -6079,6 +6153,10 @@ COMMENT ON COLUMN "public"."delivery_order_items"."source_delivery_order_id" IS 
 
 
 COMMENT ON COLUMN "public"."delivery_order_items"."approval_id" IS 'Referencia a la aprobación grupal a la que pertenece este item';
+
+
+
+COMMENT ON COLUMN "public"."delivery_order_items"."requested_by_user_id" IS 'Usuario (de profiles) que solicitó este producto en la orden. Nullable para compatibilidad con datos existentes antes de esta feature.';
 
 
 
@@ -7196,6 +7274,10 @@ CREATE INDEX "idx_delivery_order_items_product_id" ON "public"."delivery_order_i
 
 
 
+CREATE INDEX "idx_delivery_order_items_requested_by" ON "public"."delivery_order_items" USING "btree" ("requested_by_user_id") WHERE ("deleted_at" IS NULL);
+
+
+
 CREATE INDEX "idx_delivery_order_items_source_id" ON "public"."delivery_order_items" USING "btree" ("source_delivery_order_id") WHERE ("source_delivery_order_id" IS NOT NULL);
 
 
@@ -7934,6 +8016,11 @@ ALTER TABLE ONLY "public"."delivery_order_item_approvals"
 
 ALTER TABLE ONLY "public"."delivery_order_items"
     ADD CONSTRAINT "delivery_order_items_approval_id_fkey" FOREIGN KEY ("approval_id") REFERENCES "public"."delivery_order_item_approvals"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."delivery_order_items"
+    ADD CONSTRAINT "delivery_order_items_requested_by_user_id_fkey" FOREIGN KEY ("requested_by_user_id") REFERENCES "public"."profiles"("id");
 
 
 
