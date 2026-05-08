@@ -973,6 +973,8 @@ CREATE OR REPLACE FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() RET
 DECLARE
   exit_record RECORD;
   doi_record  RECORD;
+  remaining   numeric;
+  take_qty    numeric;
 BEGIN
   SELECT product_id, warehouse_id, quantity, delivery_order_id
   INTO exit_record
@@ -984,7 +986,6 @@ BEGIN
   END IF;
 
   IF exit_record.delivery_order_id IS NULL THEN
-    -- Direct exit: always restore warehouse_stock
     INSERT INTO public.warehouse_stock (product_id, warehouse_id, quantity, updated_at)
     VALUES (exit_record.product_id, exit_record.warehouse_id, exit_record.quantity, NOW())
     ON CONFLICT (product_id, warehouse_id)
@@ -993,24 +994,26 @@ BEGIN
         updated_at = NOW();
 
   ELSE
-    -- Order exit: check if delivered_quantity was already updated (Scenario B)
-    SELECT * INTO doi_record
-    FROM public.delivery_order_items
-    WHERE delivery_order_id = exit_record.delivery_order_id
-      AND product_id = exit_record.product_id
-      AND warehouse_id = exit_record.warehouse_id
-      AND deleted_at IS NULL
-    LIMIT 1;
-
-    IF FOUND AND doi_record.delivered_quantity >= exit_record.quantity THEN
-      -- Scenario B: exit did decrease warehouse_stock; revert delivered_quantity.
-      -- warehouse_stock adjustment is handled by the DOI update trigger.
-      UPDATE public.delivery_order_items
-      SET delivered_quantity = GREATEST(0, delivered_quantity - exit_record.quantity)
-      WHERE id = doi_record.id;
-    END IF;
-    -- Scenario A (delivered_quantity < exit.quantity): exit was skipped by the
-    -- original trigger; DOI reservation still holds → no direct warehouse_stock change.
+    remaining := exit_record.quantity;
+    FOR doi_record IN
+      SELECT *
+      FROM public.delivery_order_items
+      WHERE delivery_order_id = exit_record.delivery_order_id
+        AND product_id = exit_record.product_id
+        AND warehouse_id = exit_record.warehouse_id
+        AND deleted_at IS NULL
+        AND delivered_quantity > 0
+      ORDER BY created_at DESC, id DESC
+    LOOP
+      EXIT WHEN remaining <= 0;
+      take_qty := LEAST(remaining, doi_record.delivered_quantity);
+      IF take_qty > 0 THEN
+        UPDATE public.delivery_order_items
+        SET delivered_quantity = GREATEST(0, delivered_quantity - take_qty)
+        WHERE id = doi_record.id;
+        remaining := remaining - take_qty;
+      END IF;
+    END LOOP;
   END IF;
 
   RETURN NEW;
@@ -1019,6 +1022,10 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."fn_revert_stock_on_exit_cancellation"() IS 'Reverts warehouse stock and delivery_order_items.delivered_quantity on exit cancellation; LIFO distribution when multiple lines share product+warehouse.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_revert_stock_on_inventory_entry_soft_delete"() RETURNS "trigger"
@@ -5731,7 +5738,6 @@ BEGIN
     RAISE EXCEPTION 'La orden de entrega % está cancelada. No se pueden registrar más salidas.', NEW.delivery_order_id;
   END IF;
 
-  -- Verificar si la orden tiene algún usuario autorizado asignado
   SELECT EXISTS (
     SELECT 1
     FROM public.delivery_order_pickup_assignments
@@ -5740,7 +5746,6 @@ BEGIN
   ) INTO has_any_assignment;
 
   IF has_any_assignment THEN
-    -- Si hay asignaciones, el usuario debe ser uno de ellos, ser admin, o service_role
     IF COALESCE(auth.role(), ''::text) = 'service_role'
       OR EXISTS (
         SELECT 1
@@ -5756,32 +5761,45 @@ BEGIN
           AND user_id = auth.uid()
           AND deleted_at IS NULL
       ) THEN
-      -- permitido
+      PERFORM 1 WHERE false;
     ELSE
       RAISE EXCEPTION 'Solo un usuario autorizado para retiro o un administrador puede registrar salidas para esta orden';
     END IF;
   END IF;
 
-  SELECT quantity
-  INTO order_item_quantity
-  FROM public.delivery_order_items
-  WHERE delivery_order_id = NEW.delivery_order_id
-    AND product_id = NEW.product_id
-    AND warehouse_id = NEW.warehouse_id
-    AND deleted_at IS NULL;
-
-  IF order_item_quantity IS NULL THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.delivery_order_items doi_chk
+    WHERE doi_chk.delivery_order_id = NEW.delivery_order_id
+      AND doi_chk.product_id = NEW.product_id
+      AND doi_chk.warehouse_id = NEW.warehouse_id
+      AND doi_chk.deleted_at IS NULL
+  ) THEN
     RAISE EXCEPTION 'El producto % no está incluido en la orden de entrega % para la bodega %',
       NEW.product_id, NEW.delivery_order_id, NEW.warehouse_id;
   END IF;
 
-  SELECT COALESCE(SUM(quantity), 0)
+  SELECT COALESCE(SUM(doi_sum.quantity), 0)
+  INTO order_item_quantity
+  FROM public.delivery_order_items doi_sum
+  WHERE doi_sum.delivery_order_id = NEW.delivery_order_id
+    AND doi_sum.product_id = NEW.product_id
+    AND doi_sum.warehouse_id = NEW.warehouse_id
+    AND doi_sum.deleted_at IS NULL;
+
+  SELECT COALESCE(SUM(ie.quantity), 0)
   INTO total_dispatched
-  FROM public.inventory_exits
-  WHERE delivery_order_id = NEW.delivery_order_id
-    AND product_id = NEW.product_id
-    AND warehouse_id = NEW.warehouse_id
-    AND (TG_OP = 'INSERT' OR id <> NEW.id);
+  FROM public.inventory_exits ie
+  WHERE ie.delivery_order_id = NEW.delivery_order_id
+    AND ie.product_id = NEW.product_id
+    AND ie.warehouse_id = NEW.warehouse_id
+    AND (TG_OP = 'INSERT' OR ie.id <> NEW.id)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.inventory_exit_cancellations c
+      WHERE c.inventory_exit_id = ie.id
+        AND c.deleted_at IS NULL
+    );
 
   IF (total_dispatched + NEW.quantity) > order_item_quantity THEN
     RAISE EXCEPTION
@@ -5800,7 +5818,7 @@ $$;
 ALTER FUNCTION "public"."validate_inventory_exit_quantity"() OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."validate_inventory_exit_quantity"() IS 'Validates inventory exits against delivery orders and pickup assignments (multiple authorized users). Called by trigger before insert/update.';
+COMMENT ON FUNCTION "public"."validate_inventory_exit_quantity"() IS 'Validates inventory exits against delivery orders and pickup assignments (multiple authorized users). Compares SUM(active delivery_order_items.quantity) for product+warehouse with SUM(non-cancelled inventory_exits). Called by trigger before insert/update.';
 
 
 
