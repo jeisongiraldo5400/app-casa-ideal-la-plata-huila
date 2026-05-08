@@ -1,15 +1,16 @@
-import { useExitsStore, type ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
+import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
+import { ExitModePickerField } from './ExitModePickerField';
+import { UserSelectField } from './UserSelectField';
 
 export function SetupForm() {
   const {
@@ -21,6 +22,7 @@ export function SetupForm() {
     users,
     customers,
     loading,
+    customersLoading,
     loadUsers,
     searchCustomers,
     searchDeliveryOrdersByUser,
@@ -32,12 +34,44 @@ export function SetupForm() {
     reset,
     error,
     getSelectedDeliveryOrderProgress,
+    canRegisterExit,
+    authorizationMessage,
   } = useExitsStore();
 
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
+  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
+  const skipNextCustomerSearchRef = useRef(false);
+  const lastSearchedTermRef = useRef('');
+  const selectedCustomerNameRef = useRef('');
+
+  const handleCustomerInputChange = useCallback((text: string) => {
+    setSearchInput(text);
+
+    // Si el usuario cambia manualmente el nombre, invalidar la selección previa
+    if (!selectedCustomerId) {
+      return;
+    }
+
+    const normalizedTyped = text.trim().toLowerCase();
+    const normalizedSelectedName = selectedCustomerNameRef.current.trim().toLowerCase();
+    if (normalizedTyped !== normalizedSelectedName) {
+      selectedCustomerNameRef.current = '';
+      setSelectedCustomer(null);
+    }
+  }, [selectedCustomerId, setSelectedCustomer]);
+
+  const handleClearCustomerSearch = useCallback(() => {
+    skipNextCustomerSearchRef.current = true;
+    lastSearchedTermRef.current = '';
+    selectedCustomerNameRef.current = '';
+    setSelectedCustomer(null);
+    setSearchInput('');
+    searchCustomers('');
+    Keyboard.dismiss();
+  }, [searchCustomers, setSelectedCustomer]);
 
   useEffect(() => {
     loadUsers();
@@ -65,10 +99,22 @@ export function SetupForm() {
   // Debounce customer search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchInput.length >= 4) {
-        searchCustomers(searchInput);
-      } else if (searchInput.length === 0) {
+      const normalizedSearchTerm = searchInput.trim();
+
+      if (skipNextCustomerSearchRef.current) {
+        skipNextCustomerSearchRef.current = false;
+        lastSearchedTermRef.current = normalizedSearchTerm;
+        return;
+      }
+
+      if (normalizedSearchTerm.length >= 4) {
+        if (normalizedSearchTerm !== lastSearchedTermRef.current) {
+          lastSearchedTermRef.current = normalizedSearchTerm;
+          searchCustomers(normalizedSearchTerm);
+        }
+      } else if (normalizedSearchTerm.length === 0) {
         // Limpiar resultados cuando el input está vacío
+        lastSearchedTermRef.current = '';
         searchCustomers('');
       }
     }, 500);
@@ -78,18 +124,13 @@ export function SetupForm() {
 
   // Ocultar teclado automáticamente cuando se encuentran clientes
   useEffect(() => {
-    if (!loading && searchInput.length >= 4 && customers.length > 0) {
+    if (!customersLoading && searchInput.length >= 4 && customers.length > 0) {
       // Ocultar teclado para que los resultados sean visibles
       Keyboard.dismiss();
     }
-  }, [customers.length, loading, searchInput.length]);
+  }, [customers.length, customersLoading, searchInput.length]);
 
-  // Buscar remisiones cuando se selecciona un usuario
-  useEffect(() => {
-    if (exitMode === 'direct_user' && selectedUserId) {
-      searchDeliveryOrdersByUser(selectedUserId);
-    }
-  }, [exitMode, selectedUserId, searchDeliveryOrdersByUser]);
+  // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
   // Verificar si la orden está completa
   const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
@@ -100,6 +141,7 @@ export function SetupForm() {
   // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
   const canStart =
     exitMode !== null &&
+    canRegisterExit &&
     (
       (exitMode === 'direct_user' && selectedUserId !== null && selectedDeliveryOrderId !== null && !isOrderComplete) ||
       (exitMode === 'direct_customer' && selectedCustomerId !== null && selectedDeliveryOrderId !== null && !isOrderComplete)
@@ -130,26 +172,12 @@ export function SetupForm() {
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
             <Text style={[styles.label, { color: Colors.text.primary }]}>Tipo de Salida *</Text>
-            <View style={[styles.pickerContainer, {
-              backgroundColor: Colors.background.paper,
-              borderColor: Colors.divider
-            }]}>
-              <Picker
-                selectedValue={exitMode}
-                onValueChange={(value) => setExitMode(value as ExitMode)}
-                style={[styles.picker, { 
-                  color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
-                  fontWeight: '500'
-                }]}
-                dropdownIconColor={Colors.text.primary}
-                itemStyle={[styles.pickerItem, { 
-                  color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                }]}>
-                <Picker.Item label="Seleccione el tipo de salida" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                <Picker.Item label="Remisión" value="direct_user" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                <Picker.Item label="Entrega a Cliente" value="direct_customer" color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-              </Picker>
-            </View>
+            <ExitModePickerField
+              exitMode={exitMode}
+              onExitModeChange={setExitMode}
+              colors={Colors}
+              colorScheme={uiColorScheme}
+            />
           </View>
 
           {/* Bodega - Solo se muestra info cuando hay orden seleccionada */}
@@ -186,32 +214,13 @@ export function SetupForm() {
                   />
                 </TouchableOpacity>
               </View>
-              <View style={[styles.pickerContainer, {
-                backgroundColor: Colors.background.paper,
-                borderColor: Colors.divider
-              }]}>
-                <Picker
-                  selectedValue={selectedUserId}
-                  onValueChange={(value) => setSelectedUser(value)}
-                  style={[styles.picker, { 
-                    color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.primary,
-                    fontWeight: '500'
-                  }]}
-                  dropdownIconColor={Colors.text.primary}
-                  itemStyle={[styles.pickerItem, { 
-                    color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-                  }]}>
-                  <Picker.Item label="Seleccione un usuario" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-                  {users.map((user) => (
-                    <Picker.Item
-                      key={user.id}
-                      label={user.full_name || user.email || 'Usuario sin nombre'}
-                      value={user.id}
-                      color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-                    />
-                  ))}
-                </Picker>
-              </View>
+              <UserSelectField
+                users={users}
+                selectedUserId={selectedUserId}
+                onUserChange={setSelectedUser}
+                colors={Colors}
+                colorScheme={uiColorScheme}
+              />
             </View>
           )}
 
@@ -241,26 +250,38 @@ export function SetupForm() {
           {exitMode === 'direct_customer' && (
             <View style={styles.formGroup}>
               <Text style={[styles.label, { color: Colors.text.primary }]}>Cliente *</Text>
-              <TextInput
-                style={[styles.input, {
-                  backgroundColor: Colors.background.paper,
-                  borderColor: Colors.divider,
-                  color: Colors.text.primary
-                }]}
-                placeholder="Buscar por nombre o número de identificación"
-                placeholderTextColor={Colors.text.secondary}
-                value={searchInput}
-                onChangeText={setSearchInput}
-              />
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={[styles.input, styles.inputWithClearButton, {
+                    backgroundColor: Colors.background.paper,
+                    borderColor: Colors.divider,
+                    color: Colors.text.primary
+                  }]}
+                  placeholder="Buscar por nombre o número de identificación"
+                  placeholderTextColor={Colors.text.secondary}
+                  value={searchInput}
+                  onChangeText={handleCustomerInputChange}
+                />
+                {(searchInput.trim().length > 0 || selectedCustomerId) && (
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={handleClearCustomerSearch}
+                    accessibilityRole="button"
+                    accessibilityLabel="Limpiar búsqueda de cliente"
+                  >
+                    <MaterialIcons name="close" size={18} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
 
-              {loading && (
+              {customersLoading && (
                 <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
                   <ActivityIndicator size="small" color={Colors.primary.main} />
                   <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
                 </View>
               )}
 
-              {!loading && searchInput.length >= 4 && customers.length > 0 && (
+              {searchInput.trim().length >= 4 && customers.length > 0 && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -275,6 +296,8 @@ export function SetupForm() {
                       ]}
                       onPress={() => {
                         setSelectedCustomer(customer.id);
+                        skipNextCustomerSearchRef.current = true;
+                        selectedCustomerNameRef.current = customer.name;
                         setSearchInput(customer.name);
                         Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                       }}>
@@ -285,7 +308,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!loading && searchInput.length >= 4 && customers.length === 0 && (
+              {!customersLoading && searchInput.trim().length >= 4 && customers.length === 0 && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
@@ -323,6 +346,17 @@ export function SetupForm() {
               borderColor: Colors.error.main
             }]}>
               <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
+            </View>
+          )}
+
+          {selectedDeliveryOrderId && !canRegisterExit && (
+            <View style={[styles.errorContainer, {
+              backgroundColor: Colors.error.light + '20',
+              borderColor: Colors.error.main
+            }]}> 
+              <Text style={[styles.errorText, { color: Colors.error.main }]}>
+                {authorizationMessage || 'No estás autorizado para registrar la salida de inventario de esta orden.'}
+              </Text>
             </View>
           )}
 
@@ -437,23 +471,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  pickerContainer: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  picker: {
-    height: 52,
-  },
-  pickerItem: {
-    fontSize: 16,
-  },
   input: {
     borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  inputContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputWithClearButton: {
+    paddingRight: 48,
+  },
+  clearButton: {
+    position: 'absolute',
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textArea: {
     height: 96,

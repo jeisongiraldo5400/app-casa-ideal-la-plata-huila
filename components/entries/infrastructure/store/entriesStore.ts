@@ -63,7 +63,7 @@ export interface SelectedPurchaseOrderProgress {
 }
 
 interface EntriesState {
-  // Sesión de entrada
+  // Sesión de entrada (null hasta elegir tipo en flow-selection)
   entryType: EntryType | null;
   supplierId: string | null;
   purchaseOrderId: string | null;
@@ -84,7 +84,7 @@ interface EntriesState {
   loading: boolean;
   loadingMessage: string | null;
   error: string | null;
-  step: "flow-selection" | "setup" | "scanning" | "product-form"; // flow-selection: elegir tipo, setup: seleccionar supplier/PO/warehouse, scanning: escaneando, product-form: crear producto
+  step: "flow-selection" | "setup" | "scanning" | "product-form";
   setupStep: "supplier" | "purchase-order" | "warehouse"; // Paso actual en el setup
 
   // Datos para formularios
@@ -111,7 +111,7 @@ interface EntriesState {
   registeredEntriesCache: Record<string, Record<string, number>>; // orderId -> productId -> quantity
 
   // Actions - Setup
-  setEntryType: (type: EntryType) => void;
+  setEntryType: (type: EntryType | null) => void;
   setSupplier: (supplierId: string | null) => void;
   setPurchaseOrder: (purchaseOrderId: string | null) => Promise<void>;
   selectPurchaseOrder: (purchaseOrderId: string) => Promise<void>;
@@ -193,14 +193,22 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Setup actions
   setEntryType: (type) => {
-    // Limpiar orden de compra y estado relacionado cuando cambia el tipo de entrada
-    // Esto previene estados inconsistentes donde hay una OC seleccionada pero el flujo cambió
+    if (type === null) {
+      set({
+        entryType: null,
+        step: "flow-selection",
+        setupStep: "supplier",
+        purchaseOrderId: null,
+        selectedPurchaseOrder: null,
+        scannedItemsProgress: new Map(),
+        selectedOrderProductId: null,
+      });
+      return;
+    }
     set({
       entryType: type,
       step: "setup",
-      // Configurar el paso inicial del setup según el tipo
       setupStep: type === "INITIAL_LOAD" ? "warehouse" : "supplier",
-      // Limpiar orden de compra y estado relacionado para evitar inconsistencias
       purchaseOrderId: null,
       selectedPurchaseOrder: null,
       scannedItemsProgress: new Map(),
@@ -858,10 +866,20 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return;
     }
 
+    if (!entryType) {
+      set({ error: "Debe seleccionar un tipo de entrada" });
+      return;
+    }
+
     if (entryType === "PO_ENTRY" && !supplierId) {
       set({
         error: "Debe seleccionar un proveedor para entrada con orden de compra",
       });
+      return;
+    }
+
+    if (entryType === "PO_ENTRY" && !purchaseOrderId) {
+      set({ error: "Debe seleccionar una orden de compra" });
       return;
     }
 
@@ -1199,6 +1217,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       };
     }
 
+    if (entryType === "PO_ENTRY" && !purchaseOrderId) {
+      return {
+        error: {
+          message:
+            "Debe seleccionar una orden de compra para registrar la entrada.",
+        },
+      };
+    }
+
     // Establecer loading al inicio del proceso
     set({ loading: true, loadingMessage: 'Registrando entrada...' });
 
@@ -1309,13 +1336,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // Esto previene que se puedan registrar entradas excediendo las cantidades de la orden
       // independientemente del entryType seleccionado
       if (purchaseOrderId) {
-        // Warning si hay purchaseOrderId pero entryType no es PO_ENTRY (para diagnóstico)
-        if (entryType !== "PO_ENTRY") {
-          console.warn(
-            `[finalizeEntry] Advertencia: Hay una orden de compra seleccionada (${purchaseOrderId}) pero el entryType es ${entryType}. Se aplicarán validaciones de cantidad de todas formas.`
-          );
-        }
-
         // Validar estado de la orden directamente en BD
         const { data: orderData, error: orderError } = await supabase
           .from("purchase_orders")

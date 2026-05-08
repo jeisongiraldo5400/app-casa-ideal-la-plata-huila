@@ -2,7 +2,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // UI
@@ -13,6 +12,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // Local
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
+import { SupplierPickerField } from './SupplierPickerField';
+import { WarehousePickerField } from './WarehousePickerField';
 
 // Components
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
@@ -21,6 +22,7 @@ export function SetupForm() {
   const {
     supplierId,
     purchaseOrderId,
+    selectedPurchaseOrder,
     warehouseId,
     suppliers,
     purchaseOrders,
@@ -43,32 +45,29 @@ export function SetupForm() {
 
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
+  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
 
   useEffect(() => {
     loadSuppliers();
     loadWarehouses();
-  }, []);
+  }, [loadSuppliers, loadWarehouses]);
 
-  // Refrescar datos cuando la pantalla recibe foco
   useFocusEffect(
     useCallback(() => {
       loadSuppliers();
       loadWarehouses();
-      // Refrescar órdenes de compra si hay un proveedor seleccionado
       if (supplierId) {
         setSupplier(supplierId);
       }
     }, [loadSuppliers, loadWarehouses, supplierId, setSupplier])
   );
 
-  // Refrescar órdenes de compra cuando se vuelve al paso de purchase-order
   useEffect(() => {
     if (setupStep === 'purchase-order' && supplierId) {
-      setSupplier(supplierId); // Esto dispara loadPurchaseOrders
+      setSupplier(supplierId);
     }
   }, [setupStep, supplierId, setSupplier]);
 
-  // Filtrar proveedores por búsqueda (nombre o NIT)
   const filteredSuppliers = useMemo(() => {
     if (!supplierSearchQuery) return suppliers;
     const query = supplierSearchQuery.toLowerCase();
@@ -79,6 +78,11 @@ export function SetupForm() {
     );
   }, [suppliers, supplierSearchQuery]);
 
+  const handleContinueAsManualEntry = () => {
+    setEntryType('ENTRY');
+    setSetupStep('warehouse');
+  };
+
   const renderFlowSelectionStep = () => (
     <View>
       <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>¿Qué deseas registrar?</Text>
@@ -87,7 +91,7 @@ export function SetupForm() {
       </Text>
 
       <Button
-        title="Registrar entrada con Orden de Compra"
+        title="Registrar entrada con orden de compra"
         onPress={() => setEntryType('PO_ENTRY')}
         style={styles.flowButton}
       />
@@ -111,13 +115,15 @@ export function SetupForm() {
   const renderSupplierStep = () => (
     <View>
       <View style={styles.stepHeader}>
-        <TouchableOpacity onPress={() => setEntryType(null as any)} style={styles.backButton}>
+        <TouchableOpacity onPress={() => setEntryType(null)} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
         </TouchableOpacity>
         <View style={styles.stepHeaderText}>
-          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 1: Seleccionar Proveedor</Text>
+          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 1: Seleccionar proveedor</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            {entryType === 'ENTRY' ? 'Seleccione el proveedor (Opcional)' : 'Busque y seleccione el proveedor por nombre o NIT'}
+            {entryType === 'ENTRY'
+              ? 'Seleccione el proveedor (opcional)'
+              : 'Busque y seleccione el proveedor por nombre o NIT'}
           </Text>
         </View>
       </View>
@@ -143,7 +149,9 @@ export function SetupForm() {
 
       <View style={styles.field}>
         <View style={styles.fieldHeader}>
-          <Text style={[styles.label, { color: Colors.text.primary }]}>Proveedor {entryType === 'PO_ENTRY' ? '*' : '(Opcional)'}</Text>
+          <Text style={[styles.label, { color: Colors.text.primary }]}>
+            Proveedor {entryType === 'PO_ENTRY' ? '*' : '(opcional)'}
+          </Text>
           <TouchableOpacity
             onPress={() => loadSuppliers()}
             style={styles.refreshButton}
@@ -155,29 +163,13 @@ export function SetupForm() {
             />
           </TouchableOpacity>
         </View>
-        <View style={[styles.pickerContainer, {
-          backgroundColor: Colors.background.paper,
-          borderColor: Colors.divider
-        }]}>
-          <Picker
-            selectedValue={supplierId}
-            onValueChange={(value) => setSupplier(value)}
-            style={[styles.picker, { color: Colors.text.primary }]}
-            dropdownIconColor={Colors.text.primary}
-            itemStyle={[styles.pickerItem, { 
-              color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary 
-            }]}>
-            <Picker.Item label="Seleccione un proveedor" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-            {filteredSuppliers.map((supplier) => (
-              <Picker.Item
-                key={supplier.id}
-                label={`${supplier.name || 'Sin nombre'}${supplier.nit ? ` - NIT: ${supplier.nit}` : ''}`}
-                value={supplier.id}
-                color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-              />
-            ))}
-          </Picker>
-        </View>
+        <SupplierPickerField
+          supplierId={supplierId}
+          suppliers={filteredSuppliers}
+          onSupplierChange={setSupplier}
+          colors={Colors}
+          colorScheme={uiColorScheme}
+        />
       </View>
 
       {(supplierId || entryType === 'ENTRY') && (
@@ -202,6 +194,9 @@ export function SetupForm() {
     </View>
   );
 
+  const canContinuePoToWarehouse =
+    Boolean(purchaseOrderId && selectedPurchaseOrder && !loading);
+
   const renderPurchaseOrderStep = () => (
     <View>
       <View style={styles.stepHeader}>
@@ -209,9 +204,9 @@ export function SetupForm() {
           <MaterialIcons name="arrow-back" size={24} color={Colors.primary.main} />
         </TouchableOpacity>
         <View style={styles.stepHeaderText}>
-          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Seleccionar Orden de Compra (Opcional)</Text>
+          <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>Paso 2: Orden de compra</Text>
           <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
-            Seleccione la orden de compra pendiente del proveedor o continúe sin orden
+            Seleccione una orden pendiente del proveedor, o continúe como entrada manual sin OC.
           </Text>
         </View>
       </View>
@@ -249,16 +244,22 @@ export function SetupForm() {
 
       <View style={styles.purchaseOrderActions}>
         <Button
-          title={purchaseOrderId ? "Continuar" : "Continuar sin orden"}
+          title="Continuar a bodega"
           onPress={() => setSetupStep('warehouse')}
           style={styles.continueButton}
+          disabled={!canContinuePoToWarehouse}
+        />
+        <Button
+          title="Continuar como entrada manual (sin OC)"
+          onPress={handleContinueAsManualEntry}
+          style={styles.skipButton}
+          variant="outline"
         />
       </View>
     </View>
   );
 
   const renderWarehouseStep = () => {
-    // Obtener la orden seleccionada para mostrar información
     const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
     const orderItemsCount = selectedOrder?.items?.length || 0;
     const totalUnits = selectedOrder?.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
@@ -269,7 +270,7 @@ export function SetupForm() {
           <TouchableOpacity
             onPress={() => {
               if (entryType === 'INITIAL_LOAD') {
-                setEntryType(null as any); // Volver a selección de flujo
+                setEntryType(null);
               } else if (entryType === 'ENTRY') {
                 setSetupStep('supplier');
               } else {
@@ -281,7 +282,7 @@ export function SetupForm() {
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
             <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>
-              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar Bodega
+              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar bodega
             </Text>
             <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
               Seleccione la bodega de destino para la entrada
@@ -289,7 +290,6 @@ export function SetupForm() {
           </View>
         </View>
 
-        {/* Mostrar resumen de la orden seleccionada si existe */}
         {entryType === 'PO_ENTRY' && purchaseOrderId && selectedOrder && (
           <View style={[styles.orderSummary, { backgroundColor: Colors.primary.main + '10', borderColor: Colors.primary.main }]}>
             <MaterialIcons name="inventory-2" size={24} color={Colors.primary.main} />
@@ -318,32 +318,15 @@ export function SetupForm() {
               />
             </TouchableOpacity>
           </View>
-          <View style={[styles.pickerContainer, {
-            backgroundColor: Colors.background.paper,
-            borderColor: Colors.divider
-          }]}>
-            <Picker
-              selectedValue={warehouseId}
-              onValueChange={(value) => setWarehouse(value)}
-              style={[styles.picker, { color: Colors.text.primary }]}
-              dropdownIconColor={Colors.text.primary}
-              itemStyle={[styles.pickerItem, {
-                color: colorScheme === 'dark' ? '#1f2937' : Colors.text.primary
-              }]}>
-              <Picker.Item label="Seleccione una bodega" value={null} color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary} />
-              {warehouses.map((warehouse) => (
-                <Picker.Item
-                  key={warehouse.id}
-                  label={warehouse.name}
-                  value={warehouse.id}
-                  color={colorScheme === 'dark' ? '#1f2937' : Colors.text.primary}
-                />
-              ))}
-            </Picker>
-          </View>
+          <WarehousePickerField
+            warehouseId={warehouseId}
+            warehouses={warehouses}
+            onWarehouseChange={setWarehouse}
+            colors={Colors}
+            colorScheme={uiColorScheme}
+          />
         </View>
 
-        {/* Nota informativa para OC */}
         {entryType === 'PO_ENTRY' && purchaseOrderId && (
           <View style={[styles.infoNote, { backgroundColor: Colors.info?.light + '20' || Colors.primary.light + '20' }]}>
             <MaterialIcons name="info-outline" size={20} color={Colors.info?.main || Colors.primary.main} />
@@ -354,19 +337,20 @@ export function SetupForm() {
         )}
 
         {(() => {
-          // Verificar si la orden está completa
           let isOrderComplete = false;
           if (entryType === 'PO_ENTRY' && purchaseOrderId) {
             const validation = purchaseOrderValidations[purchaseOrderId];
             isOrderComplete = validation?.isComplete || false;
           }
 
-          // Simplificado: solo necesita bodega y que la orden no esté completa
-          const canStart = warehouseId && !isOrderComplete;
+          const canStart =
+            warehouseId &&
+            !isOrderComplete &&
+            (entryType !== 'PO_ENTRY' || Boolean(purchaseOrderId));
 
           return (
             <Button
-              title={isOrderComplete ? "Orden Completa - No se puede escanear" : "Comenzar Entrada"}
+              title={isOrderComplete ? 'Orden completa — no se puede escanear' : 'Comenzar entrada'}
               onPress={startEntry}
               disabled={!canStart}
               style={styles.button}
@@ -380,7 +364,7 @@ export function SetupForm() {
   return (
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
-        <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar Entrada</Text>
+        <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar entrada</Text>
         <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
           Complete los pasos para configurar la entrada de productos
         </Text>
@@ -490,20 +474,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  pickerContainer: {
-    borderWidth: 1.5,
-    borderRadius: 8,
-    overflow: 'hidden',
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  picker: {
-    height: 56,
-  },
-  pickerItem: {
-    height: 56,
-    fontSize: 16,
-  },
   continueButton: {
     marginTop: 8,
   },
@@ -565,4 +535,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

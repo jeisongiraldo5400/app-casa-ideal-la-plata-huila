@@ -1,27 +1,31 @@
-import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { supabase } from '@/lib/supabase';
-import { Colors } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { Alert, View } from 'react-native';
 
 export default function QuickSearchScreen() {
   const router = useRouter();
   const { setSearchQuery, loadInventory } = useInventoryStore();
-  const [showScanner, setShowScanner] = useState(true);
+  const [scannerActive, setScannerActive] = useState(true);
 
-  // Resetear el scanner cuando la pantalla vuelve a tener foco
   useFocusEffect(
     useCallback(() => {
-      setShowScanner(true);
+      setScannerActive(true);
+      return () => {
+        setScannerActive(false);
+      };
     }, [])
   );
 
+  const goHome = () => {
+    router.push('/(tabs)');
+  };
+
   const handleScan = async (barcode: string) => {
     try {
-      // Buscar el producto por código de barras
       const { data: product, error } = await supabase
         .from('products')
         .select('*')
@@ -34,71 +38,42 @@ export default function QuickSearchScreen() {
           'Producto no encontrado',
           `No se encontró un producto con el código de barras: ${barcode}`,
           [
-            {
-              text: 'Intentar de nuevo',
-              onPress: () => setShowScanner(true),
-            },
+            { text: 'Intentar de nuevo', style: 'default' },
             {
               text: 'Cancelar',
               style: 'cancel',
-              onPress: () => {
-                setShowScanner(false);
-                router.back();
-              },
+              onPress: goHome,
             },
           ]
         );
         return;
       }
 
-      // Cargar el inventario antes de navegar
       await loadInventory();
-
-      // Establecer la búsqueda con el código de barras
       setSearchQuery(barcode);
-
-      // Navegar al inventario
       router.push('/(tabs)/inventory');
-      setShowScanner(false);
+      setScannerActive(false);
     } catch (error: any) {
       console.error('Error searching product:', error);
-      Alert.alert(
-        'Error',
-        'Ocurrió un error al buscar el producto',
-        [
-          {
-            text: 'Intentar de nuevo',
-            onPress: () => setShowScanner(true),
-          },
-          {
-            text: 'Cancelar',
-            style: 'cancel',
-            onPress: () => {
-              setShowScanner(false);
-              router.back();
-            },
-          },
-        ]
-      );
+      Alert.alert('Error', 'Ocurrió un error al buscar el producto', [
+        { text: 'Intentar de nuevo', style: 'default' },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+          onPress: goHome,
+        },
+      ]);
     }
   };
 
   const handleClose = () => {
-    setShowScanner(false);
-    router.back();
+    setScannerActive(false);
+    goHome();
   };
 
-  if (showScanner) {
+  if (scannerActive) {
     return <BarcodeScanner onScan={handleScan} onClose={handleClose} />;
   }
 
-  return <View style={styles.container} />;
+  return <View style={{ flex: 1 }} />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background.default,
-  },
-});
-

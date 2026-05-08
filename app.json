@@ -2,7 +2,7 @@
   "expo": {
     "name": "Casa Ideal",
     "slug": "app-casa-ideal",
-    "version": "1.6.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.casaideal.laplatahuila",
-      "icon": "./assets/images/icono.png"
+      "icon": "./assets/images/icono.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras."
+      }
     },
     "android": {
       "icon": "./assets/images/icono.png",

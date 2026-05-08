@@ -120,9 +120,9 @@ export default function ExitsScreen() {
 
   return (
     <>
-      {/* Modal de loading de pantalla completa */}
+      {/* Modal de loading: no bloquear durante configuración (setup); el formulario ya muestra carga inline */}
       <Modal
-        visible={loading}
+        visible={loading && step !== 'setup'}
         transparent={true}
         animationType="fade"
         onRequestClose={() => {}} // Bloquear cierre durante loading
