@@ -2171,7 +2171,12 @@ export type Database = {
         }[]
       }
       get_products_dashboard: {
-        Args: { page?: number; page_size?: number; search_term?: string }
+        Args: {
+          include_deleted?: boolean
+          page?: number
+          page_size?: number
+          search_term?: string
+        }
         Returns: {
           barcode: string
           brand_id: string
@@ -2181,6 +2186,7 @@ export type Database = {
           color_id: string
           color_name: string
           created_at: string
+          deleted_at: string
           id: string
           name: string
           sku: string
