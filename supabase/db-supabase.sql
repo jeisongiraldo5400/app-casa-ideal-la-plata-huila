@@ -1210,6 +1210,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_update_delivery_progress_on_inventory_ex
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
+  v_item_id uuid;
   v_item_quantity numeric;
   v_delivered numeric;
   v_new_delivered numeric;
@@ -1220,19 +1221,35 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  SELECT doi.quantity, doi.delivered_quantity
-  INTO v_item_quantity, v_delivered
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.delivery_order_items doi0
+    WHERE doi0.delivery_order_id = NEW.delivery_order_id
+      AND doi0.product_id = NEW.product_id
+      AND doi0.warehouse_id = NEW.warehouse_id
+      AND doi0.deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'El producto % no está incluido en la orden de entrega % para la bodega % (ítem inexistente o eliminado)',
+      NEW.product_id, NEW.delivery_order_id, NEW.warehouse_id;
+  END IF;
+
+  SELECT doi.id, doi.quantity, doi.delivered_quantity
+  INTO v_item_id, v_item_quantity, v_delivered
   FROM public.delivery_order_items doi
   WHERE doi.delivery_order_id = NEW.delivery_order_id
     AND doi.product_id = NEW.product_id
     AND doi.warehouse_id = NEW.warehouse_id
     AND doi.deleted_at IS NULL
+    AND doi.delivered_quantity < doi.quantity
+  ORDER BY doi.created_at ASC, doi.id ASC
+  LIMIT 1
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION
-      'El producto % no está incluido en la orden de entrega % para la bodega % (ítem inexistente o eliminado)',
-      NEW.product_id, NEW.delivery_order_id, NEW.warehouse_id;
+      'Todas las líneas de la orden de entrega % para el producto % en la bodega % ya están completas; no se puede registrar más cantidad',
+      NEW.delivery_order_id, NEW.product_id, NEW.warehouse_id;
   END IF;
 
   v_new_delivered := v_delivered + NEW.quantity;
@@ -1245,10 +1262,7 @@ BEGIN
 
   UPDATE public.delivery_order_items
   SET delivered_quantity = v_new_delivered
-  WHERE delivery_order_id = NEW.delivery_order_id
-    AND product_id = NEW.product_id
-    AND warehouse_id = NEW.warehouse_id
-    AND deleted_at IS NULL;
+  WHERE id = v_item_id;
 
   SELECT NOT EXISTS (
     SELECT 1
@@ -1281,7 +1295,7 @@ $$;
 ALTER FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() IS 'Increments delivery_order_items.delivered_quantity when an inventory exit is linked to a delivery order, and sets delivery_orders.status to delivered when all active items are complete. Runs AFTER fn_update_stock_on_exit (trigger name trg_z_*). Replaces client-side update_delivery_order_progress_batch for new exits.';
+COMMENT ON FUNCTION "public"."fn_update_delivery_progress_on_inventory_exit"() IS 'Increments delivery_order_items.delivered_quantity when an inventory exit is linked to a delivery order (FIFO line with pending quantity, oldest first), and sets delivery_orders.status to delivered when all active items are complete. Runs AFTER fn_update_stock_on_exit (trigger name trg_z_*).';
 
 
 
