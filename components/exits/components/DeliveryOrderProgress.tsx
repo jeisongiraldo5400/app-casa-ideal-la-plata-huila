@@ -1,9 +1,8 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
-import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export function DeliveryOrderProgress() {
@@ -13,88 +12,21 @@ export function DeliveryOrderProgress() {
     const selectedDeliveryOrderId = useExitsStore((state) => state.selectedDeliveryOrderId);
     const registeredExitsCache = useExitsStore((state) => state.registeredExitsCache);
     
-    // Convertir Map a string JSON estable para evitar loops infinitos
-    // El string solo cambia cuando el contenido real del Map cambia
+    // scannedItemsProgressString fuerza re-render al cambiar cantidades en sesión (Map no dispara por identidad).
     const scannedItemsProgressString = useExitsStore((state) => {
         const map = state.scannedItemsProgress;
         const entries = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
         return JSON.stringify(entries);
     });
 
-    // Recalcular el progreso cada vez que cambien los valores
-    // useMemo debe llamarse ANTES de cualquier early return para cumplir con las reglas de hooks
-    const progress = useMemo(() => {
+    const progress = (() => {
         if (!selectedDeliveryOrder || !selectedDeliveryOrderId) {
             return null;
         }
-
-        // Recrear el Map desde el string JSON
-        const scannedItemsEntries: [string, number][] = JSON.parse(scannedItemsProgressString);
-        const scannedItemsMap = new Map(scannedItemsEntries);
-        
-        let items = selectedDeliveryOrder.items || [];
-
-        const normalizedItems = items.map((item) => {
-            const key = compositeKey(item.product_id, item.warehouse_id);
-            const orderQuantity = item.quantity;
-            const rawRegistered =
-                registeredExitsCache[selectedDeliveryOrderId]?.[key] || 0;
-            const registered = Math.min(rawRegistered, orderQuantity);
-            const maxPendingAfterRegistered = Math.max(
-                orderQuantity - registered,
-                0
-            );
-            const sessionScannedRaw = scannedItemsMap.get(key) || 0;
-            const sessionScanned = Math.min(
-                sessionScannedRaw,
-                maxPendingAfterRegistered
-            );
-            const pending = Math.max(
-                orderQuantity - registered - sessionScanned,
-                0
-            );
-            const isComplete = pending === 0;
-
-            return {
-                item,
-                orderQuantity,
-                registered,
-                sessionScanned,
-                pending,
-                isComplete,
-            };
-        });
-
-        const totalRequired = normalizedItems.reduce(
-            (sum, x) => sum + x.orderQuantity,
-            0
-        );
-        const totalRegistered = normalizedItems.reduce(
-            (sum, x) => sum + x.registered,
-            0
-        );
-        const totalScanned = normalizedItems.reduce(
-            (sum, x) => sum + x.sessionScanned,
-            0
-        );
-        const totalCompleted = Math.min(
-            totalRegistered + totalScanned,
-            totalRequired
-        );
-
-        return {
-            items: normalizedItems,
-            totalRequired,
-            totalRegistered,
-            totalScanned,
-            totalCompleted,
-        };
-    }, [
-        selectedDeliveryOrder,
-        selectedDeliveryOrderId,
-        registeredExitsCache,
-        scannedItemsProgressString,
-    ]);
+        void registeredExitsCache;
+        void scannedItemsProgressString;
+        return useExitsStore.getState().getSelectedDeliveryOrderProgress();
+    })();
 
     // Estados locales para UI
     const [isExpanded, setIsExpanded] = useState(true);
