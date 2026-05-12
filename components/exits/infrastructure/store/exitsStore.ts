@@ -405,7 +405,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchCustomers: async (searchTerm: string) => {
-    set({ customerSearchTerm: searchTerm, customersLoading: true });
+    const normalizedSearchTerm = searchTerm.trim();
+
+    if (!normalizedSearchTerm) {
+      set({ customerSearchTerm: '', customers: [], customersLoading: false });
+      return;
+    }
+
+    set({ customerSearchTerm: normalizedSearchTerm, customersLoading: true });
 
     try {
       // Buscar directamente en la tabla customers
@@ -416,16 +423,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         .order('name');
 
       // Si hay término de búsqueda, filtrar por nombre o número de identificación
-      if (searchTerm && searchTerm.trim()) {
+      if (normalizedSearchTerm) {
         query = query.or(
-          `name.ilike.%${searchTerm}%,id_number.ilike.%${searchTerm}%`
+          `name.ilike.%${normalizedSearchTerm}%,id_number.ilike.%${normalizedSearchTerm}%`
         );
       }
 
       const { data, error } = await query.limit(50);
 
       // Evitar que respuestas antiguas sobrescriban resultados recientes
-      if (get().customerSearchTerm !== searchTerm) {
+      if (get().customerSearchTerm !== normalizedSearchTerm) {
         return;
       }
 
@@ -437,7 +444,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ customers: data || [], customersLoading: false });
     } catch (error: any) {
       console.error('Error searching customers:', error);
-      if (get().customerSearchTerm === searchTerm) {
+      if (get().customerSearchTerm === normalizedSearchTerm) {
         set({ customers: [], customersLoading: false });
       }
     }

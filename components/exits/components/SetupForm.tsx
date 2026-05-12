@@ -12,6 +12,9 @@ import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
 import { UserSelectField } from './UserSelectField';
 
+const CUSTOMER_SEARCH_DEBOUNCE_MS = 800;
+const CUSTOMER_SEARCH_MIN_LENGTH = 4;
+
 export function SetupForm() {
   const {
     exitMode,
@@ -96,7 +99,7 @@ export function SetupForm() {
     }, []) // Sin dependencias para evitar refrescos constantes
   );
 
-  // Debounce customer search
+  // Debounce customer search so typing stays fluid while the user enters a name/id.
   useEffect(() => {
     const timer = setTimeout(() => {
       const normalizedSearchTerm = searchInput.trim();
@@ -107,7 +110,7 @@ export function SetupForm() {
         return;
       }
 
-      if (normalizedSearchTerm.length >= 4) {
+      if (normalizedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
         if (normalizedSearchTerm !== lastSearchedTermRef.current) {
           lastSearchedTermRef.current = normalizedSearchTerm;
           searchCustomers(normalizedSearchTerm);
@@ -117,18 +120,10 @@ export function SetupForm() {
         lastSearchedTermRef.current = '';
         searchCustomers('');
       }
-    }, 500);
+    }, CUSTOMER_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
   }, [searchInput, searchCustomers]);
-
-  // Ocultar teclado automáticamente cuando se encuentran clientes
-  useEffect(() => {
-    if (!customersLoading && searchInput.length >= 4 && customers.length > 0) {
-      // Ocultar teclado para que los resultados sean visibles
-      Keyboard.dismiss();
-    }
-  }, [customers.length, customersLoading, searchInput.length]);
 
   // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
@@ -281,7 +276,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {searchInput.trim().length >= 4 && customers.length > 0 && (
+              {searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length > 0 && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -308,7 +303,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!customersLoading && searchInput.trim().length >= 4 && customers.length === 0 && (
+              {!customersLoading && searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length === 0 && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
