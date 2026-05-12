@@ -1830,6 +1830,19 @@ export type Database = {
         }
         Returns: Json
       }
+      fn_assert_delivery_order_can_be_returned: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
+      fn_decrement_delivery_order_item_delivered: {
+        Args: {
+          p_order_id: string
+          p_product_id: string
+          p_quantity: number
+          p_warehouse_id: string
+        }
+        Returns: undefined
+      }
       get_customer_delivery_orders: {
         Args: { customer_id_param: string; page?: number; page_size?: number }
         Returns: {
