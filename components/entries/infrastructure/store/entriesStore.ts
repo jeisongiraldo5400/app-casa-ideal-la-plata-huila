@@ -3,6 +3,14 @@ import { create } from "zustand";
 // supabase
 import { supabase } from "@/lib/supabase";
 import { logOperationError } from "@/lib/operationLogger";
+import {
+  fetchBrands,
+  fetchCategories,
+  fetchPendingPurchaseOrders,
+  fetchPurchaseOrderItems,
+  fetchSuppliers,
+  fetchWarehouses,
+} from "../services/entriesService";
 
 // types
 import { Database } from "@/types/database.types";
@@ -444,18 +452,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadSuppliers: async () => {
     try {
-      const { data, error } = await supabase
-        .from("suppliers")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading suppliers:", error);
-        set({ suppliers: [] });
-        return;
-      }
-      set({ suppliers: data || [] });
+      const data = await fetchSuppliers();
+      set({ suppliers: data });
     } catch (error: any) {
       console.error("Error loading suppliers:", error);
       set({ suppliers: [] });
@@ -467,48 +465,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     try {
       // Cargar órdenes de compra pendientes para el proveedor
       // Solo órdenes no eliminadas y no canceladas
-      const { data: orders, error: ordersError } = await supabase
-        .from("purchase_orders")
-        .select("*")
-        .eq("supplier_id", supplierId)
-        .in("status", ["pending"])
-        .is("deleted_at", null) // Filtrar órdenes no eliminadas
-        .order("created_at", { ascending: false });
+      const orders = await fetchPendingPurchaseOrders(supplierId);
 
-      if (ordersError) {
-        console.error("Error loading purchase orders:", ordersError);
-        set({ purchaseOrders: [], loading: false, loadingMessage: null });
-        return;
-      }
-
-      // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
-      // Esto reduce de N consultas a 1 consulta
       const orderIds = (orders || []).map((order) => order.id);
 
       let allItems: any[] = [];
       if (orderIds.length > 0) {
-        const { data: itemsData, error: itemsError } = await supabase
-          .from("purchase_order_items")
-          .select(
-            `
-            *,
-            products!inner(id, name, barcode, sku, deleted_at),
-            purchase_order_id
-          `
-          )
-          .in("purchase_order_id", orderIds)
-          .is("deleted_at", null)
-          .is("products.deleted_at", null);
-
-        if (itemsError) {
+        try {
+          allItems = await fetchPurchaseOrderItems(orderIds);
+        } catch (itemsError) {
           console.error("Error loading purchase order items:", itemsError);
-        } else {
-          // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
-          allItems = (itemsData || []).filter((item: any) => 
-            !item.deleted_at && 
-            item.products && 
-            !item.products.deleted_at
-          );
         }
       }
 
@@ -794,18 +760,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadWarehouses: async () => {
     try {
-      const { data, error } = await supabase
-        .from("warehouses")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading warehouses:", error);
-        set({ warehouses: [] });
-        return;
-      }
-      set({ warehouses: data || [] });
+      const data = await fetchWarehouses();
+      set({ warehouses: data });
     } catch (error: any) {
       console.error("Error loading warehouses:", error);
       set({ warehouses: [] });
@@ -814,18 +770,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadCategories: async () => {
     try {
-      const { data, error } = await supabase
-        .from("category")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading categories:", error);
-        set({ categories: [] });
-        return;
-      }
-      set({ categories: data || [] });
+      const data = await fetchCategories();
+      set({ categories: data });
     } catch (error: any) {
       console.error("Error loading categories:", error);
       set({ categories: [] });
@@ -834,18 +780,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadBrands: async () => {
     try {
-      const { data, error } = await supabase
-        .from("brands")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading brands:", error);
-        set({ brands: [] });
-        return;
-      }
-      set({ brands: data || [] });
+      const data = await fetchBrands();
+      set({ brands: data });
     } catch (error: any) {
       console.error("Error loading brands:", error);
       set({ brands: [] });

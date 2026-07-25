@@ -3,6 +3,11 @@ import {
   computeFifoProgressByItemId
 } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
 import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import {
+  fetchActiveProfiles,
+  fetchActiveWarehouses,
+  searchCustomersByTerm,
+} from '@/components/exits/infrastructure/services/exitsService';
 import { logOperationError } from '@/lib/operationLogger';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
@@ -366,18 +371,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   loadWarehouses: async () => {
     try {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) {
-        console.error('Error loading warehouses:', error);
-        set({ warehouses: [] });
-        return;
-      }
-      set({ warehouses: data || [] });
+      const data = await fetchActiveWarehouses();
+      set({ warehouses: data });
     } catch (error: any) {
       console.error('Error loading warehouses:', error);
       set({ warehouses: [] });
@@ -386,18 +381,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   loadUsers: async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .is('deleted_at', null)
-        .order('full_name');
-
-      if (error) {
-        console.error('Error loading users:', error);
-        set({ users: [] });
-        return;
-      }
-      set({ users: (data as Profile[]) || [] });
+      const data = await fetchActiveProfiles();
+      set({ users: data });
     } catch (error: any) {
       console.error('Error loading users:', error);
       set({ users: [] });
@@ -415,38 +400,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({ customerSearchTerm: normalizedSearchTerm, customersLoading: true });
 
     try {
-      // Buscar directamente en la tabla customers
-      let query = supabase
-        .from('customers')
-        .select('*')
-        .is('deleted_at', null)
-        .order('name');
-
-      // Si hay término de búsqueda, filtrar por nombre o número de identificación
-      if (normalizedSearchTerm) {
-        query = query.or(
-          `name.ilike.%${normalizedSearchTerm}%,id_number.ilike.%${normalizedSearchTerm}%`
-        );
-      }
-
-      const { data, error } = await query.limit(50);
-
-      // Evitar que respuestas antiguas sobrescriban resultados recientes
-      if (get().customerSearchTerm !== normalizedSearchTerm) {
-        return;
-      }
-
-      if (error) {
-        console.error('Error searching customers:', error);
-        set({ customers: [], customersLoading: false });
-        return;
-      }
-      set({ customers: data || [], customersLoading: false });
+      const data = await searchCustomersByTerm(normalizedSearchTerm);
+      set({ customers: data, customersLoading: false });
     } catch (error: any) {
       console.error('Error searching customers:', error);
-      if (get().customerSearchTerm === normalizedSearchTerm) {
-        set({ customers: [], customersLoading: false });
-      }
+      set({ customers: [], customersLoading: false });
     }
   },
 
