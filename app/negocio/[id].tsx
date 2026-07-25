@@ -5,12 +5,17 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   TextInput,
   Alert,
   ActivityIndicator,
   Share,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -34,6 +39,14 @@ export default function NegocioDetailScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const handleGoBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -200,101 +213,133 @@ export default function NegocioDetailScreen() {
 
   if (loading || !negocio) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background.default }]}>
+      <SafeAreaView style={[styles.center, { backgroundColor: colors.background.default }]}>
         <ActivityIndicator color={colors.primary.main} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   const canPay = ['activo', 'entregado'].includes(negocio.status);
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background.default }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
-    >
-      <Pressable onPress={() => router.back()}>
-        <Text style={{ color: colors.primary.main }}>← Volver</Text>
-      </Pressable>
-
-      <Text style={[styles.title, { color: colors.text.primary }]}>
-        Negocio #{negocio.numero}
-      </Text>
-      <Text style={{ color: colors.text.secondary }}>
-        {negocio.status} · {customerName}
-        {orderNumber ? ` · OE ${orderNumber}` : ''}
-      </Text>
-      <Text style={{ color: colors.text.primary }}>
-        Total {formatCOP(Number(negocio.total_credit))} ·{' '}
-        {negocio.installments_count} cuotas de{' '}
-        {formatCOP(Number(negocio.installment_amount))}
-      </Text>
-
-      <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
-      {cuotas.map((c) => {
-        const late = Number(c.late_fee_amount || 0);
-        const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
-        return (
-          <View
-            key={c.id}
-            style={[styles.row, { borderColor: colors.divider }]}
-          >
-            <Text style={{ color: colors.text.primary }}>
-              #{c.installment_number} · {c.due_date}
-            </Text>
-            <Text style={{ color: colors.text.secondary }}>
-              {formatCOP(saldo)} · {c.status}
-            </Text>
-          </View>
-        );
-      })}
-
-      {canPay && (
-        <View style={{ gap: 8, marginTop: 8 }}>
-          <Text style={[styles.section, { color: colors.text.primary }]}>
-            Registrar pago
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.headerBar, { borderBottomColor: colors.divider }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleGoBack}>
+            <MaterialIcons name="arrow-back" size={24} color={colors.primary.main} />
+            <Text style={[styles.backText, { color: colors.primary.main }]}>Volver</Text>
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
+            Negocio #{negocio.numero}
           </Text>
-          <TextInput
-            placeholder="Valor"
-            keyboardType="numeric"
-            value={payAmount}
-            onChangeText={setPayAmount}
-            style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-            placeholderTextColor={colors.text.secondary}
-          />
-          <TextInput
-            placeholder="Nº recibo"
-            value={payReceipt}
-            onChangeText={setPayReceipt}
-            style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-            placeholderTextColor={colors.text.secondary}
-          />
+        </View>
+
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background.default }}
+          contentContainerStyle={{ padding: 16, gap: 12 }}
+        >
+          <Text style={{ color: colors.text.secondary }}>
+            {negocio.status} · {customerName}
+            {orderNumber ? ` · OE ${orderNumber}` : ''}
+          </Text>
+          <Text style={{ color: colors.text.primary }}>
+            Total {formatCOP(Number(negocio.total_credit))} ·{' '}
+            {negocio.installments_count} cuotas de{' '}
+            {formatCOP(Number(negocio.installment_amount))}
+          </Text>
+
+          <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
+          {cuotas.map((c) => {
+            const late = Number(c.late_fee_amount || 0);
+            const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
+            return (
+              <View
+                key={c.id}
+                style={[styles.row, { borderColor: colors.divider }]}
+              >
+                <Text style={{ color: colors.text.primary }}>
+                  #{c.installment_number} · {c.due_date}
+                </Text>
+                <Text style={{ color: colors.text.secondary }}>
+                  {formatCOP(saldo)} · {c.status}
+                </Text>
+              </View>
+            );
+          })}
+
+          {canPay && (
+            <View style={{ gap: 8, marginTop: 8 }}>
+              <Text style={[styles.section, { color: colors.text.primary }]}>
+                Registrar pago
+              </Text>
+              <TextInput
+                placeholder="Valor"
+                keyboardType="numeric"
+                value={payAmount}
+                onChangeText={setPayAmount}
+                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                placeholderTextColor={colors.text.secondary}
+              />
+              <TextInput
+                placeholder="Nº recibo"
+                value={payReceipt}
+                onChangeText={setPayReceipt}
+                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                placeholderTextColor={colors.text.secondary}
+              />
+              <Pressable
+                style={[styles.btn, { backgroundColor: colors.primary.main }]}
+                onPress={registerPago}
+                disabled={saving}
+              >
+                <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
+                  {saving ? 'Guardando…' : 'Guardar pago'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
           <Pressable
-            style={[styles.btn, { backgroundColor: colors.primary.main }]}
-            onPress={registerPago}
-            disabled={saving}
+            style={[styles.btn, { backgroundColor: colors.background.paper, marginTop: 8 }]}
+            onPress={sharePdf}
           >
-            <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-              {saving ? 'Guardando…' : 'Guardar pago'}
+            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
+              Compartir / PDF
             </Text>
           </Pressable>
-        </View>
-      )}
-
-      <Pressable
-        style={[styles.btn, { backgroundColor: colors.background.paper, marginTop: 8 }]}
-        onPress={sharePdf}
-      >
-        <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
-          Compartir / PDF
-        </Text>
-      </Pressable>
-    </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  backText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+  },
   title: { fontSize: 22, fontWeight: '700' },
   section: { fontWeight: '700', marginTop: 8 },
   row: {

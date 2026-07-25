@@ -76,7 +76,7 @@ export default function TabLayout() {
         options={{
           title: 'Negocios',
           tabBarLabel: 'Negocios',
-          href: showNegocios ? undefined : null,
+          href: null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="handshake" size={28} color={color} />
           ),
@@ -89,7 +89,7 @@ export default function TabLayout() {
         options={{
           title: 'Cartera',
           tabBarLabel: 'Cartera',
-          href: showNegocios ? undefined : null,
+          href: null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="account-balance-wallet" size={28} color={color} />
           ),
@@ -101,8 +101,7 @@ export default function TabLayout() {
         name="inventory"
         options={{
           title: 'Inventario',
-          tabBarLabel: sellerMode ? 'Catálogo' : 'Inventario',
-          href: showWarehouseTabs || showNegocios ? undefined : null,
+          tabBarLabel: 'Inventario',
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="inventory" size={28} color={color} />
           ),
@@ -115,9 +114,8 @@ export default function TabLayout() {
         options={{
           title: 'Búsqueda Rápida',
           tabBarLabel: 'Buscar',
-          href: showWarehouseTabs ? undefined : null,
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="qr-code-scanner" size={32} color={color} />
+            <MaterialIcons name="qr-code-scanner" size={28} color={color} />
           ),
           headerShown: false,
         }}
@@ -128,7 +126,6 @@ export default function TabLayout() {
         options={{
           title: 'Salidas',
           tabBarLabel: 'Salidas',
-          href: showWarehouseTabs ? undefined : null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="local-shipping" size={28} color={color} />
           ),

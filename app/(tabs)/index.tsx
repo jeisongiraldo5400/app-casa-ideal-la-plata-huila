@@ -12,10 +12,11 @@ export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { preferSellerWorkspace, isVendedor } = useUserRoles();
+  const { preferSellerWorkspace, isVendedor, isAdmin } = useUserRoles();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const sellerMode = preferSellerWorkspace();
+  const showCommercialSection = true;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -66,8 +67,11 @@ export default function HomeScreen() {
         <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
       </View>
 
-      {(sellerMode || isVendedor()) && (
-        <View style={{ gap: 10, marginBottom: 16 }}>
+      {showCommercialSection && (
+        <View style={{ gap: 10, marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 2 }}>
+            Gestión Comercial & Crédito
+          </Text>
           <TouchableOpacity
             style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
             onPress={() => router.push('/(tabs)/negocio-create')}
@@ -86,18 +90,18 @@ export default function HomeScreen() {
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
-              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]}
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
               onPress={() => router.push('/(tabs)/negocios')}
             >
               <MaterialIcons name="payments" size={22} color={colors.primary.main} />
-              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Cobrar</Text>
+              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Negocios / Cobrar</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]}
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
               onPress={() => router.push('/(tabs)/cartera')}
             >
-              <MaterialIcons name="account-balance-wallet" size={22} color={colors.primary.main} />
-              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Cartera</Text>
+              <MaterialIcons name="account-balance-wallet" size={22} color={colors.info.main} />
+              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Cartera</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -144,33 +148,13 @@ export default function HomeScreen() {
         <View style={styles.menuGrid}>
           <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-            onPress={handleViewReports}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
-              <MaterialIcons
-                name="assessment"
-                size={24}
-                color={colors.primary.main}
-              />
-            </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Reportes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Análisis
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
             onPress={handleRegisterExits}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '15' }]}>
               <MaterialIcons
                 name="local-shipping"
-                size={24}
+                size={26}
                 color={colors.error.main}
               />
             </View>
@@ -187,10 +171,10 @@ export default function HomeScreen() {
             onPress={handleRegisterEntries}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '15' }]}>
               <MaterialIcons
                 name="input"
-                size={24}
+                size={26}
                 color={colors.success.main}
               />
             </View>
@@ -207,10 +191,10 @@ export default function HomeScreen() {
             onPress={handleViewReceivedOrders}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '15' }]}>
               <MaterialIcons
                 name="receipt-long"
-                size={24}
+                size={26}
                 color={colors.warning.main}
               />
             </View>
@@ -227,10 +211,10 @@ export default function HomeScreen() {
             onPress={handleViewAllOrders}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '15' }]}>
               <MaterialIcons
                 name="list-alt"
-                size={24}
+                size={26}
                 color={colors.info.main}
               />
             </View>
@@ -242,6 +226,25 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={[styles.reportsBannerCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+          onPress={handleViewReports}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '15', marginBottom: 0 }]}>
+            <MaterialIcons name="assessment" size={26} color={colors.primary.main} />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.reportsBannerTitle, { color: colors.text.primary }]}>
+              Reportes & Analítica
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]}>
+              Estadísticas, rotación e indicadores
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -358,6 +361,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     lineHeight: 16,
+  },
+  reportsBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  reportsBannerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 2,
+    letterSpacing: -0.3,
   },
   dashboardContainer: {
     flexDirection: 'column',
