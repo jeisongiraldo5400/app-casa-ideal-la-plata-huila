@@ -56,7 +56,8 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: Colors.background.default }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      enabled={Platform.OS === 'ios'}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -76,12 +77,14 @@ export default function LoginScreen() {
             },
           ]}>
           <View style={styles.brandGlow} />
-          <Image
-            source={require('@/assets/images/logo_completo.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-            accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
-          />
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('@/assets/images/logo_completo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+              accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
+            />
+          </View>
           <Text style={styles.brandTagline}>Acceso al sistema de inventario</Text>
         </Animated.View>
 
@@ -134,10 +137,24 @@ const styles = StyleSheet.create({
     top: -40,
     alignSelf: 'center',
   },
+  logoContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    width: '100%',
+    maxWidth: 280,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   logoImage: {
     width: '100%',
-    maxWidth: 300,
-    height: 88,
+    height: 48,
   },
   brandTagline: {
     marginTop: 14,
