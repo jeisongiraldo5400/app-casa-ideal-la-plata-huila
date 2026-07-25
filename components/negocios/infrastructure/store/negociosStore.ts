@@ -6,6 +6,7 @@ import {
   type CreditSettingsInput,
 } from '@/lib/creditCalculator';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import { validateNegocioItemsStock } from '../services/negociosStockService';
 
 export interface NegocioItem {
   product_id: string;
@@ -103,6 +104,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error('Sesión no válida');
+
+    const stockCheck = await validateNegocioItemsStock(input.items);
+    if (!stockCheck.ok) {
+      throw new Error(stockCheck.message);
+    }
 
     const settings = get().creditSettings || defaultSettings;
     const productsSubtotal = input.items.reduce(

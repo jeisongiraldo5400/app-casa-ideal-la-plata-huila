@@ -1,49 +1,69 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Formik, FormikHelpers } from 'formik';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import * as Yup from 'yup';
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-interface LoginFormValues {
-  email: string;
-  password: string;
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
-
-const loginSchema = Yup.object().shape({
-  email: Yup.string()
-    .email('El correo electrónico no es válido')
-    .required('El correo electrónico es requerido'),
-  password: Yup.string()
-    .min(6, 'La contraseña debe tener al menos 6 caracteres')
-    .required('La contraseña es requerida'),
-});
 
 export function LoginForm() {
   const { signIn } = useAuth();
   const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
 
-  const initialValues: LoginFormValues = {
-    email: '',
-    password: '',
+  const validate = () => {
+    let ok = true;
+    const trimmed = email.trim();
+
+    if (!trimmed) {
+      setEmailError('El correo electrónico es requerido');
+      ok = false;
+    } else if (!isValidEmail(trimmed)) {
+      setEmailError('El correo electrónico no es válido');
+      ok = false;
+    } else {
+      setEmailError(null);
+    }
+
+    if (!password) {
+      setPasswordError('La contraseña es requerida');
+      ok = false;
+    } else if (password.length < 6) {
+      setPasswordError('La contraseña debe tener al menos 6 caracteres');
+      ok = false;
+    } else {
+      setPasswordError(null);
+    }
+
+    return ok;
   };
 
-  const handleSubmit = async (
-    values: LoginFormValues,
-    { setSubmitting }: FormikHelpers<LoginFormValues>
-  ) => {
+  const handleSubmit = async () => {
     setFormError(null);
+    if (!validate()) return;
+
     try {
-      const { error } = await signIn(values.email.trim(), values.password);
+      setSubmitting(true);
+      const { error } = await signIn(email.trim(), password);
       if (error) {
         setFormError(error.message || 'Error al iniciar sesión');
       } else {
@@ -57,105 +77,131 @@ export function LoginForm() {
   };
 
   return (
-    <Formik
-      initialValues={initialValues}
-      validationSchema={loginSchema}
-      onSubmit={handleSubmit}>
-      {({
-        handleChange,
-        handleBlur,
-        handleSubmit,
-        values,
-        errors,
-        touched,
-        isSubmitting,
-      }) => (
+    <View
+      style={[
+        styles.form,
+        {
+          backgroundColor: Colors.background.paper,
+          borderColor: Colors.divider,
+        },
+      ]}>
+      <View style={styles.formHeader}>
+        <Text style={[styles.formTitle, { color: Colors.text.primary }]}>
+          Iniciar sesión
+        </Text>
+        <Text style={[styles.formSubtitle, { color: Colors.text.secondary }]}>
+          Ingresa tus credenciales para continuar
+        </Text>
+      </View>
+
+      {formError ? (
         <View
           style={[
-            styles.form,
+            styles.errorBanner,
             {
-              backgroundColor: Colors.background.paper,
-              borderColor: Colors.divider,
+              backgroundColor: isDark
+                ? 'rgba(239, 68, 68, 0.15)'
+                : 'rgba(220, 38, 38, 0.08)',
+              borderColor: Colors.error.main,
             },
           ]}>
-          <View style={styles.formHeader}>
-            <Text style={[styles.formTitle, { color: Colors.text.primary }]}>
-              Iniciar sesión
-            </Text>
-            <Text style={[styles.formSubtitle, { color: Colors.text.secondary }]}>
-              Ingresa tus credenciales para continuar
-            </Text>
-          </View>
-
-          {formError ? (
-            <View
-              style={[
-                styles.errorBanner,
-                {
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.08)',
-                  borderColor: Colors.error.main,
-                },
-              ]}>
-              <Text style={[styles.errorBannerText, { color: Colors.error.main }]}>
-                {formError}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.inputsContainer}>
-            <Input
-              label="Correo electrónico"
-              placeholder="tu@correo.com"
-              value={values.email}
-              onChangeText={(text) => {
-                setFormError(null);
-                handleChange('email')(text);
-              }}
-              onBlur={handleBlur('email')}
-              error={touched.email && errors.email ? errors.email : undefined}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-            />
-
-            <Input
-              label="Contraseña"
-              placeholder="••••••••"
-              value={values.password}
-              onChangeText={(text) => {
-                setFormError(null);
-                handleChange('password')(text);
-              }}
-              onBlur={handleBlur('password')}
-              error={touched.password && errors.password ? errors.password : undefined}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoComplete="password"
-              rightElement={
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  activeOpacity={0.7}
-                  accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <MaterialIcons
-                    name={showPassword ? 'visibility' : 'visibility-off'}
-                    size={22}
-                    color={Colors.text.secondary}
-                  />
-                </TouchableOpacity>
-              }
-            />
-          </View>
-
-          <Button
-            title="Iniciar sesión"
-            onPress={() => handleSubmit()}
-            loading={isSubmitting}
-            style={styles.button}
-          />
+          <Text style={[styles.errorBannerText, { color: Colors.error.main }]}>
+            {formError}
+          </Text>
         </View>
-      )}
-    </Formik>
+      ) : null}
+
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: Colors.text.primary }]}>
+          Correo electrónico
+        </Text>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              color: Colors.text.primary,
+              borderColor: emailError ? Colors.error.main : Colors.divider,
+              backgroundColor: Colors.background.paper,
+            },
+          ]}
+          placeholder="tu@correo.com"
+          placeholderTextColor={Colors.text.secondary}
+          value={email}
+          onChangeText={(text) => {
+            setEmail(text);
+            setEmailError(null);
+            setFormError(null);
+          }}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="username"
+          editable={!submitting}
+        />
+        {emailError ? (
+          <Text style={[styles.errorText, { color: Colors.error.main }]}>
+            {emailError}
+          </Text>
+        ) : null}
+      </View>
+
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: Colors.text.primary }]}>
+          Contraseña
+        </Text>
+        <View
+          style={[
+            styles.passwordRow,
+            {
+              borderColor: passwordError ? Colors.error.main : Colors.divider,
+              backgroundColor: Colors.background.paper,
+            },
+          ]}>
+          <TextInput
+            style={[styles.passwordInput, { color: Colors.text.primary }]}
+            placeholder="••••••••"
+            placeholderTextColor={Colors.text.secondary}
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              setPasswordError(null);
+              setFormError(null);
+            }}
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="password"
+            textContentType="password"
+            editable={!submitting}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword((v) => !v)}
+            activeOpacity={0.7}
+            accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.eyeButton}>
+            <MaterialIcons
+              name={showPassword ? 'visibility' : 'visibility-off'}
+              size={22}
+              color={Colors.text.secondary}
+            />
+          </TouchableOpacity>
+        </View>
+        {passwordError ? (
+          <Text style={[styles.errorText, { color: Colors.error.main }]}>
+            {passwordError}
+          </Text>
+        ) : null}
+      </View>
+
+      <Button
+        title="Iniciar sesión"
+        onPress={handleSubmit}
+        loading={submitting}
+        style={styles.button}
+      />
+    </View>
   );
 }
 
@@ -192,8 +238,46 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 18,
   },
-  inputsContainer: {
-    marginBottom: 4,
+  field: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    minHeight: 52,
+  },
+  passwordInput: {
+    flex: 1,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  eyeButton: {
+    paddingRight: 12,
+    paddingLeft: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 13,
+    marginTop: 6,
+    fontWeight: '500',
   },
   button: {
     marginTop: 8,

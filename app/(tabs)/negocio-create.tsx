@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,14 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
+import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
+import {
+  availableQtyForItem,
+  fetchStockForProducts,
+  itemsHaveValidStock,
+  type ProductWarehouseStock,
+} from '@/components/negocios/infrastructure/services/negociosStockService';
 
 type Customer = {
   id: string;
@@ -36,8 +44,6 @@ type Product = {
   sale_price: number;
 };
 
-type Warehouse = { id: string; name: string };
-
 export default function NegocioCreateScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
@@ -49,7 +55,6 @@ export default function NegocioCreateScreen() {
   const [saving, setSaving] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
   const [productQuery, setProductQuery] = useState('');
 
@@ -57,7 +62,9 @@ export default function NegocioCreateScreen() {
   const [codeudor, setCodeudor] = useState<Customer | null>(null);
   const [location, setLocation] = useState('');
   const [items, setItems] = useState<NegocioItem[]>([]);
-  const [warehouseId, setWarehouseId] = useState('');
+  const [stockByProduct, setStockByProduct] = useState<
+    Record<string, ProductWarehouseStock[]>
+  >({});
   const [downPayment, setDownPayment] = useState('0');
   const [installments, setInstallments] = useState('3');
   const [frequency, setFrequency] = useState<CreditFrequency>('mensual');
@@ -65,8 +72,6 @@ export default function NegocioCreateScreen() {
   const [signature, setSignature] = useState('');
   const [sellerSignature, setSellerSignature] = useState('');
   const [guarantorSignature, setGuarantorSignature] = useState('');
-  const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
-  const [pendingPrice, setPendingPrice] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerId, setNewCustomerId] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
@@ -75,7 +80,7 @@ export default function NegocioCreateScreen() {
   useEffect(() => {
     fetchCreditSettings();
     (async () => {
-      const [c, p, w] = await Promise.all([
+      const [c, p] = await Promise.all([
         supabase
           .from('customers')
           .select('id, name, id_number')
@@ -89,21 +94,41 @@ export default function NegocioCreateScreen() {
           .eq('status', true)
           .order('name')
           .limit(200),
-        supabase
-          .from('warehouses')
-          .select('id, name')
-          .is('deleted_at', null)
-          .order('name'),
       ]);
       setCustomers(c.data || []);
       setProducts(p.data || []);
-      setWarehouses(w.data || []);
-      if (w.data?.[0]) setWarehouseId(w.data[0].id);
-      if (creditSettings?.default_frequency) {
-        setFrequency(creditSettings.default_frequency);
-      }
     })();
   }, [fetchCreditSettings]);
+
+  useEffect(() => {
+    const productIds = [...new Set(items.map((i) => i.product_id))];
+    if (!productIds.length) {
+      setStockByProduct({});
+      return;
+    }
+
+    let cancelled = false;
+    fetchStockForProducts(productIds)
+      .then((map) => {
+        if (!cancelled) setStockByProduct(map);
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          Alert.alert('Error', error.message || 'No se pudo consultar stock');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
+
+  const handleStockLoaded = useCallback(
+    (productId: string, stock: ProductWarehouseStock[]) => {
+      setStockByProduct((prev) => ({ ...prev, [productId]: stock }));
+    },
+    []
+  );
 
   const settings = creditSettings || {
     formula_type: 'financed_balance' as const,
@@ -131,45 +156,59 @@ export default function NegocioCreateScreen() {
       .slice(0, 8);
   }, [customers, customerQuery]);
 
-  const filteredProducts = useMemo(() => {
-    const q = productQuery.trim().toLowerCase();
-    if (!q) return products.slice(0, 8);
-    return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [products, productQuery]);
+  const warehouseLabel = (productId: string, warehouseId: string) =>
+    stockByProduct[productId]?.find((s) => s.warehouse_id === warehouseId)
+      ?.warehouse_name || 'Bodega';
 
-  const pushItem = (p: Product, unit_price: number) => {
-    setItems((prev) => [
-      ...prev,
-      {
-        product_id: p.id,
-        warehouse_id: warehouseId,
-        quantity: 1,
-        description: p.name,
-        unit_price,
-      },
-    ]);
-    setProductQuery('');
-    setPendingProduct(null);
-    setPendingPrice('');
+  const handleAddItem = (item: NegocioItem) => {
+    setItems((prev) => [...prev, item]);
   };
 
-  const addProduct = (p: Product) => {
-    if (!warehouseId) {
-      Alert.alert('Seleccione bodega');
-      return;
-    }
-    const catalogPrice = Number(p.sale_price) || 0;
-    if (catalogPrice <= 0) {
-      setPendingProduct(p);
-      setPendingPrice('');
-      return;
-    }
-    pushItem(p, catalogPrice);
+  const updateItem = (
+    index: number,
+    patch: Partial<Pick<NegocioItem, 'quantity' | 'unit_price' | 'warehouse_id'>>
+  ) => {
+    setItems((prev) => {
+      const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row));
+      const updated = next[index];
+      if (!updated) return next;
+
+      if (patch.quantity !== undefined || patch.warehouse_id !== undefined) {
+        const available = availableQtyForItem(
+          stockByProduct,
+          next,
+          updated.product_id,
+          updated.warehouse_id,
+          index
+        );
+        if (updated.quantity > available) {
+          Alert.alert(
+            'Stock insuficiente',
+            `Disponible en ${warehouseLabel(updated.product_id, updated.warehouse_id)}: ${available}`
+          );
+          return prev;
+        }
+      }
+
+      return next;
+    });
+  };
+
+  const canAdvanceProductsStep = () => {
+    if (!items.length) return false;
+    if (items.some((i) => i.unit_price <= 0 || i.quantity <= 0)) return false;
+    return itemsHaveValidStock(items, stockByProduct);
   };
 
   const submit = async (activate: boolean) => {
     if (!customer) return Alert.alert('Seleccione cliente');
     if (!items.length) return Alert.alert('Agregue productos');
+    if (!itemsHaveValidStock(items, stockByProduct)) {
+      return Alert.alert(
+        'Stock insuficiente',
+        'Revise la bodega y cantidad de cada producto.'
+      );
+    }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
     if (activate && !signature) return Alert.alert('Firma del cliente requerida');
 
@@ -332,128 +371,34 @@ export default function NegocioCreateScreen() {
 
       {step === 1 && (
         <View style={styles.block}>
-          <Text style={{ color: colors.text.secondary }}>Bodega</Text>
-          <View style={styles.rowWrap}>
-            {warehouses.map((w) => (
-              <Pressable
-                key={w.id}
-                onPress={() => setWarehouseId(w.id)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor:
-                      warehouseId === w.id ? colors.primary.main : colors.background.paper,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color:
-                      warehouseId === w.id
-                        ? colors.primary.contrastText
-                        : colors.text.primary,
-                  }}
-                >
-                  {w.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <TextInput
-            style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-            placeholder="Buscar producto"
-            placeholderTextColor={colors.text.secondary}
-            value={productQuery}
-            onChangeText={setProductQuery}
+          <NegocioProductAddSection
+            products={products}
+            productQuery={productQuery}
+            onProductQueryChange={setProductQuery}
+            items={items}
+            onAdd={handleAddItem}
+            onStockLoaded={handleStockLoaded}
+            colors={colors}
           />
-          {filteredProducts.map((p) => (
-            <Pressable key={p.id} onPress={() => addProduct(p)} style={styles.option}>
-              <Text style={{ color: colors.text.primary, flex: 1 }}>{p.name}</Text>
-              <Text style={{ color: colors.primary.main }}>
-                {Number(p.sale_price) > 0
-                  ? formatCOP(Number(p.sale_price))
-                  : 'Sin precio'}
-              </Text>
-            </Pressable>
-          ))}
 
-          {pendingProduct && (
-            <View style={[styles.summary, { backgroundColor: colors.background.paper }]}>
-              <Text style={{ color: colors.text.primary, fontWeight: '600' }}>
-                Precio para: {pendingProduct.name}
-              </Text>
-              <TextInput
-                keyboardType="numeric"
-                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-                placeholder="Valor unitario (contado)"
-                placeholderTextColor={colors.text.secondary}
-                value={pendingPrice}
-                onChangeText={setPendingPrice}
-              />
-              <View style={styles.rowWrap}>
-                <Pressable
-                  style={[styles.chip, { backgroundColor: colors.background.default }]}
-                  onPress={() => {
-                    setPendingProduct(null);
-                    setPendingPrice('');
-                  }}
-                >
-                  <Text style={{ color: colors.text.primary }}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.chip, { backgroundColor: colors.primary.main }]}
-                  onPress={() => {
-                    const unit_price = Number(pendingPrice.replace(/[^\d.-]/g, ''));
-                    if (!unit_price || unit_price <= 0) {
-                      Alert.alert('Indique un valor unitario válido');
-                      return;
-                    }
-                    pushItem(pendingProduct, unit_price);
-                  }}
-                >
-                  <Text style={{ color: colors.primary.contrastText }}>Agregar</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
+          <NegocioItemsList
+            items={items}
+            stockByProduct={stockByProduct}
+            onUpdateItem={updateItem}
+            onRemoveItem={(index) =>
+              setItems((prev) => prev.filter((_, i) => i !== index))
+            }
+            colors={colors}
+          />
 
-          {items.map((item, idx) => (
-            <View key={`${item.product_id}-${idx}`} style={styles.option}>
-              <Text style={{ color: colors.text.primary, flex: 1 }}>
-                {item.quantity} × {item.description}
-              </Text>
-              <TextInput
-                keyboardType="numeric"
-                style={{
-                  minWidth: 100,
-                  borderWidth: 1,
-                  borderColor: colors.divider,
-                  borderRadius: 6,
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  color: colors.text.primary,
-                  textAlign: 'right',
-                }}
-                value={String(item.unit_price)}
-                onChangeText={(text) => {
-                  const unit_price = Number(text.replace(/[^\d.-]/g, ''));
-                  setItems((prev) =>
-                    prev.map((row, i) =>
-                      i === idx
-                        ? { ...row, unit_price: Number.isFinite(unit_price) ? unit_price : 0 }
-                        : row
-                    )
-                  );
-                }}
-              />
-              <Pressable onPress={() => setItems((prev) => prev.filter((_, i) => i !== idx))}>
-                <Text style={{ color: 'crimson', marginLeft: 8 }}>Quitar</Text>
-              </Pressable>
-            </View>
-          ))}
-          <Text style={{ fontWeight: '700', color: colors.text.primary }}>
+          <Text style={{ fontWeight: '700', color: colors.text.primary, marginTop: 8 }}>
             Subtotal: {formatCOP(subtotal)}
           </Text>
+          {items.length > 0 && !itemsHaveValidStock(items, stockByProduct) && (
+            <Text style={{ color: 'crimson', fontSize: 13 }}>
+              Hay productos con stock insuficiente. Revise bodega y cantidad.
+            </Text>
+          )}
         </View>
       )}
 
@@ -565,13 +510,25 @@ export default function NegocioCreateScreen() {
         )}
         {step < 3 ? (
           <Pressable
-            style={[styles.btn, { backgroundColor: colors.primary.main }]}
+            style={[
+              styles.btn,
+              {
+                backgroundColor: colors.primary.main,
+                opacity: step === 1 && !canAdvanceProductsStep() ? 0.5 : 1,
+              },
+            ]}
             onPress={() => {
               if (step === 0 && !customer) return Alert.alert('Seleccione cliente');
               if (step === 1) {
                 if (!items.length) return Alert.alert('Agregue productos');
                 if (items.some((i) => i.unit_price <= 0)) {
                   return Alert.alert('Cada producto debe tener valor unitario mayor a 0');
+                }
+                if (!itemsHaveValidStock(items, stockByProduct)) {
+                  return Alert.alert(
+                    'Stock insuficiente',
+                    'Revise la bodega y cantidad de cada producto.'
+                  );
                 }
               }
               if (step === 2 && !firstDueDate) return Alert.alert('Fecha requerida');

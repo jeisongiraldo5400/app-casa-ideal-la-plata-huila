@@ -1,9 +1,9 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import React, { useEffect, useRef } from 'react';
+import Constants from 'expo-constants';
+import React from 'react';
 import {
-  Animated,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,51 +13,17 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
 
 export default function LoginScreen() {
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
   const insets = useSafeAreaInsets();
-  const brandOpacity = useRef(new Animated.Value(0)).current;
-  const brandTranslate = useRef(new Animated.Value(16)).current;
-  const formOpacity = useRef(new Animated.Value(0)).current;
-  const formTranslate = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    Animated.stagger(120, [
-      Animated.parallel([
-        Animated.timing(brandOpacity, {
-          toValue: 1,
-          duration: 520,
-          useNativeDriver: true,
-        }),
-        Animated.timing(brandTranslate, {
-          toValue: 0,
-          duration: 520,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.parallel([
-        Animated.timing(formOpacity, {
-          toValue: 1,
-          duration: 480,
-          useNativeDriver: true,
-        }),
-        Animated.timing(formTranslate, {
-          toValue: 0,
-          duration: 480,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
-  }, [brandOpacity, brandTranslate, formOpacity, formTranslate]);
 
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      enabled={Platform.OS === 'ios'}>
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -66,17 +32,10 @@ export default function LoginScreen() {
             paddingBottom: Math.max(insets.bottom, 24),
           },
         ]}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
         showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={[
-            styles.brandPanel,
-            {
-              opacity: brandOpacity,
-              transform: [{ translateY: brandTranslate }],
-            },
-          ]}>
-          <View style={styles.brandGlow} />
+        <View style={styles.brandPanel}>
           <View style={styles.logoContainer}>
             <Image
               source={require('@/assets/images/logo_completo.png')}
@@ -86,15 +45,9 @@ export default function LoginScreen() {
             />
           </View>
           <Text style={styles.brandTagline}>Acceso al sistema de inventario</Text>
-        </Animated.View>
+        </View>
 
-        <Animated.View
-          style={{
-            opacity: formOpacity,
-            transform: [{ translateY: formTranslate }],
-          }}>
-          <LoginForm />
-        </Animated.View>
+        <LoginForm />
 
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: Colors.text.secondary }]}>
@@ -125,17 +78,7 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
     paddingHorizontal: 16,
     borderRadius: 20,
-    overflow: 'hidden',
     backgroundColor: '#0b1f4a',
-  },
-  brandGlow: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(59, 130, 246, 0.22)',
-    top: -40,
-    alignSelf: 'center',
   },
   logoContainer: {
     backgroundColor: '#ffffff',
@@ -146,11 +89,6 @@ const styles = StyleSheet.create({
     maxWidth: 280,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
   },
   logoImage: {
     width: '100%',

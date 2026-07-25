@@ -1,13 +1,13 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
-import { getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 // Mantener el splash screen visible hasta que la app esté lista
@@ -29,10 +29,9 @@ if (!Constants.executionEnvironment || Constants.executionEnvironment === 'stand
 
 function RootLayoutNav() {
   const { session, loading, initialize } = useAuth();
-  const { initializeTheme, isDark } = useTheme();
+  const { initializeTheme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
-  const colors = getColors(isDark);
   const [appIsReady, setAppIsReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
 
@@ -70,18 +69,20 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
 
-    // Realizar la navegación
+    // Solo redirigir cuando el grupo de rutas no coincide con la sesión.
+    // Evita remounts del login que impiden escribir en los inputs.
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)');
     }
-    
-    // Esperar un momento para que la navegación se complete antes de ocultar el splash
-    setTimeout(() => {
+
+    const timer = setTimeout(() => {
       setNavigationReady(true);
     }, 500);
-  }, [session, loading, segments, router, appIsReady]);
+
+    return () => clearTimeout(timer);
+  }, [session, loading, segments, appIsReady]);
 
   useEffect(() => {
     // Solo ocultar el splash screen cuando todo esté listo: inicialización, navegación y carga completa
@@ -107,14 +108,17 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const { isDark } = useTheme();
   return (
-    <>
+    <GestureHandlerRootView style={styles.root}>
       <RootLayoutNav />
       <StatusBar style={isDark ? 'light' : 'dark'} />
-    </>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
