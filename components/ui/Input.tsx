@@ -14,12 +14,14 @@ interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
+  rightElement?: React.ReactNode;
 }
 
 export function Input({
   label,
   error,
   containerStyle,
+  rightElement,
   style,
   onFocus,
   onBlur,
@@ -42,12 +44,11 @@ export function Input({
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={[styles.label, { color: Colors.text.primary }]}>{label}</Text>}
-      <TextInput
+      <View
         style={[
-          styles.input,
+          styles.inputWrapper,
           {
             borderColor: Colors.divider,
-            color: Colors.text.primary,
             backgroundColor: Colors.background.paper,
           },
           isFocused && {
@@ -66,13 +67,23 @@ export function Input({
             borderColor: Colors.error.main,
             borderWidth: 2,
           },
-          style,
-        ]}
-        placeholderTextColor={Colors.text.secondary}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        {...props}
-      />
+        ]}>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              color: Colors.text.primary,
+            },
+            rightElement ? styles.inputWithRight : null,
+            style,
+          ]}
+          placeholderTextColor={Colors.text.secondary}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          {...props}
+        />
+        {rightElement ? <View style={styles.rightElement}>{rightElement}</View> : null}
+      </View>
       {error && <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>}
     </View>
   );
@@ -87,12 +98,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  input: {
-    height: 52,
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1.5,
     borderRadius: 12,
+    minHeight: 52,
+  },
+  input: {
+    flex: 1,
+    height: 52,
     paddingHorizontal: 16,
     fontSize: 16,
+  },
+  inputWithRight: {
+    paddingRight: 8,
+  },
+  rightElement: {
+    paddingRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorText: {
     fontSize: 13,

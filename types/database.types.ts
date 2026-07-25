@@ -92,6 +92,7 @@ export type Database = {
       customers: {
         Row: {
           address: string | null
+          client_code: string | null
           created_at: string | null
           created_by: string | null
           deleted_at: string | null
@@ -99,12 +100,15 @@ export type Database = {
           id: string
           id_number: string
           name: string
+          neighborhood: string | null
           notes: string | null
           phone: string | null
+          phone_secondary: string | null
           updated_at: string | null
         }
         Insert: {
           address?: string | null
+          client_code?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null
@@ -112,12 +116,15 @@ export type Database = {
           id?: string
           id_number: string
           name: string
+          neighborhood?: string | null
           notes?: string | null
           phone?: string | null
+          phone_secondary?: string | null
           updated_at?: string | null
         }
         Update: {
           address?: string | null
+          client_code?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null
@@ -125,8 +132,10 @@ export type Database = {
           id?: string
           id_number?: string
           name?: string
+          neighborhood?: string | null
           notes?: string | null
           phone?: string | null
+          phone_secondary?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -518,6 +527,7 @@ export type Database = {
           deleted_at: string | null
           delivery_address: string | null
           id: string
+          negocio_id: string | null
           notes: string | null
           order_number: string | null
           order_type: string
@@ -533,6 +543,7 @@ export type Database = {
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
+          negocio_id?: string | null
           notes?: string | null
           order_number?: string | null
           order_type?: string
@@ -548,6 +559,7 @@ export type Database = {
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
+          negocio_id?: string | null
           notes?: string | null
           order_number?: string | null
           order_type?: string
@@ -933,6 +945,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          sale_price: number
           sku: string
           status: boolean | null
           updated_at: string | null
@@ -947,6 +960,7 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          sale_price?: number
           sku: string
           status?: boolean | null
           updated_at?: string | null
@@ -961,6 +975,7 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          sale_price?: number
           sku?: string
           status?: boolean | null
           updated_at?: string | null
@@ -988,6 +1003,283 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+
+      credit_settings: {
+        Row: {
+          created_at: string
+          default_frequency: string
+          deleted_at: string | null
+          formula_type: string
+          id: string
+          interest_rate_monthly_pct: number
+          is_active: boolean
+          late_fee_rate_pct: number
+          legal_text: string | null
+          max_installments: number
+          min_installments: number
+          rounding_unit: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_frequency?: string
+          deleted_at?: string | null
+          formula_type?: string
+          id?: string
+          interest_rate_monthly_pct?: number
+          is_active?: boolean
+          late_fee_rate_pct?: number
+          legal_text?: string | null
+          max_installments?: number
+          min_installments?: number
+          rounding_unit?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_frequency?: string
+          deleted_at?: string | null
+          formula_type?: string
+          id?: string
+          interest_rate_monthly_pct?: number
+          is_active?: boolean
+          late_fee_rate_pct?: number
+          legal_text?: string | null
+          max_installments?: number
+          min_installments?: number
+          rounding_unit?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      negocios: {
+        Row: {
+          codeudor_customer_id: string | null
+          codeudor_snapshot: Json | null
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          customer_signature_url: string | null
+          deal_date: string
+          deleted_at: string | null
+          delivery_order_id: string | null
+          down_payment: number
+          financed_amount: number
+          first_due_date: string | null
+          formula_snapshot: Json
+          frequency: string
+          guarantor_signature_url: string | null
+          id: string
+          installment_amount: number
+          installments_count: number
+          interest_amount: number
+          location: string | null
+          notes: string | null
+          numero: number
+          products_subtotal: number
+          seller_id: string
+          seller_signature_url: string | null
+          signed_at: string | null
+          status: string
+          total_credit: number
+          updated_at: string
+        }
+        Insert: {
+          codeudor_customer_id?: string | null
+          codeudor_snapshot?: Json | null
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          customer_signature_url?: string | null
+          deal_date?: string
+          deleted_at?: string | null
+          delivery_order_id?: string | null
+          down_payment?: number
+          financed_amount?: number
+          first_due_date?: string | null
+          formula_snapshot?: Json
+          frequency?: string
+          guarantor_signature_url?: string | null
+          id?: string
+          installment_amount?: number
+          installments_count?: number
+          interest_amount?: number
+          location?: string | null
+          notes?: string | null
+          numero?: number
+          products_subtotal?: number
+          seller_id: string
+          seller_signature_url?: string | null
+          signed_at?: string | null
+          status?: string
+          total_credit?: number
+          updated_at?: string
+        }
+        Update: {
+          codeudor_customer_id?: string | null
+          codeudor_snapshot?: Json | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          customer_signature_url?: string | null
+          deal_date?: string
+          deleted_at?: string | null
+          delivery_order_id?: string | null
+          down_payment?: number
+          financed_amount?: number
+          first_due_date?: string | null
+          formula_snapshot?: Json
+          frequency?: string
+          guarantor_signature_url?: string | null
+          id?: string
+          installment_amount?: number
+          installments_count?: number
+          interest_amount?: number
+          location?: string | null
+          notes?: string | null
+          numero?: number
+          products_subtotal?: number
+          seller_id?: string
+          seller_signature_url?: string | null
+          signed_at?: string | null
+          status?: string
+          total_credit?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      negocio_items: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          negocio_id: string
+          product_id: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+          updated_at: string
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          negocio_id: string
+          product_id: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+          updated_at?: string
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          negocio_id?: string
+          product_id?: string
+          quantity?: number
+          subtotal?: number
+          unit_price?: number
+          updated_at?: string
+          warehouse_id?: string
+        }
+        Relationships: []
+      }
+      negocio_cuotas: {
+        Row: {
+          amount: number
+          created_at: string
+          deleted_at: string | null
+          due_date: string
+          id: string
+          installment_number: number
+          late_fee_amount: number
+          negocio_id: string
+          notes: string | null
+          paid_amount: number
+          paid_at: string | null
+          receipt_number: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          deleted_at?: string | null
+          due_date: string
+          id?: string
+          installment_number: number
+          late_fee_amount?: number
+          negocio_id: string
+          notes?: string | null
+          paid_amount?: number
+          paid_at?: string | null
+          receipt_number?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          deleted_at?: string | null
+          due_date?: string
+          id?: string
+          installment_number?: number
+          late_fee_amount?: number
+          negocio_id?: string
+          notes?: string | null
+          paid_amount?: number
+          paid_at?: string | null
+          receipt_number?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      negocio_pagos: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          cuota_id: string | null
+          deleted_at: string | null
+          id: string
+          negocio_id: string
+          notes: string | null
+          paid_at: string
+          receipt_number: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          cuota_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          negocio_id: string
+          notes?: string | null
+          paid_at?: string
+          receipt_number?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          cuota_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          negocio_id?: string
+          notes?: string | null
+          paid_at?: string
+          receipt_number?: string | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -2202,12 +2494,73 @@ export type Database = {
           deleted_at: string
           id: string
           name: string
+          sale_price: number
           sku: string
           status: boolean
           stock_by_warehouse: Json
           total_count: number
           total_stock: number
         }[]
+      }
+      activate_negocio: {
+        Args: { p_negocio_id: string }
+        Returns: string
+      }
+      register_negocio_pago: {
+        Args: {
+          p_negocio_id: string
+          p_amount: number
+          p_paid_at?: string
+          p_receipt_number?: string | null
+          p_cuota_id?: string | null
+          p_notes?: string | null
+        }
+        Returns: string
+      }
+      void_negocio_pago: {
+        Args: { p_pago_id: string }
+        Returns: undefined
+      }
+      cancel_negocio: {
+        Args: { p_negocio_id: string; p_reason?: string | null }
+        Returns: undefined
+      }
+      mark_cuotas_en_mora: {
+        Args: { p_negocio_id?: string | null }
+        Returns: number
+      }
+      get_cartera_cuotas: {
+        Args: {
+          p_filter?: string
+          p_days?: number
+          p_search?: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: {
+          cuota_id: string
+          negocio_id: string
+          negocio_numero: number
+          customer_name: string | null
+          seller_name: string | null
+          installment_number: number
+          due_date: string
+          amount: number
+          paid_amount: number
+          late_fee_amount: number
+          saldo: number
+          status: string
+          negocio_status: string
+          total_count: number
+        }[]
+      }
+      has_role: {
+        Args: { role_name: string }
+        Returns: boolean
+      }
+      is_admin_or_vendedor: {
+        Args: never
+        Returns: boolean
       }
       get_products_for_return: {
         Args: { order_id_param: string; return_type_param: string }

@@ -1,7 +1,7 @@
 {
   "name": "app-casa-ideal",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -35,7 +35,9 @@
     "expo-image": "~3.0.10",
     "expo-linear-gradient": "^15.0.7",
     "expo-linking": "~8.0.9",
+    "expo-print": "~15.0.8",
     "expo-router": "~6.0.15",
+    "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.11",
     "expo-status-bar": "~3.0.8",
     "expo-symbols": "~1.0.7",

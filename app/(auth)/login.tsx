@@ -1,42 +1,106 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
+import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Animated,
   Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
+  Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 export default function LoginScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const insets = useSafeAreaInsets();
+  const brandOpacity = useRef(new Animated.Value(0)).current;
+  const brandTranslate = useRef(new Animated.Value(16)).current;
+  const formOpacity = useRef(new Animated.Value(0)).current;
+  const formTranslate = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.stagger(120, [
+      Animated.parallel([
+        Animated.timing(brandOpacity, {
+          toValue: 1,
+          duration: 520,
+          useNativeDriver: true,
+        }),
+        Animated.timing(brandTranslate, {
+          toValue: 0,
+          duration: 520,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(formOpacity, {
+          toValue: 1,
+          duration: 480,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formTranslate, {
+          toValue: 0,
+          duration: 480,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [brandOpacity, brandTranslate, formOpacity, formTranslate]);
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: Math.max(insets.top, 16),
+            paddingBottom: Math.max(insets.bottom, 24),
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <View style={[styles.logoContainer, {
-          backgroundColor: '#ffffff',
-          borderRadius: 20,
-          padding: 20,
-          marginBottom: 20,
-        }]}>
+        <Animated.View
+          style={[
+            styles.brandPanel,
+            {
+              opacity: brandOpacity,
+              transform: [{ translateY: brandTranslate }],
+            },
+          ]}>
+          <View style={styles.brandGlow} />
           <Image
             source={require('@/assets/images/logo_completo.png')}
             style={styles.logoImage}
             resizeMode="contain"
+            accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
           />
+          <Text style={styles.brandTagline}>Acceso al sistema de inventario</Text>
+        </Animated.View>
+
+        <Animated.View
+          style={{
+            opacity: formOpacity,
+            transform: [{ translateY: formTranslate }],
+          }}>
+          <LoginForm />
+        </Animated.View>
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: Colors.text.secondary }]}>
+            Versión {Constants.expoConfig?.version || '1.0.0'}
+          </Text>
+          <Text style={[styles.footerText, { color: Colors.text.secondary }]}>
+            © {new Date().getFullYear()} Casa Ideal
+          </Text>
         </View>
-        
-        <LoginForm />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -49,17 +113,44 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 20,
-    paddingTop: 20,
+    paddingHorizontal: 20,
   },
-  logoContainer: {
+  brandPanel: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: -40,
+    marginBottom: 28,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#0b1f4a',
+  },
+  brandGlow: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(59, 130, 246, 0.22)',
+    top: -40,
+    alignSelf: 'center',
   },
   logoImage: {
-    width: 350,
-    maxWidth: '100%',
+    width: '100%',
+    maxWidth: 300,
+    height: 88,
+  },
+  brandTagline: {
+    marginTop: 14,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.78)',
+    textAlign: 'center',
+  },
+  footer: {
+    marginTop: 28,
+    alignItems: 'center',
+    gap: 4,
+  },
+  footerText: {
+    fontSize: 12,
   },
 });
-

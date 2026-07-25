@@ -2,9 +2,10 @@ import { useTheme } from '@/components/theme';
 import { BackButton } from '@/components/ui/BackButton';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getColors } from '@/constants/theme';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
+import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
 
 function ProfileHeaderButton() {
   const router = useRouter();
@@ -22,7 +23,20 @@ function ProfileHeaderButton() {
 export default function TabLayout() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  
+  const { loading, preferSellerWorkspace, isAdmin, isVendedor } = useUserRoles();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={colors.primary.main} />
+      </View>
+    );
+  }
+
+  const sellerMode = preferSellerWorkspace();
+  const showNegocios = sellerMode || isAdmin() || isVendedor();
+  const showWarehouseTabs = !sellerMode;
+
   return (
     <Tabs
       screenOptions={{
@@ -39,10 +53,7 @@ export default function TabLayout() {
           borderTopColor: colors.primary.main,
           borderTopWidth: 2,
           shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: -1,
-          },
+          shadowOffset: { width: 0, height: -1 },
           shadowOpacity: 0.05,
           shadowRadius: 4,
           elevation: 5,
@@ -59,39 +70,72 @@ export default function TabLayout() {
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
+
+      <Tabs.Screen
+        name="negocios"
+        options={{
+          title: 'Negocios',
+          tabBarLabel: 'Negocios',
+          href: showNegocios ? undefined : null,
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="handshake" size={28} color={color} />
+          ),
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="cartera"
+        options={{
+          title: 'Cartera',
+          tabBarLabel: 'Cartera',
+          href: showNegocios ? undefined : null,
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="account-balance-wallet" size={28} color={color} />
+          ),
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+
       <Tabs.Screen
         name="inventory"
         options={{
           title: 'Inventario',
-          tabBarLabel: 'Inventario',
+          tabBarLabel: sellerMode ? 'Catálogo' : 'Inventario',
+          href: showWarehouseTabs || showNegocios ? undefined : null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="inventory" size={28} color={color} />
           ),
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
+
       <Tabs.Screen
         name="search"
         options={{
           title: 'Búsqueda Rápida',
           tabBarLabel: 'Buscar',
+          href: showWarehouseTabs ? undefined : null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="qr-code-scanner" size={32} color={color} />
           ),
           headerShown: false,
         }}
       />
+
       <Tabs.Screen
         name="exits-list"
         options={{
           title: 'Salidas',
           tabBarLabel: 'Salidas',
+          href: showWarehouseTabs ? undefined : null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="local-shipping" size={28} color={color} />
           ),
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -103,10 +147,20 @@ export default function TabLayout() {
           headerShown: true,
         }}
       />
+
+      <Tabs.Screen
+        name="negocio-create"
+        options={{
+          href: null,
+          title: 'Nuevo negocio',
+          headerLeft: () => <BackButton />,
+        }}
+      />
+
       <Tabs.Screen
         name="entries"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          href: null,
           title: 'Entradas',
           headerLeft: () => <BackButton />,
         }}
@@ -114,7 +168,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="exits"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          href: null,
           title: 'Salidas',
           headerLeft: () => <BackButton />,
         }}
@@ -122,7 +176,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="received-orders"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          href: null,
           title: 'Mis Órdenes Recibidas',
           headerLeft: () => <BackButton />,
         }}
@@ -130,7 +184,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="all-orders"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          href: null,
           title: 'Todas las Órdenes',
           headerLeft: () => <BackButton />,
         }}
@@ -138,7 +192,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="reports"
         options={{
-          href: null, // Ocultar del tab bar pero mantener la ruta accesible
+          href: null,
           title: 'Reportes',
           headerLeft: () => <BackButton />,
         }}

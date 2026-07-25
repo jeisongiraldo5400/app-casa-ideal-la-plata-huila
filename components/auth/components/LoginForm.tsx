@@ -1,15 +1,13 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Yup from 'yup';
 
 interface LoginFormValues {
@@ -30,8 +28,9 @@ export function LoginForm() {
   const { signIn } = useAuth();
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const [formError, setFormError] = useState<string | null>(null);
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
 
   const initialValues: LoginFormValues = {
     email: '',
@@ -42,15 +41,16 @@ export function LoginForm() {
     values: LoginFormValues,
     { setSubmitting }: FormikHelpers<LoginFormValues>
   ) => {
+    setFormError(null);
     try {
       const { error } = await signIn(values.email.trim(), values.password);
       if (error) {
-        Alert.alert('Error', error.message || 'Error al iniciar sesión');
+        setFormError(error.message || 'Error al iniciar sesión');
       } else {
         router.replace('/(tabs)');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+      setFormError(error.message || 'Ocurrió un error inesperado');
     } finally {
       setSubmitting(false);
     }
@@ -70,23 +70,47 @@ export function LoginForm() {
         touched,
         isSubmitting,
       }) => (
-        <Card style={styles.card}>
+        <View
+          style={[
+            styles.form,
+            {
+              backgroundColor: Colors.background.paper,
+              borderColor: Colors.divider,
+            },
+          ]}>
           <View style={styles.formHeader}>
-            <Text style={[styles.formTitle, { color: Colors.text.primary }]}>Iniciar Sesión</Text>
-            <Text style={[styles.formSubtitle, { 
-              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
-              opacity: colorScheme === 'dark' ? 0.9 : 1
-            }]}>
-              Ingresa tus credenciales para acceder
+            <Text style={[styles.formTitle, { color: Colors.text.primary }]}>
+              Iniciar sesión
+            </Text>
+            <Text style={[styles.formSubtitle, { color: Colors.text.secondary }]}>
+              Ingresa tus credenciales para continuar
             </Text>
           </View>
+
+          {formError ? (
+            <View
+              style={[
+                styles.errorBanner,
+                {
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(220, 38, 38, 0.08)',
+                  borderColor: Colors.error.main,
+                },
+              ]}>
+              <Text style={[styles.errorBannerText, { color: Colors.error.main }]}>
+                {formError}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.inputsContainer}>
             <Input
               label="Correo electrónico"
               placeholder="tu@correo.com"
               value={values.email}
-              onChangeText={handleChange('email')}
+              onChangeText={(text) => {
+                setFormError(null);
+                handleChange('email')(text);
+              }}
               onBlur={handleBlur('email')}
               error={touched.email && errors.email ? errors.email : undefined}
               keyboardType="email-address"
@@ -94,31 +118,33 @@ export function LoginForm() {
               autoComplete="email"
             />
 
-            <View style={styles.passwordContainer}>
-              <Input
-                label="Contraseña"
-                placeholder="••••••••"
-                value={values.password}
-                onChangeText={handleChange('password')}
-                onBlur={handleBlur('password')}
-                error={touched.password && errors.password ? errors.password : undefined}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="password"
-                style={styles.passwordInput}
-              />
-              <TouchableOpacity
-                style={styles.eyeIcon}
-                onPress={() => setShowPassword(!showPassword)}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons
-                  name={showPassword ? 'visibility' : 'visibility-off'}
-                  size={24}
-                  color={Colors.text.secondary}
-                />
-              </TouchableOpacity>
-            </View>
+            <Input
+              label="Contraseña"
+              placeholder="••••••••"
+              value={values.password}
+              onChangeText={(text) => {
+                setFormError(null);
+                handleChange('password')(text);
+              }}
+              onBlur={handleBlur('password')}
+              error={touched.password && errors.password ? errors.password : undefined}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoComplete="password"
+              rightElement={
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <MaterialIcons
+                    name={showPassword ? 'visibility' : 'visibility-off'}
+                    size={22}
+                    color={Colors.text.secondary}
+                  />
+                </TouchableOpacity>
+              }
+            />
           </View>
 
           <Button
@@ -127,78 +153,49 @@ export function LoginForm() {
             loading={isSubmitting}
             style={styles.button}
           />
-
-          <View style={[styles.versionContainer, { borderTopColor: Colors.divider }]}>
-            <Text style={[styles.versionText, { 
-              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
-              opacity: colorScheme === 'dark' ? 0.8 : 1
-            }]}>
-              Versión {Constants.expoConfig?.version || '1.0.0'}
-            </Text>
-            <Text style={[styles.yearText, { 
-              color: colorScheme === 'dark' ? Colors.text.primary : Colors.text.secondary,
-              opacity: colorScheme === 'dark' ? 0.8 : 1
-            }]}>
-              © {new Date().getFullYear()}
-            </Text>
-          </View>
-        </Card>
+        </View>
       )}
     </Formik>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  form: {
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 24,
   },
   formHeader: {
-    marginBottom: 24,
-    alignItems: 'center',
+    marginBottom: 20,
   },
   formTitle: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   formSubtitle: {
     fontSize: 14,
-    textAlign: 'center',
+    lineHeight: 20,
+  },
+  errorBanner: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
   },
   inputsContainer: {
-    marginBottom: 8,
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 16,
-    top: 38,
-    padding: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  button: {
-    marginTop: 16,
-  },
-  versionContainer: {
-    marginTop: 24,
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-  },
-  versionText: {
-    fontSize: 12,
     marginBottom: 4,
   },
-  yearText: {
-    fontSize: 12,
+  button: {
+    marginTop: 8,
   },
 });
-

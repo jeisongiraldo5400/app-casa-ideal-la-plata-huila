@@ -10,47 +10,75 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
+  cleanup: () => void;
   changePassword: (newPassword: string) => Promise<{ error: any }>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+let authSubscription: { unsubscribe: () => void } | null = null;
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   loading: true,
   initialized: false,
 
   initialize: async () => {
+    if (get().initialized) return;
+
     try {
-      // Get initial session
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      // If there's an error with refresh token, clear the session
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
       if (error) {
         console.log('Auth error during initialization:', error.message);
-        // Clear invalid session
         await supabase.auth.signOut();
         set({ session: null, user: null, loading: false, initialized: true });
       } else {
-        set({ session, user: session?.user ?? null, loading: false, initialized: true });
+        set({
+          session,
+          user: session?.user ?? null,
+          loading: false,
+          initialized: true,
+        });
       }
 
-      // Listen for auth changes
-      supabase.auth.onAuthStateChange((event, session) => {
-        // Handle token refresh errors
-        if (event === 'TOKEN_REFRESHED' && !session) {
-          // If token refresh failed, clear the session
+      if (authSubscription) {
+        authSubscription.unsubscribe();
+        authSubscription = null;
+      }
+
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (event === 'TOKEN_REFRESHED' && !nextSession) {
           set({ session: null, user: null, loading: false });
         } else {
-          set({ session, user: session?.user ?? null, loading: false });
+          set({
+            session: nextSession,
+            user: nextSession?.user ?? null,
+            loading: false,
+          });
         }
       });
+      authSubscription = subscription;
     } catch (error: any) {
       console.log('Error initializing auth:', error?.message || error);
-      // If there's an invalid refresh token error, clear the session
-      if (error?.message?.includes('Refresh Token') || error?.message?.includes('Invalid Refresh Token')) {
+      if (
+        error?.message?.includes('Refresh Token') ||
+        error?.message?.includes('Invalid Refresh Token')
+      ) {
         await supabase.auth.signOut();
       }
       set({ session: null, user: null, loading: false, initialized: true });
+    }
+  },
+
+  cleanup: () => {
+    if (authSubscription) {
+      authSubscription.unsubscribe();
+      authSubscription = null;
     }
   },
 
@@ -74,4 +102,3 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error };
   },
 }));
-

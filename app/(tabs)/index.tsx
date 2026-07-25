@@ -5,14 +5,17 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { entriesToday, exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { preferSellerWorkspace, isVendedor } = useUserRoles();
+  const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
+  const sellerMode = preferSellerWorkspace();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -63,6 +66,43 @@ export default function HomeScreen() {
         <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
       </View>
 
+      {(sellerMode || isVendedor()) && (
+        <View style={{ gap: 10, marginBottom: 16 }}>
+          <TouchableOpacity
+            style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
+            onPress={() => router.push('/(tabs)/negocio-create')}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons name="handshake" size={28} color={colors.primary.contrastText} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 16 }}>
+                Nuevo negocio
+              </Text>
+              <Text style={{ color: colors.primary.contrastText, opacity: 0.9, fontSize: 13 }}>
+                Crear crédito y generar orden de entrega
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={colors.primary.contrastText} />
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]}
+              onPress={() => router.push('/(tabs)/negocios')}
+            >
+              <MaterialIcons name="payments" size={22} color={colors.primary.main} />
+              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Cobrar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]}
+              onPress={() => router.push('/(tabs)/cartera')}
+            >
+              <MaterialIcons name="account-balance-wallet" size={22} color={colors.primary.main} />
+              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Cartera</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <View style={styles.dashboardContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -70,28 +110,6 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.topCardsRow}>
-              {/*<View style={styles.halfWidthCard}>
-                <DashboardCard
-                  title="Salidas Hoy"
-                  value={exitsToday}
-                  subtitle="Productos despachados"
-                  icon="local-shipping"
-                  iconColor={colors.error.main}
-                  trend="down"
-                />
-              </View>
-              <View style={styles.halfWidthCard}>
-                <DashboardCard
-                  title="Entradas Hoy"
-                  value={entriesToday}
-                  subtitle="Productos recibidos"
-                  icon="input"
-                  iconColor={colors.success.main}
-                  trend="up"
-                />
-              </View>*/}
-            </View>
             <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <View style={styles.ordersCardHeader}>
                 <Text style={[styles.ordersCardTitle, { color: colors.text.primary }]}>Órdenes Pendientes</Text>
@@ -260,6 +278,24 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
   },
+  sellerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 20,
+  },
+  sellerSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
   button: {
     marginTop: 8,
   },
@@ -327,13 +363,6 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     marginBottom: 24,
     gap: 12,
-  },
-  topCardsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfWidthCard: {
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

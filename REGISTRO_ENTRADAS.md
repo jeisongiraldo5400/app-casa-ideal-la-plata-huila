@@ -12,8 +12,6 @@ Su objetivo principal es garantizar la trazabilidad, exactitud y control del inv
 
 🚀 1. Flujo General de Entrada de Productos
 
-Las entradas solo pueden realizarse para productos creados previamente en el sistema y que tengan un código de barras registrado.
-
 Pasos desde la App Móvil
 
 El usuario inicia el módulo de “Entradas”.
@@ -33,6 +31,8 @@ Solicita cantidad recibida.
 Registra la entrada en la tabla de movimientos.
 
 Actualiza el inventario disponible.
+
+Si **no** existe: la app permite **alta rápida del producto** (`createProduct` en el store de entradas) para no bloquear la recepción en bodega. El alta completa / catálogo maestro sigue siendo responsabilidad del panel web cuando haga falta.
 
 📥 2. Flujo: Producto con Código de Barras Registrado
 
@@ -71,29 +71,17 @@ Ubicación (opcional)
 
 Orden de compra (si aplica)
 
-❌ 3. Caso Especial: Producto SIN Código de Barras Registrado
+⚠️ 3. Caso Especial: Producto SIN Código de Barras Registrado
 
-Si el código escaneado NO existe en el sistema, se sigue el siguiente flujo.
+Si el código escaneado **no** existe, el comportamiento **actual de la app** es:
 
-🚫 Respuesta del backend (recomendada)
-{
-  "error": true,
-  "message": "Producto no encontrado. Este código de barras no está registrado en el sistema."
-}
+1. Mostrar formulario de **alta rápida** del producto (nombre, precio, etc. + el barcode escaneado).
+2. Llamar a `createProduct` en Supabase.
+3. Continuar con el registro de entrada usando el producto recién creado.
 
-📱 Mensaje mostrado en la app
+Esto desbloquea bodega en campo. El catálogo “oficial” y correcciones finas se hacen en el **panel web** (sección 5).
 
-❌ Producto no encontrado.
-Este código de barras no está asociado a ningún producto.
-Comuníquese con el área de inventario para registrarlo antes de continuar.
-
-🔒 Acción de la app
-
-Se bloquea la entrada de mercancía.
-
-NO permite continuar con el registro.
-
-NO crea productos desde el módulo móvil (por control de calidad).
+> Si en el futuro se quiere endurecer el control de calidad, se puede desactivar el alta móvil y volver a bloquear el escaneo desconocido.
 
 📝 4. Registro de Intentos de Escaneo de Productos No Registrados (opcional pero recomendado)
 

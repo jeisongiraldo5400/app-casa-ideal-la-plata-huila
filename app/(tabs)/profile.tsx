@@ -4,6 +4,7 @@ import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -15,7 +16,12 @@ export default function ProfileScreen() {
   const { themeMode, isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
+  const { roles } = useUserRoles();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const roleNames = roles
+    .map((r) => r.role?.nombre)
+    .filter(Boolean)
+    .join(', ');
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -46,6 +52,11 @@ export default function ProfileScreen() {
         </View>
         <Text style={[styles.userName, { color: colors.text.primary }]}>{user?.email?.split('@')[0] || 'Usuario'}</Text>
         <Text style={[styles.userEmail, { color: colors.text.secondary }]}>{user?.email}</Text>
+        {!!roleNames && (
+          <Text style={[styles.userEmail, { color: colors.primary.main, marginTop: 4 }]}>
+            Rol: {roleNames}
+          </Text>
+        )}
       </View>
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>

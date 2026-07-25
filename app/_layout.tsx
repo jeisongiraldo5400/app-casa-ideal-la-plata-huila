@@ -1,5 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { useTheme } from '@/components/theme';
+import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
+import { useTheme, useThemeStore } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -36,32 +37,32 @@ function RootLayoutNav() {
   const [navigationReady, setNavigationReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function prepare() {
       try {
-        // Inicializar autenticación y tema
         await initialize();
         await initializeTheme();
-        
-        // Esperar un tiempo mínimo para que el splash screen se vea bien
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Marcar la app como lista
-        setAppIsReady(true);
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        if (!cancelled) setAppIsReady(true);
       } catch (e: any) {
         console.error('Error durante la inicialización:', e);
-        // Log detallado del error para debugging
-        if (e?.message) {
-          console.error('Mensaje de error:', e.message);
-        }
-        if (e?.stack) {
-          console.error('Stack trace:', e.stack);
-        }
-        // Aún así marcar como lista después de un delay mínimo para que la app no se quede bloqueada
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setAppIsReady(true);
+        if (e?.message) console.error('Mensaje de error:', e.message);
+        if (e?.stack) console.error('Stack trace:', e.stack);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!cancelled) setAppIsReady(true);
       }
     }
+
     prepare();
+
+    return () => {
+      cancelled = true;
+      useAuthStore.getState().cleanup();
+      useThemeStore.getState().cleanup();
+    };
   }, [initialize, initializeTheme]);
 
   useEffect(() => {

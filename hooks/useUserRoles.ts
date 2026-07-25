@@ -98,8 +98,18 @@ export function useUserRoles() {
     return hasRole('bodeguero');
   };
 
+  const isVendedor = (): boolean => {
+    return hasRole('vendedor');
+  };
+
   const canMarkOrderAsReceived = (): boolean => {
     return isAdmin() || isBodeguero();
+  };
+
+  /** Modo vendedor: prioriza ventas si es vendedor y no bodeguero (admin ve ambos). */
+  const preferSellerWorkspace = (): boolean => {
+    if (isAdmin()) return false;
+    return isVendedor() && !isBodeguero();
   };
 
   return {
@@ -108,7 +118,9 @@ export function useUserRoles() {
     hasRole,
     isAdmin,
     isBodeguero,
+    isVendedor,
     canMarkOrderAsReceived,
+    preferSellerWorkspace,
   };
 }
 

@@ -1,78 +1,55 @@
-# 🏠 Casa Ideal - Aplicación Móvil
+# Casa Ideal — App móvil (SGI)
 
-Aplicación móvil desarrollada con [Expo](https://expo.dev) y React Native para la gestión de propiedades inmobiliarias.
+App Expo / React Native del **Sistema de Gestión de Inventario** (bodega + vendedores). Backend: Supabase compartido con el panel web.
 
-## 📋 Descripción
+## Roles en la app
 
-Este proyecto es una aplicación móvil creada con [`create-expo-app`](https://www.npmjs.com/package/create-expo-app) que utiliza Expo para el desarrollo multiplataforma. La aplicación utiliza Supabase como backend y base de datos.
+| Rol | Tabs / flujos principales |
+|-----|---------------------------|
+| Bodeguero / inventario | Entradas, salidas (OE), órdenes |
+| Vendedor | Negocios, cobrar, cartera, clientes |
+| Admin | Acceso amplio según permisos |
 
-## 🚀 Inicio Rápido
-
-### Prerrequisitos
-
-- Node.js (versión recomendada según tu proyecto)
-- npm o bun
-- Expo CLI (se instala globalmente o se usa con npx)
-
-### Instalación
-
-1. Instala las dependencias:
-
-   ```bash
-   npm install
-   ```
-
-2. Inicia la aplicación:
-
-   ```bash
-   npx expo start
-   ```
-
-### Ejecutar la aplicación
-
-Una vez iniciado el servidor de desarrollo, tendrás opciones para abrir la app en:
-
-- [Development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go) - Sandbox limitado para probar el desarrollo con Expo
-
-## 🛠️ Desarrollo
-
-### Estructura del Proyecto
-
-Este proyecto utiliza [file-based routing](https://docs.expo.dev/router/introduction). Puedes comenzar a desarrollar editando los archivos dentro del directorio **app**.
-
-### Generar Tipos de Supabase
-
-Para sincronizar los tipos de la base de datos con el cliente de TypeScript, ejecuta el siguiente comando desde la raíz del proyecto:
+## Inicio rápido
 
 ```bash
-npx supabase gen types typescript > types/database.types.ts
+npm install
+npx expo start
 ```
 
-Esto crea o actualiza el archivo `src/types/database.types.ts` con los tipos generados automáticamente desde tu base de datos de Supabase.
+Variables (EAS / `.env` según tu setup): URL y anon key de Supabase (`EXPO_PUBLIC_SUPABASE_*`).
 
-### Resetear el Proyecto
+## Estructura
 
-Si necesitas empezar desde cero, puedes ejecutar:
+- `app/` — rutas (Expo Router): tabs, auth, negocios, entradas/salidas
+- `components/` — módulos (entries, exits, auth, theme, …)
+- `types/database.types.ts` — tipos generados (sincronizar con web)
+
+## Tipos Supabase
+
+Preferir el script del monorepo (desde la raíz):
 
 ```bash
-npm run reset-project
+../scripts/sync-db-types.sh <PROJECT_REF>
 ```
 
-Este comando moverá el código inicial al directorio **app-example** y creará un directorio **app** en blanco donde puedes comenzar a desarrollar.
+O desde aquí:
 
-## 📚 Recursos y Documentación
+```bash
+npx supabase gen types typescript --project-id <PROJECT_REF> --schema public > types/database.types.ts
+```
 
-### Aprende más sobre Expo
+## Flujos documentados
 
-- [Documentación de Expo](https://docs.expo.dev/): Aprende fundamentos o profundiza en temas avanzados con nuestras [guías](https://docs.expo.dev/guides).
-- [Tutorial de Expo](https://docs.expo.dev/tutorial/introduction/): Sigue un tutorial paso a paso donde crearás un proyecto que funciona en Android, iOS y web.
+- Entradas / producto desconocido: [`REGISTRO_ENTRADAS.md`](./REGISTRO_ENTRADAS.md)
 
-### Comunidad
+## Tests
 
-Únete a nuestra comunidad de desarrolladores creando aplicaciones universales:
+```bash
+npm test
+npm run test:ci
+```
 
-- [Expo en GitHub](https://github.com/expo/expo): Ve nuestra plataforma de código abierto y contribuye.
-- [Comunidad de Discord](https://chat.expo.dev): Chatea con usuarios de Expo y haz preguntas.
+## Versión
+
+Alineada con `app.json` → `expo.version` (**2.0.0**).
