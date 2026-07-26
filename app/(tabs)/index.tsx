@@ -140,10 +140,9 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.menuSection}>
-        <View style={styles.menuHeader}>
-          <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
-          <View style={[styles.menuTitleUnderline, { backgroundColor: colors.primary.main }]} />
-        </View>
+        <Text style={[styles.sectionHeaderTitle, { color: colors.text.secondary }]}>
+          OPERACIONES DE ALMACÉN
+        </Text>
 
         <View style={styles.menuGrid}>
           <TouchableOpacity
@@ -154,16 +153,18 @@ export default function HomeScreen() {
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '15' }]}>
               <MaterialIcons
                 name="local-shipping"
-                size={26}
+                size={22}
                 color={colors.error.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Registrar Salidas
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Despacho
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Salidas
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Despacho
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -174,16 +175,18 @@ export default function HomeScreen() {
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '15' }]}>
               <MaterialIcons
                 name="input"
-                size={26}
+                size={22}
                 color={colors.success.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Registrar Entradas
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Ingreso
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Entradas
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Ingreso
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -194,16 +197,18 @@ export default function HomeScreen() {
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '15' }]}>
               <MaterialIcons
                 name="receipt-long"
-                size={26}
+                size={22}
                 color={colors.warning.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Mis Órdenes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Historial
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Mis Órdenes
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Historial
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -214,16 +219,18 @@ export default function HomeScreen() {
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '15' }]}>
               <MaterialIcons
                 name="list-alt"
-                size={26}
+                size={22}
                 color={colors.info.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Todas las Órdenes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Gestión
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Todas Órdenes
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Gestión
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -232,18 +239,18 @@ export default function HomeScreen() {
           onPress={handleViewReports}
           activeOpacity={0.75}
         >
-          <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '15', marginBottom: 0 }]}>
-            <MaterialIcons name="assessment" size={26} color={colors.primary.main} />
+          <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '15' }]}>
+            <MaterialIcons name="assessment" size={22} color={colors.primary.main} />
           </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.reportsBannerTitle, { color: colors.text.primary }]}>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
               Reportes & Analítica
             </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]}>
-              Estadísticas, rotación e indicadores
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Estadísticas e indicadores
             </Text>
           </View>
-          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+          <MaterialIcons name="chevron-right" size={20} color={colors.text.secondary} />
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -303,86 +310,80 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   menuSection: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
-  menuHeader: {
-    marginBottom: 20,
-  },
-  menuTitle: {
-    fontSize: 24,
+  sectionHeaderTitle: {
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-    letterSpacing: -0.5,
-  },
-  menuTitleUnderline: {
-    height: 3,
-    width: 60,
-    borderRadius: 2,
-    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 12,
+    marginLeft: 2,
   },
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     justifyContent: 'space-between',
   },
   menuCard: {
-    borderRadius: 16,
-    padding: 16,
-    width: '48%',
-    minHeight: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    width: '48.5%',
+    minHeight: 68,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     borderWidth: 1,
   },
   menuCardIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+  },
+  menuCardTextContainer: {
+    flex: 1,
+    marginLeft: 10,
   },
   menuCardTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 1,
     letterSpacing: -0.2,
-    lineHeight: 20,
+    lineHeight: 17,
   },
   menuCardSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '400',
-    lineHeight: 16,
+    lineHeight: 14,
   },
   reportsBannerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 12,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    minHeight: 68,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  reportsBannerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 2,
-    letterSpacing: -0.3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   dashboardContainer: {
     flexDirection: 'column',
