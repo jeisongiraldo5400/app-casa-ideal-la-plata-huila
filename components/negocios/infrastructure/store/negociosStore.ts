@@ -27,6 +27,7 @@ interface NegociosState {
     location: string;
     customer_id: string;
     codeudor_customer_id?: string | null;
+    remission_id?: string | null;
     items: NegocioItem[];
     down_payment: number;
     installments_count: number;
@@ -105,9 +106,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     } = await supabase.auth.getUser();
     if (!user) throw new Error('Sesión no válida');
 
-    const stockCheck = await validateNegocioItemsStock(input.items);
-    if (!stockCheck.ok) {
-      throw new Error(stockCheck.message);
+    if (!input.remission_id) {
+      const stockCheck = await validateNegocioItemsStock(input.items);
+      if (!stockCheck.ok) {
+        throw new Error(stockCheck.message);
+      }
     }
 
     const settings = get().creditSettings || defaultSettings;
@@ -132,6 +135,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         seller_id: user.id,
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
+        remission_id: input.remission_id || null,
         products_subtotal: calc.productsSubtotal,
         interest_amount: calc.interestAmount,
         total_credit: calc.totalCredit,

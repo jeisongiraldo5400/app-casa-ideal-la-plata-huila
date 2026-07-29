@@ -1075,9 +1075,9 @@ export type Database = {
           installments_count: number
           interest_amount: number
           location: string | null
-          notes: string | null
           numero: number
           products_subtotal: number
+          remission_id: string | null
           seller_id: string
           seller_signature_url: string | null
           signed_at: string | null
@@ -1109,6 +1109,7 @@ export type Database = {
           notes?: string | null
           numero?: number
           products_subtotal?: number
+          remission_id?: string | null
           seller_id: string
           seller_signature_url?: string | null
           signed_at?: string | null
@@ -1140,6 +1141,7 @@ export type Database = {
           notes?: string | null
           numero?: number
           products_subtotal?: number
+          remission_id?: string | null
           seller_id?: string
           seller_signature_url?: string | null
           signed_at?: string | null
