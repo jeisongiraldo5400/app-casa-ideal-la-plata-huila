@@ -27,6 +27,10 @@ Variables (EAS / `.env` según tu setup): URL y anon key de Supabase (`EXPO_PUBL
 
 ## Tipos Supabase
 
+El esquema y las migraciones se mantienen únicamente en
+[`../frontend/supabase/migrations/`](../frontend/supabase/migrations/). La app móvil
+solo consume los tipos generados del esquema compartido.
+
 Preferir el script del monorepo (desde la raíz):
 
 ```bash
