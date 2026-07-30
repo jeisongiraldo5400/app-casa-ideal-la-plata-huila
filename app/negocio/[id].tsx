@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Share,
   Image,
+  Modal,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -24,6 +25,17 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { SvgUri } from 'react-native-svg';
+
+const formatPaymentInput = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 12);
+  if (!digits) return '';
+
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(digits));
+};
 
 export default function NegocioDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,6 +54,7 @@ export default function NegocioDetailScreen() {
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
+  const [payModalOpen, setPayModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
   const paymentIdempotencyKey = useRef<string | null>(null);
@@ -151,6 +164,7 @@ export default function NegocioDetailScreen() {
       paymentIdempotencyKey.current = null;
       setPayAmount('');
       setPayReceipt('');
+      setPayModalOpen(false);
       Alert.alert('Listo', 'Pago registrado');
       await load();
     } catch (e: any) {
@@ -360,62 +374,56 @@ export default function NegocioDetailScreen() {
             {formatCOP(Number(negocio.installment_amount))}
           </Text>
 
-          <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
-          {cuotas.map((c) => {
-            const late = Number(c.late_fee_amount || 0);
-            const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
-            return (
-              <View
-                key={c.id}
-                style={[styles.row, { borderColor: colors.divider }]}
-              >
-                <Text style={{ color: colors.text.primary }}>
-                  #{c.installment_number} · {c.due_date}
-                </Text>
-                <Text style={{ color: colors.text.secondary }}>
-                  {formatCOP(saldo)} · {c.status}
-                </Text>
-              </View>
-            );
-          })}
-
-          {canPay && (
-            <View style={{ gap: 8, marginTop: 8 }}>
-              <Text style={[styles.section, { color: colors.text.primary }]}>
-                Registrar pago
-              </Text>
-              <TextInput
-                placeholder="Valor"
-                keyboardType="numeric"
-                value={payAmount}
-                onChangeText={(value) => {
-                  paymentIdempotencyKey.current = null;
-                  setPayAmount(value);
-                }}
-                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-                placeholderTextColor={colors.text.secondary}
-              />
-              <TextInput
-                placeholder="Recibo físico (opcional)"
-                value={payReceipt}
-                onChangeText={(value) => {
-                  paymentIdempotencyKey.current = null;
-                  setPayReceipt(value);
-                }}
-                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-                placeholderTextColor={colors.text.secondary}
-              />
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
+            {canPay && (
               <Pressable
-                style={[styles.btn, { backgroundColor: colors.primary.main }]}
-                onPress={registerPago}
-                disabled={saving}
+                style={[styles.payAction, { backgroundColor: colors.primary.main }]}
+                onPress={() => setPayModalOpen(true)}
               >
+                <MaterialIcons name="payments" size={18} color={colors.primary.contrastText} />
                 <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-                  {saving ? 'Guardando…' : 'Guardar pago'}
+                  Registrar pago
                 </Text>
               </Pressable>
+            )}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View style={[styles.installmentsTable, { borderColor: colors.divider }]}>
+              <View style={[styles.tableRow, styles.tableHeader, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+                <Text style={[styles.cellNumber, styles.headerCell, { color: colors.text.primary }]}>#</Text>
+                <Text style={[styles.cellDate, styles.headerCell, { color: colors.text.primary }]}>Vencimiento</Text>
+                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Valor</Text>
+                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Pagado</Text>
+                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Saldo</Text>
+                <Text style={[styles.cellStatus, styles.headerCell, { color: colors.text.primary }]}>Estado</Text>
+              </View>
+              {cuotas.map((c) => {
+                const late = Number(c.late_fee_amount || 0);
+                const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
+                return (
+                  <View key={c.id} style={[styles.tableRow, { borderColor: colors.divider }]}>
+                    <Text style={[styles.cellNumber, { color: colors.text.primary }]}>{c.installment_number}</Text>
+                    <Text style={[styles.cellDate, { color: colors.text.secondary }]}>{c.due_date}</Text>
+                    <Text style={[styles.cellMoney, { color: colors.text.primary }]}>{formatCOP(Number(c.amount))}</Text>
+                    <Text style={[styles.cellMoney, { color: colors.text.secondary }]}>{formatCOP(Number(c.paid_amount))}</Text>
+                    <Text style={[styles.cellMoney, { color: colors.text.primary, fontWeight: '700' }]}>{formatCOP(saldo)}</Text>
+                    <Text
+                      style={[
+                        styles.cellStatus,
+                        {
+                          color: c.status === 'mora' ? colors.error.main : colors.text.secondary,
+                          fontWeight: c.status === 'mora' ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {c.status}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
-          )}
+          </ScrollView>
 
           {(canActivate || canCancel) && (
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -463,7 +471,13 @@ export default function NegocioDetailScreen() {
                   ['Vendedor', negocio.seller_signature_url],
                 ].filter(([, url]) => Boolean(url)).map(([label, url]) => (
                   <View key={label as string}>
-                    <Image source={{ uri: url as string }} style={styles.signature} resizeMode="contain" />
+                    {(url as string).toLowerCase().includes('.svg') ? (
+                      <View style={styles.signature}>
+                        <SvgUri uri={url as string} width="100%" height="100%" />
+                      </View>
+                    ) : (
+                      <Image source={{ uri: url as string }} style={styles.signature} resizeMode="contain" />
+                    )}
                     <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{label}</Text>
                   </View>
                 ))}
@@ -480,6 +494,80 @@ export default function NegocioDetailScreen() {
             </Text>
           </Pressable>
         </ScrollView>
+
+        <Modal
+          visible={payModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !saving && setPayModalOpen(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalBackdrop}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={[styles.modalCard, { backgroundColor: colors.background.paper }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Registrar pago</Text>
+                <Pressable
+                  onPress={() => setPayModalOpen(false)}
+                  disabled={saving}
+                  hitSlop={10}
+                >
+                  <MaterialIcons name="close" size={24} color={colors.text.secondary} />
+                </Pressable>
+              </View>
+              <Text style={{ color: colors.text.secondary }}>
+                Negocio #{negocio.numero} · {customerName}
+              </Text>
+              <TextInput
+                placeholder="0,00"
+                keyboardType="numeric"
+                value={formatPaymentInput(payAmount)}
+                selection={{
+                  start: formatPaymentInput(payAmount).split(',')[0].length,
+                  end: formatPaymentInput(payAmount).split(',')[0].length,
+                }}
+                onChangeText={(value) => {
+                  paymentIdempotencyKey.current = null;
+                  setPayAmount(value.split(',')[0].replace(/\D/g, '').slice(0, 12));
+                }}
+                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                placeholderTextColor={colors.text.secondary}
+                autoFocus
+              />
+              <TextInput
+                placeholder="Recibo físico (opcional)"
+                value={payReceipt}
+                onChangeText={(value) => {
+                  paymentIdempotencyKey.current = null;
+                  setPayReceipt(value);
+                }}
+                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                placeholderTextColor={colors.text.secondary}
+              />
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={[styles.modalButton, { borderColor: colors.divider }]}
+                  onPress={() => setPayModalOpen(false)}
+                  disabled={saving}
+                >
+                  <Text style={{ color: colors.text.primary, fontWeight: '600' }}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modalButton, { backgroundColor: colors.primary.main }]}
+                  onPress={registerPago}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color={colors.primary.contrastText} />
+                  ) : (
+                    <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Guardar pago</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -511,6 +599,38 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700' },
   section: { fontWeight: '700', marginTop: 8 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  payAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  installmentsTable: {
+    minWidth: 760,
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tableHeader: { minHeight: 40 },
+  headerCell: { fontWeight: '700', fontSize: 12 },
+  cellNumber: { width: 44, paddingHorizontal: 8, textAlign: 'center' },
+  cellDate: { width: 110, paddingHorizontal: 8 },
+  cellMoney: { width: 145, paddingHorizontal: 8, textAlign: 'right' },
+  cellStatus: { width: 110, paddingHorizontal: 8, textTransform: 'capitalize' },
   row: {
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -527,4 +647,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signature: { width: 140, height: 70, borderWidth: 1, borderColor: '#d0d7de' },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalCard: {
+    borderRadius: 16,
+    padding: 20,
+    gap: 14,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  modalButton: {
+    minWidth: 120,
+    minHeight: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
 });

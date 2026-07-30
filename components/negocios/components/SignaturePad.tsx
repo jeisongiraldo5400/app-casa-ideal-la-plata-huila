@@ -11,12 +11,39 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, SvgUri, SvgXml } from 'react-native-svg';
 
 interface Props {
   label: string;
   value?: string;
   onChange: (dataUrl: string) => void;
+}
+
+function SignaturePreview({ value }: { value: string }) {
+  const normalized = value.toLowerCase();
+
+  if (normalized.startsWith('data:image/svg+xml')) {
+    const base64 = value.split(',')[1];
+    if (!base64) return null;
+    try {
+      const xml = decodeURIComponent(escape(atob(base64)));
+      return <SvgXml xml={xml} width="100%" height="100%" />;
+    } catch {
+      return <Text style={styles.previewError}>No se pudo mostrar la firma</Text>;
+    }
+  }
+
+  if (normalized.includes('.svg')) {
+    return <SvgUri uri={value} width="100%" height="100%" />;
+  }
+
+  return (
+    <Image
+      source={{ uri: value }}
+      style={styles.previewImage}
+      resizeMode="contain"
+    />
+  );
 }
 
 /**
@@ -29,19 +56,9 @@ export function SignaturePad({ label, value, onChange }: Props) {
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       {value ? (
-        value.includes('svg') || value.endsWith('.svg') ? (
-          <View style={[styles.previewBox, styles.signedPreview]}>
-            <Text style={styles.signedText}>Firma capturada</Text>
-          </View>
-        ) : (
-          <View style={styles.previewBox}>
-            <Image
-              source={{ uri: value }}
-              style={styles.previewImage}
-              resizeMode="contain"
-            />
-          </View>
-        )
+        <View style={styles.previewBox}>
+          <SignaturePreview value={value} />
+        </View>
       ) : (
         <View style={styles.emptyPreview}>
           <Text style={styles.emptyText}>Sin firma</Text>
@@ -244,13 +261,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   previewImage: { width: '100%', height: '100%' },
-  signedPreview: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#e8f5e9',
-    borderColor: '#81c784',
-  },
-  signedText: { color: '#2e7d32', fontWeight: '700', fontSize: 14 },
+  previewError: { color: '#b91c1c', fontSize: 12, textAlign: 'center' },
   emptyPreview: {
     height: 72,
     borderWidth: 1,
