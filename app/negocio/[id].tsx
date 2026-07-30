@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Share,
+  Image,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -21,6 +22,8 @@ import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
+import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
+import { createIdempotencyKey } from '@/lib/idempotency';
 
 export default function NegocioDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,6 +35,7 @@ export default function NegocioDetailScreen() {
   const [negocio, setNegocio] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [cuotas, setCuotas] = useState<any[]>([]);
+  const [pagos, setPagos] = useState<any[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
@@ -39,6 +43,9 @@ export default function NegocioDetailScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
   const [saving, setSaving] = useState(false);
+  const [actionSaving, setActionSaving] = useState(false);
+  const paymentIdempotencyKey = useRef<string | null>(null);
+  const activateIdempotencyKey = useRef<string | null>(null);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -62,7 +69,7 @@ export default function NegocioDetailScreen() {
       if (error) throw error;
       setNegocio(n);
 
-      const [itemsRes, cuotasRes, custRes, settingsRes] = await Promise.all([
+      const [itemsRes, cuotasRes, pagosRes, custRes, settingsRes] = await Promise.all([
         supabase
           .from('negocio_items')
           .select('*')
@@ -74,6 +81,11 @@ export default function NegocioDetailScreen() {
           .eq('negocio_id', id)
           .is('deleted_at', null)
           .order('installment_number'),
+        supabase
+          .from('negocio_pagos')
+          .select('*')
+          .eq('negocio_id', id)
+          .order('paid_at', { ascending: false }),
         supabase
           .from('customers')
           .select('name, id_number, phone, address')
@@ -91,6 +103,7 @@ export default function NegocioDetailScreen() {
 
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
+      setPagos(pagosRes.data || []);
       setCustomerName(custRes.data?.name || '');
       setLegalText(settingsRes.data?.legal_text || null);
 
@@ -123,6 +136,7 @@ export default function NegocioDetailScreen() {
     }
     try {
       setSaving(true);
+      paymentIdempotencyKey.current ||= createIdempotencyKey();
       const { error } = await supabase.rpc('register_negocio_pago', {
         p_negocio_id: negocio.id,
         p_amount: amount,
@@ -130,8 +144,10 @@ export default function NegocioDetailScreen() {
         p_receipt_number: payReceipt || null,
         p_cuota_id: null,
         p_notes: null,
+        p_idempotency_key: paymentIdempotencyKey.current,
       });
       if (error) throw error;
+      paymentIdempotencyKey.current = null;
       setPayAmount('');
       setPayReceipt('');
       Alert.alert('Listo', 'Pago registrado');
@@ -211,6 +227,79 @@ export default function NegocioDetailScreen() {
     }
   };
 
+  const shareReceipt = async (pago: any) => {
+    if (!negocio) return;
+    const remainingBalance = Math.max(
+      cuotas.reduce((total, cuota) => total + Math.max(
+        Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
+        0
+      ), 0),
+      0
+    );
+    const html = buildNegocioReceiptHtml({
+      receiptNumber: pago.virtual_receipt_number,
+      status: pago.receipt_status,
+      paidAt: pago.paid_at,
+      amount: Number(pago.amount),
+      physicalReceiptNumber: pago.receipt_number,
+      negocioNumero: negocio.numero,
+      customerName,
+      remainingBalance,
+    });
+    try {
+      const Print = require('expo-print');
+      const Sharing = require('expo-sharing');
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: pago.virtual_receipt_number });
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo compartir el recibo');
+    }
+  };
+
+  const activateDraft = async () => {
+    if (!negocio?.customer_signature_url) {
+      return Alert.alert('Firma requerida', 'El cliente debe firmar antes de activar el negocio.');
+    }
+    try {
+      setActionSaving(true);
+      activateIdempotencyKey.current ||= createIdempotencyKey();
+      const { error } = await supabase.rpc('activate_negocio', {
+        p_negocio_id: negocio.id,
+        p_idempotency_key: activateIdempotencyKey.current,
+      });
+      if (error) throw error;
+      activateIdempotencyKey.current = null;
+      await load();
+      Alert.alert('Listo', 'Negocio activado y orden de entrega creada.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo activar el negocio');
+    } finally {
+      setActionSaving(false);
+    }
+  };
+
+  const cancelNegocio = () => {
+    Alert.alert('Anular negocio', 'Esta acción anulará las cuotas pendientes y la orden de entrega no despachada.', [
+      { text: 'Volver', style: 'cancel' },
+      {
+        text: 'Anular', style: 'destructive', onPress: async () => {
+          try {
+            setActionSaving(true);
+            const { error } = await supabase.rpc('cancel_negocio', { p_negocio_id: negocio.id, p_reason: null });
+            if (error) throw error;
+            await load();
+          } catch (error: any) {
+            Alert.alert('Error', error.message || 'No se pudo anular el negocio');
+          } finally {
+            setActionSaving(false);
+          }
+        },
+      },
+    ]);
+  };
+
   if (loading || !negocio) {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: colors.background.default }]}>
@@ -220,6 +309,8 @@ export default function NegocioDetailScreen() {
   }
 
   const canPay = ['activo', 'entregado'].includes(negocio.status);
+  const canActivate = ['borrador', 'por_firmar'].includes(negocio.status);
+  const canCancel = !['cerrado', 'anulado'].includes(negocio.status);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
@@ -279,14 +370,20 @@ export default function NegocioDetailScreen() {
                 placeholder="Valor"
                 keyboardType="numeric"
                 value={payAmount}
-                onChangeText={setPayAmount}
+                onChangeText={(value) => {
+                  paymentIdempotencyKey.current = null;
+                  setPayAmount(value);
+                }}
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
                 placeholderTextColor={colors.text.secondary}
               />
               <TextInput
-                placeholder="Nº recibo"
+                placeholder="Recibo físico (opcional)"
                 value={payReceipt}
-                onChangeText={setPayReceipt}
+                onChangeText={(value) => {
+                  paymentIdempotencyKey.current = null;
+                  setPayReceipt(value);
+                }}
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
                 placeholderTextColor={colors.text.secondary}
               />
@@ -300,6 +397,60 @@ export default function NegocioDetailScreen() {
                 </Text>
               </Pressable>
             </View>
+          )}
+
+          {(canActivate || canCancel) && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {canActivate && (
+                <Pressable style={[styles.btn, { flex: 1, backgroundColor: colors.primary.main }]} onPress={activateDraft} disabled={actionSaving}>
+                  <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Activar negocio</Text>
+                </Pressable>
+              )}
+              {canCancel && (
+                <Pressable style={[styles.btn, { flex: 1, backgroundColor: colors.error.main }]} onPress={cancelNegocio} disabled={actionSaving}>
+                  <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Anular</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {pagos.length > 0 && (
+            <>
+              <Text style={[styles.section, { color: colors.text.primary }]}>Pagos y recibos</Text>
+              {pagos.map((pago) => (
+                <View key={pago.id} style={[styles.row, { borderColor: colors.divider }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text.primary, fontWeight: '600' }}>
+                      {formatCOP(Number(pago.amount))} · {pago.paid_at}
+                    </Text>
+                    <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                      {pago.virtual_receipt_number}{pago.receipt_number ? ` · Físico: ${pago.receipt_number}` : ''}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => shareReceipt(pago)}>
+                    <Text style={{ color: colors.primary.main, fontWeight: '700' }}>PDF</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </>
+          )}
+
+          {(negocio.customer_signature_url || negocio.guarantor_signature_url || negocio.seller_signature_url) && (
+            <>
+              <Text style={[styles.section, { color: colors.text.primary }]}>Firmas</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {[
+                  ['Cliente', negocio.customer_signature_url],
+                  ['Fiador', negocio.guarantor_signature_url],
+                  ['Vendedor', negocio.seller_signature_url],
+                ].filter(([, url]) => Boolean(url)).map(([label, url]) => (
+                  <View key={label as string}>
+                    <Image source={{ uri: url as string }} style={styles.signature} resizeMode="contain" />
+                    <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{label}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
           )}
 
           <Pressable
@@ -357,4 +508,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  signature: { width: 140, height: 70, borderWidth: 1, borderColor: '#d0d7de' },
 });

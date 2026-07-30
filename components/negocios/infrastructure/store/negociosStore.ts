@@ -7,6 +7,8 @@ import {
 } from '@/lib/creditCalculator';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
 import { validateNegocioItemsStock } from '../services/negociosStockService';
+import { createIdempotencyKey } from '@/lib/idempotency';
+import type { Json } from '@/types/database.types';
 
 export interface NegocioItem {
   product_id: string;
@@ -49,6 +51,18 @@ const defaultSettings: CreditSettingsInput & { legal_text?: string | null } = {
   default_frequency: 'mensual',
   legal_text: null,
 };
+
+interface PendingCreateRequest {
+  draftId: string;
+  idempotencyKey: string;
+  signatureUrls?: {
+    customer: string | null;
+    guarantor: string | null;
+    seller: string | null;
+  };
+}
+
+const pendingCreateRequests = new Map<string, PendingCreateRequest>();
 
 export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
@@ -125,14 +139,36 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       settings,
     });
 
-    const hasCustomerSig = Boolean(input.customer_signature_data_url?.trim());
+    if (input.activate && !input.customer_signature_data_url?.trim()) {
+      throw new Error('Se requiere firma del cliente para activar');
+    }
 
-    const { data: negocio, error } = await supabase
-      .from('negocios')
-      .insert({
+    const requestFingerprint = JSON.stringify(input);
+    let request = pendingCreateRequests.get(requestFingerprint);
+    if (!request) {
+      request = {
+        draftId: createIdempotencyKey(),
+        idempotencyKey: createIdempotencyKey(),
+      };
+      pendingCreateRequests.set(requestFingerprint, request);
+    }
+
+    if (!request.signatureUrls) {
+      const [customer, guarantor, seller] = await Promise.all([
+        uploadNegocioSignature(input.customer_signature_data_url, { negocioId: request.draftId, role: 'cliente' }),
+        uploadNegocioSignature(input.guarantor_signature_data_url, { negocioId: request.draftId, role: 'fiador' }),
+        uploadNegocioSignature(input.seller_signature_data_url, { negocioId: request.draftId, role: 'vendedor' }),
+      ]);
+      request.signatureUrls = { customer, guarantor, seller };
+    }
+
+    const { data: negocioId, error } = await supabase.rpc('create_negocio', {
+      p_negocio_id: request.draftId,
+      p_idempotency_key: request.idempotencyKey,
+      p_activate: input.activate,
+      p_negocio: {
         deal_date: input.deal_date,
         location: input.location || null,
-        seller_id: user.id,
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
         remission_id: input.remission_id || null,
@@ -146,65 +182,26 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         frequency: input.frequency,
         first_due_date: input.first_due_date,
         formula_snapshot: calc.formulaSnapshot,
-        status: hasCustomerSig ? 'por_firmar' : 'borrador',
-        customer_signature_url: null,
-        guarantor_signature_url: null,
+        customer_signature_url: request.signatureUrls.customer,
+        guarantor_signature_url: request.signatureUrls.guarantor,
+        seller_signature_url: request.signatureUrls.seller,
         notes: input.notes || null,
-        created_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    const { error: itemsError } = await supabase.from('negocio_items').insert(
-      input.items.map((item) => ({
-        negocio_id: negocio.id,
-        product_id: item.product_id,
-        warehouse_id: item.warehouse_id,
-        quantity: item.quantity,
-        description: item.description,
-        unit_price: item.unit_price,
+      } as Json,
+      p_items: input.items.map((item) => ({
+        ...item,
         subtotal: item.unit_price * item.quantity,
-      }))
-    );
-    if (itemsError) throw itemsError;
+      })) as unknown as Json,
+    });
+    if (error || !negocioId) throw error || new Error('No se pudo crear el negocio');
 
-    const customerSignatureUrl = await uploadNegocioSignature(
-      input.customer_signature_data_url,
-      { negocioId: negocio.id, role: 'cliente' }
-    );
-    const guarantorSignatureUrl = await uploadNegocioSignature(
-      input.guarantor_signature_data_url,
-      { negocioId: negocio.id, role: 'fiador' }
-    );
-    const sellerSignatureUrl = await uploadNegocioSignature(
-      input.seller_signature_data_url,
-      { negocioId: negocio.id, role: 'vendedor' }
-    );
+    const { data: negocio, error: loadError } = await supabase
+      .from('negocios')
+      .select('id, numero')
+      .eq('id', negocioId)
+      .single();
+    if (loadError || !negocio) throw loadError || new Error('No se pudo cargar el negocio creado');
 
-    if (customerSignatureUrl || guarantorSignatureUrl || sellerSignatureUrl) {
-      const { error: sigError } = await supabase
-        .from('negocios')
-        .update({
-          customer_signature_url: customerSignatureUrl,
-          guarantor_signature_url: guarantorSignatureUrl,
-          seller_signature_url: sellerSignatureUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', negocio.id);
-      if (sigError) throw sigError;
-    }
-
-    if (input.activate) {
-      if (!customerSignatureUrl) {
-        throw new Error('Se requiere firma del cliente para activar');
-      }
-      const { error: actError } = await supabase.rpc('activate_negocio', {
-        p_negocio_id: negocio.id,
-      });
-      if (actError) throw actError;
-    }
+    pendingCreateRequests.delete(requestFingerprint);
 
     await get().fetchList();
     return { numero: negocio.numero, id: negocio.id };

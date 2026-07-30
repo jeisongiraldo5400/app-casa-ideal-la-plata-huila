@@ -3,6 +3,7 @@ import { create } from "zustand";
 // supabase
 import { supabase } from "@/lib/supabase";
 import { logOperationError } from "@/lib/operationLogger";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import {
   fetchBrands,
   fetchCategories,
@@ -13,7 +14,7 @@ import {
 } from "../services/entriesService";
 
 // types
-import { Database } from "@/types/database.types";
+import { Database, type Json } from "@/types/database.types";
 
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Supplier = Database["public"]["Tables"]["suppliers"]["Row"];
@@ -23,8 +24,6 @@ type Brand = Database["public"]["Tables"]["brands"]["Row"];
 type PurchaseOrder = Database["public"]["Tables"]["purchase_orders"]["Row"];
 type PurchaseOrderItem =
   Database["public"]["Tables"]["purchase_order_items"]["Row"];
-type InventoryEntry =
-  Database["public"]["Tables"]["inventory_entries"]["Insert"];
 
 export type EntryType = "PO_ENTRY" | "ENTRY" | "INITIAL_LOAD";
 
@@ -69,6 +68,8 @@ export interface SelectedPurchaseOrderProgress {
   totalScanned: number;
   totalCompleted: number;
 }
+
+const pendingEntryRequests = new Map<string, string>();
 
 interface EntriesState {
   // Sesión de entrada (null hasta elegir tipo en flow-selection)
@@ -1375,20 +1376,38 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // Registrar cada producto en inventory_entries
       set({ loadingMessage: 'Guardando productos en el inventario...' });
       
-      const entries: InventoryEntry[] = entryItems.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-        supplier_id: supplierId,
-        purchase_order_id: purchaseOrderId,
-        warehouse_id: warehouseId,
-        barcode_scanned: item.barcode,
-        entry_type: entryType, // Usar el tipo seleccionado explícitamente
-        created_by: userId,
-      }));
+      const requestFingerprint = JSON.stringify({
+        warehouseId,
+        supplierId,
+        purchaseOrderId,
+        entryType,
+        entryItems: entryItems.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          barcode: item.barcode,
+        })),
+      });
+      let idempotencyKey = pendingEntryRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingEntryRequests.set(requestFingerprint, idempotencyKey);
+      }
 
-      const { error: entriesError } = await supabase
-        .from("inventory_entries")
-        .insert(entries);
+      const { data: entryResult, error: entriesError } = await supabase.rpc(
+        "register_inventory_entries_batch",
+        {
+          p_warehouse_id: warehouseId,
+          p_supplier_id: supplierId,
+          p_purchase_order_id: purchaseOrderId,
+          p_entry_type: entryType,
+          p_items: entryItems.map((item) => ({
+            product_id: item.product.id,
+            quantity: item.quantity,
+            barcode_scanned: item.barcode,
+          })) as unknown as Json,
+          p_idempotency_key: idempotencyKey,
+        }
+      );
 
       if (entriesError) {
         logOperationError({
@@ -1440,33 +1459,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         set({ registeredEntriesCache: updatedCache });
 
         // Verificar si la orden está completa y actualizar el estado automáticamente
-        const { data: progressData, error: progressError } = await supabase.rpc(
-          'update_purchase_order_progress',
-          {
-            order_id_param: purchaseOrderId,
-          }
-        );
-
-        if (progressError) {
-          console.error("Error updating purchase order progress:", progressError);
-          logOperationError({
-            error_code: "PURCHASE_PROGRESS_FAILED",
-            error_message: progressError.message || String(progressError),
-            module: "entries",
-            operation: "finalize_entry",
-            step: "rpc_update_progress",
-            entity_type: "purchase_order",
-            entity_id: purchaseOrderId,
-            context: {
-              warehouseId,
-              productIds: entryItems.map((i) => i.product.id),
-              quantities: entryItems.map((i) => i.quantity),
-              entryType,
-              purchaseOrderId,
-              supplierId,
-            },
-          });
-        } else if (progressData && progressData.success && progressData.all_complete) {
+        const progressData = (entryResult as {
+          purchase_order_progress?: { success?: boolean; all_complete?: boolean; updated?: boolean } | null;
+        } | null)?.purchase_order_progress;
+        if (progressData?.success && progressData.all_complete) {
           console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
           // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
           if (progressData.updated) {
@@ -1497,6 +1493,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchaseOrderValidations: updatedValidations,
         registeredEntriesCache: updatedCache,
       });
+      pendingEntryRequests.delete(requestFingerprint);
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });

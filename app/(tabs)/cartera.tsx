@@ -82,13 +82,31 @@ export default function CarteraScreen() {
 
   const totalSaldo = rows.reduce((s, r) => s + r.saldo, 0);
   const moraCount = rows.filter((r) => r.status === 'mora').length;
+  const overdueCount = rows.filter((r) => new Date(`${r.due_date}T12:00:00`) < new Date()).length;
+  const upcomingCount = rows.filter((r) => {
+    const due = new Date(`${r.due_date}T12:00:00`).getTime();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = (due - today.getTime()) / (1000 * 60 * 60 * 24);
+    return days >= 0 && days <= 15;
+  }).length;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <Text style={[styles.title, { color: colors.text.primary }]}>Cartera</Text>
-      <Text style={{ color: colors.text.secondary, marginBottom: 8 }}>
-        Saldo {formatCOP(totalSaldo)} · {moraCount} en mora
-      </Text>
+      <View style={styles.kpis}>
+        {[
+          ['Saldo', formatCOP(totalSaldo)],
+          ['Mora', String(moraCount)],
+          ['Vencidas', String(overdueCount)],
+          ['Por vencer', String(upcomingCount)],
+        ].map(([label, value]) => (
+          <View key={label} style={[styles.kpi, { backgroundColor: colors.background.paper }]}>
+            <Text style={{ color: colors.text.secondary, fontSize: 11 }}>{label}</Text>
+            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>{value}</Text>
+          </View>
+        ))}
+      </View>
 
       <View style={styles.filters}>
         {FILTERS.map((f) => (
@@ -197,6 +215,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   title: { fontSize: 24, fontWeight: '700' },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 },
+  kpi: { width: '47%', padding: 10, borderRadius: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
   row: {
     flexDirection: 'row',

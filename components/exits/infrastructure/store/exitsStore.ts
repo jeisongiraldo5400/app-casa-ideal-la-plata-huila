@@ -9,15 +9,15 @@ import {
   searchCustomersByTerm,
 } from '@/components/exits/infrastructure/services/exitsService';
 import { logOperationError } from '@/lib/operationLogger';
+import { createIdempotencyKey } from '@/lib/idempotency';
 import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/database.types';
+import { Database, type Json } from '@/types/database.types';
 import { create } from 'zustand';
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type Customer = Database['public']['Tables']['customers']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
-type InventoryExit = Database['public']['Tables']['inventory_exits']['Insert'];
 
 export type ExitMode = 'direct_user' | 'direct_customer';
 
@@ -78,6 +78,8 @@ export interface SelectedDeliveryOrderProgress {
 
 const UNAUTHORIZED_EXIT_MESSAGE =
   'No estás autorizado para registrar la salida de inventario de esta orden.';
+
+const pendingExitRequests = new Map<string, string>();
 
 type ExitAuthorizationResult = {
   canRegister: boolean;
@@ -1577,43 +1579,45 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       // Preparar datos según el modo de salida (cada item usa su propia bodega)
-      const exits: InventoryExit[] = exitItems.map((item) => {
-        const baseExit: InventoryExit = {
-          product_id: item.product.id,
+      const requestFingerprint = JSON.stringify({
+        exitMode,
+        selectedUserId,
+        selectedCustomerId,
+        selectedDeliveryOrderId,
+        deliveryObservations: deliveryObservations.trim(),
+        exitItems: exitItems.map((item) => ({
+          productId: item.product.id,
+          warehouseId: item.warehouseId,
           quantity: item.quantity,
-          warehouse_id: item.warehouseId!, // Per-item desde la orden de entrega
-          barcode_scanned: item.barcode,
-          created_by: userId
-        };
-
-        // Agregar destinatario según el modo
-        if (exitMode === 'direct_user') {
-          baseExit.delivered_to_user_id = selectedUserId;
-          if (selectedDeliveryOrderId) {
-            baseExit.delivery_order_id = selectedDeliveryOrderId;
-          }
-        } else if (exitMode === 'direct_customer') {
-          baseExit.delivered_to_customer_id = selectedCustomerId;
-          if (selectedDeliveryOrderId) {
-            baseExit.delivery_order_id = selectedDeliveryOrderId;
-          }
-        }
-
-        // Observaciones de entrega opcionales
-        if (deliveryObservations && deliveryObservations.trim()) {
-          (baseExit as any).delivery_observations = deliveryObservations.trim();
-        }
-
-        return baseExit;
+          barcode: item.barcode,
+        })),
       });
+      let idempotencyKey = pendingExitRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingExitRequests.set(requestFingerprint, idempotencyKey);
+      }
 
-      // Insertar salidas
       set({ loadingMessage: 'Guardando productos en el inventario...' });
-
-      const { data: insertedExits, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .insert(exits)
-        .select();
+      const { data: exitResult, error: exitsError } = await supabase.rpc(
+        'register_inventory_exits_batch',
+        {
+          p_exit_mode: exitMode,
+          p_delivered_to_user_id:
+            exitMode === 'direct_user' ? selectedUserId : null,
+          p_delivered_to_customer_id:
+            exitMode === 'direct_customer' ? selectedCustomerId : null,
+          p_delivery_order_id: selectedDeliveryOrderId,
+          p_delivery_observations: deliveryObservations.trim() || null,
+          p_items: exitItems.map((item) => ({
+            product_id: item.product.id,
+            warehouse_id: item.warehouseId,
+            quantity: item.quantity,
+            barcode_scanned: item.barcode,
+          })) as unknown as Json,
+          p_idempotency_key: idempotencyKey,
+        }
+      );
 
       if (exitsError) {
         const backendDeniedMessage =
@@ -1654,8 +1658,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       }
 
-      // Verificar que se insertaron correctamente
-      if (!insertedExits || insertedExits.length === 0) {
+      const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
+      if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
         return {
           error: {
@@ -1665,9 +1669,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       }
 
-      if (insertedExits.length !== exits.length) {
+      if (insertedExitIds.length !== exitItems.length) {
         console.warn(
-          `Se insertaron ${insertedExits.length} de ${exits.length} salidas`
+          `Se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
       }
 
@@ -1797,6 +1801,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Resetear todo después de finalizar
       get().reset();
+      pendingExitRequests.delete(requestFingerprint);
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });

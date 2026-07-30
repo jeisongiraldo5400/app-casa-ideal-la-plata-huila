@@ -1256,6 +1256,10 @@ export type Database = {
           notes: string | null
           paid_at: string
           receipt_number: string | null
+          receipt_status: string
+          virtual_receipt_number: string
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount: number
@@ -1268,6 +1272,10 @@ export type Database = {
           notes?: string | null
           paid_at?: string
           receipt_number?: string | null
+          receipt_status?: string
+          virtual_receipt_number?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount?: number
@@ -1280,6 +1288,10 @@ export type Database = {
           notes?: string | null
           paid_at?: string
           receipt_number?: string | null
+          receipt_status?: string
+          virtual_receipt_number?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: []
       }
@@ -2505,8 +2517,69 @@ export type Database = {
         }[]
       }
       activate_negocio: {
-        Args: { p_negocio_id: string }
+        Args: { p_idempotency_key?: string; p_negocio_id: string }
         Returns: string
+      }
+      create_negocio: {
+        Args: {
+          p_activate: boolean
+          p_idempotency_key: string
+          p_items: Json
+          p_negocio: Json
+          p_negocio_id: string
+        }
+        Returns: string
+      }
+      create_purchase_order: {
+        Args: {
+          p_idempotency_key: string
+          p_items: Json
+          p_notes: string | null
+          p_order_id: string
+          p_supplier_id: string
+        }
+        Returns: string
+      }
+      create_delivery_order: {
+        Args: {
+          p_assigned_to_user_id: string | null
+          p_customer_id: string | null
+          p_delivery_address: string | null
+          p_idempotency_key: string
+          p_items: Json
+          p_notes: string | null
+          p_order_id: string
+          p_order_type: string
+          p_zone_id: string | null
+        }
+        Returns: string
+      }
+      update_negocio: {
+        Args: { p_activate: boolean; p_idempotency_key: string; p_items: Json; p_negocio: Json; p_negocio_id: string }
+        Returns: string
+      }
+      register_inventory_entries_batch: {
+        Args: {
+          p_entry_type: string
+          p_idempotency_key: string
+          p_items: Json
+          p_purchase_order_id: string | null
+          p_supplier_id: string | null
+          p_warehouse_id: string
+        }
+        Returns: Json
+      }
+      register_inventory_exits_batch: {
+        Args: {
+          p_delivered_to_customer_id: string | null
+          p_delivered_to_user_id: string | null
+          p_delivery_observations: string | null
+          p_delivery_order_id: string | null
+          p_exit_mode: string
+          p_idempotency_key: string
+          p_items: Json
+        }
+        Returns: Json
       }
       register_negocio_pago: {
         Args: {
@@ -2516,6 +2589,7 @@ export type Database = {
           p_receipt_number?: string | null
           p_cuota_id?: string | null
           p_notes?: string | null
+          p_idempotency_key?: string | null
         }
         Returns: string
       }
@@ -2526,6 +2600,14 @@ export type Database = {
       cancel_negocio: {
         Args: { p_negocio_id: string; p_reason?: string | null }
         Returns: undefined
+      }
+      cancel_inventory_entry: {
+        Args: { p_entry_id: string; p_idempotency_key: string; p_observations: string }
+        Returns: string
+      }
+      cancel_inventory_exit: {
+        Args: { p_exit_id: string; p_idempotency_key: string; p_observations: string }
+        Returns: string
       }
       mark_cuotas_en_mora: {
         Args: { p_negocio_id?: string | null }
