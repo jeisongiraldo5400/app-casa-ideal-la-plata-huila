@@ -15,7 +15,7 @@ export function ProductFound({ product }: ProductFoundProps) {
     <Card style={styles.card}>
       <View style={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Producto encontrado</Text>
+        <Text style={styles.title}>Listo para registrar</Text>
         <View style={styles.statusBadge}>
           <Text style={styles.statusText}>
             {product.status ? 'Activo' : 'Inactivo'}
@@ -33,17 +33,6 @@ export function ProductFound({ product }: ProductFoundProps) {
         <Text style={styles.value}>{product.sku}</Text>
       </View>
       
-      <View style={styles.infoRow}>
-        <Text style={styles.label}>Código de barras:</Text>
-        <Text style={styles.value}>{product.barcode}</Text>
-      </View>
-      
-      {product.description && (
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Descripción:</Text>
-          <Text style={styles.value}>{product.description}</Text>
-        </View>
-      )}
       </View>
     </Card>
   );
@@ -98,4 +87,3 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-

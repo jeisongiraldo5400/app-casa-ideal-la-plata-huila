@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { MaterialIcons } from '@expo/vector-icons';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // UI
 import { Button } from '@/components/ui/Button';
@@ -46,6 +46,7 @@ export function SetupForm() {
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
   const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const currentStep = !entryType ? 1 : setupStep === 'supplier' ? 1 : setupStep === 'purchase-order' ? 2 : 3;
 
   useEffect(() => {
     loadSuppliers();
@@ -362,12 +363,30 @@ export function SetupForm() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <Card style={styles.card}>
         <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar entrada</Text>
         <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
           Complete los pasos para configurar la entrada de productos
         </Text>
+
+        <View style={styles.stepper} accessibilityLabel={`Paso ${currentStep} de 3`}>
+          {['Origen', 'Orden', 'Bodega'].map((label, index) => {
+            const stepNumber = index + 1;
+            const active = stepNumber === currentStep;
+            const complete = stepNumber < currentStep;
+            return (
+              <View key={label} style={styles.stepperItem}>
+                <View style={[styles.stepperDot, (active || complete) && { backgroundColor: Colors.primary.main }]}>
+                  <Text style={[styles.stepperNumber, (active || complete) && { color: Colors.primary.contrastText }]}>
+                    {complete ? '✓' : stepNumber}
+                  </Text>
+                </View>
+                <Text style={[styles.stepperLabel, { color: active ? Colors.primary.main : Colors.text.secondary }]}>{label}</Text>
+              </View>
+            );
+          })}
+        </View>
 
         {!entryType ? (
           renderFlowSelectionStep()
@@ -379,7 +398,7 @@ export function SetupForm() {
           </>
         )}
       </Card>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -399,6 +418,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 24,
   },
+  stepper: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  stepperItem: { alignItems: 'center', flex: 1 },
+  stepperDot: { alignItems: 'center', backgroundColor: '#D1D5DB', borderRadius: 14, height: 28, justifyContent: 'center', width: 28 },
+  stepperNumber: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   stepHeader: {
     flexDirection: 'row',
     alignItems: 'center',
