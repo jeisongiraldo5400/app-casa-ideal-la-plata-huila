@@ -2554,6 +2554,19 @@ export type Database = {
         }
         Returns: string
       }
+      create_inventory_product: {
+        Args: {
+          p_barcode: string
+          p_brand_id: string
+          p_category_id: string
+          p_description: string | null
+          p_idempotency_key: string
+          p_name: string
+          p_sku: string
+          p_supplier_id: string | null
+        }
+        Returns: Database["public"]["Tables"]["products"]["Row"]
+      }
       update_negocio: {
         Args: { p_activate: boolean; p_idempotency_key: string; p_items: Json; p_negocio: Json; p_negocio_id: string }
         Returns: string

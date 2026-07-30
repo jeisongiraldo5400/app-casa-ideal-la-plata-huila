@@ -81,6 +81,25 @@ const UNAUTHORIZED_EXIT_MESSAGE =
 
 const pendingExitRequests = new Map<string, string>();
 
+async function getActiveCancelledExitIds(exitIds: string[]): Promise<Set<string>> {
+  if (exitIds.length === 0) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase
+    .from('inventory_exit_cancellations')
+    .select('inventory_exit_id')
+    .in('inventory_exit_id', exitIds)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.error('Error loading inventory exit cancellations:', error);
+    return new Set();
+  }
+
+  return new Set((data || []).map((cancellation) => cancellation.inventory_exit_id));
+}
+
 type ExitAuthorizationResult = {
   canRegister: boolean;
   message: string | null;
@@ -458,17 +477,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
       const orderIds = data.map((order: any) => order.id);
 
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id')
-        .is('deleted_at', null);
-
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
-
-      // Obtener todas las salidas y filtrar las canceladas
+      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, delivery_order_id, product_id, warehouse_id, quantity')
@@ -480,6 +489,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           exitsError
         );
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
       const exitsByOrder = new Map<string, Map<string, number>>();
@@ -583,17 +596,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
       const orderIds = orders.map((order: any) => order.id);
 
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id')
-        .is('deleted_at', null);
-
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
-
-      // Obtener todas las salidas y filtrar las canceladas
+      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, delivery_order_id, product_id, warehouse_id, quantity')
@@ -602,6 +605,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (exitsError) {
         console.error('Error loading inventory exits for orders:', exitsError);
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
       const exitsByOrder = new Map<string, Map<string, number>>();
@@ -751,18 +758,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      // Obtener las salidas de inventario para esta orden desde inventory_exits
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id')
-        .is('deleted_at', null);
-
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
-
-      // Obtener todas las salidas y filtrar las canceladas
+      // Obtener las salidas de inventario de esta orden y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, product_id, warehouse_id, quantity')
@@ -775,6 +771,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         );
         // Continuar aunque haya error, pero con cache vacío
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Calcular cantidades registradas por compositeKey(product_id, warehouse_id) desde inventory_exits (excluyendo canceladas)
       const registeredByProduct: Record<string, number> = {};
@@ -1756,19 +1756,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         let orderCompleted = false;
 
         try {
-          const { data: cancelledExits } = await supabase
-            .from('inventory_exit_cancellations')
-            .select('inventory_exit_id')
-            .is('deleted_at', null);
-
-          const cancelledExitIds = new Set(
-            (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-          );
-
           const { data: exitsData, error: exitsRefreshError } = await supabase
             .from('inventory_exits')
             .select('id, product_id, warehouse_id, quantity')
             .eq('delivery_order_id', orderIdToRefresh);
+
+          const cancelledExitIds = await getActiveCancelledExitIds(
+            (exitsData || []).map((exit: any) => exit.id)
+          );
 
           if (!exitsRefreshError && exitsData) {
             const registeredByProduct: Record<string, number> = {};

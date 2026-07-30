@@ -27,6 +27,7 @@ export async function fetchWarehouses(): Promise<Warehouse[]> {
     .from("warehouses")
     .select("*")
     .eq("is_active", true)
+    .is("deleted_at", null)
     .order("name");
 
   if (error) {

@@ -70,6 +70,7 @@ export interface SelectedPurchaseOrderProgress {
 }
 
 const pendingEntryRequests = new Map<string, string>();
+const pendingProductRequests = new Map<string, string>();
 
 interface EntriesState {
   // Sesión de entrada (null hasta elegir tipo en flow-selection)
@@ -893,26 +894,21 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   searchProductByBarcode: async (barcode: string): Promise<Product | null> => {
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("barcode", barcode)
-        .is("deleted_at", null)
-        .single();
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .eq("barcode", barcode)
+      .is("deleted_at", null)
+      .single();
 
-      if (error) {
-        if (error.code === "PGRST116") {
-          return null;
-        }
-        throw error;
+    if (error) {
+      if (error.code === "PGRST116") {
+        return null;
       }
-
-      return data as Product;
-    } catch (error: any) {
-      console.error("Error searching product:", error);
-      return null;
+      throw error;
     }
+
+    return data as Product;
   },
 
   addProductToEntry: async (product, quantity, barcode) => {
@@ -930,6 +926,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       entryType,
       scannedItemsProgress,
     } = get();
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: "La cantidad debe ser un número mayor que cero" });
+      return;
+    }
 
     // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
     // Esto previene que se puedan agregar productos excediendo las cantidades de la orden
@@ -1017,7 +1018,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     if (!item) return;
 
     // Validar cantidad
-    if (quantity <= 0) {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
       set({
         error:
           "La cantidad debe ser mayor a 0. Si no desea el producto, elimínelo de la lista.",
@@ -1077,33 +1078,47 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     productData
   ): Promise<{ product: Product | null; error: any }> => {
     try {
-      const { data, error } = await supabase
-        .from("products")
-        .insert({
-          name: productData.name,
-          sku: productData.sku,
-          barcode: productData.barcode,
-          category_id: productData.category_id,
-          brand_id: productData.brand_id,
-          description: productData.description || null,
-          status: true,
-        })
-        .select()
-        .single();
+      const normalizedProduct = {
+        name: productData.name.trim(),
+        sku: productData.sku.trim(),
+        barcode: productData.barcode.trim(),
+        categoryId: productData.category_id,
+        brandId: productData.brand_id,
+        description: productData.description?.trim() || null,
+        supplierId: productData.supplier_id || null,
+      };
+      const requestFingerprint = JSON.stringify(normalizedProduct);
+      let idempotencyKey = pendingProductRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingProductRequests.set(requestFingerprint, idempotencyKey);
+      }
+
+      const { data, error } = await supabase.rpc("create_inventory_product", {
+        p_name: normalizedProduct.name,
+        p_sku: normalizedProduct.sku,
+        p_barcode: normalizedProduct.barcode,
+        p_category_id: normalizedProduct.categoryId,
+        p_brand_id: normalizedProduct.brandId,
+        p_description: normalizedProduct.description,
+        p_supplier_id: normalizedProduct.supplierId,
+        p_idempotency_key: idempotencyKey,
+      });
 
       if (error) {
         return { product: null, error };
       }
 
-      // Si hay supplier_id, crear relación en product_suppliers
-      if (productData.supplier_id) {
-        await supabase.from("product_suppliers").insert({
-          product_id: data.id,
-          supplier_id: productData.supplier_id,
-        });
+      const product = (data as Product | null);
+      if (!product?.id) {
+        return {
+          product: null,
+          error: { message: "La creación del producto no devolvió un producto válido" },
+        };
       }
 
-      return { product: data as Product, error: null };
+      pendingProductRequests.delete(requestFingerprint);
+      return { product, error: null };
     } catch (error: any) {
       return { product: null, error };
     }
@@ -1116,7 +1131,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     // que deshabilita el botón, un segundo tap puede disparar otra ejecución
     if (get().loading) {
       console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
-      return { error: null };
+      return { error: { message: "Ya se está procesando esta entrada" } };
     }
 
     const {
@@ -1189,7 +1204,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
         productIdSet.add(item.product.id);
 
-        if (item.quantity <= 0) {
+        if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
           return {
             valid: false,
             message:
@@ -1224,7 +1239,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       const { data: warehouseData, error: warehouseError } = await supabase
         .from("warehouses")
-        .select("id, is_active")
+        .select("id, is_active, deleted_at")
         .eq("id", warehouseId)
         .maybeSingle();
 
@@ -1236,7 +1251,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         };
       }
 
-      if (!warehouseData || !warehouseData.is_active) {
+      if (!warehouseData || !warehouseData.is_active || warehouseData.deleted_at) {
         return {
           valid: false,
           message:
@@ -1261,7 +1276,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       const deletedProducts =
         productsData?.filter((p) => p.deleted_at !== null) || [];
-      if (deletedProducts.length > 0) {
+      if ((productsData?.length || 0) !== productIds.length || deletedProducts.length > 0) {
         return {
           valid: false,
           message:
@@ -1430,6 +1445,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         // Limpiar loading en caso de error al insertar
         set({ loading: false, loadingMessage: null });
         return { error: entriesError };
+      }
+
+      const insertedEntryIds =
+        (entryResult as { entry_ids?: string[] } | null)?.entry_ids || [];
+      if (insertedEntryIds.length !== entryItems.length) {
+        return {
+          error: {
+            message:
+              "La respuesta del registro de entradas está incompleta. Intente nuevamente.",
+          },
+        };
       }
 
       // NOTA: No actualizamos warehouse_stock manualmente aquí porque
