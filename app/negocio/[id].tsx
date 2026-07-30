@@ -53,12 +53,17 @@ export default function NegocioDetailScreen() {
   const [cuotas, setCuotas] = useState<any[]>([]);
   const [pagos, setPagos] = useState<any[]>([]);
   const [customerName, setCustomerName] = useState('');
+  const [customerMeta, setCustomerMeta] = useState<any>({});
+  const [codeudorMeta, setCodeudorMeta] = useState<any>({});
+  const [sellerName, setSellerName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
   const [payModalOpen, setPayModalOpen] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [installmentPage, setInstallmentPage] = useState(0);
   const [paymentPage, setPaymentPage] = useState(0);
   const [customerSignature, setCustomerSignature] = useState('');
@@ -116,7 +121,7 @@ export default function NegocioDetailScreen() {
           .order('paid_at', { ascending: false }),
         supabase
           .from('customers')
-          .select('name, id_number, phone, address')
+          .select('name, id_number, phone, email, address')
           .eq('id', n.customer_id)
           .maybeSingle(),
         supabase
@@ -135,7 +140,30 @@ export default function NegocioDetailScreen() {
       setInstallmentPage(0);
       setPaymentPage(0);
       setCustomerName(custRes.data?.name || '');
+      setCustomerMeta(custRes.data || {});
       setLegalText(settingsRes.data?.legal_text || null);
+
+      if (n.codeudor_customer_id) {
+        const { data: codeudor } = await supabase
+          .from('customers')
+          .select('name, id_number, phone, email, address')
+          .eq('id', n.codeudor_customer_id)
+          .maybeSingle();
+        setCodeudorMeta(codeudor || {});
+      } else {
+        setCodeudorMeta({});
+      }
+
+      if (n.seller_id) {
+        const { data: seller } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', n.seller_id)
+          .maybeSingle();
+        setSellerName(seller?.full_name || '');
+      } else {
+        setSellerName('');
+      }
 
       if (n.delivery_order_id) {
         const { data: oe } = await supabase
@@ -202,6 +230,16 @@ export default function NegocioDetailScreen() {
       ].filter(Boolean).join(', '),
       status: negocio.status,
       customer_name: customerName || 'Cliente',
+      customer_id_number: customerMeta.id_number,
+      customer_phone: customerMeta.phone,
+      customer_email: customerMeta.email,
+      customer_address: customerMeta.address || negocio.direccion,
+      codeudor_name: codeudorMeta.name,
+      codeudor_id_number: codeudorMeta.id_number,
+      codeudor_phone: codeudorMeta.phone,
+      codeudor_email: codeudorMeta.email,
+      codeudor_address: codeudorMeta.address,
+      seller_name: sellerName,
       products_subtotal: Number(negocio.products_subtotal),
       interest_amount: Number(negocio.interest_amount),
       total_credit: Number(negocio.total_credit),
@@ -362,30 +400,31 @@ export default function NegocioDetailScreen() {
     }
   };
 
-  const cancelNegocio = () => {
-    Alert.alert('Anular negocio', 'Esta acción anulará las cuotas pendientes y la orden de entrega no despachada.', [
-      { text: 'Volver', style: 'cancel' },
-      {
-        text: 'Anular', style: 'destructive', onPress: async () => {
-          try {
-            setActionSaving(true);
-            cancelIdempotencyKey.current ||= createIdempotencyKey();
-            const { error } = await supabase.rpc('cancel_negocio', {
-              p_negocio_id: negocio.id,
-              p_reason: null,
-              p_idempotency_key: cancelIdempotencyKey.current,
-            });
-            if (error) throw error;
-            cancelIdempotencyKey.current = null;
-            await load();
-          } catch (error: any) {
-            Alert.alert('Error', error.message || 'No se pudo anular el negocio');
-          } finally {
-            setActionSaving(false);
-          }
-        },
-      },
-    ]);
+  const cancelNegocio = async () => {
+    const reason = cancelReason.trim();
+    if (!reason) {
+      return Alert.alert('Motivo requerido', 'Ingrese el motivo de la anulación.');
+    }
+
+    try {
+      setActionSaving(true);
+      cancelIdempotencyKey.current ||= createIdempotencyKey();
+      const { error } = await supabase.rpc('cancel_negocio', {
+        p_negocio_id: negocio.id,
+        p_reason: reason,
+        p_idempotency_key: cancelIdempotencyKey.current,
+      });
+      if (error) throw error;
+      cancelIdempotencyKey.current = null;
+      setCancelModalOpen(false);
+      setCancelReason('');
+      await load();
+      Alert.alert('Negocio anulado', 'El motivo quedó registrado en el historial del negocio.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo anular el negocio');
+    } finally {
+      setActionSaving(false);
+    }
   };
 
   if (loading || !negocio) {
@@ -577,7 +616,7 @@ export default function NegocioDetailScreen() {
                 </Pressable>
               )}
               {canCancel && (
-                <Pressable style={[styles.btn, { flex: 1, backgroundColor: colors.error.main }]} onPress={cancelNegocio} disabled={actionSaving}>
+                <Pressable style={[styles.btn, { flex: 1, backgroundColor: colors.error.main }]} onPress={() => setCancelModalOpen(true)} disabled={actionSaving}>
                   <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Anular</Text>
                 </Pressable>
               )}
@@ -763,6 +802,82 @@ export default function NegocioDetailScreen() {
             </View>
           </KeyboardAvoidingView>
         </Modal>
+
+        <Modal
+          visible={cancelModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !actionSaving && setCancelModalOpen(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalBackdrop}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={[styles.modalCard, { backgroundColor: colors.background.paper }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Anular negocio</Text>
+                <Pressable
+                  onPress={() => setCancelModalOpen(false)}
+                  disabled={actionSaving}
+                  hitSlop={10}
+                >
+                  <MaterialIcons name="close" size={24} color={colors.text.secondary} />
+                </Pressable>
+              </View>
+              <Text style={{ color: colors.text.secondary }}>
+                Se anularán las cuotas pendientes y la orden de entrega no despachada.
+              </Text>
+              <TextInput
+                placeholder="Motivo de la anulación *"
+                value={cancelReason}
+                onChangeText={(value) => {
+                  setCancelReason(value);
+                  cancelIdempotencyKey.current = null;
+                }}
+                multiline
+                numberOfLines={4}
+                maxLength={500}
+                style={[
+                  styles.input,
+                  styles.reasonInput,
+                  { borderColor: colors.divider, color: colors.text.primary },
+                ]}
+                placeholderTextColor={colors.text.secondary}
+                editable={!actionSaving}
+                autoFocus
+              />
+              <Text style={{ color: colors.text.secondary, fontSize: 12, textAlign: 'right' }}>
+                {cancelReason.trim().length}/500
+              </Text>
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={[styles.modalButton, { borderColor: colors.divider }]}
+                  onPress={() => setCancelModalOpen(false)}
+                  disabled={actionSaving}
+                >
+                  <Text style={{ color: colors.text.primary, fontWeight: '600' }}>Volver</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.modalButton,
+                    { backgroundColor: colors.error.main },
+                    !cancelReason.trim() && styles.pageButtonDisabled,
+                  ]}
+                  onPress={cancelNegocio}
+                  disabled={actionSaving || !cancelReason.trim()}
+                >
+                  {actionSaving ? (
+                    <ActivityIndicator color={colors.primary.contrastText} />
+                  ) : (
+                    <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
+                      Confirmar anulación
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -868,6 +983,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  reasonInput: { minHeight: 100, textAlignVertical: 'top' },
   btn: {
     paddingVertical: 12,
     borderRadius: 8,
