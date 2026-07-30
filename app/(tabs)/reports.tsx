@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const money = (value: number) => `$${Number(value || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
@@ -15,16 +15,19 @@ export default function ReportsScreen() {
   const { isAdmin, isBodeguero, loading: loadingRoles } = useUserRoles();
   const { loading, error, reportData, executiveReport, dateRange, periodType, setDateRange, setPeriodType, loadReports, loadExecutiveReport, clearError } = useReports();
   const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90'>('30');
-  const canSeeOperational = isAdmin() || isBodeguero();
+  const canSeeExecutive = isAdmin();
+  const canSeeOperational = canSeeExecutive || isBodeguero();
+  const periodStartTimestamp = dateRange.startDate.getTime();
+  const periodEndTimestamp = dateRange.endDate.getTime();
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!canSeeOperational) return;
-    await Promise.all([loadReports(false), ...(isAdmin() ? [loadExecutiveReport()] : [])]);
-  };
+    await Promise.all([loadReports(false), ...(canSeeExecutive ? [loadExecutiveReport()] : [])]);
+  }, [canSeeExecutive, canSeeOperational, loadExecutiveReport, loadReports]);
 
   useEffect(() => {
     if (!loadingRoles) void refresh();
-  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime(), periodType, loadingRoles, canSeeOperational]);
+  }, [periodStartTimestamp, periodEndTimestamp, periodType, loadingRoles, refresh]);
 
   const handlePeriodChange = (period: '7' | '30' | '90') => {
     setSelectedPeriod(period);
@@ -50,16 +53,16 @@ export default function ReportsScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[colors.primary.main]} />}>
       <Text style={[styles.title, { color: colors.text.primary }]}>Reportes</Text>
-      <Text style={[styles.subtitle, { color: colors.text.secondary }]}>{isAdmin() ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
+      <Text style={[styles.subtitle, { color: colors.text.secondary }]}>{canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
       <View style={styles.periods}>{(['7', '30', '90'] as const).map((period) => <TouchableOpacity key={period} onPress={() => handlePeriodChange(period)} style={[styles.period, { borderColor: colors.divider, backgroundColor: selectedPeriod === period ? colors.primary.main : colors.background.paper }]}><Text style={{ color: selectedPeriod === period ? colors.primary.contrastText : colors.text.primary }}>{period} días</Text></TouchableOpacity>)}</View>
       <Text style={[styles.range, { color: colors.text.secondary }]}>{range}</Text>
 
       {error && <Card style={[styles.error, { borderColor: colors.error.main }]}><Text style={{ color: colors.error.main }}>{error}</Text><TouchableOpacity onPress={() => { clearError(); void refresh(); }}><Text style={{ color: colors.primary.main, fontWeight: '700' }}>Reintentar</Text></TouchableOpacity></Card>}
 
-      {isAdmin() && executiveReport && <>
+      {canSeeExecutive && executiveReport && <>
         <Text style={[styles.section, { color: colors.text.primary }]}>Decisiones de negocio</Text>
         <View style={styles.grid}>
-          <Metric color={colors.success.main} label="Ventas activadas" value={money(executiveReport.sales_total)} />
+          <Metric color={colors.success.main} label="Negocios a crédito" value={money(executiveReport.sales_total)} />
           <Metric color={colors.primary.main} label="Recaudo período" value={money(executiveReport.collections_total)} />
           <Metric color={colors.warning.main} label="Cartera vencida" value={money(executiveReport.overdue_balance)} detail={`${executiveReport.overdue_installments} cuotas`} />
           <Metric color={colors.info.main} label="Saldo cartera" value={money(executiveReport.portfolio_balance)} />
@@ -96,6 +99,6 @@ function Metric({ label, value, detail, color }: { label: string; value: string;
 const styles = StyleSheet.create({
   container: { flex: 1 }, content: { padding: 20, paddingBottom: 40 }, centered: { alignItems: 'center', flex: 1, gap: 14, justifyContent: 'center', padding: 28 },
   title: { fontSize: 30, fontWeight: '800' }, subtitle: { fontSize: 15, marginTop: 5 }, periods: { flexDirection: 'row', gap: 8, marginTop: 22 }, period: { borderRadius: 9, borderWidth: 1, paddingHorizontal: 15, paddingVertical: 9 }, range: { fontSize: 12, marginTop: 10 },
-  section: { fontSize: 18, fontWeight: '800', marginBottom: 11, marginTop: 26 }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, metric: { flexGrow: 1, flexBasis: '45%', minWidth: '45%', padding: 13 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { color: '#6B7280', fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { color: '#6B7280', fontSize: 11, marginTop: 3 },
+  section: { fontSize: 18, fontWeight: '800', marginBottom: 16, marginTop: 30 }, grid: { columnGap: 20, flexDirection: 'row', flexWrap: 'wrap', rowGap: 20 }, metric: { elevation: 1, flexGrow: 1, flexBasis: '44%', marginBottom: 2, minWidth: '44%', padding: 14, shadowOpacity: 0.04, shadowRadius: 4 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { color: '#6B7280', fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { color: '#6B7280', fontSize: 11, marginTop: 3 },
   error: { borderWidth: 1, gap: 10, marginTop: 18, padding: 14 }, accessTitle: { fontSize: 20, fontWeight: '800' }, accessText: { fontSize: 14, textAlign: 'center' },
 });

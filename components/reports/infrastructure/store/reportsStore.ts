@@ -222,11 +222,15 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
       });
       if (error) {
         const context = [error.code, error.details, error.hint].filter(Boolean).join(' · ');
-        throw new Error([error.message || 'Error al cargar el resumen ejecutivo', context].filter(Boolean).join(' · '));
+        set({
+          error: [error.message || 'Error al cargar el resumen ejecutivo', context]
+            .filter(Boolean)
+            .join(' · '),
+        });
+        return;
       }
       set({ executiveReport: data as unknown as ExecutiveReport });
     } catch (error: any) {
-      console.error('Error loading executive report:', error);
       set({ error: error.message || 'Error al cargar el resumen ejecutivo' });
     }
   },
