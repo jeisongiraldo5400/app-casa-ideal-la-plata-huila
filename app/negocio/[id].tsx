@@ -46,6 +46,7 @@ export default function NegocioDetailScreen() {
   const [actionSaving, setActionSaving] = useState(false);
   const paymentIdempotencyKey = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
+  const cancelIdempotencyKey = useRef<string | null>(null);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -287,8 +288,14 @@ export default function NegocioDetailScreen() {
         text: 'Anular', style: 'destructive', onPress: async () => {
           try {
             setActionSaving(true);
-            const { error } = await supabase.rpc('cancel_negocio', { p_negocio_id: negocio.id, p_reason: null });
+            cancelIdempotencyKey.current ||= createIdempotencyKey();
+            const { error } = await supabase.rpc('cancel_negocio', {
+              p_negocio_id: negocio.id,
+              p_reason: null,
+              p_idempotency_key: cancelIdempotencyKey.current,
+            });
             if (error) throw error;
+            cancelIdempotencyKey.current = null;
             await load();
           } catch (error: any) {
             Alert.alert('Error', error.message || 'No se pudo anular el negocio');

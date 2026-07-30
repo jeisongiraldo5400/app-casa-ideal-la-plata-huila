@@ -2581,6 +2581,10 @@ export type Database = {
         }
         Returns: Json
       }
+      register_delivery_order_return: {
+        Args: { p_delivery_order_id: string; p_idempotency_key: string; p_inventory_exit_id: string; p_observations?: string | null; p_quantity: number; p_reason: string }
+        Returns: string
+      }
       register_negocio_pago: {
         Args: {
           p_negocio_id: string
@@ -2598,7 +2602,7 @@ export type Database = {
         Returns: undefined
       }
       cancel_negocio: {
-        Args: { p_negocio_id: string; p_reason?: string | null }
+        Args: { p_idempotency_key: string; p_negocio_id: string; p_reason?: string | null }
         Returns: undefined
       }
       cancel_inventory_entry: {
