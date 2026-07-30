@@ -10,10 +10,13 @@ export function ExitItemsList() {
   const {
     exitItems,
     removeProductFromExit,
+    updateProductQuantity,
     finalizeExit,
     loading,
     canRegisterExit,
     authorizationMessage,
+    selectedDeliveryOrder,
+    exitMode,
   } = useExitsStore();
 
   const { user } = useAuth();
@@ -32,19 +35,36 @@ export function ExitItemsList() {
       return;
     }
 
-    try {
-      const { error } = await finalizeExit(user.id);
-      if (error) {
-        const errorMessage = error?.message || error?.toString() || 'Error al finalizar la salida';
-        console.error('Error finalizing exit:', error);
-        Alert.alert('Error', errorMessage);
-      } else {
-        Alert.alert('Éxito', 'Salida registrada correctamente');
-      }
-    } catch (error: any) {
-      console.error('Exception finalizing exit:', error);
-      Alert.alert('Error', error?.message || 'Error inesperado al finalizar la salida');
-    }
+    const totalItems = exitItems.reduce((sum, item) => sum + item.quantity, 0);
+    const recipient = exitMode === 'direct_customer'
+      ? selectedDeliveryOrder?.customer_name || 'Cliente'
+      : 'Usuario interno';
+
+    Alert.alert(
+      'Confirmar salida',
+      `OE #${selectedDeliveryOrder?.order_number || selectedDeliveryOrder?.id.slice(0, 8) || '—'}\n` +
+        `Destino: ${recipient}\n` +
+        `${exitItems.length} productos · ${totalItems} unidades`,
+      [
+        { text: 'Revisar', style: 'cancel' },
+        {
+          text: 'Confirmar salida',
+          onPress: async () => {
+            try {
+              const { error } = await finalizeExit(user.id);
+              if (error) {
+                const errorMessage = error?.message || error?.toString() || 'Error al finalizar la salida';
+                Alert.alert('Error', errorMessage);
+              } else {
+                Alert.alert('Salida registrada', 'El inventario y el progreso de la orden fueron actualizados correctamente.');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Error inesperado al finalizar la salida');
+            }
+          },
+        },
+      ]
+    );
   };
 
 
@@ -75,15 +95,42 @@ export function ExitItemsList() {
                 </View>
                 <TouchableOpacity
                   style={styles.removeButton}
-                  onPress={() => removeProductFromExit(index)}>
+                  accessibilityRole="button"
+                  accessibilityLabel={`Quitar ${item.product.name}`}
+                  onPress={() => Alert.alert(
+                    'Quitar producto',
+                    `¿Quitar ${item.product.name} de esta salida?`,
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Quitar', style: 'destructive', onPress: () => removeProductFromExit(index) },
+                    ]
+                  )}>
                   <Text style={styles.removeButtonText}>✕</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.quantityRow}>
                 <Text style={styles.quantityLabel}>Cantidad:</Text>
-                <View style={styles.quantityDisplayContainer}>
+                <View style={styles.quantityControls}>
+                  <TouchableOpacity
+                    style={styles.quantityButton}
+                    disabled={item.quantity <= 1}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Disminuir cantidad de ${item.product.name}`}
+                    onPress={() => updateProductQuantity(index, item.quantity - 1)}>
+                    <Text style={styles.quantityButtonText}>−</Text>
+                  </TouchableOpacity>
+                  <View style={styles.quantityDisplayContainer}>
                   <Text style={styles.quantityDisplayText}>{item.quantity}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.quantityButton}
+                    disabled={!item.availableStock || item.availableStock <= 0}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Aumentar cantidad de ${item.product.name}`}
+                    onPress={() => updateProductQuantity(index, item.quantity + 1)}>
+                    <Text style={styles.quantityButtonText}>+</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -91,7 +138,7 @@ export function ExitItemsList() {
         </View>
 
         <Button
-          title={`Finalizar Salida (${totalItems} unidades)`}
+          title={`Revisar salida (${totalItems} unidades)`}
           onPress={handleFinalize}
           loading={loading}
           disabled={!canRegisterExit}
@@ -196,6 +243,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  quantityControls: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quantityButton: {
+    alignItems: 'center',
+    backgroundColor: Colors.primary.light + '35',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  quantityButtonText: {
+    color: Colors.primary.main,
+    fontSize: 20,
+    fontWeight: '700',
+  },
   quantityDisplayText: {
     fontSize: 18,
     fontWeight: '600',
@@ -211,4 +276,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

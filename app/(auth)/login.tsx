@@ -36,7 +36,14 @@ export default function LoginScreen() {
         keyboardDismissMode="none"
         showsVerticalScrollIndicator={false}>
         <View style={styles.brandPanel}>
-          <View style={styles.logoContainer}>
+          <View
+            style={[
+              styles.logoContainer,
+              {
+                backgroundColor: Colors.background.paper,
+                borderColor: Colors.divider,
+              },
+            ]}>
             <Image
               source={require('@/assets/images/logo_completo.png')}
               style={styles.logoImage}
@@ -44,7 +51,9 @@ export default function LoginScreen() {
               accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
             />
           </View>
-          <Text style={styles.brandTagline}>Acceso al sistema de inventario</Text>
+          <Text style={[styles.brandTagline, { color: Colors.text.secondary }]}>
+            Portal operativo
+          </Text>
         </View>
 
         <LoginForm />
@@ -74,31 +83,32 @@ const styles = StyleSheet.create({
   brandPanel: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
-    paddingVertical: 28,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: '#0b1f4a',
+    marginBottom: 24,
   },
   logoContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    width: '100%',
-    maxWidth: 280,
     alignItems: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
     justifyContent: 'center',
+    width: '100%',
+    maxWidth: 300,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
   logoImage: {
     width: '100%',
-    height: 48,
+    height: 76,
   },
   brandTagline: {
-    marginTop: 14,
+    marginTop: 10,
     fontSize: 14,
-    color: 'rgba(255,255,255,0.78)',
     textAlign: 'center',
+    fontWeight: '500',
   },
   footer: {
     marginTop: 28,

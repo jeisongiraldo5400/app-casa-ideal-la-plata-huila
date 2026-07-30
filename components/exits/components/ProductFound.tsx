@@ -16,10 +16,10 @@ export function ProductFound({ product, availableStock }: ProductFoundProps) {
     <Card style={styles.card}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>Producto encontrado</Text>
+            <Text style={styles.title}>Listo para agregar</Text>
           <View style={[styles.stockBadge, availableStock > 0 ? styles.stockAvailable : styles.stockUnavailable]}>
             <Text style={styles.stockText}>
-              Stock: {availableStock}
+              Pendiente: {availableStock}
             </Text>
           </View>
         </View>
@@ -34,24 +34,6 @@ export function ProductFound({ product, availableStock }: ProductFoundProps) {
           <Text style={styles.value}>{product.sku}</Text>
         </View>
         
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Código de barras:</Text>
-          <Text style={styles.value}>{product.barcode}</Text>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Stock disponible:</Text>
-          <Text style={[styles.value, styles.stockValue]}>
-            {availableStock} unidad{availableStock !== 1 ? 'es' : ''}
-          </Text>
-        </View>
-        
-        {product.description && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Descripción:</Text>
-            <Text style={styles.value}>{product.description}</Text>
-          </View>
-        )}
       </View>
     </Card>
   );
@@ -114,4 +96,3 @@ const styles = StyleSheet.create({
     color: Colors.info.main,
   },
 });
-

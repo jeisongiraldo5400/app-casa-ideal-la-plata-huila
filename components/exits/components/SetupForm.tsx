@@ -7,7 +7,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
 import { UserSelectField } from './UserSelectField';
@@ -132,6 +132,8 @@ export function SetupForm() {
   const isOrderComplete = deliveryOrderProgress
     ? deliveryOrderProgress.items.every(item => item.isComplete)
     : false;
+  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+  const currentStep = !exitMode ? 1 : !selectedDeliveryOrderId ? 2 : 3;
 
   // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
   const canStart =
@@ -147,11 +149,7 @@ export function SetupForm() {
       style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-      <ScrollView
-        style={[styles.container, { backgroundColor: Colors.background.default }]}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled={true}>
+      <View style={styles.content}>
         <Card style={styles.card}>
           <Text style={[styles.title, { 
             color: Colors.text.primary,
@@ -163,6 +161,30 @@ export function SetupForm() {
           }]}>
             Configure el tipo de salida y seleccione los datos requeridos
           </Text>
+
+          <View style={styles.stepper} accessibilityLabel={`Paso ${currentStep} de 3`}>
+            {['Destino', 'Orden', 'Confirmar'].map((label, index) => {
+              const stepNumber = index + 1;
+              const isActive = stepNumber === currentStep;
+              const isComplete = stepNumber < currentStep;
+              return (
+                <View key={label} style={styles.stepperItem}>
+                  <View style={[
+                    styles.stepperDot,
+                    (isActive || isComplete) && { backgroundColor: Colors.primary.main },
+                  ]}>
+                    <Text style={[
+                      styles.stepperNumber,
+                      (isActive || isComplete) && { color: Colors.primary.contrastText },
+                    ]}>{isComplete ? '✓' : stepNumber}</Text>
+                  </View>
+                  <Text style={[styles.stepperLabel, { color: isActive ? Colors.primary.main : Colors.text.secondary }]}>
+                    {label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
 
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
@@ -268,6 +290,21 @@ export function SetupForm() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              {searchInput.trim().length > 0 && searchInput.trim().length < CUSTOMER_SEARCH_MIN_LENGTH && (
+                <Text style={[styles.helperText, { color: Colors.text.secondary }]}>
+                  Escriba al menos {CUSTOMER_SEARCH_MIN_LENGTH} caracteres para buscar.
+                </Text>
+              )}
+
+              {selectedCustomer && (
+                <View style={[styles.selectionSummary, { backgroundColor: Colors.primary.light + '20' }]}>
+                  <MaterialIcons name="check-circle" size={18} color={Colors.primary.main} />
+                  <Text style={[styles.selectionSummaryText, { color: Colors.text.primary }]}>
+                    Cliente seleccionado: {selectedCustomer.name}
+                  </Text>
+                </View>
+              )}
 
               {customersLoading && (
                 <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
@@ -406,7 +443,7 @@ export function SetupForm() {
             />
           </View>
         </Card>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -433,9 +470,35 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     fontWeight: '500',
   },
+  stepper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  stepperItem: { alignItems: 'center', flex: 1 },
+  stepperDot: {
+    alignItems: 'center',
+    backgroundColor: '#D1D5DB',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  stepperNumber: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   formGroup: {
     marginBottom: 20,
   },
+  helperText: { fontSize: 12, marginTop: 6 },
+  selectionSummary: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    padding: 10,
+  },
+  selectionSummaryText: { flex: 1, fontSize: 13, fontWeight: '600' },
   fieldHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -565,4 +628,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

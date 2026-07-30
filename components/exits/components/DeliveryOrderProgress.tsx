@@ -29,7 +29,7 @@ export function DeliveryOrderProgress() {
     })();
 
     // Estados locales para UI
-    const [isExpanded, setIsExpanded] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [visibleCount, setVisibleCount] = useState(5);
 

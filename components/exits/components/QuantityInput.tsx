@@ -30,7 +30,7 @@ export function QuantityInput({
   return (
     <View style={styles.container}>
       <View style={styles.stockInfo}>
-        <Text style={styles.stockLabel}>Stock disponible:</Text>
+        <Text style={styles.stockLabel}>Pendiente por entregar:</Text>
         <Text style={styles.stockValue}>{maxQuantity} unidad{maxQuantity !== 1 ? 'es' : ''}</Text>
       </View>
 
@@ -40,7 +40,9 @@ export function QuantityInput({
         <TouchableOpacity
           style={[styles.button, quantity === 0 && styles.buttonDisabled]}
           onPress={handleDecrement}
-          disabled={quantity === 0}>
+          disabled={quantity === 0}
+          accessibilityRole="button"
+          accessibilityLabel="Disminuir cantidad">
           <Text style={styles.buttonText}>-</Text>
         </TouchableOpacity>
         
@@ -65,14 +67,16 @@ export function QuantityInput({
         <TouchableOpacity
           style={[styles.button, quantity >= maxQuantity && styles.buttonDisabled]}
           onPress={handleIncrement}
-          disabled={quantity >= maxQuantity}>
+          disabled={quantity >= maxQuantity}
+          accessibilityRole="button"
+          accessibilityLabel="Aumentar cantidad">
           <Text style={styles.buttonText}>+</Text>
         </TouchableOpacity>
       </View>
 
       {quantity > maxQuantity && (
         <Text style={styles.errorText}>
-          La cantidad no puede exceder el stock disponible
+          La cantidad no puede exceder lo pendiente en la orden
         </Text>
       )}
     </View>
@@ -147,4 +151,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
