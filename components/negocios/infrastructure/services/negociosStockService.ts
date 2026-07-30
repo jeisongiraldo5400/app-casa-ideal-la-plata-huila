@@ -118,6 +118,13 @@ export function parseNegocioMoney(value: string | number): number {
   return parseNegocioQuantity(value);
 }
 
+export function formatNegocioMoneyInput(value: string | number): string {
+  const digits = String(value).replace(/\D/g, '');
+  if (!digits) return '';
+  const normalized = digits.replace(/^0+(?=\d)/, '');
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 export async function validateNegocioItemsStock(
   items: NegocioStockItem[]
 ): Promise<{ ok: true } | { ok: false; message: string }> {

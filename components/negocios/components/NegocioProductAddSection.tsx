@@ -12,6 +12,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import type { NegocioItem } from '@/components/negocios/infrastructure/store/negociosStore';
 import {
   fetchProductWarehouseStock,
+  formatNegocioMoneyInput,
   getAddFormAvailability,
   parseNegocioMoney,
   parseNegocioQuantity,
@@ -59,7 +60,7 @@ export function NegocioProductAddSection({
 
   const filteredProducts = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
-    if (!q) return products.slice(0, 8);
+    if (!q) return [];
     return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
   }, [products, productQuery]);
 
@@ -129,7 +130,7 @@ export function NegocioProductAddSection({
   const pickProduct = (product: NegocioProduct) => {
     setSelectedProduct(product);
     const catalogPrice = Number(product.sale_price) || 0;
-    setUnitPrice(catalogPrice > 0 ? String(catalogPrice) : '');
+    setUnitPrice(catalogPrice > 0 ? formatNegocioMoneyInput(catalogPrice) : '');
     setQty('1');
     onProductQueryChange('');
   };
@@ -278,7 +279,9 @@ export function NegocioProductAddSection({
                 placeholder="Ej: 2227000"
                 placeholderTextColor={colors.text.secondary}
                 value={unitPrice}
-                onChangeText={setUnitPrice}
+                onChangeText={(value) =>
+                  setUnitPrice(formatNegocioMoneyInput(value))
+                }
               />
               {unitPrice ? (
                 <Text style={{ color: colors.text.secondary, fontSize: 12 }}>

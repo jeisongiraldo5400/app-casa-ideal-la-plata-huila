@@ -30,10 +30,13 @@ import {
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
+import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import {
   availableQtyForItem,
   fetchStockForProducts,
+  formatNegocioMoneyInput,
   itemsHaveValidStock,
+  parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 
@@ -156,7 +159,7 @@ export default function NegocioCreateScreen() {
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const calc = calculateCredit({
     productsSubtotal: subtotal,
-    downPayment: Number(downPayment) || 0,
+    downPayment: parseNegocioMoney(downPayment) || 0,
     installmentsCount: Number(installments) || 1,
     settings,
   });
@@ -275,7 +278,7 @@ export default function NegocioCreateScreen() {
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
         items,
-        down_payment: Number(downPayment) || 0,
+        down_payment: parseNegocioMoney(downPayment) || 0,
         installments_count: Number(installments) || 1,
         frequency,
         first_due_date: firstDueDate,
@@ -567,7 +570,9 @@ export default function NegocioCreateScreen() {
               keyboardType="numeric"
               style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
               value={downPayment}
-              onChangeText={setDownPayment}
+              onChangeText={(value) =>
+                setDownPayment(formatNegocioMoneyInput(value))
+              }
             />
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
             <TextInput
@@ -576,13 +581,11 @@ export default function NegocioCreateScreen() {
               value={installments}
               onChangeText={setInstallments}
             />
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha primera cuota (AAAA-MM-DD)</Text>
-            <TextInput
-              style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-              placeholder="Ej. 2026-08-22"
-              placeholderTextColor={colors.text.secondary}
+            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
+            <NegocioDatePicker
               value={firstDueDate}
-              onChangeText={setFirstDueDate}
+              onChange={setFirstDueDate}
+              colors={colors}
             />
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Frecuencia de pago</Text>
             <View style={styles.rowWrap}>

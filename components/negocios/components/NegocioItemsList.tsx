@@ -3,6 +3,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import type { NegocioItem } from '@/components/negocios/infrastructure/store/negociosStore';
 import {
   availableQtyForItem,
+  formatNegocioMoneyInput,
   parseNegocioMoney,
   parseNegocioQuantity,
   type ProductWarehouseStock,
@@ -154,7 +155,7 @@ export function NegocioItemsList({
                     styles.input,
                     { borderColor: colors.divider, color: colors.text.primary },
                   ]}
-                  value={String(item.unit_price)}
+                  value={formatNegocioMoneyInput(item.unit_price)}
                   onChangeText={(text) => {
                     const unit_price = parseNegocioMoney(text);
                     if (unit_price >= 0) onUpdateItem(idx, { unit_price });
