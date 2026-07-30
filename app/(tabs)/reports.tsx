@@ -2,343 +2,100 @@ import { EntriesVsExitsChart, useReports } from '@/components/reports';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+const money = (value: number) => `$${Number(value || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+
 export default function ReportsScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const {
-    loading,
-    error,
-    reportData,
-    dateRange,
-    periodType,
-    setDateRange,
-    setPeriodType,
-    loadReports,
-    clearError,
-  } = useReports();
+  const { isAdmin, isBodeguero, loading: loadingRoles } = useUserRoles();
+  const { loading, error, reportData, executiveReport, dateRange, periodType, setDateRange, setPeriodType, loadReports, loadExecutiveReport, clearError } = useReports();
+  const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90'>('30');
+  const canSeeOperational = isAdmin() || isBodeguero();
 
-  const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90' | 'custom'>('30');
+  const refresh = async () => {
+    if (!canSeeOperational) return;
+    await Promise.all([loadReports(false), ...(isAdmin() ? [loadExecutiveReport()] : [])]);
+  };
 
   useEffect(() => {
-    let isMounted = true;
-    const loadData = async () => {
-      try {
-        await loadReports(false); // No cargar movimientos por defecto
-      } catch (error) {
-        console.error('Error loading reports:', error);
-      }
-    };
-    if (isMounted) {
-      loadData();
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime(), periodType]);
+    if (!loadingRoles) void refresh();
+  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime(), periodType, loadingRoles, canSeeOperational]);
 
-  const handlePeriodChange = (period: '7' | '30' | '90' | 'custom') => {
+  const handlePeriodChange = (period: '7' | '30' | '90') => {
     setSelectedPeriod(period);
     const endDate = new Date();
-    let startDate: Date;
-
-    switch (period) {
-      case '7':
-        startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-        setPeriodType('day');
-        break;
-      case '30':
-        startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-        setPeriodType('day');
-        break;
-      case '90':
-        startDate = new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000);
-        setPeriodType('week');
-        break;
-      default:
-        return; // Custom date picker would go here
-    }
-
-    setDateRange(startDate, endDate);
+    const days = Number(period);
+    setPeriodType(period === '90' ? 'week' : 'day');
+    setDateRange(new Date(endDate.getTime() - (days - 1) * 86400000), endDate);
   };
 
-  const formatDateRange = () => {
-    const start = dateRange.startDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const end = dateRange.endDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    return `${start} - ${end}`;
-  };
+  const chartData = useMemo(() => reportData?.periodStats.map((period) => ({ date: period.period_date, entries: period.entries_quantity, exits: period.exits_quantity })) ?? [], [reportData]);
+  const range = `${dateRange.startDate.toLocaleDateString('es-CO')} – ${dateRange.endDate.toLocaleDateString('es-CO')}`;
 
-  // Transformar datos del RPC al formato esperado por los gráficos existentes
-  const chartData = useMemo(() => {
-    if (!reportData?.periodStats) {
-      return null;
-    }
+  if (loadingRoles || (loading && !reportData)) return <View style={[styles.centered, { backgroundColor: colors.background.default }]}><ActivityIndicator color={colors.primary.main} size="large" /><Text style={{ color: colors.text.secondary }}>Cargando reportes…</Text></View>;
 
-    return {
-      entriesVsExits: reportData.periodStats.map((period) => ({
-        date: period.period_date,
-        entries: period.entries_quantity,
-        exits: period.exits_quantity,
-      })),
-    };
-  }, [reportData]);
-
-  if (error) {
-    return (
-      <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]}>
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
-          <Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.primary.main }]}
-            onPress={() => {
-              clearError();
-              loadReports();
-            }}
-          >
-            <Text style={[styles.retryButtonText, { color: colors.primary.contrastText }]}>Reintentar</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    );
-  }
+  if (!canSeeOperational) return (
+    <View style={[styles.centered, { backgroundColor: colors.background.default }]}>
+      <MaterialIcons name="lock-outline" size={44} color={colors.text.secondary} />
+      <Text style={[styles.accessTitle, { color: colors.text.primary }]}>Reportes restringidos</Text>
+      <Text style={[styles.accessText, { color: colors.text.secondary }]}>Esta información está disponible para administración y bodega.</Text>
+    </View>
+  );
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background.default }]}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={loading && !!reportData}
-          onRefresh={() => loadReports(false)}
-          tintColor={colors.primary.main}
-          colors={[colors.primary.main]}
-        />
-      }
-    >
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Reportes</Text>
-        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>
-          Análisis de inventario y movimientos
-        </Text>
-      </View>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[colors.primary.main]} />}>
+      <Text style={[styles.title, { color: colors.text.primary }]}>Reportes</Text>
+      <Text style={[styles.subtitle, { color: colors.text.secondary }]}>{isAdmin() ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
+      <View style={styles.periods}>{(['7', '30', '90'] as const).map((period) => <TouchableOpacity key={period} onPress={() => handlePeriodChange(period)} style={[styles.period, { borderColor: colors.divider, backgroundColor: selectedPeriod === period ? colors.primary.main : colors.background.paper }]}><Text style={{ color: selectedPeriod === period ? colors.primary.contrastText : colors.text.primary }}>{period} días</Text></TouchableOpacity>)}</View>
+      <Text style={[styles.range, { color: colors.text.secondary }]}>{range}</Text>
 
-      <View style={styles.periodSelector}>
-        <Text style={[styles.periodLabel, { color: colors.text.secondary }]}>Período:</Text>
-        <View style={styles.periodButtons}>
-          {(['7', '30', '90'] as const).map((period) => (
-            <TouchableOpacity
-              key={period}
-              style={[
-                styles.periodButton,
-                {
-                  backgroundColor:
-                    selectedPeriod === period ? colors.primary.main : colors.background.paper,
-                  borderColor: colors.divider,
-                },
-              ]}
-              onPress={() => handlePeriodChange(period)}
-            >
-              <Text
-                style={[
-                  styles.periodButtonText,
-                  {
-                    color:
-                      selectedPeriod === period
-                        ? colors.primary.contrastText
-                        : colors.text.primary,
-                  },
-                ]}
-              >
-                {period} días
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {error && <Card style={[styles.error, { borderColor: colors.error.main }]}><Text style={{ color: colors.error.main }}>{error}</Text><TouchableOpacity onPress={() => { clearError(); void refresh(); }}><Text style={{ color: colors.primary.main, fontWeight: '700' }}>Reintentar</Text></TouchableOpacity></Card>}
+
+      {isAdmin() && executiveReport && <>
+        <Text style={[styles.section, { color: colors.text.primary }]}>Decisiones de negocio</Text>
+        <View style={styles.grid}>
+          <Metric color={colors.success.main} label="Ventas activadas" value={money(executiveReport.sales_total)} />
+          <Metric color={colors.primary.main} label="Recaudo período" value={money(executiveReport.collections_total)} />
+          <Metric color={colors.warning.main} label="Cartera vencida" value={money(executiveReport.overdue_balance)} detail={`${executiveReport.overdue_installments} cuotas`} />
+          <Metric color={colors.info.main} label="Saldo cartera" value={money(executiveReport.portfolio_balance)} />
         </View>
-        <Text style={[styles.dateRangeText, { color: colors.text.secondary }]}>
-          {formatDateRange()}
-        </Text>
-      </View>
-
-      {loading && !reportData ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
-            Cargando reportes...
-          </Text>
+        <View style={styles.grid}>
+          <Metric color={colors.primary.main} label="Negocios nuevos" value={String(executiveReport.new_businesses)} detail={`${executiveReport.active_businesses} activos`} />
+          <Metric color={colors.warning.main} label="Por vencer (15 días)" value={money(executiveReport.due_soon_balance)} />
+          <Metric color={colors.error.main} label="Negocios anulados" value={String(executiveReport.cancelled_businesses)} />
+          <Metric color={colors.error.main} label="Anulaciones inventario" value={String(executiveReport.inventory_cancellations)} />
         </View>
-      ) : (
-        <>
-          {reportData?.summary && (
-            <Card style={[styles.summaryCard, { backgroundColor: colors.background.paper }]}>
-              <Text style={[styles.summaryTitle, { color: colors.text.primary }]}>Resumen del Período</Text>
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryItem}>
-                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Entradas</Text>
-                  <Text style={[styles.summaryValue, { color: colors.success.main }]}>
-                    {reportData.summary.totalEntriesQuantity.toLocaleString()}
-                  </Text>
-                  <Text style={[styles.summaryCount, { color: colors.text.secondary }]}>
-                    ({reportData.summary.totalEntries} registros)
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Total Salidas</Text>
-                  <Text style={[styles.summaryValue, { color: colors.error.main }]}>
-                    {reportData.summary.totalExitsQuantity.toLocaleString()}
-                  </Text>
-                  <Text style={[styles.summaryCount, { color: colors.text.secondary }]}>
-                    ({reportData.summary.totalExits} registros)
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Movimiento Neto</Text>
-                  <Text style={[
-                    styles.summaryValue,
-                    { color: reportData.summary.netMovement >= 0 ? colors.success.main : colors.error.main }
-                  ]}>
-                    {reportData.summary.netMovement >= 0 ? '+' : ''}
-                    {reportData.summary.netMovement.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>Cancelaciones</Text>
-                  <Text style={[styles.summaryValue, { color: colors.warning.main }]}>
-                    {reportData.summary.totalCancellations}
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          )}
+        <Text style={[styles.section, { color: colors.text.primary }]}>Alertas operativas</Text>
+        <View style={styles.grid}>
+          <Metric color={colors.info.main} label="Unidades en stock" value={Number(executiveReport.stock_units).toLocaleString('es-CO')} />
+          <Metric color={colors.warning.main} label="Productos con stock bajo" value={String(executiveReport.low_stock_products)} />
+          <Metric color={colors.warning.main} label="Órdenes por despachar" value={String(executiveReport.pending_delivery_orders)} />
+        </View>
+      </>}
 
-          {chartData && (
-            <>
-              <EntriesVsExitsChart data={chartData.entriesVsExits} />
-            </>
-          )}
-        </>
-      )}
+      <Text style={[styles.section, { color: colors.text.primary }]}>Movimiento de inventario</Text>
+      {reportData?.summary && <View style={styles.grid}>
+        <Metric color={colors.success.main} label="Entradas" value={Number(reportData.summary.totalEntriesQuantity).toLocaleString('es-CO')} detail={`${reportData.summary.totalEntries} registros`} />
+        <Metric color={colors.error.main} label="Salidas" value={Number(reportData.summary.totalExitsQuantity).toLocaleString('es-CO')} detail={`${reportData.summary.totalExits} registros`} />
+        <Metric color={reportData.summary.netMovement >= 0 ? colors.success.main : colors.error.main} label="Movimiento neto" value={`${reportData.summary.netMovement >= 0 ? '+' : ''}${Number(reportData.summary.netMovement).toLocaleString('es-CO')}`} />
+      </View>}
+      <EntriesVsExitsChart data={chartData} />
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 24,
-    marginTop: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-  },
-  periodSelector: {
-    marginBottom: 24,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-  },
-  periodLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  periodButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  periodButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  periodButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  dateRangeText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  summaryCard: {
-    marginBottom: 16,
-    padding: 16,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  summaryItem: {
-    flex: 1,
-    minWidth: '45%',
-    alignItems: 'center',
-    padding: 12,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  summaryCount: {
-    fontSize: 10,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+function Metric({ label, value, detail, color }: { label: string; value: string; detail?: string; color: string }) {
+  return <Card style={styles.metric}><View style={[styles.dot, { backgroundColor: color }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={[styles.metricValue, { color }]} numberOfLines={1}>{value}</Text>{detail && <Text style={styles.metricDetail}>{detail}</Text>}</Card>;
+}
 
+const styles = StyleSheet.create({
+  container: { flex: 1 }, content: { padding: 20, paddingBottom: 40 }, centered: { alignItems: 'center', flex: 1, gap: 14, justifyContent: 'center', padding: 28 },
+  title: { fontSize: 30, fontWeight: '800' }, subtitle: { fontSize: 15, marginTop: 5 }, periods: { flexDirection: 'row', gap: 8, marginTop: 22 }, period: { borderRadius: 9, borderWidth: 1, paddingHorizontal: 15, paddingVertical: 9 }, range: { fontSize: 12, marginTop: 10 },
+  section: { fontSize: 18, fontWeight: '800', marginBottom: 11, marginTop: 26 }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, metric: { flexGrow: 1, flexBasis: '45%', minWidth: '45%', padding: 13 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { color: '#6B7280', fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { color: '#6B7280', fontSize: 11, marginTop: 3 },
+  error: { borderWidth: 1, gap: 10, marginTop: 18, padding: 14 }, accessTitle: { fontSize: 20, fontWeight: '800' }, accessText: { fontSize: 14, textAlign: 'center' },
+});

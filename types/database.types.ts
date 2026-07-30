@@ -2659,6 +2659,10 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_admin_executive_report: {
+        Args: { p_end_date: string; p_start_date: string }
+        Returns: Json
+      }
       has_role: {
         Args: { role_name: string }
         Returns: boolean

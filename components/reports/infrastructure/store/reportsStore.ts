@@ -42,10 +42,27 @@ export interface ReportData {
   }[];
 }
 
+export interface ExecutiveReport {
+  sales_total: number;
+  new_businesses: number;
+  active_businesses: number;
+  cancelled_businesses: number;
+  collections_total: number;
+  portfolio_balance: number;
+  overdue_balance: number;
+  overdue_installments: number;
+  due_soon_balance: number;
+  stock_units: number;
+  low_stock_products: number;
+  pending_delivery_orders: number;
+  inventory_cancellations: number;
+}
+
 interface ReportsState {
   loading: boolean;
   error: string | null;
   reportData: ReportData | null;
+  executiveReport: ExecutiveReport | null;
   dateRange: {
     startDate: Date;
     endDate: Date;
@@ -54,6 +71,7 @@ interface ReportsState {
   setDateRange: (startDate: Date, endDate: Date) => void;
   setPeriodType: (type: 'day' | 'week' | 'month') => void;
   loadReports: (includeMovements?: boolean) => Promise<void>;
+  loadExecutiveReport: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -61,6 +79,7 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   loading: false,
   error: null,
   reportData: null,
+  executiveReport: null,
   dateRange: {
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)), // Últimos 30 días
     endDate: new Date(),
@@ -100,27 +119,22 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
 
       // OPTIMIZADO: Usar RPC get_period_stats en lugar de múltiples consultas
       // Esto reduce de ~6-8 consultas a 1-2 consultas
-      const queries: Promise<any>[] = [
-        supabase.rpc('get_period_stats', {
-          start_date: startISO,
-          end_date: endISO,
-          period_type: periodType,
-        }),
-      ];
-
-      // Opcionalmente cargar movimientos recientes (para vista detallada)
-      if (includeMovements) {
-        queries.push(
-          supabase.rpc('get_movements_by_period', {
+      const statsRequest = supabase.rpc('get_period_stats', {
+        start_date: startISO,
+        end_date: endISO,
+        period_type: periodType,
+      });
+      const movementsRequest = includeMovements
+        ? supabase.rpc('get_movements_by_period', {
             start_date: startISO,
             end_date: endISO,
-            movement_limit: 100, // Últimos 100 movimientos
+            movement_limit: 100,
           })
-        );
-      }
-
-      const results = await Promise.all(queries);
-      const { data: periodStatsData, error: statsError } = results[0];
+        : null;
+      const [{ data: periodStatsData, error: statsError }, movementsResult] = await Promise.all([
+        statsRequest,
+        movementsRequest,
+      ]);
 
       if (statsError) {
         throw new Error(statsError.message || 'Error al cargar estadísticas');
@@ -166,8 +180,8 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
 
       // Procesar movimientos si se solicitaron
       let recentMovements: ReportData['recentMovements'] = undefined;
-      if (includeMovements && results[1]) {
-        const { data: movementsData, error: movementsError } = results[1];
+      if (includeMovements && movementsResult) {
+        const { data: movementsData, error: movementsError } = movementsResult;
         if (!movementsError && movementsData) {
           recentMovements = (movementsData as MovementResult[]).map((m) => ({
             id: m.id,
@@ -196,6 +210,24 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         error: error.message || 'Error al cargar reportes',
         loading: false,
       });
+    }
+  },
+
+  loadExecutiveReport: async () => {
+    try {
+      const { dateRange } = get();
+      const { data, error } = await supabase.rpc('get_admin_executive_report', {
+        p_start_date: dateRange.startDate.toISOString().slice(0, 10),
+        p_end_date: dateRange.endDate.toISOString().slice(0, 10),
+      });
+      if (error) {
+        const context = [error.code, error.details, error.hint].filter(Boolean).join(' · ');
+        throw new Error([error.message || 'Error al cargar el resumen ejecutivo', context].filter(Boolean).join(' · '));
+      }
+      set({ executiveReport: data as unknown as ExecutiveReport });
+    } catch (error: any) {
+      console.error('Error loading executive report:', error);
+      set({ error: error.message || 'Error al cargar el resumen ejecutivo' });
     }
   },
 }));
