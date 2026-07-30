@@ -104,8 +104,8 @@ function SignatureFullscreenModal({
 
   const padW = Math.max(280, width - (landscape ? 48 : 24));
   const padH = Math.max(
-    220,
-    landscape ? height - insets.top - insets.bottom - 120 : height * 0.55
+    280,
+    height - insets.top - insets.bottom - (landscape ? 120 : 180)
   );
 
   const pathsRef = useRef<string[]>([]);

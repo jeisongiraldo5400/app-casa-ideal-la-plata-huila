@@ -26,6 +26,8 @@ import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { SvgUri } from 'react-native-svg';
+import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { uploadNegocioSignature } from '@/lib/uploadSignature';
 
 const formatPaymentInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 12);
@@ -55,6 +57,11 @@ export default function NegocioDetailScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
   const [payModalOpen, setPayModalOpen] = useState(false);
+  const [paymentPage, setPaymentPage] = useState(0);
+  const [customerSignature, setCustomerSignature] = useState('');
+  const [guarantorSignature, setGuarantorSignature] = useState('');
+  const [sellerSignature, setSellerSignature] = useState('');
+  const [signaturesDirty, setSignaturesDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
   const paymentIdempotencyKey = useRef<string | null>(null);
@@ -82,6 +89,10 @@ export default function NegocioDetailScreen() {
         .single();
       if (error) throw error;
       setNegocio(n);
+      setCustomerSignature(n.customer_signature_url || '');
+      setGuarantorSignature(n.guarantor_signature_url || '');
+      setSellerSignature(n.seller_signature_url || '');
+      setSignaturesDirty(false);
 
       const [itemsRes, cuotasRes, pagosRes, custRes, settingsRes] = await Promise.all([
         supabase
@@ -118,6 +129,7 @@ export default function NegocioDetailScreen() {
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
       setPagos(pagosRes.data || []);
+      setPaymentPage(0);
       setCustomerName(custRes.data?.name || '');
       setLegalText(settingsRes.data?.legal_text || null);
 
@@ -278,18 +290,65 @@ export default function NegocioDetailScreen() {
   };
 
   const activateDraft = async () => {
-    if (!negocio?.customer_signature_url) {
+    if (!customerSignature) {
       return Alert.alert('Firma requerida', 'El cliente debe firmar antes de activar el negocio.');
     }
     try {
       setActionSaving(true);
       activateIdempotencyKey.current ||= createIdempotencyKey();
-      const { error } = await supabase.rpc('activate_negocio', {
-        p_negocio_id: negocio.id,
-        p_idempotency_key: activateIdempotencyKey.current,
-      });
+      let error: any = null;
+
+      if (signaturesDirty) {
+        const [customerUrl, guarantorUrl, sellerUrl] = await Promise.all([
+          uploadNegocioSignature(customerSignature, { negocioId: negocio.id, role: 'cliente' }),
+          uploadNegocioSignature(guarantorSignature, { negocioId: negocio.id, role: 'fiador' }),
+          uploadNegocioSignature(sellerSignature, { negocioId: negocio.id, role: 'vendedor' }),
+        ]);
+        const result = await supabase.rpc('update_negocio', {
+          p_negocio_id: negocio.id,
+          p_idempotency_key: activateIdempotencyKey.current,
+          p_activate: true,
+          p_negocio: {
+            deal_date: negocio.deal_date,
+            municipio_id: negocio.municipio_id,
+            direccion: negocio.direccion,
+            customer_id: negocio.customer_id,
+            codeudor_customer_id: negocio.codeudor_customer_id || null,
+            products_subtotal: Number(negocio.products_subtotal),
+            interest_amount: Number(negocio.interest_amount),
+            total_credit: Number(negocio.total_credit),
+            down_payment: Number(negocio.down_payment),
+            financed_amount: Number(negocio.financed_amount),
+            installments_count: Number(negocio.installments_count),
+            installment_amount: Number(negocio.installment_amount),
+            frequency: negocio.frequency,
+            first_due_date: negocio.first_due_date,
+            formula_snapshot: negocio.formula_snapshot || {},
+            customer_signature_url: customerUrl,
+            guarantor_signature_url: guarantorUrl,
+            seller_signature_url: sellerUrl,
+            notes: negocio.notes || null,
+          },
+          p_items: items.map((item) => ({
+            product_id: item.product_id,
+            warehouse_id: item.warehouse_id,
+            quantity: Number(item.quantity),
+            description: item.description,
+            unit_price: Number(item.unit_price),
+            subtotal: Number(item.subtotal),
+          })),
+        });
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('activate_negocio', {
+          p_negocio_id: negocio.id,
+          p_idempotency_key: activateIdempotencyKey.current,
+        });
+        error = result.error;
+      }
       if (error) throw error;
       activateIdempotencyKey.current = null;
+      setSignaturesDirty(false);
       await load();
       Alert.alert('Listo', 'Negocio activado y orden de entrega creada.');
     } catch (error: any) {
@@ -425,6 +484,46 @@ export default function NegocioDetailScreen() {
             </View>
           </ScrollView>
 
+          {canActivate && (
+            <View style={[styles.signingCard, { borderColor: colors.divider }]}>
+              <Text style={[styles.section, { color: colors.text.primary }]}>
+                Firmas para activar
+              </Text>
+              <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                La firma del cliente es obligatoria. Cada firma se abre en pantalla completa.
+              </Text>
+              <SignaturePad
+                label="Firma del cliente *"
+                value={customerSignature}
+                onChange={(value) => {
+                  setCustomerSignature(value);
+                  setSignaturesDirty(true);
+                  activateIdempotencyKey.current = null;
+                }}
+              />
+              {negocio.codeudor_customer_id && (
+                <SignaturePad
+                  label="Firma del fiador"
+                  value={guarantorSignature}
+                  onChange={(value) => {
+                    setGuarantorSignature(value);
+                    setSignaturesDirty(true);
+                    activateIdempotencyKey.current = null;
+                  }}
+                />
+              )}
+              <SignaturePad
+                label="Firma del vendedor"
+                value={sellerSignature}
+                onChange={(value) => {
+                  setSellerSignature(value);
+                  setSignaturesDirty(true);
+                  activateIdempotencyKey.current = null;
+                }}
+              />
+            </View>
+          )}
+
           {(canActivate || canCancel) && (
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {canActivate && (
@@ -442,26 +541,59 @@ export default function NegocioDetailScreen() {
 
           {pagos.length > 0 && (
             <>
-              <Text style={[styles.section, { color: colors.text.primary }]}>Pagos y recibos</Text>
-              {pagos.map((pago) => (
-                <View key={pago.id} style={[styles.row, { borderColor: colors.divider }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: colors.text.primary, fontWeight: '600' }}>
-                      {formatCOP(Number(pago.amount))} · {pago.paid_at}
-                    </Text>
-                    <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                      {pago.virtual_receipt_number}{pago.receipt_number ? ` · Físico: ${pago.receipt_number}` : ''}
-                    </Text>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.section, { color: colors.text.primary }]}>Pagos y recibos</Text>
+                <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                  {pagos.length} registro{pagos.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator>
+                <View style={[styles.paymentsTable, { borderColor: colors.divider }]}>
+                  <View style={[styles.tableRow, styles.tableHeader, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+                    <Text style={[styles.paymentDate, styles.headerCell, { color: colors.text.primary }]}>Fecha</Text>
+                    <Text style={[styles.paymentAmount, styles.headerCell, { color: colors.text.primary }]}>Valor</Text>
+                    <Text style={[styles.paymentReceipt, styles.headerCell, { color: colors.text.primary }]}>Recibo virtual</Text>
+                    <Text style={[styles.paymentPhysical, styles.headerCell, { color: colors.text.primary }]}>Físico</Text>
+                    <Text style={[styles.paymentPdf, styles.headerCell, { color: colors.text.primary }]}>Archivo</Text>
                   </View>
-                  <Pressable onPress={() => shareReceipt(pago)}>
-                    <Text style={{ color: colors.primary.main, fontWeight: '700' }}>PDF</Text>
+                  {pagos.slice(paymentPage * 10, paymentPage * 10 + 10).map((pago) => (
+                    <View key={pago.id} style={[styles.tableRow, { borderColor: colors.divider }]}>
+                      <Text style={[styles.paymentDate, { color: colors.text.secondary }]}>{pago.paid_at}</Text>
+                      <Text style={[styles.paymentAmount, { color: colors.text.primary, fontWeight: '700' }]}>{formatCOP(Number(pago.amount))}</Text>
+                      <Text style={[styles.paymentReceipt, { color: colors.text.secondary }]}>{pago.virtual_receipt_number}</Text>
+                      <Text style={[styles.paymentPhysical, { color: colors.text.secondary }]}>{pago.receipt_number || '—'}</Text>
+                      <Pressable style={styles.paymentPdf} onPress={() => shareReceipt(pago)}>
+                        <Text style={{ color: colors.primary.main, fontWeight: '700' }}>PDF</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+              {pagos.length > 10 && (
+                <View style={styles.pagination}>
+                  <Pressable
+                    style={[styles.pageButton, { borderColor: colors.divider }]}
+                    disabled={paymentPage === 0}
+                    onPress={() => setPaymentPage((page) => Math.max(page - 1, 0))}
+                  >
+                    <Text style={{ color: colors.text.primary }}>Anterior</Text>
+                  </Pressable>
+                  <Text style={{ color: colors.text.secondary }}>
+                    {paymentPage + 1} de {Math.ceil(pagos.length / 10)}
+                  </Text>
+                  <Pressable
+                    style={[styles.pageButton, { borderColor: colors.divider }]}
+                    disabled={paymentPage + 1 >= Math.ceil(pagos.length / 10)}
+                    onPress={() => setPaymentPage((page) => page + 1)}
+                  >
+                    <Text style={{ color: colors.text.primary }}>Siguiente</Text>
                   </Pressable>
                 </View>
-              ))}
+              )}
             </>
           )}
 
-          {(negocio.customer_signature_url || negocio.guarantor_signature_url || negocio.seller_signature_url) && (
+          {!canActivate && (negocio.customer_signature_url || negocio.guarantor_signature_url || negocio.seller_signature_url) && (
             <>
               <Text style={[styles.section, { color: colors.text.primary }]}>Firmas</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
@@ -631,6 +763,35 @@ const styles = StyleSheet.create({
   cellDate: { width: 110, paddingHorizontal: 8 },
   cellMoney: { width: 145, paddingHorizontal: 8, textAlign: 'right' },
   cellStatus: { width: 110, paddingHorizontal: 8, textTransform: 'capitalize' },
+  paymentsTable: {
+    minWidth: 700,
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  paymentDate: { width: 105, paddingHorizontal: 8 },
+  paymentAmount: { width: 140, paddingHorizontal: 8, textAlign: 'right' },
+  paymentReceipt: { width: 180, paddingHorizontal: 8 },
+  paymentPhysical: { width: 155, paddingHorizontal: 8 },
+  paymentPdf: { width: 80, paddingHorizontal: 8, alignItems: 'center' },
+  pagination: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  pageButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  signingCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 14,
+  },
   row: {
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
