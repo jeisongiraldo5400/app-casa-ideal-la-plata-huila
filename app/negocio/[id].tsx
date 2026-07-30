@@ -29,6 +29,8 @@ import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
 
+const TABLE_PAGE_SIZE = 5;
+
 const formatPaymentInput = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 12);
   if (!digits) return '';
@@ -57,6 +59,7 @@ export default function NegocioDetailScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
   const [payModalOpen, setPayModalOpen] = useState(false);
+  const [installmentPage, setInstallmentPage] = useState(0);
   const [paymentPage, setPaymentPage] = useState(0);
   const [customerSignature, setCustomerSignature] = useState('');
   const [guarantorSignature, setGuarantorSignature] = useState('');
@@ -129,6 +132,7 @@ export default function NegocioDetailScreen() {
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
       setPagos(pagosRes.data || []);
+      setInstallmentPage(0);
       setPaymentPage(0);
       setCustomerName(custRes.data?.name || '');
       setLegalText(settingsRes.data?.legal_text || null);
@@ -457,7 +461,12 @@ export default function NegocioDetailScreen() {
                 <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Saldo</Text>
                 <Text style={[styles.cellStatus, styles.headerCell, { color: colors.text.primary }]}>Estado</Text>
               </View>
-              {cuotas.map((c) => {
+              {cuotas
+                .slice(
+                  installmentPage * TABLE_PAGE_SIZE,
+                  installmentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE
+                )
+                .map((c) => {
                 const late = Number(c.late_fee_amount || 0);
                 const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
                 return (
@@ -483,6 +492,42 @@ export default function NegocioDetailScreen() {
               })}
             </View>
           </ScrollView>
+          <View style={styles.pagination}>
+            <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
+              {cuotas.length
+                ? `${installmentPage * TABLE_PAGE_SIZE + 1}–${Math.min(
+                    (installmentPage + 1) * TABLE_PAGE_SIZE,
+                    cuotas.length
+                  )} de ${cuotas.length}`
+                : '0 registros'}
+            </Text>
+            <Pressable
+              style={[
+                styles.pageButton,
+                { borderColor: colors.divider },
+                installmentPage === 0 && styles.pageButtonDisabled,
+              ]}
+              disabled={installmentPage === 0}
+              onPress={() => setInstallmentPage((page) => Math.max(page - 1, 0))}
+            >
+              <Text style={{ color: colors.text.primary }}>Anterior</Text>
+            </Pressable>
+            <Text style={{ color: colors.text.secondary }}>
+              Página {installmentPage + 1} de {Math.max(Math.ceil(cuotas.length / TABLE_PAGE_SIZE), 1)}
+            </Text>
+            <Pressable
+              style={[
+                styles.pageButton,
+                { borderColor: colors.divider },
+                installmentPage + 1 >= Math.ceil(cuotas.length / TABLE_PAGE_SIZE) &&
+                  styles.pageButtonDisabled,
+              ]}
+              disabled={installmentPage + 1 >= Math.ceil(cuotas.length / TABLE_PAGE_SIZE)}
+              onPress={() => setInstallmentPage((page) => page + 1)}
+            >
+              <Text style={{ color: colors.text.primary }}>Siguiente</Text>
+            </Pressable>
+          </View>
 
           {canActivate && (
             <View style={[styles.signingCard, { borderColor: colors.divider }]}>
@@ -556,7 +601,12 @@ export default function NegocioDetailScreen() {
                     <Text style={[styles.paymentPhysical, styles.headerCell, { color: colors.text.primary }]}>Físico</Text>
                     <Text style={[styles.paymentPdf, styles.headerCell, { color: colors.text.primary }]}>Archivo</Text>
                   </View>
-                  {pagos.slice(paymentPage * 10, paymentPage * 10 + 10).map((pago) => (
+                  {pagos
+                    .slice(
+                      paymentPage * TABLE_PAGE_SIZE,
+                      paymentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE
+                    )
+                    .map((pago) => (
                     <View key={pago.id} style={[styles.tableRow, { borderColor: colors.divider }]}>
                       <Text style={[styles.paymentDate, { color: colors.text.secondary }]}>{pago.paid_at}</Text>
                       <Text style={[styles.paymentAmount, { color: colors.text.primary, fontWeight: '700' }]}>{formatCOP(Number(pago.amount))}</Text>
@@ -569,27 +619,40 @@ export default function NegocioDetailScreen() {
                   ))}
                 </View>
               </ScrollView>
-              {pagos.length > 10 && (
-                <View style={styles.pagination}>
-                  <Pressable
-                    style={[styles.pageButton, { borderColor: colors.divider }]}
-                    disabled={paymentPage === 0}
-                    onPress={() => setPaymentPage((page) => Math.max(page - 1, 0))}
-                  >
-                    <Text style={{ color: colors.text.primary }}>Anterior</Text>
-                  </Pressable>
-                  <Text style={{ color: colors.text.secondary }}>
-                    {paymentPage + 1} de {Math.ceil(pagos.length / 10)}
-                  </Text>
-                  <Pressable
-                    style={[styles.pageButton, { borderColor: colors.divider }]}
-                    disabled={paymentPage + 1 >= Math.ceil(pagos.length / 10)}
-                    onPress={() => setPaymentPage((page) => page + 1)}
-                  >
-                    <Text style={{ color: colors.text.primary }}>Siguiente</Text>
-                  </Pressable>
-                </View>
-              )}
+              <View style={styles.pagination}>
+                <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
+                  {paymentPage * TABLE_PAGE_SIZE + 1}–{Math.min(
+                    (paymentPage + 1) * TABLE_PAGE_SIZE,
+                    pagos.length
+                  )} de {pagos.length}
+                </Text>
+                <Pressable
+                  style={[
+                    styles.pageButton,
+                    { borderColor: colors.divider },
+                    paymentPage === 0 && styles.pageButtonDisabled,
+                  ]}
+                  disabled={paymentPage === 0}
+                  onPress={() => setPaymentPage((page) => Math.max(page - 1, 0))}
+                >
+                  <Text style={{ color: colors.text.primary }}>Anterior</Text>
+                </Pressable>
+                <Text style={{ color: colors.text.secondary }}>
+                  Página {paymentPage + 1} de {Math.max(Math.ceil(pagos.length / TABLE_PAGE_SIZE), 1)}
+                </Text>
+                <Pressable
+                  style={[
+                    styles.pageButton,
+                    { borderColor: colors.divider },
+                    paymentPage + 1 >= Math.ceil(pagos.length / TABLE_PAGE_SIZE) &&
+                      styles.pageButtonDisabled,
+                  ]}
+                  disabled={paymentPage + 1 >= Math.ceil(pagos.length / TABLE_PAGE_SIZE)}
+                  onPress={() => setPaymentPage((page) => page + 1)}
+                >
+                  <Text style={{ color: colors.text.primary }}>Siguiente</Text>
+                </Pressable>
+              </View>
             </>
           )}
 
@@ -778,14 +841,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     gap: 12,
   },
+  paginationSummary: { marginRight: 'auto', fontSize: 12 },
   pageButton: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  pageButtonDisabled: { opacity: 0.4 },
   signingCard: {
     borderWidth: 1,
     borderRadius: 12,
