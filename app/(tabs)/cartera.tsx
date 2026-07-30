@@ -43,7 +43,8 @@ export default function CarteraScreen() {
 
   const load = useCallback(async () => {
     try {
-      await supabase.rpc('mark_cuotas_en_mora', { p_negocio_id: null });
+      const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', { p_negocio_id: null });
+      if (moraError) console.warn('No se actualizaron cuotas en mora:', moraError.message);
       const { data, error } = await supabase.rpc('get_cartera_cuotas', {
         p_filter: filter,
         p_days: 15,

@@ -1017,6 +1017,7 @@ export type Database = {
           late_fee_rate_pct: number
           legal_text: string | null
           max_installments: number
+          money_decimal_places: number
           min_installments: number
           rounding_unit: number
           updated_at: string
@@ -1032,6 +1033,7 @@ export type Database = {
           late_fee_rate_pct?: number
           legal_text?: string | null
           max_installments?: number
+          money_decimal_places?: number
           min_installments?: number
           rounding_unit?: number
           updated_at?: string
@@ -1047,6 +1049,7 @@ export type Database = {
           late_fee_rate_pct?: number
           legal_text?: string | null
           max_installments?: number
+          money_decimal_places?: number
           min_installments?: number
           rounding_unit?: number
           updated_at?: string
@@ -1075,6 +1078,7 @@ export type Database = {
           installments_count: number
           interest_amount: number
           location: string | null
+          notes: string | null
           numero: number
           products_subtotal: number
           remission_id: string | null
