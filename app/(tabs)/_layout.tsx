@@ -23,7 +23,7 @@ function ProfileHeaderButton() {
 export default function TabLayout() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { loading, preferSellerWorkspace, isAdmin, isVendedor } = useUserRoles();
+  const { loading } = useUserRoles();
 
   if (loading) {
     return (
@@ -32,10 +32,6 @@ export default function TabLayout() {
       </View>
     );
   }
-
-  const sellerMode = preferSellerWorkspace();
-  const showNegocios = sellerMode || isAdmin() || isVendedor();
-  const showWarehouseTabs = !sellerMode;
 
   return (
     <Tabs
@@ -174,7 +170,15 @@ export default function TabLayout() {
         name="received-orders"
         options={{
           href: null,
-          title: 'Mis Órdenes Recibidas',
+          title: 'Historial de órdenes recibidas',
+          headerLeft: () => <BackButton />,
+        }}
+      />
+      <Tabs.Screen
+        name="my-orders"
+        options={{
+          href: null,
+          title: 'Mis órdenes asignadas',
           headerLeft: () => <BackButton />,
         }}
       />

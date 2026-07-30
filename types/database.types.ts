@@ -2850,6 +2850,26 @@ export type Database = {
           total_quantity: number
         }[]
       }
+      get_my_authorized_delivery_orders: {
+        Args: never
+        Returns: {
+          assigned_to_user_id: string | null
+          created_at: string
+          customer_id: string | null
+          customer_id_number: string | null
+          customer_name: string | null
+          delivered_quantity: number
+          delivery_address: string | null
+          id: string
+          notes: string | null
+          order_number: string | null
+          order_type: string
+          pending_quantity: number
+          status: string
+          total_items: number
+          total_quantity: number
+        }[]
+      }
       get_users_dashboard: {
         Args: { page?: number; page_size?: number; search_term?: string }
         Returns: {

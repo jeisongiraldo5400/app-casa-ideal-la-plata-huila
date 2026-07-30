@@ -5,17 +5,14 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
-import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { preferSellerWorkspace, isVendedor, isAdmin } = useUserRoles();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
-  const sellerMode = preferSellerWorkspace();
   const showCommercialSection = true;
 
   useEffect(() => {
@@ -45,8 +42,8 @@ export default function HomeScreen() {
     router.push('/(tabs)/exits');
   };
 
-  const handleViewReceivedOrders = () => {
-    router.push('/(tabs)/received-orders');
+  const handleViewMyOrders = () => {
+    router.push('/(tabs)/my-orders');
   };
 
   const handleViewAllOrders = () => {
@@ -191,7 +188,7 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-            onPress={handleViewReceivedOrders}
+            onPress={handleViewMyOrders}
             activeOpacity={0.7}
           >
             <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '15' }]}>
@@ -206,7 +203,7 @@ export default function HomeScreen() {
                 Mis Órdenes
               </Text>
               <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-                Historial
+                Asignadas para salida
               </Text>
             </View>
           </TouchableOpacity>
