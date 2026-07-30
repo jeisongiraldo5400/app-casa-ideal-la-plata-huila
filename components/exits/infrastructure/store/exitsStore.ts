@@ -461,7 +461,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
+        .select('inventory_exit_id')
+        .is('deleted_at', null);
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -585,7 +586,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
+        .select('inventory_exit_id')
+        .is('deleted_at', null);
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -753,7 +755,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Primero obtener los IDs de salidas canceladas para excluirlas
       const { data: cancelledExits, error: cancelledError } = await supabase
         .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
+        .select('inventory_exit_id')
+        .is('deleted_at', null);
 
       const cancelledExitIds = new Set(
         (cancelledExits || []).map((c: any) => c.inventory_exit_id)
@@ -1338,8 +1341,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    if (quantity <= 0) {
-      set({ error: 'La cantidad debe ser mayor a 0' });
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: 'La cantidad debe ser un número mayor que cero' });
       return;
     }
 
@@ -1463,25 +1466,60 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   updateProductQuantity: (index: number, quantity: number) => {
-    const { exitItems, selectedDeliveryOrderId, scannedItemsProgress } = get();
+    const {
+      exitItems,
+      selectedDeliveryOrder,
+      selectedDeliveryOrderId,
+      registeredExitsCache,
+      scannedItemsProgress
+    } = get();
 
-    if (quantity <= 0) {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: 'La cantidad debe ser un número mayor que cero' });
       return;
     }
 
     const item = exitItems[index];
     if (!item) return;
 
-    // Verificar que no exceda el stock disponible
-    if (quantity > (item.availableStock || 0)) {
+    if (!selectedDeliveryOrderId || !selectedDeliveryOrder || !item.warehouseId) {
+      set({ error: 'Debe seleccionar una orden de entrega válida' });
+      return;
+    }
+
+    const matchingOrderItems = selectedDeliveryOrder.items.filter(
+      (orderItem) =>
+        orderItem.product_id === item.product.id &&
+        orderItem.warehouse_id === item.warehouseId
+    );
+    const totalRequired = matchingOrderItems.reduce(
+      (total, orderItem) => total + orderItem.quantity,
+      0
+    );
+    const deliveredFromDatabase = matchingOrderItems.reduce(
+      (total, orderItem) => total + orderItem.db_delivered_quantity,
+      0
+    );
+    const cacheKey = compositeKey(item.product.id, item.warehouseId);
+    const deliveredFromExits =
+      registeredExitsCache[selectedDeliveryOrderId]?.[cacheKey] ?? 0;
+    const delivered = Math.min(
+      Math.max(deliveredFromDatabase, deliveredFromExits),
+      totalRequired
+    );
+    const maximumAllowed = Math.max(totalRequired - delivered, 0);
+
+    if (quantity > maximumAllowed) {
       set({
-        error: `La cantidad no puede exceder el stock disponible: ${item.availableStock || 0}`
+        error: `La cantidad no puede exceder lo pendiente en la orden: ${maximumAllowed}`
       });
       return;
     }
 
     const updatedItems = exitItems.map((item, i) =>
-      i === index ? { ...item, quantity } : item
+      i === index
+        ? { ...item, quantity, availableStock: maximumAllowed - quantity }
+        : item
     );
 
     // Si hay una orden de entrega seleccionada, actualizar progreso con clave compuesta
@@ -1531,6 +1569,28 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     if (!exitMode) {
       return { error: { message: 'Debe seleccionar un modo de salida' } };
+    }
+
+    if (exitMode === 'direct_user' && !selectedUserId) {
+      return { error: { message: 'Debe seleccionar un usuario destinatario' } };
+    }
+
+    if (exitMode === 'direct_customer' && !selectedCustomerId) {
+      return { error: { message: 'Debe seleccionar un cliente destinatario' } };
+    }
+
+    if (!selectedDeliveryOrderId) {
+      return { error: { message: 'Debe seleccionar una orden de entrega' } };
+    }
+
+    if (
+      exitItems.some(
+        (item) => !Number.isFinite(item.quantity) || item.quantity <= 0
+      )
+    ) {
+      return {
+        error: { message: 'Todas las cantidades deben ser números mayores que cero' }
+      };
     }
 
     if (selectedDeliveryOrderId && !canRegisterExit) {
@@ -1670,9 +1730,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       if (insertedExitIds.length !== exitItems.length) {
-        console.warn(
-          `Se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
+        console.error(
+          `Respuesta inválida: se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
+        return {
+          error: {
+            message:
+              'La respuesta del registro de salidas está incompleta. Intente nuevamente.'
+          }
+        };
       }
 
       // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
@@ -1692,7 +1758,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         try {
           const { data: cancelledExits } = await supabase
             .from('inventory_exit_cancellations')
-            .select('inventory_exit_id');
+            .select('inventory_exit_id')
+            .is('deleted_at', null);
 
           const cancelledExitIds = new Set(
             (cancelledExits || []).map((c: any) => c.inventory_exit_id)
