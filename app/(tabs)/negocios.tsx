@@ -14,12 +14,15 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import { formatCOP } from '@/lib/creditCalculator';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function NegociosScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { list, loading, fetchList } = useNegociosStore();
+  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
@@ -38,15 +41,17 @@ export default function NegociosScreen() {
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text.primary }]}>Negocios</Text>
-        <Pressable
-          style={[styles.cta, { backgroundColor: colors.primary.main }]}
-          onPress={() => router.push('/(tabs)/negocio-create')}
-        >
-          <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
-          <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-            Nuevo
-          </Text>
-        </Pressable>
+        {canCreate && (
+          <Pressable
+            style={[styles.cta, { backgroundColor: colors.primary.main }]}
+            onPress={() => router.push('/(tabs)/negocio-create')}
+          >
+            <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
+            <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
+              Nuevo
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {loading && !refreshing ? (

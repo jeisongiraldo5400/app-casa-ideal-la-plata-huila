@@ -6,14 +6,17 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
-  const showCommercialSection = true;
+  const showCommercialSection = isAdmin() || isVendedor() || isGestorCobro();
+  const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,22 +72,24 @@ export default function HomeScreen() {
           <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 2 }}>
             Gestión Comercial & Crédito
           </Text>
-          <TouchableOpacity
-            style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
-            onPress={() => router.push('/(tabs)/negocio-create')}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons name="handshake" size={28} color={colors.primary.contrastText} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 16 }}>
-                Nuevo negocio
-              </Text>
-              <Text style={{ color: colors.primary.contrastText, opacity: 0.9, fontSize: 13 }}>
-                Crear crédito y generar orden de entrega
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color={colors.primary.contrastText} />
-          </TouchableOpacity>
+          {canCreateNegocio && (
+            <TouchableOpacity
+              style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
+              onPress={() => router.push('/(tabs)/negocio-create')}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="handshake" size={28} color={colors.primary.contrastText} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 16 }}>
+                  Nuevo negocio
+                </Text>
+                <Text style={{ color: colors.primary.contrastText, opacity: 0.9, fontSize: 13 }}>
+                  Crear crédito y generar orden de entrega
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color={colors.primary.contrastText} />
+            </TouchableOpacity>
+          )}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
               style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}

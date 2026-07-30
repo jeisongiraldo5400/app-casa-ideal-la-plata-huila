@@ -26,7 +26,8 @@ interface NegociosState {
   fetchCreditSettings: () => Promise<void>;
   createAndActivate: (input: {
     deal_date: string;
-    location: string;
+    municipio_id: string;
+    direccion: string;
     customer_id: string;
     codeudor_customer_id?: string | null;
     remission_id?: string | null;
@@ -119,6 +120,8 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error('Sesión no válida');
+    if (!input.municipio_id) throw new Error('Seleccione un municipio');
+    if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
 
     if (!input.remission_id) {
       const stockCheck = await validateNegocioItemsStock(input.items);
@@ -168,7 +171,8 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       p_activate: input.activate,
       p_negocio: {
         deal_date: input.deal_date,
-        location: input.location || null,
+        municipio_id: input.municipio_id,
+        direccion: input.direccion.trim(),
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
         remission_id: input.remission_id || null,
@@ -186,7 +190,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         guarantor_signature_url: request.signatureUrls.guarantor,
         seller_signature_url: request.signatureUrls.seller,
         notes: input.notes || null,
-      } as Json,
+      } as unknown as Json,
       p_items: input.items.map((item) => ({
         ...item,
         subtotal: item.unit_price * item.quantity,

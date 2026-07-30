@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -51,6 +52,8 @@ type Product = {
   name: string;
   sale_price: number;
 };
+type Departamento = { id: string; nombre: string };
+type Municipio = { id: string; nombre: string; departamento_id: string };
 
 const WIZARD_STEPS = [
   { id: 0, label: 'Cliente', icon: 'person' },
@@ -75,7 +78,11 @@ export default function NegocioCreateScreen() {
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [codeudor, setCodeudor] = useState<Customer | null>(null);
-  const [location, setLocation] = useState('');
+  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+  const [municipios, setMunicipios] = useState<Municipio[]>([]);
+  const [departamentoId, setDepartamentoId] = useState('');
+  const [municipioId, setMunicipioId] = useState('');
+  const [direccion, setDireccion] = useState('');
   const [items, setItems] = useState<NegocioItem[]>([]);
   const [stockByProduct, setStockByProduct] = useState<
     Record<string, ProductWarehouseStock[]>
@@ -100,7 +107,7 @@ export default function NegocioCreateScreen() {
   useEffect(() => {
     fetchCreditSettings();
     (async () => {
-      const [c, p] = await Promise.all([
+      const [c, p, d, m] = await Promise.all([
         supabase
           .from('customers')
           .select('id, name, id_number')
@@ -114,9 +121,23 @@ export default function NegocioCreateScreen() {
           .eq('status', true)
           .order('name')
           .limit(200),
+        supabase
+          .from('departamentos')
+          .select('id, nombre')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .order('nombre'),
+        supabase
+          .from('municipios')
+          .select('id, nombre, departamento_id')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .order('nombre'),
       ]);
       setCustomers(c.data || []);
       setProducts(p.data || []);
+      setDepartamentos(d.data || []);
+      setMunicipios(m.data || []);
     })();
   }, [fetchCreditSettings]);
 
@@ -260,6 +281,9 @@ export default function NegocioCreateScreen() {
 
   const submit = async (activate: boolean) => {
     if (!customer) return Alert.alert('Seleccione cliente');
+    if (!departamentoId) return Alert.alert('Seleccione departamento');
+    if (!municipioId) return Alert.alert('Seleccione municipio');
+    if (!direccion.trim()) return Alert.alert('Ingrese la dirección de la vivienda');
     if (!items.length) return Alert.alert('Agregue productos');
     if (!itemsHaveValidStock(items, stockByProduct)) {
       return Alert.alert(
@@ -274,7 +298,8 @@ export default function NegocioCreateScreen() {
       setSaving(true);
       const result = await createAndActivate({
         deal_date: new Date().toISOString().slice(0, 10),
-        location,
+        municipio_id: municipioId,
+        direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
         items,
@@ -507,14 +532,54 @@ export default function NegocioCreateScreen() {
 
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
-                    Lugar o municipio de venta:
+                    Departamento *
+                  </Text>
+                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0 }]}>
+                    <Picker
+                      selectedValue={departamentoId}
+                      onValueChange={(value) => {
+                        setDepartamentoId(String(value));
+                        setMunicipioId('');
+                      }}
+                      style={{ color: colors.text.primary }}
+                    >
+                      <Picker.Item label="Seleccione departamento" value="" />
+                      {departamentos.map((departamento) => (
+                        <Picker.Item key={departamento.id} label={departamento.nombre} value={departamento.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Municipio *
+                  </Text>
+                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0, opacity: departamentoId ? 1 : 0.55 }]}>
+                    <Picker
+                      enabled={Boolean(departamentoId)}
+                      selectedValue={municipioId}
+                      onValueChange={(value) => setMunicipioId(String(value))}
+                      style={{ color: colors.text.primary }}
+                    >
+                      <Picker.Item label="Seleccione municipio" value="" />
+                      {municipios
+                        .filter((municipio) => municipio.departamento_id === departamentoId)
+                        .map((municipio) => (
+                          <Picker.Item key={municipio.id} label={municipio.nombre} value={municipio.id} />
+                        ))}
+                    </Picker>
+                  </View>
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Dirección de la vivienda *
                   </Text>
                   <TextInput
                     style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-                    placeholder="Ej. La Plata, Huila"
+                    placeholder="Ej. Carrera 5 # 12-30, barrio San Rafael"
                     placeholderTextColor={colors.text.secondary}
-                    value={location}
-                    onChangeText={setLocation}
+                    value={direccion}
+                    onChangeText={setDireccion}
                   />
                 </View>
               </View>

@@ -102,6 +102,10 @@ export function useUserRoles() {
     return hasRole('vendedor');
   };
 
+  const isGestorCobro = (): boolean => {
+    return hasRole('gestor de cobro');
+  };
+
   const canMarkOrderAsReceived = (): boolean => {
     return isAdmin() || isBodeguero();
   };
@@ -119,8 +123,8 @@ export function useUserRoles() {
     isAdmin,
     isBodeguero,
     isVendedor,
+    isGestorCobro,
     canMarkOrderAsReceived,
     preferSellerWorkspace,
   };
 }
-

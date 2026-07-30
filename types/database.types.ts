@@ -101,6 +101,7 @@ export type Database = {
           id_number: string
           name: string
           neighborhood: string | null
+          municipio_id: string | null
           notes: string | null
           phone: string | null
           phone_secondary: string | null
@@ -117,6 +118,7 @@ export type Database = {
           id_number: string
           name: string
           neighborhood?: string | null
+          municipio_id?: string | null
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
@@ -133,6 +135,7 @@ export type Database = {
           id_number?: string
           name?: string
           neighborhood?: string | null
+          municipio_id?: string | null
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
@@ -146,6 +149,36 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "customers_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departamentos: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: { codigo?: string | null; created_at?: string; deleted_at?: string | null; id?: string; is_active?: boolean; nombre: string; updated_at?: string | null }
+        Update: { codigo?: string | null; created_at?: string; deleted_at?: string | null; id?: string; is_active?: boolean; nombre?: string; updated_at?: string | null }
+        Relationships: []
+      }
+      gestor_municipios: {
+        Row: { assigned_by: string | null; created_at: string; deleted_at: string | null; gestor_id: string; id: string; municipio_id: string }
+        Insert: { assigned_by?: string | null; created_at?: string; deleted_at?: string | null; gestor_id: string; id?: string; municipio_id: string }
+        Update: { assigned_by?: string | null; created_at?: string; deleted_at?: string | null; gestor_id?: string; id?: string; municipio_id?: string }
+        Relationships: [
+          { foreignKeyName: "gestor_municipios_gestor_id_fkey"; columns: ["gestor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "gestor_municipios_municipio_id_fkey"; columns: ["municipio_id"]; isOneToOne: false; referencedRelation: "municipios"; referencedColumns: ["id"] },
         ]
       }
       delivery_order_edit_observations: {
@@ -1067,17 +1100,20 @@ export type Database = {
           deal_date: string
           deleted_at: string | null
           delivery_order_id: string | null
+          direccion: string | null
           down_payment: number
           financed_amount: number
           first_due_date: string | null
           formula_snapshot: Json
           frequency: string
           guarantor_signature_url: string | null
+          gestor_cobro_id: string | null
           id: string
           installment_amount: number
           installments_count: number
           interest_amount: number
           location: string | null
+          municipio_id: string | null
           notes: string | null
           numero: number
           products_subtotal: number
@@ -1099,17 +1135,20 @@ export type Database = {
           deal_date?: string
           deleted_at?: string | null
           delivery_order_id?: string | null
+          direccion?: string | null
           down_payment?: number
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
           frequency?: string
           guarantor_signature_url?: string | null
+          gestor_cobro_id?: string | null
           id?: string
           installment_amount?: number
           installments_count?: number
           interest_amount?: number
           location?: string | null
+          municipio_id?: string | null
           notes?: string | null
           numero?: number
           products_subtotal?: number
@@ -1131,17 +1170,20 @@ export type Database = {
           deal_date?: string
           deleted_at?: string | null
           delivery_order_id?: string | null
+          direccion?: string | null
           down_payment?: number
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
           frequency?: string
           guarantor_signature_url?: string | null
+          gestor_cobro_id?: string | null
           id?: string
           installment_amount?: number
           installments_count?: number
           interest_amount?: number
           location?: string | null
+          municipio_id?: string | null
           notes?: string | null
           numero?: number
           products_subtotal?: number
@@ -1153,7 +1195,56 @@ export type Database = {
           total_credit?: number
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          { foreignKeyName: "negocios_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocios_municipio_id_fkey"; columns: ["municipio_id"]; isOneToOne: false; referencedRelation: "municipios"; referencedColumns: ["id"] },
+        ]
+      }
+      negocio_gestor_historial: {
+        Row: {
+          accion: string
+          asignado_por: string | null
+          created_at: string
+          gestor_anterior_id: string | null
+          gestor_cobro_id: string | null
+          id: string
+          motivo: string | null
+          negocio_id: string
+        }
+        Insert: {
+          accion: string
+          asignado_por?: string | null
+          created_at?: string
+          gestor_anterior_id?: string | null
+          gestor_cobro_id?: string | null
+          id?: string
+          motivo?: string | null
+          negocio_id: string
+        }
+        Update: {
+          accion?: string
+          asignado_por?: string | null
+          created_at?: string
+          gestor_anterior_id?: string | null
+          gestor_cobro_id?: string | null
+          id?: string
+          motivo?: string | null
+          negocio_id?: string
+        }
+        Relationships: [
+          { foreignKeyName: "negocio_gestor_historial_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_gestor_historial_gestor_anterior_id_fkey"; columns: ["gestor_anterior_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_gestor_historial_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_gestor_historial_asignado_por_fkey"; columns: ["asignado_por"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      municipios: {
+        Row: { codigo: string | null; created_at: string; deleted_at: string | null; departamento_id: string; id: string; is_active: boolean; nombre: string; updated_at: string | null }
+        Insert: { codigo?: string | null; created_at?: string; deleted_at?: string | null; departamento_id: string; id?: string; is_active?: boolean; nombre: string; updated_at?: string | null }
+        Update: { codigo?: string | null; created_at?: string; deleted_at?: string | null; departamento_id?: string; id?: string; is_active?: boolean; nombre?: string; updated_at?: string | null }
+        Relationships: [
+          { foreignKeyName: "municipios_departamento_id_fkey"; columns: ["departamento_id"]; isOneToOne: false; referencedRelation: "departamentos"; referencedColumns: ["id"] },
+        ]
       }
       negocio_items: {
         Row: {
@@ -1195,7 +1286,11 @@ export type Database = {
           updated_at?: string
           warehouse_id?: string
         }
-        Relationships: []
+        Relationships: [
+          { foreignKeyName: "negocio_items_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_items_product_id_fkey"; columns: ["product_id"]; isOneToOne: false; referencedRelation: "products"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_items_warehouse_id_fkey"; columns: ["warehouse_id"]; isOneToOne: false; referencedRelation: "warehouses"; referencedColumns: ["id"] },
+        ]
       }
       negocio_cuotas: {
         Row: {
@@ -2524,6 +2619,30 @@ export type Database = {
         Args: { p_idempotency_key?: string; p_negocio_id: string }
         Returns: string
       }
+      assign_gestor_to_negocios: {
+        Args: { p_gestor_cobro_id: string; p_motivo?: string | null; p_negocio_ids: string[] }
+        Returns: { unchanged_count: number; updated_count: number }[]
+      }
+      unassign_gestor_from_negocios: {
+        Args: { p_motivo?: string | null; p_negocio_ids: string[] }
+        Returns: { unchanged_count: number; updated_count: number }[]
+      }
+      get_negocio_gestor_historial: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          accion: string
+          asignado_por: string
+          asignado_por_nombre: string
+          created_at: string
+          gestor_anterior_id: string
+          gestor_anterior_nombre: string
+          gestor_cobro_id: string
+          gestor_cobro_nombre: string
+          id: string
+          motivo: string
+          negocio_id: string
+        }[]
+      }
       create_negocio: {
         Args: {
           p_activate: boolean
@@ -2641,12 +2760,20 @@ export type Database = {
           p_search?: string
           p_page?: number
           p_page_size?: number
+          p_municipio_id?: string | null
+          p_gestor_id?: string | null
         }
         Returns: {
           cuota_id: string
           negocio_id: string
           negocio_numero: number
           customer_name: string | null
+          customer_id_number: string | null
+          customer_phone: string | null
+          customer_address: string | null
+          municipio_id: string | null
+          municipio_name: string | null
+          departamento_name: string | null
           seller_name: string | null
           installment_number: number
           due_date: string
@@ -2658,10 +2785,6 @@ export type Database = {
           negocio_status: string
           total_count: number
         }[]
-      }
-      get_admin_executive_report: {
-        Args: { p_end_date: string; p_start_date: string }
-        Returns: Json
       }
       has_role: {
         Args: { role_name: string }

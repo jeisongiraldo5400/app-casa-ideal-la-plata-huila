@@ -8,6 +8,7 @@ App Expo / React Native del **Sistema de Gestión de Inventario** (bodega + vend
 |-----|---------------------------|
 | Bodeguero / inventario | Entradas, salidas (OE), órdenes |
 | Vendedor | Negocios, cobrar, cartera, clientes |
+| Gestor de cobro | Crea negocios (queda autoasignado), cobra su cartera asignada |
 | Admin | Acceso amplio según permisos |
 
 ## Inicio rápido

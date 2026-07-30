@@ -64,7 +64,7 @@ export default function NegocioDetailScreen() {
 
       const { data: n, error } = await supabase
         .from('negocios')
-        .select('*')
+        .select('*, municipio:municipios(nombre, departamento:departamentos(nombre))')
         .eq('id', id)
         .single();
       if (error) throw error;
@@ -165,7 +165,11 @@ export default function NegocioDetailScreen() {
     const html = buildNegocioContractHtml({
       numero: negocio.numero,
       deal_date: negocio.deal_date,
-      location: negocio.location,
+      location: [
+        negocio.direccion,
+        negocio.municipio?.nombre,
+        negocio.municipio?.departamento?.nombre,
+      ].filter(Boolean).join(', '),
       status: negocio.status,
       customer_name: customerName || 'Cliente',
       products_subtotal: Number(negocio.products_subtotal),
@@ -343,6 +347,13 @@ export default function NegocioDetailScreen() {
             {negocio.status} · {customerName}
             {orderNumber ? ` · OE ${orderNumber}` : ''}
           </Text>
+          {(negocio.direccion || negocio.municipio?.nombre) && (
+            <Text style={{ color: colors.text.secondary }}>
+              {[negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
+                .filter(Boolean)
+                .join(', ')}
+            </Text>
+          )}
           <Text style={{ color: colors.text.primary }}>
             Total {formatCOP(Number(negocio.total_credit))} ·{' '}
             {negocio.installments_count} cuotas de{' '}
