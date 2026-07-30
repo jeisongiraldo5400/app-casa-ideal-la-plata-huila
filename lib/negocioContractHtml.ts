@@ -145,10 +145,10 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   th { background:#eaf2fb; color:#164f91; text-transform:uppercase; font-size:8.5px; }
   tr { break-inside:avoid; }
   .r { text-align: right; }
-  .finance { grid-template-columns:repeat(3,1fr); margin-top:6px; }
+  .finance { grid-template-columns:repeat(4,1fr); margin-top:6px; }
   .finance div { padding:5px 7px; border-right:1px solid #8aaccf; border-bottom:1px solid #8aaccf; }
-  .finance div:nth-child(3n) { border-right:0; }
-  .finance div:nth-last-child(-n+3) { border-bottom:0; }
+  .finance div:nth-child(4n) { border-right:0; }
+  .finance div:nth-last-child(-n+4) { border-bottom:0; }
   .finance span { display:block; color:#53708f; font-size:8px; text-transform:uppercase; }
   .finance strong { font-size:11px; }
   .sigs { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:12px; break-inside:avoid; }
@@ -204,7 +204,6 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   </table>
   <div class="finance">
     <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
-    <div><span>Interés</span><strong>${formatCOP(data.interest_amount)}</strong></div>
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
     <div><span>Cuota inicial</span><strong>${formatCOP(data.down_payment)}</strong></div>
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>
