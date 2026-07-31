@@ -20,6 +20,8 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   colors: ThemeColors;
+  label?: string;
+  accessibilityLabel?: string;
 };
 
 const MONTHS = [
@@ -60,7 +62,7 @@ const displayDate = (value: string) => {
   }).format(date);
 };
 
-export function NegocioDatePicker({ value, onChange, colors }: Props) {
+export function NegocioDatePicker({ value, onChange, colors, label = 'Seleccionar fecha', accessibilityLabel }: Props) {
   const [visible, setVisible] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const selected = fromDateValue(value);
@@ -98,7 +100,7 @@ export function NegocioDatePicker({ value, onChange, colors }: Props) {
     <>
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityLabel="Seleccionar fecha de la primera cuota"
+        accessibilityLabel={accessibilityLabel || label}
         onPress={open}
         style={[
           styles.dateField,
@@ -112,7 +114,7 @@ export function NegocioDatePicker({ value, onChange, colors }: Props) {
             textTransform: value ? 'capitalize' : 'none',
           }}
         >
-          {displayDate(value)}
+          {value ? displayDate(value) : label}
         </Text>
         <MaterialIcons name="calendar-month" size={22} color={colors.primary.main} />
       </TouchableOpacity>

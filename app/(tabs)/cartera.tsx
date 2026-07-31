@@ -1,231 +1,51 @@
-import { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
+import { supabase } from '@/lib/supabase';
+import { CarteraAnalyticsSection } from '@/components/cartera/CarteraAnalyticsSection';
+import { CarteraFilterModal } from '@/components/cartera/CarteraFilterModal';
+import { CollectionManagerPaymentsModal } from '@/components/cartera/CollectionManagerPaymentsModal';
+import { fetchCarteraDashboard, fetchCarteraPage, fetchMunicipios, searchCollectionManagers, type CarteraDashboard, type CarteraFilter, type CarteraRow, type CollectionManager, type Municipio } from '@/lib/cartera/carteraService';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
-type Row = {
-  cuota_id: string;
-  negocio_id: string;
-  negocio_numero: number;
-  customer_name: string | null;
-  installment_number: number;
-  due_date: string;
-  saldo: number;
-  status: string;
-};
+const PAGE_SIZE = 10;
+type Filters = { filter: CarteraFilter; search: string; municipioId: string; days: number; searchMunicipio: string };
+const INITIAL_FILTERS: Filters = { filter: 'todas', search: '', municipioId: '', days: 15, searchMunicipio: '' };
 
-const FILTERS = [
-  { id: 'todas', label: 'Todas' },
-  { id: 'por_vencer', label: 'Por vencer' },
-  { id: 'vencidas', label: 'Vencidas' },
-  { id: 'mora', label: 'Mora' },
-] as const;
+function daysOverdue(date: string) { const due=new Date(`${date}T12:00:00`); const today=new Date(); today.setHours(12,0,0,0); return Math.max(0,Math.floor((today.getTime()-due.getTime())/86400000)); }
 
 export default function CarteraScreen() {
-  const router = useRouter();
-  const { isDark } = useTheme();
-  const colors = getColors(isDark);
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]['id']>('todas');
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const router=useRouter(); const {isDark}=useTheme(); const colors=getColors(isDark); const {isAdmin,isGestorCobro}=useUserRoles();
+  const [filters,setFilters]=useState<Filters>(INITIAL_FILTERS); const [draftFilters,setDraftFilters]=useState<Filters>(INITIAL_FILTERS); const [filtersOpen,setFiltersOpen]=useState(false);
+  const [rows,setRows]=useState<CarteraRow[]>([]); const [totalCount,setTotalCount]=useState(0); const [page,setPage]=useState(1); const [loading,setLoading]=useState(true); const [loadingMore,setLoadingMore]=useState(false); const [refreshing,setRefreshing]=useState(false);
+  const [dashboard,setDashboard]=useState<CarteraDashboard|null>(null); const [municipios,setMunicipios]=useState<Municipio[]>([]);
+  const [managerPickerOpen,setManagerPickerOpen]=useState(false); const [managerSearch,setManagerSearch]=useState(''); const [managers,setManagers]=useState<CollectionManager[]>([]); const [selectedManager,setSelectedManager]=useState<CollectionManager|null>(null); const [managerModalOpen,setManagerModalOpen]=useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', { p_negocio_id: null });
-      if (moraError) console.warn('No se actualizaron cuotas en mora:', moraError.message);
-      const { data, error } = await supabase.rpc('get_cartera_cuotas', {
-        p_filter: filter,
-        p_days: 15,
-        p_search: '',
-        p_page: 1,
-        p_page_size: 50,
-      });
-      if (error) throw error;
-      setRows(
-        (data || []).map((r: any) => ({
-          cuota_id: r.cuota_id,
-          negocio_id: r.negocio_id,
-          negocio_numero: r.negocio_numero,
-          customer_name: r.customer_name,
-          installment_number: r.installment_number,
-          due_date: r.due_date,
-          saldo: Number(r.saldo),
-          status: r.status,
-        }))
-      );
-    } catch (e) {
-      console.error(e);
-      setRows([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [filter]);
-
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      load();
-    }, [load])
-  );
-
-  const totalSaldo = rows.reduce((s, r) => s + r.saldo, 0);
-  const moraCount = rows.filter((r) => r.status === 'mora').length;
-  const overdueCount = rows.filter((r) => new Date(`${r.due_date}T12:00:00`) < new Date()).length;
-  const upcomingCount = rows.filter((r) => {
-    const due = new Date(`${r.due_date}T12:00:00`).getTime();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days = (due - today.getTime()) / (1000 * 60 * 60 * 24);
-    return days >= 0 && days <= 15;
-  }).length;
-
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <Text style={[styles.title, { color: colors.text.primary }]}>Cartera</Text>
-      <View style={styles.kpis}>
-        {[
-          ['Saldo', formatCOP(totalSaldo)],
-          ['Mora', String(moraCount)],
-          ['Vencidas', String(overdueCount)],
-          ['Por vencer', String(upcomingCount)],
-        ].map(([label, value]) => (
-          <View key={label} style={[styles.kpi, { backgroundColor: colors.background.paper }]}>
-            <Text style={{ color: colors.text.secondary, fontSize: 11 }}>{label}</Text>
-            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>{value}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.filters}>
-        {FILTERS.map((f) => (
-          <Pressable
-            key={f.id}
-            onPress={() => setFilter(f.id)}
-            style={[
-              styles.chip,
-              {
-                backgroundColor:
-                  filter === f.id ? colors.primary.main : colors.background.paper,
-              },
-            ]}
-          >
-            <Text
-              style={{
-                color:
-                  filter === f.id
-                    ? colors.primary.contrastText
-                    : colors.text.primary,
-                fontWeight: '600',
-                fontSize: 13,
-              }}
-            >
-              {f.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary.main} />
-      ) : (
-        <FlatList
-          data={rows}
-          keyExtractor={(item) => item.cuota_id}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                load();
-              }}
-            />
-          }
-          ListEmptyComponent={
-            <Text
-              style={{
-                textAlign: 'center',
-                marginTop: 40,
-                color: colors.text.secondary,
-              }}
-            >
-              Sin cuotas en este filtro
-            </Text>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => router.push(`/negocio/${item.negocio_id}`)}
-              style={[
-                styles.row,
-                {
-                  backgroundColor: colors.background.paper,
-                  borderLeftColor:
-                    item.status === 'mora' ? colors.error.main : colors.primary.main,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
-                  #{item.negocio_numero} · cuota {item.installment_number}
-                </Text>
-                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
-                  {item.customer_name || 'Cliente'} · vence {item.due_date}
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
-                  {formatCOP(item.saldo)}
-                </Text>
-                <Text
-                  style={{
-                    color:
-                      item.status === 'mora'
-                        ? colors.error.main
-                        : colors.text.secondary,
-                    fontSize: 12,
-                  }}
-                >
-                  {item.status === 'mora'
-                    ? 'En mora'
-                    : item.status === 'parcial'
-                      ? 'Parcial'
-                      : 'Pendiente'}
-                </Text>
-              </View>
-            </Pressable>
-          )}
-        />
-      )}
-    </View>
-  );
+  const load=useCallback(async(target:number=1, reset:boolean=true)=>{ if(reset)setLoading(true);else setLoadingMore(true); try { if(reset){const {error}=await supabase.rpc('mark_cuotas_en_mora',{p_negocio_id:null});if(error)console.warn(error.message);} const [list,summary]=await Promise.all([fetchCarteraPage({...filters,page:target,pageSize:PAGE_SIZE}),reset?fetchCarteraDashboard(filters.municipioId):Promise.resolve(null)]); setRows(current=>reset?list.rows:[...current,...list.rows]);setTotalCount(list.totalCount);setPage(target);if(summary)setDashboard(summary); }catch(e:any){if(reset){setRows([]);setTotalCount(0);}Alert.alert('Cartera',e.message||'No fue posible cargar la información');}finally{setLoading(false);setLoadingMore(false);setRefreshing(false);} },[filters]);
+  useFocusEffect(useCallback(()=>{void load(1,true);},[load]));
+  useEffect(()=>{fetchMunicipios().then(setMunicipios).catch((e)=>console.warn(e.message));},[]);
+  useEffect(()=>{const timer=setTimeout(()=>{searchCollectionManagers(managerSearch).then(setManagers).catch(()=>setManagers([]));},300);return()=>clearTimeout(timer);},[managerSearch]);
+  const openFilters=()=>{setDraftFilters(filters);setFiltersOpen(true);};
+  const applyFilters=()=>{setFilters(draftFilters);setFiltersOpen(false);};
+  const showManager=()=>{if(isGestorCobro()&&!isAdmin()){Alert.alert('Mis cobros','Seleccione su usuario desde la lista de gestores disponible para su cuenta.');}setManagerSearch('');setManagerPickerOpen(true);};
+  const summary=dashboard?.summary||{}; const primary=[['Cartera pendiente',formatCOP(Number(summary.total_balance||0)),colors.primary.main],['Cartera vencida',formatCOP(Number(summary.overdue_balance||0)),colors.error.main],['Recaudado mes',formatCOP(Number(summary.collected_month||0)),colors.success.main],['Cumplimiento',`${Number(summary.collection_compliance||0).toFixed(1)}%`,Number(summary.collection_compliance||0)>=90?colors.success.main:colors.warning.main]];
+  return <View style={[styles.container,{backgroundColor:colors.background.default}]}> 
+    <FlatList data={rows} keyExtractor={(item)=>item.cuota_id} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load(1,true);}}/>}
+      ListHeaderComponent={<><View style={styles.top}><View><Text style={[styles.title,{color:colors.text.primary}]}>Cartera</Text><Text style={{color:colors.text.secondary,fontSize:12}}>{totalCount} cuotas abiertas</Text></View><View style={styles.actions}><Pressable onPress={openFilters} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="tune" size={23} color={colors.primary.main}/></Pressable><Pressable onPress={()=>void load(1,true)} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="refresh" size={23} color={colors.primary.main}/></Pressable></View></View>
+      <View style={styles.cards}>{primary.map(([label,value,color])=><View key={label as string} style={[styles.card,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><Text style={{color:colors.text.secondary,fontSize:11}}>{label}</Text><Text style={{color:color as string,fontWeight:'800',fontSize:15}} numberOfLines={1}>{value}</Text></View>)}</View>
+      {(isAdmin()||isGestorCobro())&&<Pressable onPress={showManager} style={[styles.managerButton,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><MaterialIcons name="people-alt" size={20} color={colors.primary.main}/><Text style={{color:colors.text.primary,fontWeight:'700'}}>{isAdmin()?'Ver cobros por gestor':'Mis cobros'}</Text><MaterialIcons name="chevron-right" size={22} color={colors.text.secondary}/></Pressable>}
+      <CarteraAnalyticsSection data={dashboard} colors={colors} onOpenBusiness={(id)=>router.push(`/negocio/${id}`)}/>
+      <Text style={[styles.section,{color:colors.text.primary}]}>Cuotas</Text><Text style={{color:colors.text.secondary,fontSize:12,marginBottom:8}}>{filters.filter==='todas'?'Todas las cuotas abiertas':filters.filter.replace('_',' ') }{filters.municipioId?' · Municipio filtrado':''}</Text></>}
+      renderItem={({item})=>{const overdue=daysOverdue(item.due_date);const border=item.status==='mora'||overdue>30?colors.error.main:overdue>0?colors.warning.main:colors.primary.main;return <Pressable onPress={()=>router.push(`/negocio/${item.negocio_id}`)} style={[styles.row,{backgroundColor:colors.background.paper,borderLeftColor:border}]}><View style={{flex:1,gap:2}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>#{item.negocio_numero} · cuota {item.installment_number}</Text><Text style={{color:colors.text.secondary,fontSize:13}}>{item.customer_name||'Cliente'}{item.municipio_name?` · ${item.municipio_name}`:''}</Text><Text style={{color:overdue>0?colors.error.main:colors.text.secondary,fontSize:12}}>Vence {item.due_date}{overdue>0?` · ${overdue} días de atraso`:''}</Text></View><View style={{alignItems:'flex-end',gap:4}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>{formatCOP(Number(item.saldo))}</Text><Text style={{color:item.status==='mora'?colors.error.main:colors.text.secondary,fontSize:12,fontWeight:'700'}}>{item.status==='mora'?'En mora':item.status==='parcial'?'Parcial':'Pendiente'}</Text></View></Pressable>}}
+      ListEmptyComponent={loading?<ActivityIndicator color={colors.primary.main} style={{margin:30}}/>:<Text style={[styles.empty,{color:colors.text.secondary}]}>Sin cuotas para estos filtros</Text>}
+      ListFooterComponent={rows.length<totalCount?<Pressable disabled={loadingMore} onPress={()=>void load(page+1,false)} style={[styles.loadMore,{borderColor:colors.divider}]}>{loadingMore?<ActivityIndicator color={colors.primary.main}/>:<Text style={{color:colors.primary.main,fontWeight:'700'}}>Cargar más · {rows.length} de {totalCount}</Text>}</Pressable>:rows.length?<Text style={[styles.end,{color:colors.text.secondary}]}>Mostrando {rows.length} de {totalCount} cuotas</Text>:null}/>
+    <CarteraFilterModal visible={filtersOpen} colors={colors} municipios={municipios} values={draftFilters} onChange={setDraftFilters} onClose={applyFilters}/>
+    <Modal visible={managerPickerOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={()=>setManagerPickerOpen(false)}><View style={[styles.pickerRoot,{backgroundColor:colors.background.default}]}><View style={[styles.pickerHeader,{borderBottomColor:colors.divider}]}><Text style={[styles.title,{color:colors.text.primary}]}>Seleccionar gestor</Text><Pressable onPress={()=>setManagerPickerOpen(false)}><MaterialIcons name="close" size={26} color={colors.text.primary}/></Pressable></View><TextInput autoFocus value={managerSearch} onChangeText={setManagerSearch} placeholder="Buscar por nombre" placeholderTextColor={colors.text.secondary} style={[styles.managerSearch,{borderColor:colors.divider,color:colors.text.primary,backgroundColor:colors.background.paper}]}/><FlatList data={managers} keyExtractor={(item)=>item.id} renderItem={({item})=><Pressable onPress={()=>{setSelectedManager(item);setManagerPickerOpen(false);setManagerModalOpen(true)}} style={[styles.managerRow,{borderBottomColor:colors.divider}]}><MaterialIcons name="person" size={22} color={colors.primary.main}/><Text style={{color:colors.text.primary,fontWeight:'600'}}>{item.full_name}</Text></Pressable>} ListEmptyComponent={<Text style={[styles.empty,{color:colors.text.secondary}]}>No se encontraron gestores</Text>}/></View></Modal>
+    <CollectionManagerPaymentsModal visible={managerModalOpen} manager={selectedManager} colors={colors} onClose={()=>{setManagerModalOpen(false);setSelectedManager(null)}} onOpenBusiness={(id)=>{setManagerModalOpen(false);setSelectedManager(null);router.push(`/negocio/${id}`)}}/>
+  </View>;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700' },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 },
-  kpi: { width: '47%', padding: 10, borderRadius: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    marginBottom: 8,
-    borderRadius: 10,
-    borderLeftWidth: 4,
-    gap: 8,
-  },
-});
+const styles=StyleSheet.create({container:{flex:1},list:{padding:16,paddingBottom:32},top:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:12},title:{fontSize:24,fontWeight:'800'},actions:{flexDirection:'row',gap:8},icon:{padding:10,borderRadius:10},cards:{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:10},card:{width:'48%',borderWidth:1,borderRadius:10,padding:10,gap:4},managerButton:{borderWidth:1,borderRadius:10,padding:12,flexDirection:'row',alignItems:'center',gap:9,marginBottom:12},section:{fontSize:17,fontWeight:'800',marginTop:4},row:{flexDirection:'row',padding:13,borderRadius:10,borderLeftWidth:4,marginBottom:8,gap:8},empty:{textAlign:'center',marginVertical:35},loadMore:{borderWidth:1,borderRadius:10,padding:13,alignItems:'center',marginTop:6},end:{textAlign:'center',marginVertical:16,fontSize:12},pickerRoot:{flex:1},pickerHeader:{padding:16,flexDirection:'row',justifyContent:'space-between',borderBottomWidth:1},managerSearch:{margin:16,borderWidth:1,borderRadius:10,padding:12},managerRow:{padding:16,flexDirection:'row',gap:10,alignItems:'center',borderBottomWidth:1}});
