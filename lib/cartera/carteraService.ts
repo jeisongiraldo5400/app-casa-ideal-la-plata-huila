@@ -49,6 +49,11 @@ export type CarteraDashboard = {
 export async function fetchCarteraPage(params: {
   filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string;
 }) {
+  const { error: moraError } = await (supabase.rpc as any)('mark_cuotas_en_mora', {
+    p_negocio_id: null,
+  });
+  if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
+
   const { data, error } = await (supabase.rpc as any)('get_cartera_cuotas', {
     p_filter: params.filter, p_days: params.days, p_search: params.search,
     p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
@@ -62,6 +67,11 @@ export async function fetchCarteraPage(params: {
 }
 
 export async function fetchCarteraDashboard(municipioId = '') {
+  const { error: moraError } = await (supabase.rpc as any)('mark_cuotas_en_mora', {
+    p_negocio_id: null,
+  });
+  if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
+
   const { data, error } = await (supabase.rpc as any)('get_cartera_management_dashboard', {
     p_municipio_id: municipioId || null,
   });
