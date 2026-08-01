@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 const BUCKET = 'negocios-firmas';
+const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 /**
  * Sube firma (data URL) a Storage y devuelve URL pública.
@@ -17,7 +18,13 @@ export async function uploadNegocioSignature(
   if (!raw) return null;
 
   if (raw.startsWith('http://') || raw.startsWith('https://')) {
-    return raw;
+    const bucketPath = `/storage/v1/object/public/${BUCKET}/`;
+    const expectedOrigin = new URL(process.env.EXPO_PUBLIC_SUPABASE_URL!).origin;
+    const remote = new URL(raw);
+    if (remote.origin === expectedOrigin && remote.pathname.includes(bucketPath)) {
+      return raw;
+    }
+    throw new Error('La firma remota no pertenece al almacenamiento autorizado');
   }
 
   if (!raw.startsWith('data:image/')) {
@@ -31,14 +38,15 @@ export async function uploadNegocioSignature(
 
   const mime = match[1];
   const base64 = match[2];
+  if (!ALLOWED_MIME_TYPES.has(mime)) {
+    throw new Error('Tipo de imagen de firma no permitido');
+  }
   const ext =
-    mime.includes('svg')
-      ? 'svg'
-      : mime.includes('jpeg') || mime.includes('jpg')
-        ? 'jpg'
-        : mime.includes('webp')
-          ? 'webp'
-          : 'png';
+    mime.includes('jpeg') || mime.includes('jpg')
+      ? 'jpg'
+      : mime.includes('webp')
+        ? 'webp'
+        : 'png';
 
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);

@@ -110,6 +110,7 @@ function SignatureFullscreenModal({
 
   const pathsRef = useRef<string[]>([]);
   const currentRef = useRef<string>('');
+  const svgRef = useRef<React.ElementRef<typeof Svg>>(null);
   const [tick, setTick] = useState(0);
   const hasStroke = pathsRef.current.length > 0 || Boolean(currentRef.current);
 
@@ -125,16 +126,11 @@ function SignatureFullscreenModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const buildDataUrl = () => {
-    const all = pathsRef.current.join('');
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(
-      padW
-    )}" height="${Math.round(padH)}" viewBox="0 0 ${Math.round(padW)} ${Math.round(
-      padH
-    )}" style="background:#fff">${all}</svg>`;
-    // base64 para Storage (image/svg+xml)
-    const b64 = btoa(unescape(encodeURIComponent(svg)));
-    return `data:image/svg+xml;base64,${b64}`;
+  const confirmPng = () => {
+    svgRef.current?.toDataURL(
+      (base64: string) => onConfirm(`data:image/png;base64,${base64}`),
+      { width: Math.round(padW), height: Math.round(padH) }
+    );
   };
 
   const pan = useMemo(
@@ -208,7 +204,7 @@ function SignatureFullscreenModal({
           style={[styles.fullPad, { width: padW, height: padH }]}
           {...pan.panHandlers}
         >
-          <Svg width={padW} height={padH}>
+          <Svg ref={svgRef} width={padW} height={padH} style={{ backgroundColor: '#fff' }}>
             {displayPath.map((d, i) => (
               <Path
                 key={`${i}-${d.slice(0, 12)}`}
@@ -238,7 +234,7 @@ function SignatureFullscreenModal({
           <Pressable
             style={[styles.primaryBtn, !hasStroke && styles.btnDisabled]}
             disabled={!hasStroke}
-            onPress={() => onConfirm(buildDataUrl())}
+            onPress={confirmPng}
           >
             <Text style={styles.primaryBtnText}>Confirmar firma</Text>
           </Pressable>
