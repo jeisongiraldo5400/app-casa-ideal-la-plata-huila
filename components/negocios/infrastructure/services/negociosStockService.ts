@@ -115,7 +115,18 @@ export function parseNegocioQuantity(value: string | number): number {
 }
 
 export function parseNegocioMoney(value: string | number): number {
-  return parseNegocioQuantity(value);
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : NaN;
+  }
+
+  // Los valores monetarios se muestran como COP enteros con puntos de miles
+  // (por ejemplo, "1.990.000"). Esos puntos son separadores visuales, no
+  // decimales, así que se deben retirar antes de convertir el valor.
+  const digits = String(value).replace(/\D/g, '');
+  if (!digits) return NaN;
+
+  const amount = Number(digits);
+  return Number.isSafeInteger(amount) ? amount : NaN;
 }
 
 export function formatNegocioMoneyInput(value: string | number): string {
