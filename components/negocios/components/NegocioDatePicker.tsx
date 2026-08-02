@@ -49,7 +49,13 @@ const fromDateValue = (value: string) => {
   const [year, month, day] = value.split('-').map(Number);
   if (!year || !month || !day) return null;
   const date = new Date(year, month - 1, day);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) return null;
+  return date;
 };
 
 const displayDate = (value: string) => {

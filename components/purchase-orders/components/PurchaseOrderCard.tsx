@@ -20,23 +20,23 @@ import { PurchaseOrderProductsModal } from './PurchaseOrderProductsModal';
 interface PurchaseOrderCardOrder {
     id: string;
     order_number: string | null;
-    created_at: string;
+    created_at: string | null;
     status: string;
     notes: string | null;
     supplier?: {
-        name: string;
+        name: string | null;
     } | null;
     created_by_profile?: {
         full_name: string | null;
         email: string | null;
     } | null;
-    items?: Array<{
+    items?: {
         id: string;
         quantity: number;
         product?: {
             name: string;
         } | null;
-    }>;
+    }[];
 }
 
 interface PurchaseOrderCardProps {

@@ -133,7 +133,9 @@ export function NegocioItemsList({
                   value={String(item.quantity)}
                   onChangeText={(text) => {
                     const quantity = parseNegocioQuantity(text);
-                    if (quantity > 0) onUpdateItem(idx, { quantity });
+                    if (Number.isSafeInteger(quantity) && quantity > 0) {
+                      onUpdateItem(idx, { quantity });
+                    }
                   }}
                 />
                 {qtyIssue ? (

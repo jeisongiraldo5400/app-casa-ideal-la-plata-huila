@@ -78,7 +78,7 @@ export function AllOrdersList({ searchQuery = '' }: AllOrdersListProps) {
           No se encontraron resultados
         </Text>
         <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          No hay órdenes de compra que coincidan con "{searchQuery}"
+          No hay órdenes de compra que coincidan con &quot;{searchQuery}&quot;
         </Text>
       </View>
     );
@@ -135,6 +135,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
 
 

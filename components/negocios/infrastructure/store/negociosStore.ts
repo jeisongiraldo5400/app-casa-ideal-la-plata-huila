@@ -6,7 +6,10 @@ import {
   type CreditSettingsInput,
 } from '@/lib/creditCalculator';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
-import { validateNegocioItemsStock } from '../services/negociosStockService';
+import {
+  validateNegocioItemsInput,
+  validateNegocioItemsStock,
+} from '../services/negociosStockService';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import type { Json } from '@/types/database.types';
 
@@ -44,15 +47,6 @@ interface NegociosState {
   }) => Promise<{ numero: number; id: string } | null>;
 }
 
-const defaultSettings: CreditSettingsInput & { legal_text?: string | null } = {
-  formula_type: 'financed_balance',
-  interest_rate_monthly_pct: 0,
-  rounding_unit: 1000,
-  late_fee_rate_pct: 0,
-  default_frequency: 'mensual',
-  legal_text: null,
-};
-
 interface PendingCreateRequest {
   draftId: string;
   idempotencyKey: string;
@@ -61,9 +55,21 @@ interface PendingCreateRequest {
     guarantor: string | null;
     seller: string | null;
   };
+  signaturePromise?: Promise<{
+    customer: string | null;
+    guarantor: string | null;
+    seller: string | null;
+  }>;
 }
 
 const pendingCreateRequests = new Map<string, PendingCreateRequest>();
+
+const isValidDateValue = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
 
 export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
@@ -90,7 +96,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   },
 
   fetchCreditSettings: async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('credit_settings')
       .select('*')
       .is('deleted_at', null)
@@ -99,20 +105,38 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       .limit(1)
       .maybeSingle();
 
-    if (data) {
-      set({
-        creditSettings: {
-          formula_type: data.formula_type as any,
+    if (error) throw new Error(`No fue posible cargar la configuración de crédito: ${error.message}`);
+    if (!data) throw new Error('No existe una configuración de crédito activa');
+
+    const formulaType = data.formula_type as CreditSettingsInput['formula_type'];
+    const defaultFrequency = data.default_frequency as CreditFrequency;
+    const numericSettings = [
+      data.interest_rate_monthly_pct,
+      data.rounding_unit,
+      data.late_fee_rate_pct,
+      data.min_installments,
+      data.max_installments,
+    ].map(Number);
+    if (
+      !['cash_includes_interest', 'simple_markup', 'financed_balance'].includes(formulaType) ||
+      !['mensual', 'quincenal', 'semanal'].includes(defaultFrequency) ||
+      numericSettings.some((value) => !Number.isFinite(value)) ||
+      Number(data.min_installments) < 1 ||
+      Number(data.max_installments) < Number(data.min_installments)
+    ) throw new Error('La configuración de crédito activa contiene valores inválidos');
+
+    set({
+      creditSettings: {
+          formula_type: formulaType,
           interest_rate_monthly_pct: Number(data.interest_rate_monthly_pct),
           rounding_unit: Number(data.rounding_unit),
           late_fee_rate_pct: Number(data.late_fee_rate_pct),
-          default_frequency: data.default_frequency as CreditFrequency,
+          min_installments: Number(data.min_installments),
+          max_installments: Number(data.max_installments),
+          default_frequency: defaultFrequency,
           legal_text: data.legal_text,
-        },
-      });
-    } else {
-      set({ creditSettings: defaultSettings });
-    }
+      },
+    });
   },
 
   createAndActivate: async (input) => {
@@ -120,8 +144,23 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error('Sesión no válida');
+    if (!input.customer_id) throw new Error('Seleccione un cliente');
     if (!input.municipio_id) throw new Error('Seleccione un municipio');
     if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
+    if (!isValidDateValue(input.deal_date)) throw new Error('Fecha del negocio inválida');
+    if (!isValidDateValue(input.first_due_date)) throw new Error('Fecha de primera cuota inválida');
+    validateNegocioItemsInput(input.items);
+
+    const settings = get().creditSettings;
+    if (!settings) throw new Error('La configuración de crédito aún no está disponible');
+    if (!Number.isSafeInteger(input.installments_count)) throw new Error('El número de cuotas debe ser entero');
+    const minInstallments = settings.min_installments ?? 1;
+    const maxInstallments = settings.max_installments ?? Number.MAX_SAFE_INTEGER;
+    if (input.installments_count < minInstallments || input.installments_count > maxInstallments) {
+      throw new Error(`El número de cuotas debe estar entre ${minInstallments} y ${maxInstallments}`);
+    }
+    if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
+    if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
 
     if (!input.remission_id) {
       const stockCheck = await validateNegocioItemsStock(input.items);
@@ -130,11 +169,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
-    const settings = get().creditSettings || defaultSettings;
     const productsSubtotal = input.items.reduce(
       (s, i) => s + i.unit_price * i.quantity,
       0
     );
+    if (input.down_payment > productsSubtotal) throw new Error('La cuota inicial no puede superar el subtotal');
     const calc = calculateCredit({
       productsSubtotal,
       downPayment: input.down_payment,
@@ -154,15 +193,24 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         idempotencyKey: createIdempotencyKey(),
       };
       pendingCreateRequests.set(requestFingerprint, request);
+      if (pendingCreateRequests.size > 20) {
+        const oldestKey = pendingCreateRequests.keys().next().value;
+        if (oldestKey) pendingCreateRequests.delete(oldestKey);
+      }
     }
 
     if (!request.signatureUrls) {
-      const [customer, guarantor, seller] = await Promise.all([
+      request.signaturePromise ??= Promise.all([
         uploadNegocioSignature(input.customer_signature_data_url, { negocioId: request.draftId, role: 'cliente' }),
         uploadNegocioSignature(input.guarantor_signature_data_url, { negocioId: request.draftId, role: 'fiador' }),
         uploadNegocioSignature(input.seller_signature_data_url, { negocioId: request.draftId, role: 'vendedor' }),
-      ]);
-      request.signatureUrls = { customer, guarantor, seller };
+      ]).then(([customer, guarantor, seller]) => ({ customer, guarantor, seller }));
+      try {
+        request.signatureUrls = await request.signaturePromise;
+      } catch (error) {
+        request.signaturePromise = undefined;
+        throw error;
+      }
     }
 
     const { data: negocioId, error } = await supabase.rpc('create_negocio', {

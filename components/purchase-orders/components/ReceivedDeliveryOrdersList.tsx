@@ -199,6 +199,8 @@ export function ReceivedDeliveryOrdersList() {
           customer_id: order.customer_id,
           customer_id_number: order.customer?.id_number || null,
           customer_name: order.customer?.name || null,
+          customer_phone: null,
+          customer_email: null,
           assigned_to_user_id: order.assigned_to_user_id,
           assigned_to_user_name: order.assigned_to_user?.full_name || null,
           assigned_to_user_email: order.assigned_to_user?.email || null,

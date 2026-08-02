@@ -2,9 +2,10 @@ module.exports = {
   preset: 'jest-expo',
   setupFiles: ['<rootDir>/jest.setup.js'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.after.js'],
-  transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)',
-  ],
+  // pnpm instala dependencias reales bajo node_modules/.pnpm. Transformar las
+  // dependencias evita que Jest intente ejecutar directamente los módulos ESM
+  // usados por React Native y Expo.
+  transformIgnorePatterns: [],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
@@ -27,4 +28,3 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   // jest-expo maneja el testEnvironment automáticamente
 };
-

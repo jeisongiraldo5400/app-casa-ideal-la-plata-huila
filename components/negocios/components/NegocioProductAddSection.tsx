@@ -121,6 +121,7 @@ export function NegocioProductAddSection({
     hasStock &&
     availability.available > 0 &&
     Number.isFinite(quantity) &&
+    Number.isSafeInteger(quantity) &&
     quantity > 0 &&
     !qtyExceedsStock &&
     Number.isFinite(price) &&

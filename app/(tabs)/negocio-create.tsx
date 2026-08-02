@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -62,6 +62,9 @@ const WIZARD_STEPS = [
   { id: 3, label: 'Firma', icon: 'draw' },
 ];
 
+const localDateValue = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 export default function NegocioCreateScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
@@ -71,6 +74,11 @@ export default function NegocioCreateScreen() {
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const frequencyInitializedRef = useRef(false);
+  const [loadingInitialData, setLoadingInitialData] = useState(true);
+  const [initialDataError, setInitialDataError] = useState('');
+  const [initialDataReload, setInitialDataReload] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
@@ -105,22 +113,11 @@ export default function NegocioCreateScreen() {
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
 
   useEffect(() => {
-    fetchCreditSettings();
+    let cancelled = false;
     (async () => {
-      const [c, p, d, m] = await Promise.all([
-        supabase
-          .from('customers')
-          .select('id, name, id_number')
-          .is('deleted_at', null)
-          .order('name')
-          .limit(200),
-        supabase
-          .from('products')
-          .select('id, name, sale_price')
-          .is('deleted_at', null)
-          .eq('status', true)
-          .order('name')
-          .limit(200),
+      try {
+        const [, d, m] = await Promise.all([
+          fetchCreditSettings(),
         supabase
           .from('departamentos')
           .select('id, nombre')
@@ -133,16 +130,75 @@ export default function NegocioCreateScreen() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .order('nombre'),
-      ]);
-      setCustomers(c.data || []);
-      setProducts(p.data || []);
-      setDepartamentos(d.data || []);
-      setMunicipios(m.data || []);
+        ]);
+        if (d.error) throw d.error;
+        if (m.error) throw m.error;
+        if (!cancelled) {
+          setDepartamentos(d.data || []);
+          setMunicipios(m.data || []);
+          setInitialDataError('');
+        }
+      } catch (error: any) {
+        if (!cancelled) setInitialDataError(error.message || 'No fue posible cargar los datos requeridos');
+      } finally {
+        if (!cancelled) setLoadingInitialData(false);
+      }
     })();
-  }, [fetchCreditSettings]);
+    return () => { cancelled = true; };
+  }, [fetchCreditSettings, initialDataReload]);
 
   useEffect(() => {
-    const productIds = [...new Set(items.map((i) => i.product_id))];
+    const query = customerQuery.trim();
+    if (!query) { setCustomers([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const pattern = `%${query}%`;
+      const [byName, byDocument] = await Promise.all([
+        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('name', pattern).order('name').limit(20),
+        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('id_number', pattern).order('name').limit(20),
+      ]);
+      if (!cancelled) {
+        const error = byName.error || byDocument.error;
+        if (error) Alert.alert('Error', 'No fue posible buscar clientes');
+        const unique = new Map([...(byName.data || []), ...(byDocument.data || [])].map((row) => [row.id, row]));
+        setCustomers(error ? [] : [...unique.values()].slice(0, 20));
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [customerQuery]);
+
+  useEffect(() => {
+    const query = productQuery.trim();
+    if (!query) { setProducts([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, sale_price')
+        .is('deleted_at', null)
+        .eq('status', true)
+        .ilike('name', `%${query}%`)
+        .order('name')
+        .limit(20);
+      if (!cancelled) {
+        if (error) Alert.alert('Error', 'No fue posible buscar productos');
+        setProducts(error ? [] : data || []);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [productQuery]);
+
+  useEffect(() => {
+    if (!frequencyInitializedRef.current && creditSettings?.default_frequency) {
+      setFrequency(creditSettings.default_frequency);
+      frequencyInitializedRef.current = true;
+    }
+  }, [creditSettings]);
+
+  const stockProductIdsKey = [...new Set(items.map((i) => i.product_id))].sort().join(',');
+
+  useEffect(() => {
+    const productIds = stockProductIdsKey ? stockProductIdsKey.split(',') : [];
     if (!productIds.length) {
       setStockByProduct({});
       return;
@@ -162,7 +218,7 @@ export default function NegocioCreateScreen() {
     return () => {
       cancelled = true;
     };
-  }, [items]);
+  }, [stockProductIdsKey]);
 
   const handleStockLoaded = useCallback(
     (productId: string, stock: ProductWarehouseStock[]) => {
@@ -176,12 +232,16 @@ export default function NegocioCreateScreen() {
     interest_rate_monthly_pct: 0,
     rounding_unit: 1000,
   };
+  const minInstallments = settings.min_installments ?? 1;
+  const maxInstallments = settings.max_installments ?? 120;
+  const installmentsNumber = Number(installments);
+  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= minInstallments && installmentsNumber <= maxInstallments;
 
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const calc = calculateCredit({
     productsSubtotal: subtotal,
     downPayment: parseNegocioMoney(downPayment) || 0,
-    installmentsCount: Number(installments) || 1,
+    installmentsCount: installmentsValid ? installmentsNumber : minInstallments,
     settings,
   });
 
@@ -280,11 +340,15 @@ export default function NegocioCreateScreen() {
   };
 
   const submit = async (activate: boolean) => {
+    if (savingRef.current) return;
     if (!customer) return Alert.alert('Seleccione cliente');
     if (!departamentoId) return Alert.alert('Seleccione departamento');
     if (!municipioId) return Alert.alert('Seleccione municipio');
     if (!direccion.trim()) return Alert.alert('Ingrese la dirección de la vivienda');
     if (!items.length) return Alert.alert('Agregue productos');
+    if (items.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || !Number.isSafeInteger(item.unit_price) || item.unit_price <= 0)) {
+      return Alert.alert('Productos inválidos', 'Revise cantidades y valores unitarios.');
+    }
     if (!itemsHaveValidStock(items, stockByProduct)) {
       return Alert.alert(
         'Stock insuficiente',
@@ -292,19 +356,26 @@ export default function NegocioCreateScreen() {
       );
     }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
+    if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
+    if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}`);
+    const parsedDownPayment = parseNegocioMoney(downPayment);
+    if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
+      return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
+    }
     if (activate && !signature) return Alert.alert('Firma del cliente requerida');
 
     try {
+      savingRef.current = true;
       setSaving(true);
       const result = await createAndActivate({
-        deal_date: new Date().toISOString().slice(0, 10),
+        deal_date: localDateValue(),
         municipio_id: municipioId,
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
         items,
-        down_payment: parseNegocioMoney(downPayment) || 0,
-        installments_count: Number(installments) || 1,
+        down_payment: parsedDownPayment,
+        installments_count: installmentsNumber,
         frequency,
         first_due_date: firstDueDate,
         customer_signature_data_url: signature || '',
@@ -322,12 +393,34 @@ export default function NegocioCreateScreen() {
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo crear el negocio');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
+      {loadingInitialData && (
+        <View style={{ padding: 12, flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.primary.main} />
+          <Text style={{ color: colors.text.secondary }}>Cargando configuración…</Text>
+        </View>
+      )}
+      {initialDataError ? (
+        <View style={{ padding: 12, backgroundColor: colors.error.main + '18' }}>
+          <Text style={{ color: colors.error.main, textAlign: 'center' }}>{initialDataError}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              setLoadingInitialData(true);
+              setInitialDataError('');
+              setInitialDataReload((value) => value + 1);
+            }}
+            style={{ alignSelf: 'center', padding: 8 }}
+          >
+            <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       {/* Wizard Steps Header */}
       <View style={[styles.wizardHeader, { backgroundColor: colors.background.paper, borderBottomColor: colors.divider }]}>
         {WIZARD_STEPS.map((s, idx) => {
@@ -646,6 +739,11 @@ export default function NegocioCreateScreen() {
               value={installments}
               onChangeText={setInstallments}
             />
+            {!installmentsValid && (
+              <Text style={{ color: colors.error.main, fontSize: 12 }}>
+                Ingrese un número entero entre {minInstallments} y {maxInstallments}.
+              </Text>
+            )}
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
             <NegocioDatePicker
               value={firstDueDate}
@@ -751,11 +849,26 @@ export default function NegocioCreateScreen() {
               styles.footerBtnPrimary,
               {
                 backgroundColor: colors.primary.main,
-                opacity: step === 0 && !customer ? 0.5 : step === 1 && !canAdvanceProductsStep() ? 0.5 : 1,
+                opacity:
+                  loadingInitialData || initialDataError
+                    ? 0.5
+                    : step === 0 && (!customer || !departamentoId || !municipioId || !direccion.trim())
+                    ? 0.5
+                    : step === 1 && !canAdvanceProductsStep()
+                    ? 0.5
+                    : step === 2 && (!firstDueDate || !installmentsValid)
+                    ? 0.5
+                    : 1,
               },
             ]}
+            disabled={loadingInitialData || Boolean(initialDataError)}
             onPress={() => {
-              if (step === 0 && !customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
+              if (step === 0) {
+                if (!customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
+                if (!departamentoId) return Alert.alert('Campo requerido', 'Seleccione un departamento.');
+                if (!municipioId) return Alert.alert('Campo requerido', 'Seleccione un municipio.');
+                if (!direccion.trim()) return Alert.alert('Campo requerido', 'Ingrese la dirección de la vivienda.');
+              }
               if (step === 1) {
                 if (!items.length) return Alert.alert('Productos requeridos', 'Agregue al menos un producto.');
                 if (items.some((i) => i.unit_price <= 0)) {
@@ -768,7 +881,15 @@ export default function NegocioCreateScreen() {
                   );
                 }
               }
-              if (step === 2 && !firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
+              if (step === 2) {
+                if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
+                if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
+                if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
+                const initial = parseNegocioMoney(downPayment);
+                if (!Number.isSafeInteger(initial) || initial < 0 || initial > subtotal) {
+                  return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos.');
+                }
+              }
               setStep((s) => s + 1);
             }}
           >

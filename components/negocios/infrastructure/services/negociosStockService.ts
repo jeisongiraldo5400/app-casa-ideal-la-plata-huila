@@ -13,6 +13,33 @@ export type NegocioStockItem = {
   description?: string;
 };
 
+export function validateNegocioItemsInput(items: NegocioStockItem[]): void {
+  if (!items.length) throw new Error('Agregue al menos un producto');
+
+  for (const item of items) {
+    if (!item.product_id || !item.warehouse_id) {
+      throw new Error('Cada producto debe tener una bodega válida');
+    }
+    if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+      throw new Error('Cada producto debe tener una cantidad entera mayor a 0');
+    }
+    const price = (item as NegocioStockItem & { unit_price?: number }).unit_price;
+    if (price !== undefined && (!Number.isSafeInteger(price) || price <= 0)) {
+      throw new Error('Cada producto debe tener un valor unitario válido mayor a 0');
+    }
+  }
+}
+
+export function aggregateNegocioStockItems(items: NegocioStockItem[]): NegocioStockItem[] {
+  const grouped = new Map<string, NegocioStockItem>();
+  for (const item of items) {
+    const key = `${item.product_id}:${item.warehouse_id}`;
+    const current = grouped.get(key);
+    grouped.set(key, current ? { ...current, quantity: current.quantity + item.quantity } : { ...item });
+  }
+  return [...grouped.values()];
+}
+
 export async function fetchProductWarehouseStock(
   productId: string
 ): Promise<ProductWarehouseStock[]> {
@@ -139,7 +166,7 @@ export function formatNegocioMoneyInput(value: string | number): string {
 export async function validateNegocioItemsStock(
   items: NegocioStockItem[]
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  for (const item of items) {
+  for (const item of aggregateNegocioStockItems(items)) {
     const { data, error } = await supabase
       .from('warehouse_stock')
       .select('quantity, warehouse:warehouses(name), product:products(name)')
