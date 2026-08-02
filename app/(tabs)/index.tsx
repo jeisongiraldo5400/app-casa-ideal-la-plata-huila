@@ -109,6 +109,21 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {isGestorCobro() && (
+        <TouchableOpacity
+          style={[styles.sellerCta, { backgroundColor: '#0f766e', marginBottom: 20 }]}
+          onPress={() => router.push('/(tabs)/ruta-cobros' as any)}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="route" size={30} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 17 }}>Mi ruta de cobros</Text>
+            <Text style={{ color: '#ccfbf1', fontSize: 13 }}>Organiza y recorre las visitas del día</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={25} color="#fff" />
+        </TouchableOpacity>
+      )}
+
       <View style={styles.dashboardContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>

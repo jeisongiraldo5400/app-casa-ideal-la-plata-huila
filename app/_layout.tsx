@@ -102,6 +102,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
     </Stack>
   );
 }

@@ -94,6 +94,25 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="ruta-cobros"
+        options={{
+          title: 'Ruta de cobros',
+          href: null,
+          headerLeft: () => <BackButton />,
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="ruta-cobros-crear"
+        options={{
+          title: 'Crear ruta',
+          href: null,
+          headerLeft: () => <BackButton />,
+        }}
+      />
+
+      <Tabs.Screen
         name="inventory"
         options={{
           title: 'Inventario',

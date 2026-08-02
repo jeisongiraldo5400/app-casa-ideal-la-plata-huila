@@ -42,7 +42,7 @@ const formatPaymentInput = (value: string) => {
 };
 
 export default function NegocioDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, routeStopId } = useLocalSearchParams<{ id: string; routeStopId?: string }>();
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -195,21 +195,33 @@ export default function NegocioDetailScreen() {
     try {
       setSaving(true);
       paymentIdempotencyKey.current ||= createIdempotencyKey();
-      const { error } = await supabase.rpc('register_negocio_pago', {
-        p_negocio_id: negocio.id,
-        p_amount: amount,
-        p_paid_at: new Date().toISOString().slice(0, 10),
-        p_receipt_number: payReceipt || null,
-        p_cuota_id: null,
-        p_notes: null,
-        p_idempotency_key: paymentIdempotencyKey.current,
-      });
+      const rpcName = routeStopId ? 'register_collection_route_payment' : 'register_negocio_pago';
+      const rpcParams = routeStopId
+        ? {
+            p_stop_id: routeStopId,
+            p_amount: amount,
+            p_paid_at: new Date().toISOString().slice(0, 10),
+            p_receipt_number: payReceipt || null,
+            p_cuota_id: null,
+            p_notes: null,
+            p_idempotency_key: paymentIdempotencyKey.current,
+          }
+        : {
+            p_negocio_id: negocio.id,
+            p_amount: amount,
+            p_paid_at: new Date().toISOString().slice(0, 10),
+            p_receipt_number: payReceipt || null,
+            p_cuota_id: null,
+            p_notes: null,
+            p_idempotency_key: paymentIdempotencyKey.current,
+          };
+      const { error } = await (supabase.rpc as any)(rpcName, rpcParams);
       if (error) throw error;
       paymentIdempotencyKey.current = null;
       setPayAmount('');
       setPayReceipt('');
       setPayModalOpen(false);
-      Alert.alert('Listo', 'Pago registrado');
+      Alert.alert('Listo', routeStopId ? 'Pago registrado y parada completada' : 'Pago registrado');
       await load();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo registrar');
