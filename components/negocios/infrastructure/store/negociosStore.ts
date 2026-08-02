@@ -114,6 +114,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       data.interest_rate_monthly_pct,
       data.rounding_unit,
       data.late_fee_rate_pct,
+      data.money_decimal_places,
       data.min_installments,
       data.max_installments,
     ].map(Number);
@@ -131,6 +132,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           interest_rate_monthly_pct: Number(data.interest_rate_monthly_pct),
           rounding_unit: Number(data.rounding_unit),
           late_fee_rate_pct: Number(data.late_fee_rate_pct),
+          money_decimal_places: Number(data.money_decimal_places),
           min_installments: Number(data.min_installments),
           max_installments: Number(data.max_installments),
           default_frequency: defaultFrequency,
@@ -140,6 +142,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   },
 
   createAndActivate: async (input) => {
+    await get().fetchCreditSettings();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -154,11 +157,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     const settings = get().creditSettings;
     if (!settings) throw new Error('La configuración de crédito aún no está disponible');
     if (!Number.isSafeInteger(input.installments_count)) throw new Error('El número de cuotas debe ser entero');
-    const minInstallments = settings.min_installments ?? 1;
-    const maxInstallments = settings.max_installments ?? Number.MAX_SAFE_INTEGER;
-    if (input.installments_count < minInstallments || input.installments_count > maxInstallments) {
-      throw new Error(`El número de cuotas debe estar entre ${minInstallments} y ${maxInstallments}`);
-    }
+    if (input.installments_count < 1) throw new Error('El número de cuotas debe ser mayor a 0');
     if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
     if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
 
@@ -178,6 +177,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       productsSubtotal,
       downPayment: input.down_payment,
       installmentsCount: input.installments_count,
+      frequency: input.frequency,
       settings,
     });
 

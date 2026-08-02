@@ -232,16 +232,15 @@ export default function NegocioCreateScreen() {
     interest_rate_monthly_pct: 0,
     rounding_unit: 1000,
   };
-  const minInstallments = settings.min_installments ?? 1;
-  const maxInstallments = settings.max_installments ?? 120;
   const installmentsNumber = Number(installments);
-  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= minInstallments && installmentsNumber <= maxInstallments;
+  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
 
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const calc = calculateCredit({
     productsSubtotal: subtotal,
     downPayment: parseNegocioMoney(downPayment) || 0,
-    installmentsCount: installmentsValid ? installmentsNumber : minInstallments,
+    installmentsCount: installmentsValid ? installmentsNumber : 1,
+    frequency,
     settings,
   });
 
@@ -357,7 +356,7 @@ export default function NegocioCreateScreen() {
     }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
     if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
-    if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}`);
+    if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0');
     const parsedDownPayment = parseNegocioMoney(downPayment);
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
@@ -741,7 +740,7 @@ export default function NegocioCreateScreen() {
             />
             {!installmentsValid && (
               <Text style={{ color: colors.error.main, fontSize: 12 }}>
-                Ingrese un número entero entre {minInstallments} y {maxInstallments}.
+                Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
               </Text>
             )}
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
@@ -882,7 +881,7 @@ export default function NegocioCreateScreen() {
                 }
               }
               if (step === 2) {
-                if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
+                if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
                 if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
                 if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
                 const initial = parseNegocioMoney(downPayment);
