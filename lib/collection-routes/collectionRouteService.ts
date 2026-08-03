@@ -82,6 +82,11 @@ export async function startCollectionRoute(routeId: string) {
   if (error) throw new Error(error.message || 'No fue posible iniciar la ruta');
 }
 
+export async function selectCollectionRouteStop(stopId: string) {
+  const { error } = await (supabase.rpc as any)('select_collection_route_stop', { p_stop_id: stopId });
+  if (error) throw new Error(error.message || 'No fue posible seleccionar la parada');
+}
+
 export async function updateCollectionRouteStop(
   stopId: string,
   status: Extract<StopStatus, 'sin_pago' | 'reprogramado' | 'omitido'>,
@@ -104,4 +109,3 @@ export async function finishCollectionRoute(routeId: string, cancel = false) {
   });
   if (error) throw new Error(error.message || 'No fue posible finalizar la ruta');
 }
-
