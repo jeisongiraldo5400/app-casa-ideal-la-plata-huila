@@ -79,6 +79,8 @@ export default function NegocioDetailScreen() {
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
+    } else if (routeStopId) {
+      router.replace('/(tabs)/ruta-cobros' as any);
     } else {
       router.replace('/(tabs)');
     }
@@ -450,14 +452,21 @@ export default function NegocioDetailScreen() {
   const canPay = ['activo', 'entregado'].includes(negocio.status);
   const canActivate = ['borrador', 'por_firmar'].includes(negocio.status);
   const canCancel = !['cerrado', 'anulado'].includes(negocio.status);
+  const totalPaid = pagos
+    .filter((pago) => pago.receipt_status !== 'anulado')
+    .reduce((total, pago) => total + Number(pago.amount || 0), 0);
+  const pendingBalance = cuotas.reduce((total, cuota) => total + Math.max(
+    Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
+    0
+  ), 0);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={[styles.headerBar, { borderBottomColor: colors.divider }]}>
+        <View style={[styles.headerBar, { borderBottomColor: colors.divider, backgroundColor: colors.background.paper }]}>
           <TouchableOpacity style={styles.backBtn} onPress={handleGoBack}>
             <MaterialIcons name="arrow-back" size={24} color={colors.primary.main} />
             <Text style={[styles.backText, { color: colors.primary.main }]}>Volver</Text>
@@ -465,28 +474,34 @@ export default function NegocioDetailScreen() {
           <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
             Negocio #{negocio.numero}
           </Text>
+          <TouchableOpacity style={styles.homeBtn} onPress={() => router.replace('/(tabs)' as any)} hitSlop={10}>
+            <MaterialIcons name="home" size={23} color={colors.primary.main} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
           style={{ flex: 1, backgroundColor: colors.background.default }}
           contentContainerStyle={{ padding: 16, gap: 12 }}
         >
-          <Text style={{ color: colors.text.secondary }}>
-            {negocio.status} · {customerName}
-            {orderNumber ? ` · OE ${orderNumber}` : ''}
-          </Text>
-          {(negocio.direccion || negocio.municipio?.nombre) && (
-            <Text style={{ color: colors.text.secondary }}>
-              {[negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
-                .filter(Boolean)
-                .join(', ')}
-            </Text>
-          )}
-          <Text style={{ color: colors.text.primary }}>
-            Total {formatCOP(Number(negocio.total_credit))} ·{' '}
-            {negocio.installments_count} cuotas de{' '}
-            {formatCOP(Number(negocio.installment_amount))}
-          </Text>
+          <View style={[styles.creditHero, { backgroundColor: colors.primary.main }]}>
+            <View style={styles.creditHeroTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.heroEyebrow}>CLIENTE</Text>
+                <Text style={styles.heroCustomer}>{customerName}</Text>
+                <Text style={styles.heroAddress} numberOfLines={2}>
+                  {[negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
+                    .filter(Boolean).join(', ') || 'Dirección no registrada'}
+                </Text>
+              </View>
+              <View style={styles.businessStatus}><Text style={styles.businessStatusText}>{negocio.status}</Text></View>
+            </View>
+            <View style={styles.creditMetrics}>
+              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>CRÉDITO</Text><Text style={styles.heroMetricValue}>{formatCOP(Number(negocio.total_credit))}</Text></View>
+              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>PAGADO</Text><Text style={styles.heroMetricValue}>{formatCOP(totalPaid)}</Text></View>
+              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>SALDO</Text><Text style={styles.heroMetricValue}>{formatCOP(pendingBalance)}</Text></View>
+            </View>
+            <Text style={styles.heroPlan}>{negocio.installments_count} cuotas de {formatCOP(Number(negocio.installment_amount))}{orderNumber ? ` · OE ${orderNumber}` : ''}</Text>
+          </View>
 
           <View style={styles.sectionHeader}>
             <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
@@ -502,47 +517,29 @@ export default function NegocioDetailScreen() {
               </Pressable>
             )}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View style={[styles.installmentsTable, { borderColor: colors.divider }]}>
-              <View style={[styles.tableRow, styles.tableHeader, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-                <Text style={[styles.cellNumber, styles.headerCell, { color: colors.text.primary }]}>#</Text>
-                <Text style={[styles.cellDate, styles.headerCell, { color: colors.text.primary }]}>Vencimiento</Text>
-                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Valor</Text>
-                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Pagado</Text>
-                <Text style={[styles.cellMoney, styles.headerCell, { color: colors.text.primary }]}>Saldo</Text>
-                <Text style={[styles.cellStatus, styles.headerCell, { color: colors.text.primary }]}>Estado</Text>
-              </View>
-              {cuotas
-                .slice(
-                  installmentPage * TABLE_PAGE_SIZE,
-                  installmentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE
-                )
-                .map((c) => {
+          <View style={styles.mobileCardList}>
+            {cuotas
+              .slice(installmentPage * TABLE_PAGE_SIZE, installmentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE)
+              .map((c) => {
                 const late = Number(c.late_fee_amount || 0);
                 const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
+                const statusColor = c.status === 'pagada' ? colors.success.main : c.status === 'mora' ? colors.error.main : c.status === 'parcial' ? colors.warning.main : colors.info.main;
                 return (
-                  <View key={c.id} style={[styles.tableRow, { borderColor: colors.divider }]}>
-                    <Text style={[styles.cellNumber, { color: colors.text.primary }]}>{c.installment_number}</Text>
-                    <Text style={[styles.cellDate, { color: colors.text.secondary }]}>{c.due_date}</Text>
-                    <Text style={[styles.cellMoney, { color: colors.text.primary }]}>{formatCOP(Number(c.amount))}</Text>
-                    <Text style={[styles.cellMoney, { color: colors.text.secondary }]}>{formatCOP(Number(c.paid_amount))}</Text>
-                    <Text style={[styles.cellMoney, { color: colors.text.primary, fontWeight: '700' }]}>{formatCOP(saldo)}</Text>
-                    <Text
-                      style={[
-                        styles.cellStatus,
-                        {
-                          color: c.status === 'mora' ? colors.error.main : colors.text.secondary,
-                          fontWeight: c.status === 'mora' ? '700' : '500',
-                        },
-                      ]}
-                    >
-                      {c.status}
-                    </Text>
+                  <View key={c.id} style={[styles.installmentCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+                    <View style={styles.installmentTop}>
+                      <View style={[styles.installmentNumber, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontWeight: '900' }}>#{c.installment_number}</Text></View>
+                      <View style={{ flex: 1 }}><Text style={[styles.installmentTitle, { color: colors.text.primary }]}>Cuota {c.installment_number}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }}>Vence {c.due_date}</Text></View>
+                      <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontSize: 11, fontWeight: '900', textTransform: 'capitalize' }}>{c.status}</Text></View>
+                    </View>
+                    <View style={[styles.installmentAmounts, { borderTopColor: colors.divider }]}>
+                      <View><Text style={styles.amountLabel}>VALOR</Text><Text style={[styles.amountValue, { color: colors.text.primary }]}>{formatCOP(Number(c.amount) + late)}</Text>{late > 0 && <Text style={{ color: colors.error.main, fontSize: 10 }}>Incluye mora {formatCOP(late)}</Text>}</View>
+                      <View><Text style={styles.amountLabel}>PAGADO</Text><Text style={[styles.amountValue, { color: colors.success.main }]}>{formatCOP(Number(c.paid_amount))}</Text></View>
+                      <View style={{ alignItems: 'flex-end' }}><Text style={styles.amountLabel}>SALDO</Text><Text style={[styles.amountValue, { color: saldo > 0 ? colors.text.primary : colors.success.main }]}>{formatCOP(saldo)}</Text></View>
+                    </View>
                   </View>
                 );
               })}
-            </View>
-          </ScrollView>
+          </View>
           <View style={styles.pagination}>
             <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
               {cuotas.length
@@ -643,33 +640,15 @@ export default function NegocioDetailScreen() {
                   {pagos.length} registro{pagos.length === 1 ? '' : 's'}
                 </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator>
-                <View style={[styles.paymentsTable, { borderColor: colors.divider }]}>
-                  <View style={[styles.tableRow, styles.tableHeader, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-                    <Text style={[styles.paymentDate, styles.headerCell, { color: colors.text.primary }]}>Fecha</Text>
-                    <Text style={[styles.paymentAmount, styles.headerCell, { color: colors.text.primary }]}>Valor</Text>
-                    <Text style={[styles.paymentReceipt, styles.headerCell, { color: colors.text.primary }]}>Recibo virtual</Text>
-                    <Text style={[styles.paymentPhysical, styles.headerCell, { color: colors.text.primary }]}>Físico</Text>
-                    <Text style={[styles.paymentPdf, styles.headerCell, { color: colors.text.primary }]}>Archivo</Text>
+              <View style={styles.mobileCardList}>
+                {pagos.slice(paymentPage * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE).map((pago) => (
+                  <View key={pago.id} style={[styles.paymentCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+                    <View style={[styles.paymentIcon, { backgroundColor: `${colors.success.main}18` }]}><MaterialIcons name="receipt-long" size={23} color={colors.success.main} /></View>
+                    <View style={{ flex: 1 }}><Text style={[styles.paymentValue, { color: colors.text.primary }]}>{formatCOP(Number(pago.amount))}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }}>{pago.paid_at} · {pago.virtual_receipt_number}</Text><Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text></View>
+                    <Pressable style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]} onPress={() => shareReceipt(pago)}><MaterialIcons name="picture-as-pdf" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>PDF</Text></Pressable>
                   </View>
-                  {pagos
-                    .slice(
-                      paymentPage * TABLE_PAGE_SIZE,
-                      paymentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE
-                    )
-                    .map((pago) => (
-                    <View key={pago.id} style={[styles.tableRow, { borderColor: colors.divider }]}>
-                      <Text style={[styles.paymentDate, { color: colors.text.secondary }]}>{pago.paid_at}</Text>
-                      <Text style={[styles.paymentAmount, { color: colors.text.primary, fontWeight: '700' }]}>{formatCOP(Number(pago.amount))}</Text>
-                      <Text style={[styles.paymentReceipt, { color: colors.text.secondary }]}>{pago.virtual_receipt_number}</Text>
-                      <Text style={[styles.paymentPhysical, { color: colors.text.secondary }]}>{pago.receipt_number || '—'}</Text>
-                      <Pressable style={styles.paymentPdf} onPress={() => shareReceipt(pago)}>
-                        <Text style={{ color: colors.primary.main, fontWeight: '700' }}>PDF</Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
+                ))}
+              </View>
               <View style={styles.pagination}>
                 <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
                   {paymentPage * TABLE_PAGE_SIZE + 1}–{Math.min(
@@ -919,6 +898,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
+  homeBtn: { width: 42, height: 42, alignItems: 'flex-end', justifyContent: 'center' },
+  creditHero: { borderRadius: 20, padding: 17, gap: 15 },
+  creditHeroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  heroEyebrow: { color: '#bfdbfe', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
+  heroCustomer: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 3 },
+  heroAddress: { color: '#dbeafe', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  businessStatus: { backgroundColor: '#ffffff22', borderRadius: 13, paddingHorizontal: 9, paddingVertical: 5 },
+  businessStatusText: { color: '#fff', fontWeight: '900', fontSize: 10, textTransform: 'uppercase' },
+  creditMetrics: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#ffffff44', paddingTop: 13 },
+  creditMetric: { flex: 1 },
+  heroMetricValue: { color: '#fff', fontSize: 14, fontWeight: '900', marginTop: 3 },
+  heroPlan: { color: '#dbeafe', fontSize: 12, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '700' },
   section: { fontWeight: '700', marginTop: 8 },
   sectionHeader: {
@@ -935,6 +926,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
   },
+  mobileCardList: { gap: 10 },
+  installmentCard: { borderWidth: 1, borderRadius: 16, padding: 13 },
+  installmentTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  installmentNumber: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  installmentTitle: { fontWeight: '900', fontSize: 15 },
+  statusPill: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 11 },
+  installmentAmounts: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 11, marginTop: 11 },
+  amountLabel: { color: '#64748b', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  amountValue: { fontSize: 13, fontWeight: '900', marginTop: 3 },
+  paymentCard: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  paymentIcon: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  paymentValue: { fontSize: 17, fontWeight: '900' },
+  receiptButton: { minWidth: 48, minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 1 },
   installmentsTable: {
     minWidth: 760,
     borderWidth: 1,

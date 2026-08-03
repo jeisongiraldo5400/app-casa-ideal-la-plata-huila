@@ -11,9 +11,10 @@ import { getRouteProgress } from '@/lib/collection-routes/routeState';
 import { CollectionRoute, CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
 import { getCachedActiveRoute } from '@/lib/collection-routes/routeCache';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
@@ -52,6 +53,10 @@ export default function CollectionRouteDetailScreen() {
   const progress = getRouteProgress(route.stops);
   const allDone = progress.total > 0 && progress.completed === progress.total;
   const activeStop = route.stops.find((stop) => stop.status === 'actual');
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/ruta-cobros' as any);
+  };
 
   const confirmCancel = () => Alert.alert('Cancelar ruta', 'La ruta se conservará en el historial. ¿Deseas cancelarla?', [
     { text: 'No', style: 'cancel' },
@@ -59,8 +64,17 @@ export default function CollectionRouteDetailScreen() {
   ]);
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
-      <Stack.Screen options={{ headerShown: true, title: 'Ruta de cobros', headerStyle: { backgroundColor: colors.primary.main }, headerTintColor: '#fff' }} />
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background.default }]} edges={['top', 'left', 'right']}>
+      <View style={[styles.safeHeader, { backgroundColor: colors.primary.main }]}>
+        <TouchableOpacity onPress={goBack} style={styles.headerBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Volver a mis rutas">
+          <MaterialIcons name="arrow-back" size={25} color="#fff" />
+          <Text style={styles.headerBackText}>Volver</Text>
+        </TouchableOpacity>
+        <Text style={styles.safeHeaderTitle}>Ruta de cobros</Text>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} style={styles.headerHome} hitSlop={10} accessibilityRole="button" accessibilityLabel="Ir al inicio">
+          <MaterialIcons name="home" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
       <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />} contentContainerStyle={{ paddingBottom: 34 }}>
         <View style={[styles.summary, { backgroundColor: colors.primary.main }]}>
           <View style={styles.summaryTop}><View><Text style={styles.summaryEyebrow}>{route.status === 'activa' ? 'RUTA EN CURSO' : route.status.toUpperCase()}</Text><Text style={styles.summaryTitle}>{progress.completed} de {progress.total} visitas</Text></View><View style={styles.percent}><Text style={styles.percentText}>{progress.percentage}%</Text></View></View>
@@ -94,10 +108,10 @@ export default function CollectionRouteDetailScreen() {
           </>}
         </View></View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, summary: { padding: 20, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 }, summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, summaryEyebrow: { color: '#bfdbfe', fontSize: 11, fontWeight: '900', letterSpacing: 1 }, summaryTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: 3 }, percent: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ffffff22', alignItems: 'center', justifyContent: 'center' }, percentText: { color: '#fff', fontWeight: '900' }, progressTrack: { height: 7, backgroundColor: '#ffffff30', borderRadius: 5, marginVertical: 15, overflow: 'hidden' }, progressValue: { height: '100%', backgroundColor: '#fff', borderRadius: 5 }, moneyRow: { flexDirection: 'row', justifyContent: 'space-between' }, moneyLabel: { color: '#bfdbfe', fontSize: 11 }, moneyValue: { color: '#fff', fontWeight: '900', fontSize: 16, marginTop: 2 }, actionBox: { alignItems: 'center', padding: 22, gap: 9 }, actionTitle: { fontSize: 17, fontWeight: '900' }, primaryButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20, marginTop: 8 }, buttonText: { color: '#fff', fontWeight: '900' }, nextCard: { margin: 16, marginBottom: 2, borderWidth: 1.5, borderRadius: 17, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, nextIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' }, roadContainer: { paddingHorizontal: 13 }, finishButton: { marginHorizontal: 18, height: 52, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, cancelButton: { alignItems: 'center', padding: 20 }, overlay: { flex: 1, backgroundColor: '#0007', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, paddingBottom: 32, gap: 11 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#cbd5e1', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between' }, sheetTitle: { fontSize: 22, fontWeight: '900', marginTop: 3 }, infoBox: { padding: 13, borderRadius: 12, gap: 7 }, balance: { fontSize: 19, fontWeight: '900' }, secondaryButton: { height: 45, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, outcomeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }, outcomeButton: { alignItems: 'center', gap: 4, padding: 8 }, outcomeText: { color: '#475569', fontSize: 11, fontWeight: '800' }, textInput: { borderWidth: 1, borderRadius: 12, padding: 12 }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 20 }, saveOutcome: { paddingHorizontal: 18, paddingVertical: 13, borderRadius: 12 },
+  screen: { flex: 1 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, safeHeader: { minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }, headerBack: { minWidth: 82, height: 44, flexDirection: 'row', alignItems: 'center', gap: 4 }, headerBackText: { color: '#fff', fontSize: 15, fontWeight: '800' }, safeHeaderTitle: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: '900' }, headerHome: { width: 82, height: 44, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 5 }, summary: { padding: 20, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 }, summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, summaryEyebrow: { color: '#bfdbfe', fontSize: 11, fontWeight: '900', letterSpacing: 1 }, summaryTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: 3 }, percent: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ffffff22', alignItems: 'center', justifyContent: 'center' }, percentText: { color: '#fff', fontWeight: '900' }, progressTrack: { height: 7, backgroundColor: '#ffffff30', borderRadius: 5, marginVertical: 15, overflow: 'hidden' }, progressValue: { height: '100%', backgroundColor: '#fff', borderRadius: 5 }, moneyRow: { flexDirection: 'row', justifyContent: 'space-between' }, moneyLabel: { color: '#bfdbfe', fontSize: 11 }, moneyValue: { color: '#fff', fontWeight: '900', fontSize: 16, marginTop: 2 }, actionBox: { alignItems: 'center', padding: 22, gap: 9 }, actionTitle: { fontSize: 17, fontWeight: '900' }, primaryButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20, marginTop: 8 }, buttonText: { color: '#fff', fontWeight: '900' }, nextCard: { margin: 16, marginBottom: 2, borderWidth: 1.5, borderRadius: 17, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, nextIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' }, roadContainer: { paddingHorizontal: 13 }, finishButton: { marginHorizontal: 18, height: 52, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, cancelButton: { alignItems: 'center', padding: 20 }, overlay: { flex: 1, backgroundColor: '#0007', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, paddingBottom: 32, gap: 11 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#cbd5e1', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between' }, sheetTitle: { fontSize: 22, fontWeight: '900', marginTop: 3 }, infoBox: { padding: 13, borderRadius: 12, gap: 7 }, balance: { fontSize: 19, fontWeight: '900' }, secondaryButton: { height: 45, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, outcomeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }, outcomeButton: { alignItems: 'center', gap: 4, padding: 8 }, outcomeText: { color: '#475569', fontSize: 11, fontWeight: '800' }, textInput: { borderWidth: 1, borderRadius: 12, padding: 12 }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 20 }, saveOutcome: { paddingHorizontal: 18, paddingVertical: 13, borderRadius: 12 },
 });
