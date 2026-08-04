@@ -17,7 +17,6 @@ export function DeliveryOrderSelector() {
         searchDeliveryOrdersByCustomer,
         searchDeliveryOrdersByUser,
         selectDeliveryOrder,
-        error,
     } = useExitsStore();
 
     const colorScheme = useColorScheme() ?? 'light';
@@ -204,14 +203,6 @@ export function DeliveryOrderSelector() {
                 })}
             </ScrollView>
 
-            {error && (
-                <View style={[styles.errorContainer, {
-                    backgroundColor: Colors.error.light + '20',
-                    borderColor: Colors.error.main
-                }]}>
-                    <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
-                </View>
-            )}
         </View>
     );
 }

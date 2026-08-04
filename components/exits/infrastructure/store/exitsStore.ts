@@ -699,55 +699,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     });
 
     try {
-      // Consulta directa con joins para obtener todos los detalles
-      const { data: orderData, error: orderError } = await supabase
-        .from('delivery_orders')
-        .select(
-          `
-          *,
-          customer:customers(id, name, id_number),
-          assigned_to_user:profiles(id, full_name, email),
-          items:delivery_order_items!fk_delivery_order_item_order!inner(
-            id,
-            product_id,
-            warehouse_id,
-            quantity,
-            delivered_quantity,
-            created_at,
-            deleted_at,
-            source_delivery_order_id,
-            product:products!inner(id, name, barcode, sku, deleted_at),
-            warehouse:warehouses(id, name)
-          )
-        `
-        )
-        .eq('id', orderId)
-        .is('items.deleted_at', null)
-        .is('items.product.deleted_at', null)
-        .single();
+      // La orden proviene de la lista que el usuario acaba de cargar y seleccionar.
+      // Reconsultar la cabecera podía devolver cero filas por diferencias de RLS o
+      // relaciones embebidas, aunque la orden ya estuviera visible y autorizada.
+      const orderHeader: any = get().deliveryOrders.find(
+        (order) => order.id === orderId
+      );
 
-      if (orderError) {
-        console.error('Error loading delivery order details:', orderError);
-        logOperationError({
-          error_code: 'DELIVERY_ORDER_LOAD_FAILED',
-          error_message: orderError.message || String(orderError),
-          module: 'exits',
-          operation: 'select_delivery_order',
-          step: 'query',
-          entity_type: 'delivery_order',
-          entity_id: orderId
-        });
-        set({
-          selectedDeliveryOrder: null,
-          selectedDeliveryOrderId: null,
-          loading: false,
-          loadingMessage: null,
-          error: orderError.message
-        });
-        return;
-      }
-
-      if (!orderData) {
+      if (!orderHeader) {
         set({
           selectedDeliveryOrder: null,
           selectedDeliveryOrderId: null,
@@ -757,6 +716,52 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         });
         return;
       }
+
+      const { data: orderItems, error: itemsError } = await supabase
+        .from('delivery_order_items')
+        .select(
+          `
+          id,
+          product_id,
+          warehouse_id,
+          quantity,
+          delivered_quantity,
+          created_at,
+          deleted_at,
+          source_delivery_order_id,
+          product:products!inner(id, name, barcode, sku, deleted_at),
+          warehouse:warehouses(id, name)
+        `
+        )
+        .eq('delivery_order_id', orderId)
+        .is('deleted_at', null)
+        .is('product.deleted_at', null)
+        .order('created_at', { ascending: true });
+
+      if (itemsError) {
+        console.error('Error loading delivery order items:', itemsError);
+        set({
+          selectedDeliveryOrder: null,
+          selectedDeliveryOrderId: null,
+          loading: false,
+          loadingMessage: null,
+          error: itemsError.message || 'No fue posible cargar los productos de la orden'
+        });
+        return;
+      }
+
+      if (!orderItems?.length) {
+        set({
+          selectedDeliveryOrder: null,
+          selectedDeliveryOrderId: null,
+          loading: false,
+          loadingMessage: null,
+          error: 'La orden no tiene productos disponibles para registrar la salida'
+        });
+        return;
+      }
+
+      const orderData = { ...orderHeader, items: orderItems };
 
       // Obtener las salidas de inventario de esta orden y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
@@ -791,8 +796,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Para remisiones (assigned_to_user_id), usar el nombre del usuario asignado
       // Para clientes (customer_id), usar el nombre del cliente
       const customerName =
-        orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
-      const customerIdNumber = orderData.customer?.id_number || '';
+        orderData.customer_name ||
+        orderData.assigned_to_user_name ||
+        orderData.customer?.name ||
+        orderData.assigned_to_user?.full_name ||
+        '';
+      const customerIdNumber =
+        orderData.customer_id_number || orderData.customer?.id_number || '';
 
       // Incluir TODOS los items (directos + de órdenes asignadas)
       // Filtrar items con deleted_at o productos eliminados (seguridad adicional)

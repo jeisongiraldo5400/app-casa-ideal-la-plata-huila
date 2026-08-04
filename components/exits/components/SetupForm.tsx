@@ -35,7 +35,6 @@ export function SetupForm() {
     setDeliveryObservations,
     startExit,
     reset,
-    error,
     getSelectedDeliveryOrderProgress,
     canRegisterExit,
     authorizationMessage,
@@ -371,15 +370,6 @@ export function SetupForm() {
                 />
               </View>
             )}
-
-          {error && (
-            <View style={[styles.errorContainer, {
-              backgroundColor: Colors.error.light + '20',
-              borderColor: Colors.error.main
-            }]}>
-              <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
-            </View>
-          )}
 
           {selectedDeliveryOrderId && !canRegisterExit && (
             <View style={[styles.errorContainer, {
