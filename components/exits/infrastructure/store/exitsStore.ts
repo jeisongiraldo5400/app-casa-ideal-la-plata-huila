@@ -66,6 +66,10 @@ export interface DeliveryOrder {
   remission_id?: string | null;
 }
 
+export type DeliveryOrderHeader = Partial<Omit<DeliveryOrder, 'id' | 'items'>> & {
+  id: string;
+};
+
 type DeliveryOrderItemQueryRow = Pick<
   Database['public']['Tables']['delivery_order_items']['Row'],
   | 'id'
@@ -93,8 +97,42 @@ const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
 `;
 
 async function fetchSelectableDeliveryOrderItems(
-  order: DeliveryOrder
+  order: DeliveryOrderHeader
 ): Promise<{ data: DeliveryOrderItemQueryRow[]; error: { message: string } | null }> {
+  const rpcResult = await supabase.rpc('get_authorized_delivery_order_items', {
+    p_order_id: order.id,
+  });
+
+  if (!rpcResult.error) {
+    return {
+      data: (rpcResult.data || []).map((item: Database['public']['Functions']['get_authorized_delivery_order_items']['Returns'][number]) => ({
+        id: item.id,
+        product_id: item.product_id,
+        warehouse_id: item.warehouse_id,
+        quantity: item.quantity,
+        delivered_quantity: item.delivered_quantity,
+        created_at: item.created_at,
+        deleted_at: null,
+        source_delivery_order_id: item.source_delivery_order_id,
+        product: {
+          id: item.product_id,
+          name: item.product_name,
+          barcode: item.product_barcode,
+          sku: item.product_sku,
+          deleted_at: null,
+        },
+        warehouse: { id: item.warehouse_id, name: item.warehouse_name },
+      })),
+      error: null,
+    };
+  }
+
+  // Compatibilidad temporal mientras la migración del RPC llega al ambiente.
+  // Solo PGRST202 (función aún ausente) permite continuar con las consultas RLS.
+  if (rpcResult.error.code !== 'PGRST202') {
+    return { data: [], error: rpcResult.error };
+  }
+
   let itemResult = await supabase
     .from('delivery_order_items')
     .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
@@ -266,7 +304,10 @@ interface ExitsState {
   // Actions - Delivery Orders
   searchDeliveryOrdersByCustomer: (customerId: string) => Promise<void>;
   searchDeliveryOrdersByUser: (userId: string) => Promise<void>;
-  selectDeliveryOrder: (orderId: string) => Promise<void>;
+  selectDeliveryOrder: (
+    orderId: string,
+    authorizedHeader?: DeliveryOrderHeader
+  ) => Promise<void>;
   validateCurrentUserAuthorizationForOrder: (
     orderId: string
   ) => Promise<ExitAuthorizationResult>;
@@ -793,7 +834,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
-  selectDeliveryOrder: async (orderId: string) => {
+  selectDeliveryOrder: async (orderId: string, authorizedHeader) => {
     set({
       loading: true,
       loadingMessage: 'Cargando detalles de la orden...',
@@ -804,9 +845,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // La orden proviene de la lista que el usuario acaba de cargar y seleccionar.
       // Reconsultar la cabecera podía devolver cero filas por diferencias de RLS o
       // relaciones embebidas, aunque la orden ya estuviera visible y autorizada.
-      const orderHeader: any = get().deliveryOrders.find(
-        (order) => order.id === orderId
-      );
+      const orderHeader: DeliveryOrderHeader | undefined =
+        authorizedHeader ||
+        get().deliveryOrders.find((order) => order.id === orderId);
 
       if (!orderHeader) {
         set({
@@ -845,7 +886,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      const orderData = { ...orderHeader, items: orderItems };
+      const orderData: any = { ...orderHeader, items: orderItems };
 
       // Obtener las salidas de inventario de esta orden y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
@@ -920,10 +961,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         customer_id: orderData.customer_id || '',
         customer_name: customerName,
         customer_id_number: customerIdNumber,
-        status: orderData.status,
+        status: orderData.status || 'pending',
         delivery_address: orderData.delivery_address || '',
         notes: orderData.notes || '',
-        created_at: orderData.created_at,
+        created_at: orderData.created_at || new Date().toISOString(),
         items: activeItems.map((item: any) => {
           const fp = fifoAllocated.get(item.id) ?? {
             registered: 0,

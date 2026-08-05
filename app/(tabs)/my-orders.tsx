@@ -102,8 +102,23 @@ export default function MyOrdersScreen() {
         exits.setSelectedUser(order.assigned_to_user_id || user.id);
       }
 
-      await exits.selectDeliveryOrder(order.id);
-      const selectedState = useExitsStore.getState();
+      await exits.selectDeliveryOrder(order.id, {
+        id: order.id,
+        order_number: order.order_number,
+        order_type: order.order_type,
+        customer_id: order.customer_id || '',
+        customer_name: order.customer_name || '',
+        customer_id_number: order.customer_id_number || '',
+        assigned_to_user_name: null,
+        status: order.status,
+        delivery_address: order.delivery_address,
+        notes: order.notes,
+        created_at: order.created_at,
+        total_items: order.total_items,
+        total_quantity: order.total_quantity,
+        delivered_quantity: order.delivered_quantity,
+      });
+      let selectedState = useExitsStore.getState();
 
       if (!selectedState.selectedDeliveryOrderId) {
         Alert.alert('Orden no disponible', selectedState.error || 'No fue posible preparar la salida.');
@@ -112,6 +127,13 @@ export default function MyOrdersScreen() {
 
       if (!selectedState.canRegisterExit) {
         Alert.alert('Sin autorización', selectedState.authorizationMessage || 'No estás autorizado para registrar esta salida.');
+        return;
+      }
+
+      selectedState.startExit();
+      selectedState = useExitsStore.getState();
+      if (selectedState.step !== 'scanning') {
+        Alert.alert('No se pudo iniciar la salida', selectedState.error || 'Revisa los datos de la orden e intenta nuevamente.');
         return;
       }
 

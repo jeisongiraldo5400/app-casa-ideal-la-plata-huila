@@ -2264,6 +2264,22 @@ export type Database = {
           total_quantity: number
         }[]
       }
+      get_authorized_delivery_order_items: {
+        Args: { p_order_id: string }
+        Returns: {
+          created_at: string
+          delivered_quantity: number
+          id: string
+          product_barcode: string | null
+          product_id: string
+          product_name: string
+          product_sku: string | null
+          quantity: number
+          source_delivery_order_id: string | null
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
       get_customer_exit_history: {
         Args: { customer_id_param: string; page?: number; page_size?: number }
         Returns: {
