@@ -4,6 +4,7 @@ import { createCollectionRoute, fetchRouteCandidates } from '@/lib/collection-ro
 import { moveItem } from '@/lib/collection-routes/routeState';
 import { CandidateFilter, CollectionRouteCandidate } from '@/lib/collection-routes/types';
 import { fetchMunicipios, Municipio } from '@/lib/cartera/carteraService';
+import { localDateValue } from '@/lib/localDate';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
@@ -62,7 +63,7 @@ export default function CreateCollectionRouteScreen() {
     if (!selected.length) return Alert.alert('Selecciona negocios', 'Agrega al menos un negocio a la ruta.');
     try {
       setSaving(true);
-      const routeId = await createCollectionRoute(selected.map((item) => item.negocio_id), new Date().toISOString().slice(0, 10));
+      const routeId = await createCollectionRoute(selected.map((item) => item.negocio_id), localDateValue());
       router.replace(`/ruta-cobros/${routeId}` as any);
     } catch (e: any) {
       Alert.alert('No se pudo crear la ruta', e.message);

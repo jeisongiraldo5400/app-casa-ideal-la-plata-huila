@@ -2215,6 +2215,10 @@ export type Database = {
         Args: { p_cancelled_at?: string; p_order_id: string }
         Returns: undefined
       }
+      consume_admin_api_rate_limit: {
+        Args: { p_max_requests?: number; p_window_seconds?: number }
+        Returns: boolean
+      }
       edit_delivery_order_items: {
         Args: {
           p_delivery_address?: string
@@ -2248,22 +2252,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      get_customer_delivery_orders: {
-        Args: { customer_id_param: string; page?: number; page_size?: number }
-        Returns: {
-          created_at: string
-          created_by_name: string
-          delivered_quantity: number
-          delivery_address: string
-          id: string
-          is_complete: boolean
-          notes: string
-          status: string
-          total_count: number
-          total_items: number
-          total_quantity: number
-        }[]
-      }
       get_authorized_delivery_order_items: {
         Args: { p_order_id: string }
         Returns: {
@@ -2278,6 +2266,22 @@ export type Database = {
           source_delivery_order_id: string | null
           warehouse_id: string
           warehouse_name: string
+        }[]
+      }
+      get_customer_delivery_orders: {
+        Args: { customer_id_param: string; page?: number; page_size?: number }
+        Returns: {
+          created_at: string
+          created_by_name: string
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          is_complete: boolean
+          notes: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
         }[]
       }
       get_customer_exit_history: {
@@ -2801,6 +2805,116 @@ export type Database = {
           negocio_status: string
           total_count: number
         }[]
+      }
+      get_cartera_management_dashboard: {
+        Args: { p_municipio_id?: string | null }
+        Returns: Json
+      }
+      search_collection_managers: {
+        Args: { p_search?: string; p_limit?: number }
+        Returns: { id: string; full_name: string }[]
+      }
+      get_collection_manager_businesses: {
+        Args: { p_gestor_id: string; p_search?: string; p_limit?: number }
+        Returns: {
+          negocio_id: string
+          negocio_numero: number
+          customer_name: string
+          customer_id_number: string
+          current_assignment: boolean
+          historical_assignment: boolean
+        }[]
+      }
+      get_collection_manager_payments: {
+        Args: {
+          p_gestor_id: string
+          p_scope?: string
+          p_negocio_id?: string | null
+          p_date_from?: string | null
+          p_date_to?: string | null
+          p_receipt_status?: string
+          p_search?: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
+      get_collection_route_candidates: {
+        Args: {
+          p_search?: string
+          p_filter?: string
+          p_municipio_id?: string | null
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: {
+          negocio_id: string
+          negocio_numero: number
+          customer_name: string
+          customer_id_number: string
+          customer_phone: string
+          customer_address: string
+          municipality_id: string
+          municipality_name: string
+          expected_balance: number
+          overdue_balance: number
+          next_due_date: string
+          open_installments: number
+          total_count: number
+        }[]
+      }
+      create_collection_route: {
+        Args: { p_negocio_ids: string[]; p_route_date?: string }
+        Returns: string
+      }
+      get_collection_route: {
+        Args: { p_route_id: string }
+        Returns: Json
+      }
+      get_my_collection_routes: {
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          route_date: string
+          status: string
+          stop_count: number
+          completed_count: number
+          expected_total: number
+          collected_total: number
+        }[]
+      }
+      start_collection_route: {
+        Args: { p_route_id: string }
+        Returns: undefined
+      }
+      select_collection_route_stop: {
+        Args: { p_stop_id: string }
+        Returns: undefined
+      }
+      update_collection_route_stop: {
+        Args: {
+          p_stop_id: string
+          p_status: string
+          p_reason?: string | null
+          p_notes?: string | null
+        }
+        Returns: undefined
+      }
+      register_collection_route_payment: {
+        Args: {
+          p_stop_id: string
+          p_amount: number
+          p_paid_at: string
+          p_receipt_number?: string | null
+          p_cuota_id?: string | null
+          p_notes?: string | null
+          p_idempotency_key?: string | null
+        }
+        Returns: string
+      }
+      finish_collection_route: {
+        Args: { p_route_id: string; p_cancel?: boolean }
+        Returns: undefined
       }
       has_role: {
         Args: { role_name: string }

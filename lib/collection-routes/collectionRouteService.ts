@@ -17,7 +17,7 @@ export async function fetchRouteCandidates(params: {
   page: number;
   pageSize: number;
 }) {
-  const { data, error } = await (supabase.rpc as any)('get_collection_route_candidates', {
+  const { data, error } = await supabase.rpc('get_collection_route_candidates', {
     p_search: params.search,
     p_filter: params.filter,
     p_municipio_id: params.municipioId || null,
@@ -25,7 +25,7 @@ export async function fetchRouteCandidates(params: {
     p_page_size: params.pageSize,
   });
   if (error) throw new Error(error.message || 'No fue posible buscar los negocios');
-  const rows = (data || []).map((row: any): CollectionRouteCandidate => ({
+  const rows = ((data || []) as CollectionRouteCandidate[]).map((row) => ({
     ...row,
     negocio_numero: asNumber(row.negocio_numero),
     expected_balance: asNumber(row.expected_balance),
@@ -37,7 +37,7 @@ export async function fetchRouteCandidates(params: {
 }
 
 export async function createCollectionRoute(negocioIds: string[], routeDate: string) {
-  const { data, error } = await (supabase.rpc as any)('create_collection_route', {
+  const { data, error } = await supabase.rpc('create_collection_route', {
     p_negocio_ids: negocioIds,
     p_route_date: routeDate,
   });
@@ -46,9 +46,9 @@ export async function createCollectionRoute(negocioIds: string[], routeDate: str
 }
 
 export async function fetchMyCollectionRoutes() {
-  const { data, error } = await (supabase.rpc as any)('get_my_collection_routes', { p_limit: 20 });
+  const { data, error } = await supabase.rpc('get_my_collection_routes', { p_limit: 20 });
   if (error) throw new Error(error.message || 'No fue posible cargar las rutas');
-  return (data || []).map((row: any): CollectionRouteSummary => ({
+  return ((data || []) as CollectionRouteSummary[]).map((row) => ({
     ...row,
     stop_count: asNumber(row.stop_count),
     completed_count: asNumber(row.completed_count),
@@ -58,14 +58,18 @@ export async function fetchMyCollectionRoutes() {
 }
 
 export async function fetchCollectionRoute(routeId: string) {
-  const { data, error } = await (supabase.rpc as any)('get_collection_route', { p_route_id: routeId });
+  const { data, error } = await supabase.rpc('get_collection_route', { p_route_id: routeId });
   if (error) throw new Error(error.message || 'No fue posible cargar la ruta');
-  const raw = data as any;
+  const raw = data as CollectionRoute & {
+    stops?: CollectionRoute['stops'];
+    total_expected?: number;
+    total_collected?: number;
+  };
   const route: CollectionRoute = {
     ...raw,
     total_expected: asNumber(raw.total_expected),
     total_collected: asNumber(raw.total_collected),
-    stops: (raw.stops || []).map((stop: any) => ({
+    stops: (raw.stops || []).map((stop) => ({
       ...stop,
       negocio_numero: asNumber(stop.negocio_numero),
       position: asNumber(stop.position),
@@ -78,12 +82,12 @@ export async function fetchCollectionRoute(routeId: string) {
 }
 
 export async function startCollectionRoute(routeId: string) {
-  const { error } = await (supabase.rpc as any)('start_collection_route', { p_route_id: routeId });
+  const { error } = await supabase.rpc('start_collection_route', { p_route_id: routeId });
   if (error) throw new Error(error.message || 'No fue posible iniciar la ruta');
 }
 
 export async function selectCollectionRouteStop(stopId: string) {
-  const { error } = await (supabase.rpc as any)('select_collection_route_stop', { p_stop_id: stopId });
+  const { error } = await supabase.rpc('select_collection_route_stop', { p_stop_id: stopId });
   if (error) throw new Error(error.message || 'No fue posible seleccionar la parada');
 }
 
@@ -93,7 +97,7 @@ export async function updateCollectionRouteStop(
   reason: string,
   notes?: string,
 ) {
-  const { error } = await (supabase.rpc as any)('update_collection_route_stop', {
+  const { error } = await supabase.rpc('update_collection_route_stop', {
     p_stop_id: stopId,
     p_status: status,
     p_reason: reason,
@@ -103,7 +107,7 @@ export async function updateCollectionRouteStop(
 }
 
 export async function finishCollectionRoute(routeId: string, cancel = false) {
-  const { error } = await (supabase.rpc as any)('finish_collection_route', {
+  const { error } = await supabase.rpc('finish_collection_route', {
     p_route_id: routeId,
     p_cancel: cancel,
   });

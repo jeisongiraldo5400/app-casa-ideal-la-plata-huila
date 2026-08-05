@@ -49,17 +49,17 @@ export type CarteraDashboard = {
 export async function fetchCarteraPage(params: {
   filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string;
 }) {
-  const { error: moraError } = await (supabase.rpc as any)('mark_cuotas_en_mora', {
+  const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
     p_negocio_id: null,
   });
   if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
 
-  const { data, error } = await (supabase.rpc as any)('get_cartera_cuotas', {
+  const { data, error } = await supabase.rpc('get_cartera_cuotas', {
     p_filter: params.filter, p_days: params.days, p_search: params.search,
     p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
   });
   if (error) throw new Error(error.message || 'No fue posible cargar la cartera');
-  const rows = (data || []).map((row: any): CarteraRow => ({
+  const rows = ((data || []) as CarteraRow[]).map((row) => ({
     ...row, amount: Number(row.amount), paid_amount: Number(row.paid_amount),
     late_fee_amount: Number(row.late_fee_amount || 0), saldo: Number(row.saldo), total_count: Number(row.total_count || 0),
   }));
@@ -67,16 +67,16 @@ export async function fetchCarteraPage(params: {
 }
 
 export async function fetchCarteraDashboard(municipioId = '') {
-  const { error: moraError } = await (supabase.rpc as any)('mark_cuotas_en_mora', {
+  const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
     p_negocio_id: null,
   });
   if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
 
-  const { data, error } = await (supabase.rpc as any)('get_cartera_management_dashboard', {
+  const { data, error } = await supabase.rpc('get_cartera_management_dashboard', {
     p_municipio_id: municipioId || null,
   });
   if (error) throw new Error(error.message || 'No fue posible cargar el resumen de cartera');
-  return data as CarteraDashboard;
+  return data as unknown as CarteraDashboard;
 }
 
 export async function fetchMunicipios() {
@@ -87,13 +87,13 @@ export async function fetchMunicipios() {
 }
 
 export async function searchCollectionManagers(search: string) {
-  const { data, error } = await (supabase.rpc as any)('search_collection_managers', { p_search: search, p_limit: 30 });
+  const { data, error } = await supabase.rpc('search_collection_managers', { p_search: search, p_limit: 30 });
   if (error) throw new Error(error.message || 'No fue posible buscar gestores');
   return (data || []) as CollectionManager[];
 }
 
 export async function fetchManagerBusinesses(managerId: string, search = '') {
-  const { data, error } = await (supabase.rpc as any)('get_collection_manager_businesses', {
+  const { data, error } = await supabase.rpc('get_collection_manager_businesses', {
     p_gestor_id: managerId, p_search: search, p_limit: 100,
   });
   if (error) throw new Error(error.message || 'No fue posible cargar negocios');
@@ -104,12 +104,22 @@ export async function fetchManagerPayments(managerId: string, params: {
   scope: 'performed' | 'portfolio'; negocioId: string; dateFrom: string; dateTo: string;
   receiptStatus: 'todos' | 'emitido' | 'anulado'; search: string; page: number; pageSize: number;
 }) {
-  const { data, error } = await (supabase.rpc as any)('get_collection_manager_payments', {
+  const { data, error } = await supabase.rpc('get_collection_manager_payments', {
     p_gestor_id: managerId, p_scope: params.scope, p_negocio_id: params.negocioId || null,
     p_date_from: params.dateFrom || null, p_date_to: params.dateTo || null,
     p_receipt_status: params.receiptStatus, p_search: params.search,
     p_page: params.page, p_page_size: params.pageSize,
   });
   if (error) throw new Error(error.message || 'No fue posible cargar cobros');
-  return data as { summary: { total_count: number; valid_count: number; voided_count: number; total_collected: number; average_payment: number; last_payment_date: string | null }; rows: ManagerPayment[] };
+  return data as unknown as {
+    summary: {
+      total_count: number;
+      valid_count: number;
+      voided_count: number;
+      total_collected: number;
+      average_payment: number;
+      last_payment_date: string | null;
+    };
+    rows: ManagerPayment[];
+  };
 }

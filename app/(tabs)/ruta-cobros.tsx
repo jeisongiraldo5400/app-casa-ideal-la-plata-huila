@@ -23,6 +23,7 @@ export default function CollectionRoutesScreen() {
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
       setError('');
       setRoutes(await fetchMyCollectionRoutes());
     } catch (e: any) {
@@ -32,9 +33,16 @@ export default function CollectionRoutesScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { if (!rolesLoading && canUseRoutes) load(); }, [canUseRoutes, load, rolesLoading]));
+  useFocusEffect(useCallback(() => {
+    if (rolesLoading) return;
+    if (!canUseRoutes) {
+      setLoading(false);
+      return;
+    }
+    load();
+  }, [canUseRoutes, load, rolesLoading]));
 
-  if (rolesLoading || loading) return <View style={styles.center}><ActivityIndicator color={colors.primary.main} /></View>;
+  if (rolesLoading || (canUseRoutes && loading)) return <View style={styles.center}><ActivityIndicator color={colors.primary.main} /></View>;
   if (!canUseRoutes) return <View style={styles.center}><MaterialIcons name="lock" size={44} color={colors.text.secondary} /><Text style={{ color: colors.text.primary }}>Este módulo es exclusivo para gestores de cobro.</Text></View>;
 
   const active = routes.find((route) => route.status === 'activa' || route.status === 'borrador');

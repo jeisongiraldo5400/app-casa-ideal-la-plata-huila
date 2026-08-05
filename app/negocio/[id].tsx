@@ -25,6 +25,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { localDateValue } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
@@ -197,27 +198,26 @@ export default function NegocioDetailScreen() {
     try {
       setSaving(true);
       paymentIdempotencyKey.current ||= createIdempotencyKey();
-      const rpcName = routeStopId ? 'register_collection_route_payment' : 'register_negocio_pago';
-      const rpcParams = routeStopId
-        ? {
+      const paidAt = localDateValue();
+      const { error } = routeStopId
+        ? await supabase.rpc('register_collection_route_payment', {
             p_stop_id: routeStopId,
             p_amount: amount,
-            p_paid_at: new Date().toISOString().slice(0, 10),
+            p_paid_at: paidAt,
             p_receipt_number: payReceipt || null,
             p_cuota_id: null,
             p_notes: null,
             p_idempotency_key: paymentIdempotencyKey.current,
-          }
-        : {
+          })
+        : await supabase.rpc('register_negocio_pago', {
             p_negocio_id: negocio.id,
             p_amount: amount,
-            p_paid_at: new Date().toISOString().slice(0, 10),
+            p_paid_at: paidAt,
             p_receipt_number: payReceipt || null,
             p_cuota_id: null,
             p_notes: null,
             p_idempotency_key: paymentIdempotencyKey.current,
-          };
-      const { error } = await (supabase.rpc as any)(rpcName, rpcParams);
+          });
       if (error) throw error;
       paymentIdempotencyKey.current = null;
       setPayAmount('');

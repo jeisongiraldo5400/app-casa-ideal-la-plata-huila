@@ -1450,6 +1450,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       const insertedEntryIds =
         (entryResult as { entry_ids?: string[] } | null)?.entry_ids || [];
       if (insertedEntryIds.length !== entryItems.length) {
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             message:

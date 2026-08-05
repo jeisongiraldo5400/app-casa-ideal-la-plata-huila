@@ -1687,6 +1687,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // Finalize exit
   finalizeExit: async (userId: string): Promise<{ error: any }> => {
+    if (get().loading) {
+      console.warn('[finalizeExit] Ya se está procesando una salida, ignorando llamada duplicada');
+      return { error: { message: 'Ya se está procesando esta salida' } };
+    }
+
     const {
       exitItems,
       exitMode,
@@ -1845,6 +1850,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             deliveryOrderId: selectedDeliveryOrderId
           }
         });
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             ...exitsError,
@@ -1856,6 +1862,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
       if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             message:
@@ -1868,6 +1875,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         console.error(
           `Respuesta inválida: se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             message:

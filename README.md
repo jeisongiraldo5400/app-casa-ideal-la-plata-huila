@@ -28,20 +28,19 @@ Variables (EAS / `.env` según tu setup): URL y anon key de Supabase (`EXPO_PUBL
 
 ## Tipos Supabase
 
-El esquema y las migraciones se mantienen únicamente en
-[`../frontend/supabase/migrations/`](../frontend/supabase/migrations/). La app móvil
-solo consume los tipos generados del esquema compartido.
+El esquema y las migraciones viven solo en
+[`../frontend/supabase/migrations/`](../frontend/supabase/migrations/).
+Los tipos se mantienen en `frontend/src/types/database.types.ts`; esta app solo
+tiene una copia en `types/database.types.ts`.
 
-Preferir el script del monorepo (desde la raíz):
+Desde la raíz del monorepo:
 
 ```bash
+# Copiar tipos web → móvil (uso habitual tras cambios locales)
+../scripts/sync-db-types.sh --from-web
+
+# Regenerar desde Supabase remoto (migraciones ya aplicadas)
 ../scripts/sync-db-types.sh <PROJECT_REF>
-```
-
-O desde aquí:
-
-```bash
-npx supabase gen types typescript --project-id <PROJECT_REF> --schema public > types/database.types.ts
 ```
 
 ## Flujos documentados
