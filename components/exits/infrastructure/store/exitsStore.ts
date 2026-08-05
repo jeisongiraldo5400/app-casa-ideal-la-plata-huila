@@ -57,6 +57,108 @@ export interface DeliveryOrder {
   notes: string | null;
   created_at: string;
   items: DeliveryOrderItem[];
+  order_type?: string | null;
+  assigned_to_user_name?: string | null;
+  total_items?: number;
+  total_quantity?: number;
+  delivered_quantity?: number;
+  is_from_remission?: boolean;
+  remission_id?: string | null;
+}
+
+type DeliveryOrderItemQueryRow = Pick<
+  Database['public']['Tables']['delivery_order_items']['Row'],
+  | 'id'
+  | 'product_id'
+  | 'warehouse_id'
+  | 'quantity'
+  | 'delivered_quantity'
+  | 'created_at'
+  | 'deleted_at'
+  | 'source_delivery_order_id'
+> & {
+  product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
+  warehouse: Pick<Warehouse, 'id' | 'name'> | null;
+};
+
+const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
+  id,
+  product_id,
+  warehouse_id,
+  quantity,
+  delivered_quantity,
+  created_at,
+  deleted_at,
+  source_delivery_order_id
+`;
+
+async function fetchSelectableDeliveryOrderItems(
+  order: DeliveryOrder
+): Promise<{ data: DeliveryOrderItemQueryRow[]; error: { message: string } | null }> {
+  let itemResult = await supabase
+    .from('delivery_order_items')
+    .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
+    .eq('delivery_order_id', order.id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+
+  if (itemResult.error) {
+    return { data: [], error: itemResult.error };
+  }
+
+  if (!itemResult.data?.length) {
+    // La clave confiable es source_delivery_order_id. Algunas órdenes de cliente
+    // llegan desde la rama de asignaciones del RPC (is_from_remission = false),
+    // aunque sus líneas estén copiadas dentro de una remisión.
+    itemResult = await supabase
+      .from('delivery_order_items')
+      .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
+      .eq('source_delivery_order_id', order.id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+
+    if (itemResult.error) {
+      return { data: [], error: itemResult.error };
+    }
+  }
+
+  const rawItems = itemResult.data || [];
+  if (rawItems.length === 0) {
+    return { data: [], error: null };
+  }
+
+  // Las relaciones embebidas con !inner podían eliminar toda la respuesta aunque
+  // las líneas sí existieran. Cargar los catálogos por separado conserva las líneas
+  // y permite distinguir un producto realmente eliminado de un join vacío.
+  const productIds = [...new Set(rawItems.map((item) => item.product_id))];
+  const warehouseIds = [...new Set(rawItems.map((item) => item.warehouse_id))];
+  const [productsResult, warehousesResult] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, barcode, sku, deleted_at')
+      .in('id', productIds)
+      .is('deleted_at', null),
+    supabase.from('warehouses').select('id, name').in('id', warehouseIds),
+  ]);
+
+  if (productsResult.error) {
+    return { data: [], error: productsResult.error };
+  }
+  if (warehousesResult.error) {
+    return { data: [], error: warehousesResult.error };
+  }
+
+  const productsById = new Map((productsResult.data || []).map((product) => [product.id, product]));
+  const warehousesById = new Map((warehousesResult.data || []).map((warehouse) => [warehouse.id, warehouse]));
+
+  return {
+    data: rawItems.map((item) => ({
+      ...item,
+      product: productsById.get(item.product_id) || null,
+      warehouse: warehousesById.get(item.warehouse_id) || null,
+    })) as DeliveryOrderItemQueryRow[],
+    error: null,
+  };
 }
 
 export interface SelectedDeliveryOrderProgressItem {
@@ -717,26 +819,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      const { data: orderItems, error: itemsError } = await supabase
-        .from('delivery_order_items')
-        .select(
-          `
-          id,
-          product_id,
-          warehouse_id,
-          quantity,
-          delivered_quantity,
-          created_at,
-          deleted_at,
-          source_delivery_order_id,
-          product:products!inner(id, name, barcode, sku, deleted_at),
-          warehouse:warehouses(id, name)
-        `
-        )
-        .eq('delivery_order_id', orderId)
-        .is('deleted_at', null)
-        .is('product.deleted_at', null)
-        .order('created_at', { ascending: true });
+      const { data: orderItems, error: itemsError } =
+        await fetchSelectableDeliveryOrderItems(orderHeader);
 
       if (itemsError) {
         console.error('Error loading delivery order items:', itemsError);

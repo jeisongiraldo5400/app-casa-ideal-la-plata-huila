@@ -345,7 +345,7 @@ export function SetupForm() {
             </View>
           )}
 
-          {/* Selector de Orden de Entrega (opcional para Salida a Cliente) */}
+          {/* Selector compacto de Orden de Entrega para Salida a Cliente */}
           {exitMode === 'direct_customer' && selectedCustomerId && (
             <DeliveryOrderSelector />
           )}
