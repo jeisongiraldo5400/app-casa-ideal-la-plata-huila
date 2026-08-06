@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -189,11 +189,35 @@ export default function NegocioDetailScreen() {
     }, [load])
   );
 
+  const pendingBalance = useMemo(
+    () =>
+      cuotas
+        .filter((cuota) => cuota.status !== 'anulada')
+        .reduce(
+          (total, cuota) =>
+            total +
+            Math.max(
+              Number(cuota.amount) +
+                Number(cuota.late_fee_amount || 0) -
+                Number(cuota.paid_amount || 0),
+              0
+            ),
+          0
+        ),
+    [cuotas]
+  );
+
   const registerPago = async () => {
     if (!negocio) return;
     const amount = Number(payAmount);
     if (!amount || amount <= 0) {
       return Alert.alert('Indique un valor válido');
+    }
+    if (amount - pendingBalance > 0.009) {
+      return Alert.alert(
+        'Valor supera el saldo',
+        `El saldo pendiente es ${formatCOP(pendingBalance)}.`
+      );
     }
     try {
       setSaving(true);
@@ -317,10 +341,12 @@ export default function NegocioDetailScreen() {
   const shareReceipt = async (pago: any) => {
     if (!negocio) return;
     const remainingBalance = Math.max(
-      cuotas.reduce((total, cuota) => total + Math.max(
-        Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
-        0
-      ), 0),
+      cuotas
+        .filter((cuota) => cuota.status !== 'anulada')
+        .reduce((total, cuota) => total + Math.max(
+          Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
+          0
+        ), 0),
       0
     );
     const html = buildNegocioReceiptHtml({
@@ -455,10 +481,6 @@ export default function NegocioDetailScreen() {
   const totalPaid = pagos
     .filter((pago) => pago.receipt_status !== 'anulado')
     .reduce((total, pago) => total + Number(pago.amount || 0), 0);
-  const pendingBalance = cuotas.reduce((total, cuota) => total + Math.max(
-    Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
-    0
-  ), 0);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }} edges={['top', 'left', 'right']}>
