@@ -14,6 +14,9 @@ import { supabase } from '@/lib/supabase';
 import { Database, type Json } from '@/types/database.types';
 import { create } from 'zustand';
 
+/** Invalidates in-flight customer searches when a newer query starts or clears. */
+let customerSearchGeneration = 0;
+
 type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type Customer = Database['public']['Tables']['customers']['Row'];
@@ -555,6 +558,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   searchCustomers: async (searchTerm: string) => {
     const normalizedSearchTerm = searchTerm.trim();
+    const generation = ++customerSearchGeneration;
 
     if (!normalizedSearchTerm) {
       set({ customerSearchTerm: '', customers: [], customersLoading: false });
@@ -565,8 +569,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     try {
       const data = await searchCustomersByTerm(normalizedSearchTerm);
+      if (generation !== customerSearchGeneration) {
+        return;
+      }
       set({ customers: data, customersLoading: false });
     } catch (error: any) {
+      if (generation !== customerSearchGeneration) {
+        return;
+      }
       console.error('Error searching customers:', error);
       set({ customers: [], customersLoading: false });
     }

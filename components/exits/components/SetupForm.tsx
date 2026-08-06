@@ -45,9 +45,16 @@ export function SetupForm() {
   const Colors = getColors(colorScheme === 'dark');
   const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const skipNextCustomerSearchRef = useRef(false);
   const lastSearchedTermRef = useRef('');
   const selectedCustomerNameRef = useRef('');
+
+  const normalizedSearchInput = searchInput.trim();
+  const isSearchPending = normalizedSearchInput !== debouncedSearchTerm;
+  const hasCommittedSearch = debouncedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH;
+  // Empty-state only after the committed term matches what the user typed (no mid-typing flicker).
+  const canShowEmptyState = hasCommittedSearch && !isSearchPending;
 
   const handleCustomerInputChange = useCallback((text: string) => {
     setSearchInput(text);
@@ -66,11 +73,12 @@ export function SetupForm() {
   }, [selectedCustomerId, setSelectedCustomer]);
 
   const handleClearCustomerSearch = useCallback(() => {
-    skipNextCustomerSearchRef.current = true;
     lastSearchedTermRef.current = '';
     selectedCustomerNameRef.current = '';
+    skipNextCustomerSearchRef.current = false;
     setSelectedCustomer(null);
     setSearchInput('');
+    setDebouncedSearchTerm('');
     searchCustomers('');
     Keyboard.dismiss();
   }, [searchCustomers, setSelectedCustomer]);
@@ -98,31 +106,33 @@ export function SetupForm() {
     }, []) // Sin dependencias para evitar refrescos constantes
   );
 
-  // Debounce customer search so typing stays fluid while the user enters a name/id.
+  // Commit search term only after the user pauses typing.
   useEffect(() => {
     const timer = setTimeout(() => {
-      const normalizedSearchTerm = searchInput.trim();
-
-      if (skipNextCustomerSearchRef.current) {
-        skipNextCustomerSearchRef.current = false;
-        lastSearchedTermRef.current = normalizedSearchTerm;
-        return;
-      }
-
-      if (normalizedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
-        if (normalizedSearchTerm !== lastSearchedTermRef.current) {
-          lastSearchedTermRef.current = normalizedSearchTerm;
-          searchCustomers(normalizedSearchTerm);
-        }
-      } else if (normalizedSearchTerm.length === 0) {
-        // Limpiar resultados cuando el input está vacío
-        lastSearchedTermRef.current = '';
-        searchCustomers('');
-      }
+      setDebouncedSearchTerm(searchInput.trim());
     }, CUSTOMER_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [searchInput, searchCustomers]);
+  }, [searchInput]);
+
+  // Fetch customers from the committed (debounced) term only.
+  useEffect(() => {
+    if (skipNextCustomerSearchRef.current) {
+      skipNextCustomerSearchRef.current = false;
+      lastSearchedTermRef.current = debouncedSearchTerm;
+      return;
+    }
+
+    if (debouncedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
+      if (debouncedSearchTerm !== lastSearchedTermRef.current) {
+        lastSearchedTermRef.current = debouncedSearchTerm;
+        searchCustomers(debouncedSearchTerm);
+      }
+    } else if (debouncedSearchTerm.length === 0) {
+      lastSearchedTermRef.current = '';
+      searchCustomers('');
+    }
+  }, [debouncedSearchTerm, searchCustomers]);
 
   // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
@@ -290,7 +300,7 @@ export function SetupForm() {
                 )}
               </View>
 
-              {searchInput.trim().length > 0 && searchInput.trim().length < CUSTOMER_SEARCH_MIN_LENGTH && (
+              {normalizedSearchInput.length > 0 && normalizedSearchInput.length < CUSTOMER_SEARCH_MIN_LENGTH && (
                 <Text style={[styles.helperText, { color: Colors.text.secondary }]}>
                   Escriba al menos {CUSTOMER_SEARCH_MIN_LENGTH} caracteres para buscar.
                 </Text>
@@ -305,14 +315,14 @@ export function SetupForm() {
                 </View>
               )}
 
-              {customersLoading && (
+              {customersLoading && customers.length === 0 && hasCommittedSearch && (
                 <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
                   <ActivityIndicator size="small" color={Colors.primary.main} />
                   <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
                 </View>
               )}
 
-              {searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length > 0 && (
+              {hasCommittedSearch && customers.length > 0 && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -330,6 +340,7 @@ export function SetupForm() {
                         skipNextCustomerSearchRef.current = true;
                         selectedCustomerNameRef.current = customer.name;
                         setSearchInput(customer.name);
+                        setDebouncedSearchTerm(customer.name.trim());
                         Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                       }}>
                       <Text style={[styles.customerName, { color: Colors.text.primary }]}>{customer.name}</Text>
@@ -339,7 +350,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!customersLoading && searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length === 0 && (
+              {!customersLoading && canShowEmptyState && customers.length === 0 && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
