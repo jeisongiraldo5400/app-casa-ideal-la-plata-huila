@@ -620,6 +620,37 @@ COMMENT ON FUNCTION "public"."fn_adjust_stock_on_delivery_order_item_change"() I
 
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_assert_delivery_order_can_be_returned"("p_order_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_status text;
+BEGIN
+  SELECT status
+  INTO v_status
+  FROM public.delivery_orders
+  WHERE id = p_order_id
+    AND deleted_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No se encontró la orden de entrega';
+  END IF;
+
+  IF v_status = 'pending' THEN
+    RAISE EXCEPTION 'Para órdenes pendientes, cancele la salida o edite la orden.';
+  END IF;
+
+  IF v_status NOT IN ('delivered', 'approved') THEN
+    RAISE EXCEPTION 'Solo se pueden registrar devoluciones de órdenes entregadas o aprobadas.';
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_assert_delivery_order_can_be_returned"("p_order_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -719,6 +750,52 @@ $$;
 ALTER FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_decrement_delivery_order_item_delivered"("p_order_id" "uuid", "p_product_id" "uuid", "p_warehouse_id" "uuid", "p_quantity" numeric) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+  v_remaining numeric := p_quantity;
+  v_item RECORD;
+  v_take numeric;
+BEGIN
+  IF p_quantity <= 0 THEN
+    RETURN;
+  END IF;
+
+  FOR v_item IN
+    SELECT id, delivered_quantity
+    FROM public.delivery_order_items
+    WHERE delivery_order_id = p_order_id
+      AND product_id = p_product_id
+      AND warehouse_id = p_warehouse_id
+      AND deleted_at IS NULL
+      AND COALESCE(delivered_quantity, 0) > 0
+    ORDER BY created_at DESC, id DESC
+    FOR UPDATE
+  LOOP
+    EXIT WHEN v_remaining <= 0;
+
+    v_take := LEAST(v_remaining, COALESCE(v_item.delivered_quantity, 0));
+
+    IF v_take > 0 THEN
+      UPDATE public.delivery_order_items
+      SET delivered_quantity = GREATEST(0, COALESCE(delivered_quantity, 0) - v_take)
+      WHERE id = v_item.id;
+
+      v_remaining := v_remaining - v_take;
+    END IF;
+  END LOOP;
+
+  IF v_remaining > 0 THEN
+    RAISE EXCEPTION 'La devolución excede la cantidad entregada neta. Excedente: %', v_remaining;
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."fn_decrement_delivery_order_item_delivered"("p_order_id" "uuid", "p_product_id" "uuid", "p_warehouse_id" "uuid", "p_quantity" numeric) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_log_delivery_order_delivered"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -758,37 +835,37 @@ CREATE OR REPLACE FUNCTION "public"."fn_process_delivery_order_return"() RETURNS
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 DECLARE
-  new_entry_id UUID;
+  new_entry_id uuid;
 BEGIN
-  -- Create inventory entry; entry_type != 'return' so fn_update_stock_on_entry
-  -- will add to warehouse_stock via its existing trigger.
+  PERFORM public.fn_assert_delivery_order_can_be_returned(NEW.delivery_order_id);
+
   INSERT INTO public.inventory_entries (
     product_id,
     warehouse_id,
     quantity,
     entry_type,
+    delivery_order_return_id,
     created_by
   ) VALUES (
     NEW.product_id,
     NEW.warehouse_id,
     NEW.quantity,
-    'delivery_return',
+    'return',
+    NEW.id,
     NEW.created_by
   )
   RETURNING id INTO new_entry_id;
 
-  -- Link the new inventory entry back to this return record.
   UPDATE public.delivery_order_returns
   SET inventory_entry_id = new_entry_id
   WHERE id = NEW.id;
 
-  -- Reduce delivered_quantity on the matching DOI (product came back to warehouse).
-  UPDATE public.delivery_order_items
-  SET delivered_quantity = GREATEST(0, delivered_quantity - NEW.quantity)
-  WHERE delivery_order_id = NEW.delivery_order_id
-    AND product_id = NEW.product_id
-    AND warehouse_id = NEW.warehouse_id
-    AND deleted_at IS NULL;
+  PERFORM public.fn_decrement_delivery_order_item_delivered(
+    NEW.delivery_order_id,
+    NEW.product_id,
+    NEW.warehouse_id,
+    NEW.quantity
+  );
 
   RETURN NEW;
 END;
@@ -1394,55 +1471,44 @@ CREATE OR REPLACE FUNCTION "public"."fn_update_stock_on_entry"() RETURNS "trigge
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 DECLARE
-    stock_delta NUMERIC;
-    ret_type TEXT;
+  stock_delta numeric;
+  ret_type text;
 BEGIN
-    -- Skip if this entry is soft-deleted
-    IF NEW.deleted_at IS NOT NULL THEN
-        RETURN NEW;
-    END IF;
-
-    -- Determinar el cambio de stock según el tipo de entrada
-    IF NEW.entry_type = 'return' THEN
-        -- Para returns, necesitamos consultar return_type para determinar la dirección
-        SELECT return_type INTO ret_type
-        FROM returns
-        WHERE product_id = NEW.product_id
-          AND warehouse_id = NEW.warehouse_id
-          AND quantity = NEW.quantity
-          AND created_by = NEW.created_by
-          AND created_at BETWEEN (NEW.created_at - INTERVAL '1 second') AND (NEW.created_at + INTERVAL '1 second')
-          AND inventory_entry_id IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1;
-
-        -- Determinar dirección del stock según tipo de devolución
-        IF ret_type = 'purchase_order' THEN
-            -- Devoluciones a proveedor: producto SALE del almacén (RESTAR)
-            stock_delta := -NEW.quantity;
-        ELSIF ret_type = 'delivery_order' THEN
-            -- Devoluciones de cliente: producto REGRESA al almacén (SUMAR)
-            stock_delta := NEW.quantity;
-        ELSE
-            -- Fallback: si no encontramos el registro, loguear warning y sumar por defecto
-            RAISE WARNING 'No se pudo determinar return_type para inventory_entry %, usando ADD por defecto', NEW.id;
-            stock_delta := NEW.quantity;
-        END IF;
-    ELSE
-        -- Todos los otros entry_types: SUMAR al stock
-        -- (PO_ENTRY, ENTRY, INITIAL_LOAD, etc.)
-        stock_delta := NEW.quantity;
-    END IF;
-
-    -- Upsert en warehouse_stock con el delta calculado
-    INSERT INTO public.warehouse_stock (product_id, warehouse_id, quantity, updated_at)
-    VALUES (NEW.product_id, NEW.warehouse_id, stock_delta, NOW())
-    ON CONFLICT (product_id, warehouse_id)
-    DO UPDATE SET
-        quantity = warehouse_stock.quantity + EXCLUDED.quantity,
-        updated_at = NOW();
-
+  IF NEW.deleted_at IS NOT NULL THEN
     RETURN NEW;
+  END IF;
+
+  IF NEW.delivery_order_return_id IS NOT NULL THEN
+    stock_delta := NEW.quantity;
+  ELSIF NEW.entry_type = 'return' THEN
+    SELECT return_type INTO ret_type
+    FROM public.returns
+    WHERE product_id = NEW.product_id
+      AND warehouse_id = NEW.warehouse_id
+      AND quantity = NEW.quantity
+      AND created_by IS NOT DISTINCT FROM NEW.created_by
+      AND created_at BETWEEN (NEW.created_at - INTERVAL '1 second') AND (NEW.created_at + INTERVAL '1 second')
+      AND inventory_entry_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF ret_type = 'purchase_order' THEN
+      stock_delta := -NEW.quantity;
+    ELSE
+      stock_delta := NEW.quantity;
+    END IF;
+  ELSE
+    stock_delta := NEW.quantity;
+  END IF;
+
+  INSERT INTO public.warehouse_stock (product_id, warehouse_id, quantity, updated_at)
+  VALUES (NEW.product_id, NEW.warehouse_id, stock_delta, NOW())
+  ON CONFLICT (product_id, warehouse_id)
+  DO UPDATE SET
+    quantity = warehouse_stock.quantity + EXCLUDED.quantity,
+    updated_at = NOW();
+
+  RETURN NEW;
 END;
 $$;
 
@@ -2842,55 +2908,54 @@ CREATE OR REPLACE FUNCTION "public"."get_orders_for_return"("return_type_param" 
     LANGUAGE "plpgsql" STABLE
     AS $$
 BEGIN
-    IF return_type_param = 'purchase_order' THEN
-        RETURN QUERY
-        SELECT
-            po.id,
-            po.order_number,
-            COALESCE(po.order_number, 'OC-' || SUBSTRING(po.id::text, 1, 8)) AS display_name
-        FROM public.purchase_orders po
-        WHERE po.status != 'cancelled'
-          AND po.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 
-              FROM public.inventory_entries ie
-              WHERE ie.purchase_order_id = po.id
-          )
-          AND (
-              search_term = ''
-              OR LOWER(po.order_number) LIKE '%' || LOWER(search_term) || '%'
-              OR LOWER(COALESCE(po.order_number, 'OC-' || SUBSTRING(po.id::text, 1, 8))) LIKE '%' || LOWER(search_term) || '%'
-              OR po.id::text LIKE '%' || search_term || '%'
-          )
-        ORDER BY po.created_at DESC
-        LIMIT 50; -- Limitar resultados para mejor rendimiento
-        
-    ELSIF return_type_param = 'delivery_order' THEN
-        RETURN QUERY
-        SELECT
-            dord.id,
-            dord.order_number,
-            COALESCE(dord.order_number, 'OE-' || SUBSTRING(dord.id::text, 1, 8)) AS display_name
-        FROM public.delivery_orders dord
-        WHERE dord.status != 'cancelled'
-          AND dord.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 
-              FROM public.inventory_exits iex
-              WHERE iex.delivery_order_id = dord.id
-          )
-          AND (
-              search_term = ''
-              OR LOWER(dord.order_number) LIKE '%' || LOWER(search_term) || '%'
-              OR LOWER(COALESCE(dord.order_number, 'OE-' || SUBSTRING(dord.id::text, 1, 8))) LIKE '%' || LOWER(search_term) || '%'
-              OR dord.id::text LIKE '%' || search_term || '%'
-          )
-        ORDER BY dord.created_at DESC
-        LIMIT 50; -- Limitar resultados para mejor rendimiento
-    ELSE
-        -- Retornar vacío si el tipo no es válido
-        RETURN;
-    END IF;
+  IF return_type_param = 'purchase_order' THEN
+    RETURN QUERY
+    SELECT
+      po.id,
+      po.order_number,
+      COALESCE(po.order_number, 'OC-' || SUBSTRING(po.id::text, 1, 8)) AS display_name
+    FROM public.purchase_orders po
+    WHERE po.status != 'cancelled'
+      AND po.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM public.inventory_entries ie
+        WHERE ie.purchase_order_id = po.id
+      )
+      AND (
+        search_term = ''
+        OR LOWER(po.order_number) LIKE '%' || LOWER(search_term) || '%'
+        OR LOWER(COALESCE(po.order_number, 'OC-' || SUBSTRING(po.id::text, 1, 8))) LIKE '%' || LOWER(search_term) || '%'
+        OR po.id::text LIKE '%' || search_term || '%'
+      )
+    ORDER BY po.created_at DESC
+    LIMIT 50;
+
+  ELSIF return_type_param = 'delivery_order' THEN
+    RETURN QUERY
+    SELECT
+      dord.id,
+      dord.order_number,
+      COALESCE(dord.order_number, 'OE-' || SUBSTRING(dord.id::text, 1, 8)) AS display_name
+    FROM public.delivery_orders dord
+    WHERE dord.status IN ('delivered', 'approved')
+      AND dord.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM public.inventory_exits iex
+        WHERE iex.delivery_order_id = dord.id
+      )
+      AND (
+        search_term = ''
+        OR LOWER(dord.order_number) LIKE '%' || LOWER(search_term) || '%'
+        OR LOWER(COALESCE(dord.order_number, 'OE-' || SUBSTRING(dord.id::text, 1, 8))) LIKE '%' || LOWER(search_term) || '%'
+        OR dord.id::text LIKE '%' || search_term || '%'
+      )
+    ORDER BY dord.created_at DESC
+    LIMIT 50;
+  ELSE
+    RETURN;
+  END IF;
 END;
 $$;
 
@@ -3616,101 +3681,111 @@ CREATE OR REPLACE FUNCTION "public"."get_products_for_return"("return_type_param
     LANGUAGE "plpgsql" STABLE
     AS $$
 BEGIN
-    IF return_type_param = 'purchase_order' THEN
-        RETURN QUERY
-        WITH received_by_product_warehouse AS (
-            -- Calcular cantidades recibidas por producto-bodega
-            SELECT
-                ie.product_id,
-                ie.warehouse_id,
-                SUM(ie.quantity) AS total_received
-            FROM public.inventory_entries ie
-            WHERE ie.purchase_order_id = order_id_param
-            GROUP BY ie.product_id, ie.warehouse_id
-        ),
-        returned_by_product_warehouse AS (
-            -- Calcular cantidades ya devueltas por producto-bodega
-            SELECT
-                r.product_id,
-                r.warehouse_id,
-                SUM(r.quantity) AS total_returned
-            FROM public.returns r
-            WHERE r.return_type = 'purchase_order'
-              AND r.order_id = order_id_param
-            GROUP BY r.product_id, r.warehouse_id
-        ),
-        products_with_quantities AS (
-            SELECT
-                r.product_id,
-                r.warehouse_id,
-                r.total_received,
-                COALESCE(ret.total_returned, 0) AS total_returned,
-                (r.total_received - COALESCE(ret.total_returned, 0)) AS max_returnable
-            FROM received_by_product_warehouse r
-            LEFT JOIN returned_by_product_warehouse ret 
-                ON ret.product_id = r.product_id 
-                AND ret.warehouse_id = r.warehouse_id
-            WHERE (r.total_received - COALESCE(ret.total_returned, 0)) > 0
-        )
+  IF return_type_param = 'purchase_order' THEN
+    RETURN QUERY
+    WITH received_by_product_warehouse AS (
+      SELECT
+        ie.product_id,
+        ie.warehouse_id,
+        SUM(ie.quantity) AS total_received
+      FROM public.inventory_entries ie
+      WHERE ie.purchase_order_id = order_id_param
+      GROUP BY ie.product_id, ie.warehouse_id
+    ),
+    returned_by_product_warehouse AS (
+      SELECT
+        r.product_id,
+        r.warehouse_id,
+        SUM(r.quantity) AS total_returned
+      FROM public.returns r
+      WHERE r.return_type = 'purchase_order'
+        AND r.order_id = order_id_param
+      GROUP BY r.product_id, r.warehouse_id
+    ),
+    products_with_quantities AS (
+      SELECT
+        r.product_id,
+        r.warehouse_id,
+        r.total_received,
+        COALESCE(ret.total_returned, 0) AS total_returned,
+        (r.total_received - COALESCE(ret.total_returned, 0)) AS max_returnable
+      FROM received_by_product_warehouse r
+      LEFT JOIN returned_by_product_warehouse ret
+        ON ret.product_id = r.product_id
+        AND ret.warehouse_id = r.warehouse_id
+      WHERE (r.total_received - COALESCE(ret.total_returned, 0)) > 0
+    )
+    SELECT
+      pwq.product_id,
+      p.name::text AS product_name,
+      p.sku::text AS product_sku,
+      pwq.warehouse_id,
+      w.name::text AS warehouse_name,
+      pwq.max_returnable,
+      pwq.total_returned AS already_returned
+    FROM products_with_quantities pwq
+    LEFT JOIN public.products p ON p.id = pwq.product_id
+    LEFT JOIN public.warehouses w ON w.id = pwq.warehouse_id
+    WHERE p.id IS NOT NULL
+    ORDER BY p.name, w.name;
+
+  ELSIF return_type_param = 'delivery_order' THEN
+    RETURN QUERY
+    WITH returned_by_product_warehouse AS (
+      SELECT
+        returned.product_id,
+        returned.warehouse_id,
+        SUM(returned.quantity) AS total_returned
+      FROM (
         SELECT
-            pwq.product_id,
-            p.name::text AS product_name,
-            p.sku::text AS product_sku,
-            pwq.warehouse_id,
-            w.name::text AS warehouse_name,
-            pwq.max_returnable,
-            pwq.total_returned AS already_returned
-        FROM products_with_quantities pwq
-        LEFT JOIN public.products p ON p.id = pwq.product_id
-        LEFT JOIN public.warehouses w ON w.id = pwq.warehouse_id
-        WHERE p.id IS NOT NULL
-        ORDER BY p.name, w.name;
-        
-    ELSIF return_type_param = 'delivery_order' THEN
-        RETURN QUERY
-        WITH returned_by_product_warehouse AS (
-            -- Calcular cantidades ya devueltas por producto-bodega
-            SELECT
-                r.product_id,
-                r.warehouse_id,
-                SUM(r.quantity) AS total_returned
-            FROM public.returns r
-            WHERE r.return_type = 'delivery_order'
-              AND r.order_id = order_id_param
-            GROUP BY r.product_id, r.warehouse_id
-        ),
-        items_with_returns AS (
-            SELECT
-                doi.product_id,
-                doi.warehouse_id,
-                doi.delivered_quantity,
-                COALESCE(ret.total_returned, 0) AS total_returned,
-                (doi.delivered_quantity - COALESCE(ret.total_returned, 0)) AS max_returnable
-            FROM public.delivery_order_items doi
-            LEFT JOIN returned_by_product_warehouse ret 
-                ON ret.product_id = doi.product_id 
-                AND ret.warehouse_id = doi.warehouse_id
-            WHERE doi.delivery_order_id = order_id_param
-              AND doi.delivered_quantity > 0
-              AND (doi.delivered_quantity - COALESCE(ret.total_returned, 0)) > 0
-        )
+          r.product_id,
+          r.warehouse_id,
+          r.quantity
+        FROM public.returns r
+        WHERE r.return_type = 'delivery_order'
+          AND r.order_id = order_id_param
+
+        UNION ALL
+
         SELECT
-            iwr.product_id,
-            p.name::text AS product_name,
-            p.sku::text AS product_sku,
-            iwr.warehouse_id,
-            w.name::text AS warehouse_name,
-            iwr.max_returnable,
-            iwr.total_returned AS already_returned
-        FROM items_with_returns iwr
-        LEFT JOIN public.products p ON p.id = iwr.product_id
-        LEFT JOIN public.warehouses w ON w.id = iwr.warehouse_id
-        WHERE p.id IS NOT NULL
-        ORDER BY p.name, w.name;
-    ELSE
-        -- Retornar vacío si el tipo no es válido
-        RETURN;
-    END IF;
+          dor.product_id,
+          dor.warehouse_id,
+          dor.quantity
+        FROM public.delivery_order_returns dor
+        WHERE dor.delivery_order_id = order_id_param
+      ) returned
+      GROUP BY returned.product_id, returned.warehouse_id
+    ),
+    delivered_by_product_warehouse AS (
+      SELECT
+        doi.product_id,
+        doi.warehouse_id,
+        SUM(COALESCE(doi.delivered_quantity, 0)) AS net_delivered
+      FROM public.delivery_order_items doi
+      WHERE doi.delivery_order_id = order_id_param
+        AND doi.deleted_at IS NULL
+      GROUP BY doi.product_id, doi.warehouse_id
+    )
+    SELECT
+      dbpw.product_id,
+      p.name::text AS product_name,
+      p.sku::text AS product_sku,
+      dbpw.warehouse_id,
+      w.name::text AS warehouse_name,
+      dbpw.net_delivered AS max_returnable,
+      COALESCE(ret.total_returned, 0) AS already_returned
+    FROM delivered_by_product_warehouse dbpw
+    LEFT JOIN returned_by_product_warehouse ret
+      ON ret.product_id = dbpw.product_id
+      AND ret.warehouse_id = dbpw.warehouse_id
+    LEFT JOIN public.products p ON p.id = dbpw.product_id
+    LEFT JOIN public.warehouses w ON w.id = dbpw.warehouse_id
+    WHERE p.id IS NOT NULL
+      AND dbpw.net_delivered > 0
+    ORDER BY p.name, w.name;
+  ELSE
+    RETURN;
+  END IF;
 END;
 $$;
 
@@ -4924,76 +4999,63 @@ CREATE OR REPLACE FUNCTION "public"."process_return_inventory"() RETURNS "trigge
     LANGUAGE "plpgsql"
     AS $$
 DECLARE
-    new_entry_id UUID;
+  new_entry_id uuid;
 BEGIN
-    -- Solo procesar en INSERT
-    IF TG_OP = 'INSERT' THEN
-        IF NEW.return_type = 'purchase_order' THEN
-            -- Para purchase orders: crear entrada de inventario (devolver al stock)
-            -- NOTA: El trigger fn_update_stock_on_entry() actualizará warehouse_stock automáticamente
-            INSERT INTO inventory_entries (
-                product_id,
-                warehouse_id,
-                quantity,
-                entry_type,
-                purchase_order_id,
-                created_by
-            ) VALUES (
-                NEW.product_id,
-                NEW.warehouse_id,
-                NEW.quantity,
-                'return',
-                NEW.order_id,
-                NEW.created_by
-            )
-            RETURNING id INTO new_entry_id;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.return_type = 'purchase_order' THEN
+      INSERT INTO public.inventory_entries (
+        product_id,
+        warehouse_id,
+        quantity,
+        entry_type,
+        purchase_order_id,
+        created_by
+      ) VALUES (
+        NEW.product_id,
+        NEW.warehouse_id,
+        NEW.quantity,
+        'return',
+        NEW.order_id,
+        NEW.created_by
+      )
+      RETURNING id INTO new_entry_id;
 
-            -- REMOVIDO: Actualización directa de warehouse_stock
-            -- El trigger fn_update_stock_on_entry() ya lo hace automáticamente
-            -- Esto estaba causando DOBLE incremento del stock
+      UPDATE public.returns
+      SET inventory_entry_id = new_entry_id
+      WHERE id = NEW.id;
 
-            -- Actualizar el registro de devolución con el ID de la entrada
-            UPDATE returns
-            SET inventory_entry_id = new_entry_id
-            WHERE id = NEW.id;
+    ELSIF NEW.return_type = 'delivery_order' THEN
+      PERFORM public.fn_assert_delivery_order_can_be_returned(NEW.order_id);
 
-        ELSIF NEW.return_type = 'delivery_order' THEN
-            -- Para delivery orders: crear entrada de inventario (devolver al stock)
-            -- NOTA: El trigger fn_update_stock_on_entry() actualizará warehouse_stock automáticamente
-            INSERT INTO inventory_entries (
-                product_id,
-                warehouse_id,
-                quantity,
-                entry_type,
-                created_by
-            ) VALUES (
-                NEW.product_id,
-                NEW.warehouse_id,
-                NEW.quantity,
-                'return',
-                NEW.created_by
-            )
-            RETURNING id INTO new_entry_id;
+      INSERT INTO public.inventory_entries (
+        product_id,
+        warehouse_id,
+        quantity,
+        entry_type,
+        created_by
+      ) VALUES (
+        NEW.product_id,
+        NEW.warehouse_id,
+        NEW.quantity,
+        'return',
+        NEW.created_by
+      )
+      RETURNING id INTO new_entry_id;
 
-            -- REMOVIDO: Actualización directa de warehouse_stock
-            -- El trigger fn_update_stock_on_entry() ya lo hace automáticamente
-            -- Esto estaba causando DOBLE incremento del stock
+      PERFORM public.fn_decrement_delivery_order_item_delivered(
+        NEW.order_id,
+        NEW.product_id,
+        NEW.warehouse_id,
+        NEW.quantity
+      );
 
-            -- Actualizar delivered_quantity en delivery_order_items (reducir cantidad entregada)
-            UPDATE delivery_order_items
-            SET delivered_quantity = GREATEST(0, delivered_quantity - NEW.quantity)
-            WHERE delivery_order_id = NEW.order_id
-              AND product_id = NEW.product_id
-              AND warehouse_id = NEW.warehouse_id;
-
-            -- Actualizar el registro de devolución con el ID de la entrada
-            UPDATE returns
-            SET inventory_entry_id = new_entry_id
-            WHERE id = NEW.id;
-        END IF;
+      UPDATE public.returns
+      SET inventory_entry_id = new_entry_id
+      WHERE id = NEW.id;
     END IF;
+  END IF;
 
-    RETURN NEW;
+  RETURN NEW;
 END;
 $$;
 
@@ -9220,6 +9282,12 @@ GRANT ALL ON FUNCTION "public"."fn_adjust_stock_on_delivery_order_item_change"()
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_assert_delivery_order_can_be_returned"("p_order_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_assert_delivery_order_can_be_returned"("p_order_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_assert_delivery_order_can_be_returned"("p_order_id" "uuid") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() TO "service_role";
@@ -9229,6 +9297,12 @@ GRANT ALL ON FUNCTION "public"."fn_auto_update_remission_status_on_delivery"() T
 GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "anon";
 GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_cancel_inventory_entry_on_cancellation"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_decrement_delivery_order_item_delivered"("p_order_id" "uuid", "p_product_id" "uuid", "p_warehouse_id" "uuid", "p_quantity" numeric) TO "anon";
+GRANT ALL ON FUNCTION "public"."fn_decrement_delivery_order_item_delivered"("p_order_id" "uuid", "p_product_id" "uuid", "p_warehouse_id" "uuid", "p_quantity" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_decrement_delivery_order_item_delivered"("p_order_id" "uuid", "p_product_id" "uuid", "p_warehouse_id" "uuid", "p_quantity" numeric) TO "service_role";
 
 
 

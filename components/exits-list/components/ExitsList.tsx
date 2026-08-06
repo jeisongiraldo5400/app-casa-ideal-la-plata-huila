@@ -61,7 +61,10 @@ export function ExitsList() {
         const creatorName = item.created_by_name || 'Usuario desconocido';
 
         return (
-          <Card key={item.id} style={[styles.itemCard, item.is_cancelled && styles.cancelledCard]}>
+          <Card
+            key={item.id}
+            style={StyleSheet.flatten([styles.itemCard, item.is_cancelled ? styles.cancelledCard : undefined])}
+          >
             <View style={styles.itemHeader}>
               <View style={styles.itemInfo}>
                 <Text style={styles.productName}>{item.product_name || 'Sin nombre'}</Text>
@@ -265,4 +268,3 @@ const styles = StyleSheet.create({
     height: 20,
   },
 });
-

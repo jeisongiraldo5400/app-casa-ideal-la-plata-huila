@@ -2,7 +2,7 @@
   "expo": {
     "name": "Casa Ideal",
     "slug": "app-casa-ideal",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "orientation": "portrait",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
@@ -37,10 +37,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ],
+      "permissions": ["android.permission.CAMERA"],
       "package": "com.casaideal.laplatahuila"
     },
     "web": {

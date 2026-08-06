@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { Card } from '@/components/ui/Card';
 import { useTheme } from '@/components/theme';
@@ -16,7 +16,7 @@ interface EntriesVsExitsChartProps {
 export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const screenWidth = Dimensions.get('window').width;
+  const { width: screenWidth } = useWindowDimensions();
 
   if (!data || data.length === 0) {
     return (
@@ -28,12 +28,15 @@ export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
   }
 
   // Preparar datos para el gráfico
+  const labelInterval = Math.max(1, Math.ceil(data.length / 6));
   const chartData = data.map((item, index) => {
     try {
       const date = item.date ? new Date(item.date) : new Date();
       return {
         value: Number(item.entries) || 0,
-        label: date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
+        label: index % labelInterval === 0 || index === data.length - 1
+          ? date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })
+          : '',
         labelTextStyle: { color: colors.text.secondary, fontSize: 10 },
       };
     } catch (error) {
@@ -54,6 +57,8 @@ export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
     ...data.map((d) => Math.max(Number(d.entries) || 0, Number(d.exits) || 0)),
     1
   );
+  const chartWidth = Math.max(screenWidth - 112, 210);
+  const pointSpacing = Math.max(16, Math.floor((chartWidth - 24) / Math.max(data.length - 1, 1)));
 
   return (
     <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
@@ -62,8 +67,8 @@ export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
         <LineChart
           data={chartData}
           data2={chartDataExits}
-          height={200}
-          width={screenWidth - 80}
+          height={180}
+          width={chartWidth}
           color={colors.success.main}
           color2={colors.error.main}
           thickness={2}
@@ -75,7 +80,7 @@ export function EntriesVsExitsChart({ data }: EntriesVsExitsChartProps) {
           rulesType="solid"
           yAxisTextStyle={{ color: colors.text.secondary, fontSize: 10 }}
           maxValue={maxValue * 1.2}
-          spacing={40}
+          spacing={pointSpacing}
           initialSpacing={10}
           endSpacing={10}
           curved
@@ -117,6 +122,7 @@ const styles = StyleSheet.create({
   chartContainer: {
     alignItems: 'center',
     marginVertical: 8,
+    overflow: 'hidden',
   },
   legend: {
     flexDirection: 'row',
@@ -143,4 +149,3 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
 });
-

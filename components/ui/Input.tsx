@@ -8,26 +8,28 @@ import {
   ViewStyle,
 } from 'react-native';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
+  rightElement?: React.ReactNode;
 }
 
 export function Input({
   label,
   error,
   containerStyle,
+  rightElement,
   style,
   onFocus,
   onBlur,
   ...props
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
 
   const handleFocus = (e: any) => {
     setIsFocused(true);
@@ -39,41 +41,46 @@ export function Input({
     onBlur?.(e);
   };
 
+  const borderColor = error
+    ? Colors.error.main
+    : isFocused
+      ? Colors.primary.main
+      : Colors.divider;
+
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={[styles.label, { color: Colors.text.primary }]}>{label}</Text>}
-      <TextInput
+      {label ? (
+        <Text style={[styles.label, { color: Colors.text.primary }]}>{label}</Text>
+      ) : null}
+      <View
         style={[
-          styles.input,
+          styles.inputWrapper,
           {
-            borderColor: Colors.divider,
-            color: Colors.text.primary,
+            borderColor,
             backgroundColor: Colors.background.paper,
           },
-          isFocused && {
-            borderColor: Colors.primary.main,
-            borderWidth: 2,
-            shadowColor: Colors.primary.main,
-            shadowOffset: {
-              width: 0,
-              height: 0,
-            },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 2,
-          },
-          error && {
-            borderColor: Colors.error.main,
-            borderWidth: 2,
-          },
-          style,
-        ]}
-        placeholderTextColor={Colors.text.secondary}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        {...props}
-      />
-      {error && <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>}
+        ]}>
+        <TextInput
+          style={[
+            styles.input,
+            { color: Colors.text.primary },
+            rightElement ? styles.inputWithRight : null,
+            style,
+          ]}
+          placeholderTextColor={Colors.text.secondary}
+          {...props}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+        />
+        {rightElement ? (
+          <View style={styles.rightElement} pointerEvents="box-none">
+            {rightElement}
+          </View>
+        ) : null}
+      </View>
+      {error ? (
+        <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
+      ) : null}
     </View>
   );
 }
@@ -87,12 +94,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  input: {
-    height: 52,
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Border width fijo: cambiar 1.5→2 al focus provoca re-layout
+    // y en iOS el TextInput pierde el teclado / no deja escribir.
     borderWidth: 1.5,
     borderRadius: 12,
+    minHeight: 52,
+  },
+  input: {
+    flex: 1,
+    minHeight: 52,
     paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 16,
+  },
+  inputWithRight: {
+    paddingRight: 8,
+  },
+  rightElement: {
+    paddingRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorText: {
     fontSize: 13,
@@ -100,4 +124,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

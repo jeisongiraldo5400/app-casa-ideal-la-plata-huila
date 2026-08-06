@@ -18,7 +18,7 @@ const lightColors = {
     contrastText: '#ffffff', // Blanco
   },
   background: {
-    default: '#fafbfc', // Gris muy claro - Fondo default
+    default: '#f7f5f1', // papel cálido
     paper: '#ffffff', // Blanco - Fondos, papel
   },
   text: {

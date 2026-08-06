@@ -11,9 +11,11 @@ export function EntryItemsList() {
   const {
     entryItems,
     removeProductFromEntry,
+    updateProductQuantity,
     finalizeEntry,
     loading,
     purchaseOrderId,
+    selectedPurchaseOrder,
   } = useEntriesStore();
 
   const { user } = useAuth();
@@ -73,16 +75,27 @@ export function EntryItemsList() {
         return;
       }
 
-      const { error } = await finalizeEntry(user.id);
-      if (error) {
-        Alert.alert('Error', error.message || 'Error al finalizar la entrada');
-      } else {
-        // Recargar las cantidades registradas después de finalizar exitosamente
-        if (purchaseOrderId) {
-          await loadRegisteredQuantities();
-        }
-        Alert.alert('Éxito', 'Entrada registrada correctamente');
-      }
+      const totalItems = entryItems.reduce((sum, item) => sum + item.quantity, 0);
+      Alert.alert(
+        'Confirmar entrada',
+        `${selectedPurchaseOrder ? `OC #${selectedPurchaseOrder.order_number || selectedPurchaseOrder.id.slice(0, 8)}\n` : ''}` +
+          `${entryItems.length} productos · ${totalItems} unidades`,
+        [
+          { text: 'Revisar', style: 'cancel' },
+          {
+            text: 'Registrar entrada',
+            onPress: async () => {
+              const { error } = await finalizeEntry(user.id);
+              if (error) {
+                Alert.alert('Error', error.message || 'Error al finalizar la entrada');
+              } else {
+                if (purchaseOrderId) await loadRegisteredQuantities();
+                Alert.alert('Entrada registrada', 'El inventario y el progreso de la orden fueron actualizados correctamente.');
+              }
+            },
+          },
+        ]
+      );
     } finally {
       isFinalizingRef.current = false;
     }
@@ -121,16 +134,42 @@ export function EntryItemsList() {
                   </View>
                   <TouchableOpacity
                     style={styles.removeButton}
-                    onPress={() => removeProductFromEntry(index)}>
+                    accessibilityRole="button"
+                    accessibilityLabel={`Quitar ${item.product.name}`}
+                    onPress={() => Alert.alert(
+                      'Quitar producto',
+                      `¿Quitar ${item.product.name} de esta entrada?`,
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: 'Quitar', style: 'destructive', onPress: () => removeProductFromEntry(index) },
+                      ]
+                    )}>
                     <Text style={styles.removeButtonText}>✕</Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.quantityRow}>
                   <Text style={styles.quantityLabel}>Cantidad:</Text>
-                  <View style={styles.quantityDisplay}>
-                    <Text style={styles.quantityValue}>{item.quantity}</Text>
-                    <Text style={styles.quantityUnit}>unidad{item.quantity !== 1 ? 'es' : ''}</Text>
+                  <View style={styles.quantityControls}>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      disabled={item.quantity <= 1}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Disminuir cantidad de ${item.product.name}`}
+                      onPress={() => updateProductQuantity(index, item.quantity - 1)}>
+                      <Text style={styles.quantityButtonText}>−</Text>
+                    </TouchableOpacity>
+                    <View style={styles.quantityDisplay}>
+                      <Text style={styles.quantityValue}>{item.quantity}</Text>
+                      <Text style={styles.quantityUnit}>unidad{item.quantity !== 1 ? 'es' : ''}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Aumentar cantidad de ${item.product.name}`}
+                      onPress={() => updateProductQuantity(index, item.quantity + 1)}>
+                      <Text style={styles.quantityButtonText}>+</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -146,7 +185,7 @@ export function EntryItemsList() {
         </ScrollView>
 
         <Button
-          title={`Finalizar Entrada (${totalItems} unidades)`}
+          title={`Revisar entrada (${totalItems} unidades)`}
           onPress={handleFinalize}
           loading={loading}
           style={styles.finalizeButton}
@@ -247,6 +286,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.divider,
   },
+  quantityControls: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quantityButton: {
+    alignItems: 'center',
+    backgroundColor: Colors.primary.light + '35',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  quantityButtonText: {
+    color: Colors.primary.main,
+    fontSize: 20,
+    fontWeight: '700',
+  },
   quantityValue: {
     fontSize: 16,
     fontWeight: '700',
@@ -280,4 +337,3 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
-

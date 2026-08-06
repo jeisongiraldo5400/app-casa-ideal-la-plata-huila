@@ -7,10 +7,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
 import { UserSelectField } from './UserSelectField';
+
+const CUSTOMER_SEARCH_DEBOUNCE_MS = 800;
+const CUSTOMER_SEARCH_MIN_LENGTH = 4;
 
 export function SetupForm() {
   const {
@@ -32,7 +35,6 @@ export function SetupForm() {
     setDeliveryObservations,
     startExit,
     reset,
-    error,
     getSelectedDeliveryOrderProgress,
     canRegisterExit,
     authorizationMessage,
@@ -43,9 +45,16 @@ export function SetupForm() {
   const Colors = getColors(colorScheme === 'dark');
   const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const skipNextCustomerSearchRef = useRef(false);
   const lastSearchedTermRef = useRef('');
   const selectedCustomerNameRef = useRef('');
+
+  const normalizedSearchInput = searchInput.trim();
+  const isSearchPending = normalizedSearchInput !== debouncedSearchTerm;
+  const hasCommittedSearch = debouncedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH;
+  // Empty-state only after the committed term matches what the user typed (no mid-typing flicker).
+  const canShowEmptyState = hasCommittedSearch && !isSearchPending;
 
   const handleCustomerInputChange = useCallback((text: string) => {
     setSearchInput(text);
@@ -64,11 +73,12 @@ export function SetupForm() {
   }, [selectedCustomerId, setSelectedCustomer]);
 
   const handleClearCustomerSearch = useCallback(() => {
-    skipNextCustomerSearchRef.current = true;
     lastSearchedTermRef.current = '';
     selectedCustomerNameRef.current = '';
+    skipNextCustomerSearchRef.current = false;
     setSelectedCustomer(null);
     setSearchInput('');
+    setDebouncedSearchTerm('');
     searchCustomers('');
     Keyboard.dismiss();
   }, [searchCustomers, setSelectedCustomer]);
@@ -96,39 +106,33 @@ export function SetupForm() {
     }, []) // Sin dependencias para evitar refrescos constantes
   );
 
-  // Debounce customer search
+  // Commit search term only after the user pauses typing.
   useEffect(() => {
     const timer = setTimeout(() => {
-      const normalizedSearchTerm = searchInput.trim();
-
-      if (skipNextCustomerSearchRef.current) {
-        skipNextCustomerSearchRef.current = false;
-        lastSearchedTermRef.current = normalizedSearchTerm;
-        return;
-      }
-
-      if (normalizedSearchTerm.length >= 4) {
-        if (normalizedSearchTerm !== lastSearchedTermRef.current) {
-          lastSearchedTermRef.current = normalizedSearchTerm;
-          searchCustomers(normalizedSearchTerm);
-        }
-      } else if (normalizedSearchTerm.length === 0) {
-        // Limpiar resultados cuando el input está vacío
-        lastSearchedTermRef.current = '';
-        searchCustomers('');
-      }
-    }, 500);
+      setDebouncedSearchTerm(searchInput.trim());
+    }, CUSTOMER_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [searchInput, searchCustomers]);
+  }, [searchInput]);
 
-  // Ocultar teclado automáticamente cuando se encuentran clientes
+  // Fetch customers from the committed (debounced) term only.
   useEffect(() => {
-    if (!customersLoading && searchInput.length >= 4 && customers.length > 0) {
-      // Ocultar teclado para que los resultados sean visibles
-      Keyboard.dismiss();
+    if (skipNextCustomerSearchRef.current) {
+      skipNextCustomerSearchRef.current = false;
+      lastSearchedTermRef.current = debouncedSearchTerm;
+      return;
     }
-  }, [customers.length, customersLoading, searchInput.length]);
+
+    if (debouncedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
+      if (debouncedSearchTerm !== lastSearchedTermRef.current) {
+        lastSearchedTermRef.current = debouncedSearchTerm;
+        searchCustomers(debouncedSearchTerm);
+      }
+    } else if (debouncedSearchTerm.length === 0) {
+      lastSearchedTermRef.current = '';
+      searchCustomers('');
+    }
+  }, [debouncedSearchTerm, searchCustomers]);
 
   // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
 
@@ -137,6 +141,8 @@ export function SetupForm() {
   const isOrderComplete = deliveryOrderProgress
     ? deliveryOrderProgress.items.every(item => item.isComplete)
     : false;
+  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+  const currentStep = !exitMode ? 1 : !selectedDeliveryOrderId ? 2 : 3;
 
   // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
   const canStart =
@@ -152,11 +158,7 @@ export function SetupForm() {
       style={[styles.container, { backgroundColor: Colors.background.default }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-      <ScrollView
-        style={[styles.container, { backgroundColor: Colors.background.default }]}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled={true}>
+      <View style={styles.content}>
         <Card style={styles.card}>
           <Text style={[styles.title, { 
             color: Colors.text.primary,
@@ -168,6 +170,30 @@ export function SetupForm() {
           }]}>
             Configure el tipo de salida y seleccione los datos requeridos
           </Text>
+
+          <View style={styles.stepper} accessibilityLabel={`Paso ${currentStep} de 3`}>
+            {['Destino', 'Orden', 'Confirmar'].map((label, index) => {
+              const stepNumber = index + 1;
+              const isActive = stepNumber === currentStep;
+              const isComplete = stepNumber < currentStep;
+              return (
+                <View key={label} style={styles.stepperItem}>
+                  <View style={[
+                    styles.stepperDot,
+                    (isActive || isComplete) && { backgroundColor: Colors.primary.main },
+                  ]}>
+                    <Text style={[
+                      styles.stepperNumber,
+                      (isActive || isComplete) && { color: Colors.primary.contrastText },
+                    ]}>{isComplete ? '✓' : stepNumber}</Text>
+                  </View>
+                  <Text style={[styles.stepperLabel, { color: isActive ? Colors.primary.main : Colors.text.secondary }]}>
+                    {label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
 
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
@@ -274,14 +300,29 @@ export function SetupForm() {
                 )}
               </View>
 
-              {customersLoading && (
+              {normalizedSearchInput.length > 0 && normalizedSearchInput.length < CUSTOMER_SEARCH_MIN_LENGTH && (
+                <Text style={[styles.helperText, { color: Colors.text.secondary }]}>
+                  Escriba al menos {CUSTOMER_SEARCH_MIN_LENGTH} caracteres para buscar.
+                </Text>
+              )}
+
+              {selectedCustomer && (
+                <View style={[styles.selectionSummary, { backgroundColor: Colors.primary.light + '20' }]}>
+                  <MaterialIcons name="check-circle" size={18} color={Colors.primary.main} />
+                  <Text style={[styles.selectionSummaryText, { color: Colors.text.primary }]}>
+                    Cliente seleccionado: {selectedCustomer.name}
+                  </Text>
+                </View>
+              )}
+
+              {customersLoading && customers.length === 0 && hasCommittedSearch && (
                 <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
                   <ActivityIndicator size="small" color={Colors.primary.main} />
                   <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
                 </View>
               )}
 
-              {searchInput.trim().length >= 4 && customers.length > 0 && (
+              {hasCommittedSearch && customers.length > 0 && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -299,6 +340,7 @@ export function SetupForm() {
                         skipNextCustomerSearchRef.current = true;
                         selectedCustomerNameRef.current = customer.name;
                         setSearchInput(customer.name);
+                        setDebouncedSearchTerm(customer.name.trim());
                         Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
                       }}>
                       <Text style={[styles.customerName, { color: Colors.text.primary }]}>{customer.name}</Text>
@@ -308,13 +350,13 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!customersLoading && searchInput.trim().length >= 4 && customers.length === 0 && (
+              {!customersLoading && canShowEmptyState && customers.length === 0 && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
           )}
 
-          {/* Selector de Orden de Entrega (opcional para Salida a Cliente) */}
+          {/* Selector compacto de Orden de Entrega para Salida a Cliente */}
           {exitMode === 'direct_customer' && selectedCustomerId && (
             <DeliveryOrderSelector />
           )}
@@ -339,15 +381,6 @@ export function SetupForm() {
                 />
               </View>
             )}
-
-          {error && (
-            <View style={[styles.errorContainer, {
-              backgroundColor: Colors.error.light + '20',
-              borderColor: Colors.error.main
-            }]}>
-              <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
-            </View>
-          )}
 
           {selectedDeliveryOrderId && !canRegisterExit && (
             <View style={[styles.errorContainer, {
@@ -411,7 +444,7 @@ export function SetupForm() {
             />
           </View>
         </Card>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -438,9 +471,35 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     fontWeight: '500',
   },
+  stepper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  stepperItem: { alignItems: 'center', flex: 1 },
+  stepperDot: {
+    alignItems: 'center',
+    backgroundColor: '#D1D5DB',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  stepperNumber: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   formGroup: {
     marginBottom: 20,
   },
+  helperText: { fontSize: 12, marginTop: 6 },
+  selectionSummary: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    padding: 10,
+  },
+  selectionSummaryText: { flex: 1, fontSize: 13, fontWeight: '600' },
   fieldHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -570,4 +629,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

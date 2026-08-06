@@ -1,5 +1,6 @@
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { DeliveryOrderProgress } from '@/components/exits/components/DeliveryOrderProgress';
+import { ExitSessionContext } from '@/components/exits/components/ExitSessionContext';
 import { ExitItemsList } from '@/components/exits/components/ExitItemsList';
 import { ProductFound } from '@/components/exits/components/ProductFound';
 import { QuantityInput } from '@/components/exits/components/QuantityInput';
@@ -174,6 +175,7 @@ export default function ExitsScreen() {
 
       {step === 'scanning' && (
         <>
+          <ExitSessionContext />
           {!currentProduct && !currentScannedBarcode && (
             <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
               <View style={styles.scanCardContent}>
@@ -254,11 +256,10 @@ export default function ExitsScreen() {
             </View>
           )}
 
-          {/* Productos escaneados (carrito) - se muestra primero */}
-          {exitItems.length > 0 && <ExitItemsList />}
-
-          {/* Listado de productos de la orden de entrega */}
+          {/* El detalle inicia colapsado; se expande solo cuando el operador lo necesita. */}
           {selectedDeliveryOrderId && <DeliveryOrderProgress />}
+
+          {exitItems.length > 0 && <ExitItemsList />}
         </>
       )}
     </ScrollView>
@@ -411,4 +412,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

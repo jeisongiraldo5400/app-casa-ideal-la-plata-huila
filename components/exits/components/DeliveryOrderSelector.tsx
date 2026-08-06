@@ -1,367 +1,218 @@
-import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { useExitsStore, type DeliveryOrder } from '@/components/exits/infrastructure/store/exitsStore';
 import { getColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getStatusColor, getTypeColor, translateOrderStatus, translateOrderType } from '../utils/translations';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getVisibleDeliveryOrders, ORDER_PAGE_SIZE } from '../utils/deliveryOrderPagination';
 
-export function DeliveryOrderSelector() {
-    const {
-        exitMode,
-        selectedCustomerId,
-        selectedUserId,
-        deliveryOrders,
-        selectedDeliveryOrderId,
-        loading,
-        searchDeliveryOrdersByCustomer,
-        searchDeliveryOrdersByUser,
-        selectDeliveryOrder,
-        error,
-    } = useExitsStore();
-
-    const colorScheme = useColorScheme() ?? 'light';
-    const Colors = getColors(colorScheme === 'dark');
-
-    useEffect(() => {
-        if (exitMode === 'direct_customer' && selectedCustomerId) {
-            searchDeliveryOrdersByCustomer(selectedCustomerId);
-        } else if (exitMode === 'direct_user' && selectedUserId) {
-            searchDeliveryOrdersByUser(selectedUserId);
-        }
-    }, [exitMode, selectedCustomerId, selectedUserId, searchDeliveryOrdersByCustomer, searchDeliveryOrdersByUser]);
-
-    const isRemissionMode = exitMode === 'direct_user';
-    const orderTypeLabel = isRemissionMode ? 'remisión' : 'orden de entrega';
-    const orderTypeLabelPlural = isRemissionMode ? 'remisiones' : 'órdenes de entrega';
-
-    if (loading) {
-        return (
-            <View style={styles.listContainer}>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={Colors.primary.main} />
-                    <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Cargando {orderTypeLabelPlural}...</Text>
-                </View>
-            </View>
-        );
-    }
-
-    if (deliveryOrders.length === 0) {
-        return (
-            <View style={styles.listContainer}>
-                <View style={styles.emptyContainer}>
-                    <MaterialIcons name="inbox" size={64} color={Colors.text.secondary} />
-                    <Text style={[styles.emptyTitle, { color: Colors.text.primary }]}>No hay {orderTypeLabelPlural} pendientes</Text>
-                    <Text style={[styles.emptySubtitle, { color: Colors.text.secondary }]}>
-                        {isRemissionMode
-                            ? 'Este usuario no tiene remisiones pendientes'
-                            : 'Este cliente no tiene órdenes de entrega pendientes'}
-                    </Text>
-                </View>
-            </View>
-        );
-    }
-
-    return (
-        <View style={styles.listContainer}>
-            <Text style={[styles.title, { color: Colors.text.primary }]}>Seleccione {isRemissionMode ? 'Remisión' : 'Orden de Entrega'}</Text>
-            <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
-                {isRemissionMode ? 'Remisiones' : 'Órdenes'} pendientes ({deliveryOrders.length})
-            </Text>
-
-            <ScrollView
-                style={styles.ordersList}
-                contentContainerStyle={styles.ordersListContent}
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}>
-                {deliveryOrders.map((order: any) => {
-                    const isSelected = selectedDeliveryOrderId === order.id;
-                    const progress = order.total_quantity > 0 ? order.delivered_quantity / order.total_quantity : 0;
-                    const progressPercent = Math.round(progress * 100);
-                    const isComplete = order.total_quantity > 0 && order.delivered_quantity >= order.total_quantity;
-
-                    return (
-                        <TouchableOpacity
-                            key={order.id}
-                            style={[
-                                styles.orderItem,
-                                { 
-                                    borderColor: Colors.divider,
-                                    backgroundColor: Colors.background.paper
-                                },
-                                isSelected && { 
-                                    borderColor: Colors.primary.main,
-                                    backgroundColor: Colors.primary.light + '10'
-                                },
-                                isComplete && { 
-                                    borderColor: Colors.success.main,
-                                    backgroundColor: Colors.success.light + '10',
-                                    opacity: 0.8
-                                },
-                            ]}
-                            onPress={() => !isComplete && selectDeliveryOrder(order.id)}
-                            disabled={isComplete}>
-
-                            <View style={styles.orderHeader}>
-                                <View style={styles.orderInfo}>
-                                    <View style={styles.idAndBadgesRow}>
-                                        <Text style={[styles.orderId, { color: Colors.text.primary }]} numberOfLines={1}>Orden #{order.order_number || order.id.slice(0, 8)}</Text>
-
-                                        <View style={styles.badgesWrapper}>
-                                            {/* Badge de Tipo */}
-                                            <View style={[
-                                                styles.typeBadge,
-                                                { backgroundColor: getTypeColor(order.order_type || 'customer').bg }
-                                            ]}>
-                                                <Text style={[
-                                                    styles.typeText,
-                                                    { color: getTypeColor(order.order_type || 'customer').text }
-                                                ]}>
-                                                    {translateOrderType(order.order_type || 'customer')}
-                                                </Text>
-                                            </View>
-
-                                            {/* Badge de Estado */}
-                                            {isComplete ? (
-                                                <View style={[styles.statusBadge, styles.status_complete]}>
-                                                    <MaterialIcons name="check-circle" size={14} color={Colors.success.main} />
-                                                    <Text style={[styles.statusText, { color: Colors.success.main }]}>Comp.</Text>
-                                                </View>
-                                            ) : (
-                                                <View style={[
-                                                    styles.statusBadge,
-                                                    { backgroundColor: getStatusColor(order.status).bg }
-                                                ]}>
-                                                    <Text style={[
-                                                        styles.statusText,
-                                                        { color: getStatusColor(order.status).text }
-                                                    ]}>
-                                                        {getStatusLabel(order.status)}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                    </View>
-                                </View>
-                                {isSelected && !isComplete && (
-                                    <View style={styles.selectedIconWrapper}>
-                                        <MaterialIcons name="check-circle" size={24} color={Colors.primary.main} />
-                                    </View>
-                                )}
-                            </View>
-
-                            <View style={styles.orderDetails}>
-                                {/* Nombre del cliente o usuario asignado */}
-                                {(order.customer_name || order.assigned_to_user_name) && (
-                                    <View style={styles.detailRow}>
-                                        <MaterialIcons name="person" size={16} color={Colors.text.secondary} />
-                                        <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
-                                            {order.customer_name || order.assigned_to_user_name}
-                                        </Text>
-                                    </View>
-                                )}
-
-                                <View style={styles.detailRow}>
-                                    <MaterialIcons name="inventory" size={16} color={Colors.text.secondary} />
-                                    <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
-                                        {order.total_items} productos ({order.total_quantity} unidades)
-                                    </Text>
-                                </View>
-
-                                {order.delivery_address && (
-                                    <View style={styles.detailRow}>
-                                        <MaterialIcons name="location-on" size={16} color={Colors.text.secondary} />
-                                        <Text style={[styles.detailText, { color: Colors.text.secondary }]} numberOfLines={1}>
-                                            {order.delivery_address}
-                                        </Text>
-                                    </View>
-                                )}
-
-                                <View style={styles.detailRow}>
-                                    <MaterialIcons name="calendar-today" size={16} color={Colors.text.secondary} />
-                                    <Text style={[styles.detailText, { color: Colors.text.secondary }]}>
-                                        {new Date(order.created_at).toLocaleDateString('es-CO')}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* Progress bar */}
-                            {order.delivered_quantity > 0 && (
-                                <View style={[styles.progressContainer, { borderTopColor: Colors.divider }]}>
-                                    <View style={[styles.progressBar, { backgroundColor: Colors.divider }]}>
-                                        <View style={[styles.progressFill, { 
-                                            width: `${progressPercent}%`,
-                                            backgroundColor: Colors.success.main
-                                        }]} />
-                                    </View>
-                                    <Text style={[styles.progressText, { color: Colors.text.secondary }]}>
-                                        {order.delivered_quantity} / {order.total_quantity} entregados ({progressPercent}%)
-                                    </Text>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
-
-            {error && (
-                <View style={[styles.errorContainer, {
-                    backgroundColor: Colors.error.light + '20',
-                    borderColor: Colors.error.main
-                }]}>
-                    <Text style={[styles.errorText, { color: Colors.error.main }]}>{error}</Text>
-                </View>
-            )}
-        </View>
-    );
+function asQuantity(value: unknown): number {
+  const quantity = Number(value ?? 0);
+  return Number.isFinite(quantity) ? quantity : 0;
 }
 
-function getStatusLabel(status: string): string {
-    return translateOrderStatus(status);
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Sin fecha' : date.toLocaleDateString('es-CO');
+}
+
+export function DeliveryOrderSelector() {
+  const {
+    exitMode,
+    selectedCustomerId,
+    selectedUserId,
+    deliveryOrders,
+    selectedDeliveryOrderId,
+    loading,
+    searchDeliveryOrdersByCustomer,
+    searchDeliveryOrdersByUser,
+    selectDeliveryOrder,
+  } = useExitsStore();
+
+  const colorScheme = useColorScheme() ?? 'light';
+  const Colors = getColors(colorScheme === 'dark');
+  const [visibleCount, setVisibleCount] = useState(ORDER_PAGE_SIZE);
+  const destinationId = exitMode === 'direct_user' ? selectedUserId : selectedCustomerId;
+  const isRemissionMode = exitMode === 'direct_user';
+  const pluralLabel = isRemissionMode ? 'remisiones' : 'órdenes de entrega';
+
+  const refresh = useCallback(() => {
+    if (exitMode === 'direct_customer' && selectedCustomerId) {
+      return searchDeliveryOrdersByCustomer(selectedCustomerId);
+    }
+    if (exitMode === 'direct_user' && selectedUserId) {
+      return searchDeliveryOrdersByUser(selectedUserId);
+    }
+    return Promise.resolve();
+  }, [exitMode, selectedCustomerId, selectedUserId, searchDeliveryOrdersByCustomer, searchDeliveryOrdersByUser]);
+
+  useEffect(() => {
+    setVisibleCount(ORDER_PAGE_SIZE);
+    void refresh();
+  }, [destinationId, exitMode, refresh]);
+
+  const visibleOrders = useMemo(
+    () => getVisibleDeliveryOrders(deliveryOrders, visibleCount),
+    [deliveryOrders, visibleCount],
+  );
+  const hasMore = visibleOrders.length < deliveryOrders.length;
+
+  if (loading && deliveryOrders.length === 0) {
+    return (
+      <View style={styles.stateContainer} accessibilityLiveRegion="polite">
+        <ActivityIndicator size="small" color={Colors.primary.main} />
+        <Text style={[styles.stateText, { color: Colors.text.secondary }]}>Cargando {pluralLabel}...</Text>
+      </View>
+    );
+  }
+
+  if (deliveryOrders.length === 0) {
+    return (
+      <View style={styles.stateContainer}>
+        <MaterialIcons name="inbox" size={38} color={Colors.text.secondary} />
+        <Text style={[styles.emptyTitle, { color: Colors.text.primary }]}>No hay {pluralLabel} pendientes</Text>
+        <Text style={[styles.stateText, { color: Colors.text.secondary }]}>El destinatario seleccionado no tiene entregas disponibles.</Text>
+        <TouchableOpacity onPress={() => void refresh()} style={styles.retryButton} accessibilityRole="button">
+          <MaterialIcons name="refresh" size={18} color={Colors.primary.main} />
+          <Text style={{ color: Colors.primary.main, fontWeight: '700' }}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.headingRow}>
+        <View style={styles.headingCopy}>
+          <Text style={[styles.title, { color: Colors.text.primary }]}>Seleccione {isRemissionMode ? 'la remisión' : 'la orden'}</Text>
+          <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>Mostrando {visibleOrders.length} de {deliveryOrders.length}</Text>
+        </View>
+        <TouchableOpacity onPress={() => void refresh()} disabled={loading} style={styles.iconButton} accessibilityLabel={`Actualizar ${pluralLabel}`}>
+          {loading ? <ActivityIndicator size="small" color={Colors.primary.main} /> : <MaterialIcons name="refresh" size={21} color={Colors.primary.main} />}
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.table, { backgroundColor: Colors.background.paper, borderColor: Colors.divider }]}>
+        <View style={[styles.tableHeader, { borderBottomColor: Colors.divider }]}>
+          <Text style={[styles.headerMain, { color: Colors.text.secondary }]}>ENTREGA</Text>
+          <Text style={[styles.headerPending, { color: Colors.text.secondary }]}>PENDIENTE</Text>
+        </View>
+
+        {visibleOrders.map((order, index) => (
+          <OrderRow
+            key={order.id}
+            order={order}
+            isLast={index === visibleOrders.length - 1}
+            selected={selectedDeliveryOrderId === order.id}
+            disabled={loading}
+            colors={Colors}
+            onPress={() => void selectDeliveryOrder(order.id)}
+          />
+        ))}
+      </View>
+
+      {hasMore ? (
+        <TouchableOpacity
+          onPress={() => setVisibleCount((current) => current + ORDER_PAGE_SIZE)}
+          style={[styles.loadMore, { borderColor: Colors.divider }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Cargar ${Math.min(ORDER_PAGE_SIZE, deliveryOrders.length - visibleOrders.length)} ${pluralLabel} más`}>
+          <Text style={{ color: Colors.primary.main, fontWeight: '700' }}>Cargar 5 más</Text>
+          <MaterialIcons name="expand-more" size={20} color={Colors.primary.main} />
+        </TouchableOpacity>
+      ) : (
+        <Text style={[styles.endText, { color: Colors.text.secondary }]}>Todas las {pluralLabel} disponibles están visibles</Text>
+      )}
+    </View>
+  );
+}
+
+type OrderRowProps = {
+  order: DeliveryOrder;
+  selected: boolean;
+  isLast: boolean;
+  disabled: boolean;
+  colors: ReturnType<typeof getColors>;
+  onPress: () => void;
+};
+
+function OrderRow({ order, selected, isLast, disabled, colors, onPress }: OrderRowProps) {
+  const total = asQuantity(order.total_quantity);
+  const delivered = Math.min(total, asQuantity(order.delivered_quantity));
+  const pending = Math.max(0, total - delivered);
+  const progress = total > 0 ? Math.round((delivered / total) * 100) : 0;
+  const partial = delivered > 0;
+  const destination = order.customer_name || order.assigned_to_user_name || 'Destinatario';
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected, disabled }}
+      accessibilityLabel={`${destination}, ${pending} unidades pendientes`}
+      style={[
+        styles.row,
+        !isLast && { borderBottomColor: colors.divider, borderBottomWidth: StyleSheet.hairlineWidth },
+        selected && { backgroundColor: `${colors.primary.light}20`, borderLeftColor: colors.primary.main, borderLeftWidth: 4 },
+      ]}>
+      <View style={styles.rowMain}>
+        <View style={styles.rowTitleLine}>
+          <Text style={[styles.destination, { color: colors.text.primary }]} numberOfLines={1}>{destination}</Text>
+          <View style={[styles.status, { backgroundColor: partial ? `${colors.warning.main}18` : `${colors.primary.main}14` }]}>
+            <Text style={[styles.statusText, { color: partial ? colors.warning.main : colors.primary.main }]}>{partial ? 'Parcial' : 'Pendiente'}</Text>
+          </View>
+        </View>
+        <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
+          {formatDate(order.created_at)} · {asQuantity(order.total_items)} productos · #{order.order_number || order.id.slice(0, 8)}
+        </Text>
+        {partial && (
+          <View style={styles.progressRow}>
+            <View style={[styles.progressTrack, { backgroundColor: colors.divider }]}>
+              <View style={[styles.progressFill, { backgroundColor: colors.success.main, width: `${progress}%` }]} />
+            </View>
+            <Text style={[styles.progressText, { color: colors.text.secondary }]}>{progress}%</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.pendingColumn}>
+        <Text style={[styles.pendingQuantity, { color: pending > 0 ? colors.text.primary : colors.success.main }]}>{pending}</Text>
+        <Text style={[styles.unitsLabel, { color: colors.text.secondary }]}>unid.</Text>
+      </View>
+      <MaterialIcons name={selected ? 'check-circle' : 'chevron-right'} size={22} color={selected ? colors.primary.main : colors.text.secondary} />
+    </TouchableOpacity>
+  );
 }
 
 const styles = StyleSheet.create({
-    listContainer: {
-        marginTop: 8,
-        marginBottom: 20,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    subtitle: {
-        fontSize: 14,
-        marginBottom: 16,
-    },
-    loadingContainer: {
-        padding: 40,
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 14,
-    },
-    emptyContainer: {
-        padding: 40,
-        alignItems: 'center',
-    },
-    emptyTitle: {
-        marginTop: 16,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    emptySubtitle: {
-        marginTop: 8,
-        fontSize: 14,
-        textAlign: 'center',
-    },
-    ordersList: {
-        maxHeight: 450,
-        flexGrow: 0,
-    },
-    ordersListContent: {
-        paddingBottom: 8,
-        flexGrow: 0,
-    },
-    orderItem: {
-        padding: 12,
-        marginBottom: 12,
-        borderRadius: 12,
-        borderWidth: 2,
-    },
-    orderHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 12,
-    },
-    orderInfo: {
-        flex: 1,
-    },
-    idAndBadgesRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 8,
-    },
-    orderId: {
-        fontSize: 16,
-        fontWeight: '700',
-        flexShrink: 1,
-    },
-    badgesWrapper: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-    },
-    selectedIconWrapper: {
-        marginLeft: 8,
-    },
-    typeBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 6,
-        minWidth: 60,
-        alignItems: 'center',
-    },
-    typeText: {
-        fontSize: 11,
-        fontWeight: '700',
-        textAlign: 'center',
-    },
-    statusBadge: {
-        paddingHorizontal: 6,
-        paddingVertical: 3,
-        borderRadius: 6,
-    },
-    status_complete: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    statusText: {
-        fontSize: 11,
-        fontWeight: '700',
-    },
-    orderDetails: {
-        gap: 6,
-    },
-    detailRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    detailText: {
-        fontSize: 13,
-        flex: 1,
-    },
-    progressContainer: {
-        marginTop: 10,
-        paddingTop: 10,
-        borderTopWidth: 1,
-    },
-    progressBar: {
-        height: 6,
-        borderRadius: 3,
-        overflow: 'hidden',
-        marginBottom: 6,
-    },
-    progressFill: {
-        height: '100%',
-    },
-    progressText: {
-        fontSize: 11,
-        textAlign: 'right',
-    },
-    errorContainer: {
-        marginTop: 16,
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-    },
-    errorText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
+  container: { marginBottom: 20, marginTop: 4 },
+  headingRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  headingCopy: { flex: 1 },
+  title: { fontSize: 16, fontWeight: '800' },
+  subtitle: { fontSize: 12, marginTop: 2 },
+  iconButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 },
+  table: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
+  tableHeader: { borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8 },
+  headerMain: { flex: 1, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  headerPending: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, width: 68 },
+  row: { alignItems: 'center', flexDirection: 'row', minHeight: 74, paddingHorizontal: 12, paddingVertical: 10 },
+  rowMain: { flex: 1, minWidth: 0 },
+  rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  destination: { flex: 1, fontSize: 14, fontWeight: '800' },
+  status: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
+  statusText: { fontSize: 10, fontWeight: '800' },
+  meta: { fontSize: 11, marginTop: 5 },
+  pendingColumn: { alignItems: 'center', marginLeft: 8, width: 48 },
+  pendingQuantity: { fontSize: 17, fontWeight: '800' },
+  unitsLabel: { fontSize: 10 },
+  progressRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 7 },
+  progressTrack: { borderRadius: 3, flex: 1, height: 5, overflow: 'hidden' },
+  progressFill: { height: '100%' },
+  progressText: { fontSize: 10, width: 28 },
+  loadMore: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', marginTop: 10, padding: 11 },
+  endText: { fontSize: 11, marginTop: 9, textAlign: 'center' },
+  stateContainer: { alignItems: 'center', marginBottom: 20, paddingHorizontal: 20, paddingVertical: 24 },
+  stateText: { fontSize: 13, marginTop: 7, textAlign: 'center' },
+  emptyTitle: { fontSize: 15, fontWeight: '800', marginTop: 8 },
+  retryButton: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 12, padding: 8 },
 });

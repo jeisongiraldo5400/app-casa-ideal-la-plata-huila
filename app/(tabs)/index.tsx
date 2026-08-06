@@ -6,13 +6,17 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { entriesToday, exitsToday, pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
+  const showCommercialSection = isAdmin() || isVendedor() || isGestorCobro();
+  const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -41,8 +45,8 @@ export default function HomeScreen() {
     router.push('/(tabs)/exits');
   };
 
-  const handleViewReceivedOrders = () => {
-    router.push('/(tabs)/received-orders');
+  const handleViewMyOrders = () => {
+    router.push('/(tabs)/my-orders');
   };
 
   const handleViewAllOrders = () => {
@@ -63,6 +67,63 @@ export default function HomeScreen() {
         <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
       </View>
 
+      {showCommercialSection && (
+        <View style={{ gap: 10, marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 2 }}>
+            Gestión Comercial & Crédito
+          </Text>
+          {canCreateNegocio && (
+            <TouchableOpacity
+              style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
+              onPress={() => router.push('/(tabs)/negocio-create')}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="handshake" size={28} color={colors.primary.contrastText} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 16 }}>
+                  Nuevo negocio
+                </Text>
+                <Text style={{ color: colors.primary.contrastText, opacity: 0.9, fontSize: 13 }}>
+                  Crear crédito y generar orden de entrega
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color={colors.primary.contrastText} />
+            </TouchableOpacity>
+          )}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+              onPress={() => router.push('/(tabs)/negocios')}
+            >
+              <MaterialIcons name="payments" size={22} color={colors.primary.main} />
+              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Negocios / Cobrar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+              onPress={() => router.push('/(tabs)/cartera')}
+            >
+              <MaterialIcons name="account-balance-wallet" size={22} color={colors.info.main} />
+              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Cartera</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {isGestorCobro() && (
+        <TouchableOpacity
+          style={[styles.sellerCta, { backgroundColor: '#0f766e', marginBottom: 20 }]}
+          onPress={() => router.push('/(tabs)/ruta-cobros' as any)}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="route" size={30} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 17 }}>Mi ruta de cobros</Text>
+            <Text style={{ color: '#ccfbf1', fontSize: 13 }}>Organiza y recorre las visitas del día</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={25} color="#fff" />
+        </TouchableOpacity>
+      )}
+
       <View style={styles.dashboardContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -70,28 +131,6 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.topCardsRow}>
-              {/*<View style={styles.halfWidthCard}>
-                <DashboardCard
-                  title="Salidas Hoy"
-                  value={exitsToday}
-                  subtitle="Productos despachados"
-                  icon="local-shipping"
-                  iconColor={colors.error.main}
-                  trend="down"
-                />
-              </View>
-              <View style={styles.halfWidthCard}>
-                <DashboardCard
-                  title="Entradas Hoy"
-                  value={entriesToday}
-                  subtitle="Productos recibidos"
-                  icon="input"
-                  iconColor={colors.success.main}
-                  trend="up"
-                />
-              </View>*/}
-            </View>
             <View style={[styles.ordersCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <View style={styles.ordersCardHeader}>
                 <Text style={[styles.ordersCardTitle, { color: colors.text.primary }]}>Órdenes Pendientes</Text>
@@ -118,50 +157,31 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.menuSection}>
-        <View style={styles.menuHeader}>
-          <Text style={[styles.menuTitle, { color: colors.text.primary }]}>Menú de Operaciones</Text>
-          <View style={[styles.menuTitleUnderline, { backgroundColor: colors.primary.main }]} />
-        </View>
+        <Text style={[styles.sectionHeaderTitle, { color: colors.text.secondary }]}>
+          OPERACIONES DE ALMACÉN
+        </Text>
 
         <View style={styles.menuGrid}>
-          <TouchableOpacity
-            style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-            onPress={handleViewReports}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '12' }]}>
-              <MaterialIcons
-                name="assessment"
-                size={24}
-                color={colors.primary.main}
-              />
-            </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Reportes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Análisis
-            </Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
             onPress={handleRegisterExits}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.error.main + '15' }]}>
               <MaterialIcons
                 name="local-shipping"
-                size={24}
+                size={22}
                 color={colors.error.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Registrar Salidas
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Despacho
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Salidas
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Despacho
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -169,39 +189,43 @@ export default function HomeScreen() {
             onPress={handleRegisterEntries}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.success.main + '15' }]}>
               <MaterialIcons
                 name="input"
-                size={24}
+                size={22}
                 color={colors.success.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Registrar Entradas
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Ingreso
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Entradas
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Ingreso
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.menuCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-            onPress={handleViewReceivedOrders}
+            onPress={handleViewMyOrders}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.warning.main + '15' }]}>
               <MaterialIcons
                 name="receipt-long"
-                size={24}
+                size={22}
                 color={colors.warning.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Mis Órdenes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Historial
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Mis Órdenes
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Asignadas para salida
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -209,21 +233,42 @@ export default function HomeScreen() {
             onPress={handleViewAllOrders}
             activeOpacity={0.7}
           >
-            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '12' }]}>
+            <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.info.main + '15' }]}>
               <MaterialIcons
                 name="list-alt"
-                size={24}
+                size={22}
                 color={colors.info.main}
               />
             </View>
-            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={2}>
-              Todas las Órdenes
-            </Text>
-            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-              Gestión
-            </Text>
+            <View style={styles.menuCardTextContainer}>
+              <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                Todas Órdenes
+              </Text>
+              <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                Gestión
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={[styles.reportsBannerCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+          onPress={handleViewReports}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.menuCardIconWrapper, { backgroundColor: colors.primary.main + '15' }]}>
+            <MaterialIcons name="assessment" size={22} color={colors.primary.main} />
+          </View>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={[styles.menuCardTitle, { color: colors.text.primary }]} numberOfLines={1}>
+              Reportes & Analítica
+            </Text>
+            <Text style={[styles.menuCardSubtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+              Estadísticas e indicadores
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color={colors.text.secondary} />
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -260,80 +305,107 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
   },
+  sellerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 20,
+  },
+  sellerSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
   button: {
     marginTop: 8,
   },
   menuSection: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
-  menuHeader: {
-    marginBottom: 20,
-  },
-  menuTitle: {
-    fontSize: 24,
+  sectionHeaderTitle: {
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-    letterSpacing: -0.5,
-  },
-  menuTitleUnderline: {
-    height: 3,
-    width: 60,
-    borderRadius: 2,
-    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 12,
+    marginLeft: 2,
   },
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     justifyContent: 'space-between',
   },
   menuCard: {
-    borderRadius: 16,
-    padding: 16,
-    width: '48%',
-    minHeight: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    width: '48.5%',
+    minHeight: 68,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     borderWidth: 1,
   },
   menuCardIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+  },
+  menuCardTextContainer: {
+    flex: 1,
+    marginLeft: 10,
   },
   menuCardTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 1,
     letterSpacing: -0.2,
-    lineHeight: 20,
+    lineHeight: 17,
   },
   menuCardSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '400',
-    lineHeight: 16,
+    lineHeight: 14,
+  },
+  reportsBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    minHeight: 68,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   dashboardContainer: {
     flexDirection: 'column',
     marginBottom: 24,
     gap: 12,
-  },
-  topCardsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfWidthCard: {
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

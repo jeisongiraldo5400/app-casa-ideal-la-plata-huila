@@ -3,16 +3,24 @@ import {
   computeFifoProgressByItemId
 } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
 import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import {
+  fetchActiveProfiles,
+  fetchActiveWarehouses,
+  searchCustomersByTerm,
+} from '@/components/exits/infrastructure/services/exitsService';
 import { logOperationError } from '@/lib/operationLogger';
+import { createIdempotencyKey } from '@/lib/idempotency';
 import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/database.types';
+import { Database, type Json } from '@/types/database.types';
 import { create } from 'zustand';
+
+/** Invalidates in-flight customer searches when a newer query starts or clears. */
+let customerSearchGeneration = 0;
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type Customer = Database['public']['Tables']['customers']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
-type InventoryExit = Database['public']['Tables']['inventory_exits']['Insert'];
 
 export type ExitMode = 'direct_user' | 'direct_customer';
 
@@ -52,6 +60,146 @@ export interface DeliveryOrder {
   notes: string | null;
   created_at: string;
   items: DeliveryOrderItem[];
+  order_type?: string | null;
+  assigned_to_user_name?: string | null;
+  total_items?: number;
+  total_quantity?: number;
+  delivered_quantity?: number;
+  is_from_remission?: boolean;
+  remission_id?: string | null;
+}
+
+export type DeliveryOrderHeader = Partial<Omit<DeliveryOrder, 'id' | 'items'>> & {
+  id: string;
+};
+
+type DeliveryOrderItemQueryRow = Pick<
+  Database['public']['Tables']['delivery_order_items']['Row'],
+  | 'id'
+  | 'product_id'
+  | 'warehouse_id'
+  | 'quantity'
+  | 'delivered_quantity'
+  | 'created_at'
+  | 'deleted_at'
+  | 'source_delivery_order_id'
+> & {
+  product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
+  warehouse: Pick<Warehouse, 'id' | 'name'> | null;
+};
+
+const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
+  id,
+  product_id,
+  warehouse_id,
+  quantity,
+  delivered_quantity,
+  created_at,
+  deleted_at,
+  source_delivery_order_id
+`;
+
+async function fetchSelectableDeliveryOrderItems(
+  order: DeliveryOrderHeader
+): Promise<{ data: DeliveryOrderItemQueryRow[]; error: { message: string } | null }> {
+  const rpcResult = await supabase.rpc('get_authorized_delivery_order_items', {
+    p_order_id: order.id,
+  });
+
+  if (!rpcResult.error) {
+    return {
+      data: (rpcResult.data || []).map((item: Database['public']['Functions']['get_authorized_delivery_order_items']['Returns'][number]) => ({
+        id: item.id,
+        product_id: item.product_id,
+        warehouse_id: item.warehouse_id,
+        quantity: item.quantity,
+        delivered_quantity: item.delivered_quantity,
+        created_at: item.created_at,
+        deleted_at: null,
+        source_delivery_order_id: item.source_delivery_order_id,
+        product: {
+          id: item.product_id,
+          name: item.product_name,
+          barcode: item.product_barcode,
+          sku: item.product_sku,
+          deleted_at: null,
+        },
+        warehouse: { id: item.warehouse_id, name: item.warehouse_name },
+      })),
+      error: null,
+    };
+  }
+
+  // Compatibilidad temporal mientras la migración del RPC llega al ambiente.
+  // Solo PGRST202 (función aún ausente) permite continuar con las consultas RLS.
+  if (rpcResult.error.code !== 'PGRST202') {
+    return { data: [], error: rpcResult.error };
+  }
+
+  let itemResult = await supabase
+    .from('delivery_order_items')
+    .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
+    .eq('delivery_order_id', order.id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+
+  if (itemResult.error) {
+    return { data: [], error: itemResult.error };
+  }
+
+  if (!itemResult.data?.length) {
+    // La clave confiable es source_delivery_order_id. Algunas órdenes de cliente
+    // llegan desde la rama de asignaciones del RPC (is_from_remission = false),
+    // aunque sus líneas estén copiadas dentro de una remisión.
+    itemResult = await supabase
+      .from('delivery_order_items')
+      .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
+      .eq('source_delivery_order_id', order.id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+
+    if (itemResult.error) {
+      return { data: [], error: itemResult.error };
+    }
+  }
+
+  const rawItems = itemResult.data || [];
+  if (rawItems.length === 0) {
+    return { data: [], error: null };
+  }
+
+  // Las relaciones embebidas con !inner podían eliminar toda la respuesta aunque
+  // las líneas sí existieran. Cargar los catálogos por separado conserva las líneas
+  // y permite distinguir un producto realmente eliminado de un join vacío.
+  const productIds = [...new Set(rawItems.map((item) => item.product_id))];
+  const warehouseIds = [...new Set(rawItems.map((item) => item.warehouse_id))];
+  const [productsResult, warehousesResult] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, barcode, sku, deleted_at')
+      .in('id', productIds)
+      .is('deleted_at', null),
+    supabase.from('warehouses').select('id, name').in('id', warehouseIds),
+  ]);
+
+  if (productsResult.error) {
+    return { data: [], error: productsResult.error };
+  }
+  if (warehousesResult.error) {
+    return { data: [], error: warehousesResult.error };
+  }
+
+  const productsById = new Map((productsResult.data || []).map((product) => [product.id, product]));
+  const warehousesById = new Map((warehousesResult.data || []).map((warehouse) => [warehouse.id, warehouse]));
+
+  return {
+    data: rawItems.map((item) => ({
+      ...item,
+      product: productsById.get(item.product_id) || null,
+      warehouse: warehousesById.get(item.warehouse_id) || null,
+    })) as DeliveryOrderItemQueryRow[],
+    error: null,
+  };
 }
 
 export interface SelectedDeliveryOrderProgressItem {
@@ -73,6 +221,27 @@ export interface SelectedDeliveryOrderProgress {
 
 const UNAUTHORIZED_EXIT_MESSAGE =
   'No estás autorizado para registrar la salida de inventario de esta orden.';
+
+const pendingExitRequests = new Map<string, string>();
+
+async function getActiveCancelledExitIds(exitIds: string[]): Promise<Set<string>> {
+  if (exitIds.length === 0) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase
+    .from('inventory_exit_cancellations')
+    .select('inventory_exit_id')
+    .in('inventory_exit_id', exitIds)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.error('Error loading inventory exit cancellations:', error);
+    return new Set();
+  }
+
+  return new Set((data || []).map((cancellation) => cancellation.inventory_exit_id));
+}
 
 type ExitAuthorizationResult = {
   canRegister: boolean;
@@ -138,7 +307,10 @@ interface ExitsState {
   // Actions - Delivery Orders
   searchDeliveryOrdersByCustomer: (customerId: string) => Promise<void>;
   searchDeliveryOrdersByUser: (userId: string) => Promise<void>;
-  selectDeliveryOrder: (orderId: string) => Promise<void>;
+  selectDeliveryOrder: (
+    orderId: string,
+    authorizedHeader?: DeliveryOrderHeader
+  ) => Promise<void>;
   validateCurrentUserAuthorizationForOrder: (
     orderId: string
   ) => Promise<ExitAuthorizationResult>;
@@ -366,18 +538,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   loadWarehouses: async () => {
     try {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) {
-        console.error('Error loading warehouses:', error);
-        set({ warehouses: [] });
-        return;
-      }
-      set({ warehouses: data || [] });
+      const data = await fetchActiveWarehouses();
+      set({ warehouses: data });
     } catch (error: any) {
       console.error('Error loading warehouses:', error);
       set({ warehouses: [] });
@@ -386,18 +548,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   loadUsers: async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .is('deleted_at', null)
-        .order('full_name');
-
-      if (error) {
-        console.error('Error loading users:', error);
-        set({ users: [] });
-        return;
-      }
-      set({ users: (data as Profile[]) || [] });
+      const data = await fetchActiveProfiles();
+      set({ users: data });
     } catch (error: any) {
       console.error('Error loading users:', error);
       set({ users: [] });
@@ -405,41 +557,28 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchCustomers: async (searchTerm: string) => {
-    set({ customerSearchTerm: searchTerm, customersLoading: true });
+    const normalizedSearchTerm = searchTerm.trim();
+    const generation = ++customerSearchGeneration;
+
+    if (!normalizedSearchTerm) {
+      set({ customerSearchTerm: '', customers: [], customersLoading: false });
+      return;
+    }
+
+    set({ customerSearchTerm: normalizedSearchTerm, customersLoading: true });
 
     try {
-      // Buscar directamente en la tabla customers
-      let query = supabase
-        .from('customers')
-        .select('*')
-        .is('deleted_at', null)
-        .order('name');
-
-      // Si hay término de búsqueda, filtrar por nombre o número de identificación
-      if (searchTerm && searchTerm.trim()) {
-        query = query.or(
-          `name.ilike.%${searchTerm}%,id_number.ilike.%${searchTerm}%`
-        );
-      }
-
-      const { data, error } = await query.limit(50);
-
-      // Evitar que respuestas antiguas sobrescriban resultados recientes
-      if (get().customerSearchTerm !== searchTerm) {
+      const data = await searchCustomersByTerm(normalizedSearchTerm);
+      if (generation !== customerSearchGeneration) {
         return;
       }
-
-      if (error) {
-        console.error('Error searching customers:', error);
-        set({ customers: [], customersLoading: false });
-        return;
-      }
-      set({ customers: data || [], customersLoading: false });
+      set({ customers: data, customersLoading: false });
     } catch (error: any) {
-      console.error('Error searching customers:', error);
-      if (get().customerSearchTerm === searchTerm) {
-        set({ customers: [], customersLoading: false });
+      if (generation !== customerSearchGeneration) {
+        return;
       }
+      console.error('Error searching customers:', error);
+      set({ customers: [], customersLoading: false });
     }
   },
 
@@ -491,16 +630,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
       const orderIds = data.map((order: any) => order.id);
 
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
-
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
-
-      // Obtener todas las salidas y filtrar las canceladas
+      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, delivery_order_id, product_id, warehouse_id, quantity')
@@ -512,6 +642,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           exitsError
         );
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
       const exitsByOrder = new Map<string, Map<string, number>>();
@@ -615,16 +749,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
       const orderIds = orders.map((order: any) => order.id);
 
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
-
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
-
-      // Obtener todas las salidas y filtrar las canceladas
+      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, delivery_order_id, product_id, warehouse_id, quantity')
@@ -633,6 +758,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (exitsError) {
         console.error('Error loading inventory exits for orders:', exitsError);
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
       const exitsByOrder = new Map<string, Map<string, number>>();
@@ -715,7 +844,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
-  selectDeliveryOrder: async (orderId: string) => {
+  selectDeliveryOrder: async (orderId: string, authorizedHeader) => {
     set({
       loading: true,
       loadingMessage: 'Cargando detalles de la orden...',
@@ -723,55 +852,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     });
 
     try {
-      // Consulta directa con joins para obtener todos los detalles
-      const { data: orderData, error: orderError } = await supabase
-        .from('delivery_orders')
-        .select(
-          `
-          *,
-          customer:customers(id, name, id_number),
-          assigned_to_user:profiles(id, full_name, email),
-          items:delivery_order_items!fk_delivery_order_item_order!inner(
-            id,
-            product_id,
-            warehouse_id,
-            quantity,
-            delivered_quantity,
-            created_at,
-            deleted_at,
-            source_delivery_order_id,
-            product:products!inner(id, name, barcode, sku, deleted_at),
-            warehouse:warehouses(id, name)
-          )
-        `
-        )
-        .eq('id', orderId)
-        .is('items.deleted_at', null)
-        .is('items.product.deleted_at', null)
-        .single();
+      // La orden proviene de la lista que el usuario acaba de cargar y seleccionar.
+      // Reconsultar la cabecera podía devolver cero filas por diferencias de RLS o
+      // relaciones embebidas, aunque la orden ya estuviera visible y autorizada.
+      const orderHeader: DeliveryOrderHeader | undefined =
+        authorizedHeader ||
+        get().deliveryOrders.find((order) => order.id === orderId);
 
-      if (orderError) {
-        console.error('Error loading delivery order details:', orderError);
-        logOperationError({
-          error_code: 'DELIVERY_ORDER_LOAD_FAILED',
-          error_message: orderError.message || String(orderError),
-          module: 'exits',
-          operation: 'select_delivery_order',
-          step: 'query',
-          entity_type: 'delivery_order',
-          entity_id: orderId
-        });
-        set({
-          selectedDeliveryOrder: null,
-          selectedDeliveryOrderId: null,
-          loading: false,
-          loadingMessage: null,
-          error: orderError.message
-        });
-        return;
-      }
-
-      if (!orderData) {
+      if (!orderHeader) {
         set({
           selectedDeliveryOrder: null,
           selectedDeliveryOrderId: null,
@@ -782,17 +870,35 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      // Obtener las salidas de inventario para esta orden desde inventory_exits
-      // Primero obtener los IDs de salidas canceladas para excluirlas
-      const { data: cancelledExits, error: cancelledError } = await supabase
-        .from('inventory_exit_cancellations')
-        .select('inventory_exit_id');
+      const { data: orderItems, error: itemsError } =
+        await fetchSelectableDeliveryOrderItems(orderHeader);
 
-      const cancelledExitIds = new Set(
-        (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-      );
+      if (itemsError) {
+        console.error('Error loading delivery order items:', itemsError);
+        set({
+          selectedDeliveryOrder: null,
+          selectedDeliveryOrderId: null,
+          loading: false,
+          loadingMessage: null,
+          error: itemsError.message || 'No fue posible cargar los productos de la orden'
+        });
+        return;
+      }
 
-      // Obtener todas las salidas y filtrar las canceladas
+      if (!orderItems?.length) {
+        set({
+          selectedDeliveryOrder: null,
+          selectedDeliveryOrderId: null,
+          loading: false,
+          loadingMessage: null,
+          error: 'La orden no tiene productos disponibles para registrar la salida'
+        });
+        return;
+      }
+
+      const orderData: any = { ...orderHeader, items: orderItems };
+
+      // Obtener las salidas de inventario de esta orden y sus cancelaciones activas.
       const { data: exitsData, error: exitsError } = await supabase
         .from('inventory_exits')
         .select('id, product_id, warehouse_id, quantity')
@@ -805,6 +911,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         );
         // Continuar aunque haya error, pero con cache vacío
       }
+
+      const cancelledExitIds = await getActiveCancelledExitIds(
+        (exitsData || []).map((exit: any) => exit.id)
+      );
 
       // Calcular cantidades registradas por compositeKey(product_id, warehouse_id) desde inventory_exits (excluyendo canceladas)
       const registeredByProduct: Record<string, number> = {};
@@ -821,8 +931,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       // Para remisiones (assigned_to_user_id), usar el nombre del usuario asignado
       // Para clientes (customer_id), usar el nombre del cliente
       const customerName =
-        orderData.customer?.name || orderData.assigned_to_user?.full_name || '';
-      const customerIdNumber = orderData.customer?.id_number || '';
+        orderData.customer_name ||
+        orderData.assigned_to_user_name ||
+        orderData.customer?.name ||
+        orderData.assigned_to_user?.full_name ||
+        '';
+      const customerIdNumber =
+        orderData.customer_id_number || orderData.customer?.id_number || '';
 
       // Incluir TODOS los items (directos + de órdenes asignadas)
       // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
@@ -856,10 +971,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         customer_id: orderData.customer_id || '',
         customer_name: customerName,
         customer_id_number: customerIdNumber,
-        status: orderData.status,
+        status: orderData.status || 'pending',
         delivery_address: orderData.delivery_address || '',
         notes: orderData.notes || '',
-        created_at: orderData.created_at,
+        created_at: orderData.created_at || new Date().toISOString(),
         items: activeItems.map((item: any) => {
           const fp = fifoAllocated.get(item.id) ?? {
             registered: 0,
@@ -1371,8 +1486,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    if (quantity <= 0) {
-      set({ error: 'La cantidad debe ser mayor a 0' });
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: 'La cantidad debe ser un número mayor que cero' });
       return;
     }
 
@@ -1496,25 +1611,60 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   updateProductQuantity: (index: number, quantity: number) => {
-    const { exitItems, selectedDeliveryOrderId, scannedItemsProgress } = get();
+    const {
+      exitItems,
+      selectedDeliveryOrder,
+      selectedDeliveryOrderId,
+      registeredExitsCache,
+      scannedItemsProgress
+    } = get();
 
-    if (quantity <= 0) {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: 'La cantidad debe ser un número mayor que cero' });
       return;
     }
 
     const item = exitItems[index];
     if (!item) return;
 
-    // Verificar que no exceda el stock disponible
-    if (quantity > (item.availableStock || 0)) {
+    if (!selectedDeliveryOrderId || !selectedDeliveryOrder || !item.warehouseId) {
+      set({ error: 'Debe seleccionar una orden de entrega válida' });
+      return;
+    }
+
+    const matchingOrderItems = selectedDeliveryOrder.items.filter(
+      (orderItem) =>
+        orderItem.product_id === item.product.id &&
+        orderItem.warehouse_id === item.warehouseId
+    );
+    const totalRequired = matchingOrderItems.reduce(
+      (total, orderItem) => total + orderItem.quantity,
+      0
+    );
+    const deliveredFromDatabase = matchingOrderItems.reduce(
+      (total, orderItem) => total + orderItem.db_delivered_quantity,
+      0
+    );
+    const cacheKey = compositeKey(item.product.id, item.warehouseId);
+    const deliveredFromExits =
+      registeredExitsCache[selectedDeliveryOrderId]?.[cacheKey] ?? 0;
+    const delivered = Math.min(
+      Math.max(deliveredFromDatabase, deliveredFromExits),
+      totalRequired
+    );
+    const maximumAllowed = Math.max(totalRequired - delivered, 0);
+
+    if (quantity > maximumAllowed) {
       set({
-        error: `La cantidad no puede exceder el stock disponible: ${item.availableStock || 0}`
+        error: `La cantidad no puede exceder lo pendiente en la orden: ${maximumAllowed}`
       });
       return;
     }
 
     const updatedItems = exitItems.map((item, i) =>
-      i === index ? { ...item, quantity } : item
+      i === index
+        ? { ...item, quantity, availableStock: maximumAllowed - quantity }
+        : item
     );
 
     // Si hay una orden de entrega seleccionada, actualizar progreso con clave compuesta
@@ -1547,6 +1697,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // Finalize exit
   finalizeExit: async (userId: string): Promise<{ error: any }> => {
+    if (get().loading) {
+      console.warn('[finalizeExit] Ya se está procesando una salida, ignorando llamada duplicada');
+      return { error: { message: 'Ya se está procesando esta salida' } };
+    }
+
     const {
       exitItems,
       exitMode,
@@ -1564,6 +1719,28 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     if (!exitMode) {
       return { error: { message: 'Debe seleccionar un modo de salida' } };
+    }
+
+    if (exitMode === 'direct_user' && !selectedUserId) {
+      return { error: { message: 'Debe seleccionar un usuario destinatario' } };
+    }
+
+    if (exitMode === 'direct_customer' && !selectedCustomerId) {
+      return { error: { message: 'Debe seleccionar un cliente destinatario' } };
+    }
+
+    if (!selectedDeliveryOrderId) {
+      return { error: { message: 'Debe seleccionar una orden de entrega' } };
+    }
+
+    if (
+      exitItems.some(
+        (item) => !Number.isFinite(item.quantity) || item.quantity <= 0
+      )
+    ) {
+      return {
+        error: { message: 'Todas las cantidades deben ser números mayores que cero' }
+      };
     }
 
     if (selectedDeliveryOrderId && !canRegisterExit) {
@@ -1612,43 +1789,45 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       // Preparar datos según el modo de salida (cada item usa su propia bodega)
-      const exits: InventoryExit[] = exitItems.map((item) => {
-        const baseExit: InventoryExit = {
-          product_id: item.product.id,
+      const requestFingerprint = JSON.stringify({
+        exitMode,
+        selectedUserId,
+        selectedCustomerId,
+        selectedDeliveryOrderId,
+        deliveryObservations: deliveryObservations.trim(),
+        exitItems: exitItems.map((item) => ({
+          productId: item.product.id,
+          warehouseId: item.warehouseId,
           quantity: item.quantity,
-          warehouse_id: item.warehouseId!, // Per-item desde la orden de entrega
-          barcode_scanned: item.barcode,
-          created_by: userId
-        };
-
-        // Agregar destinatario según el modo
-        if (exitMode === 'direct_user') {
-          baseExit.delivered_to_user_id = selectedUserId;
-          if (selectedDeliveryOrderId) {
-            baseExit.delivery_order_id = selectedDeliveryOrderId;
-          }
-        } else if (exitMode === 'direct_customer') {
-          baseExit.delivered_to_customer_id = selectedCustomerId;
-          if (selectedDeliveryOrderId) {
-            baseExit.delivery_order_id = selectedDeliveryOrderId;
-          }
-        }
-
-        // Observaciones de entrega opcionales
-        if (deliveryObservations && deliveryObservations.trim()) {
-          (baseExit as any).delivery_observations = deliveryObservations.trim();
-        }
-
-        return baseExit;
+          barcode: item.barcode,
+        })),
       });
+      let idempotencyKey = pendingExitRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingExitRequests.set(requestFingerprint, idempotencyKey);
+      }
 
-      // Insertar salidas
       set({ loadingMessage: 'Guardando productos en el inventario...' });
-
-      const { data: insertedExits, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .insert(exits)
-        .select();
+      const { data: exitResult, error: exitsError } = await supabase.rpc(
+        'register_inventory_exits_batch',
+        {
+          p_exit_mode: exitMode,
+          p_delivered_to_user_id:
+            exitMode === 'direct_user' ? selectedUserId : null,
+          p_delivered_to_customer_id:
+            exitMode === 'direct_customer' ? selectedCustomerId : null,
+          p_delivery_order_id: selectedDeliveryOrderId,
+          p_delivery_observations: deliveryObservations.trim() || null,
+          p_items: exitItems.map((item) => ({
+            product_id: item.product.id,
+            warehouse_id: item.warehouseId,
+            quantity: item.quantity,
+            barcode_scanned: item.barcode,
+          })) as unknown as Json,
+          p_idempotency_key: idempotencyKey,
+        }
+      );
 
       if (exitsError) {
         const backendDeniedMessage =
@@ -1681,6 +1860,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             deliveryOrderId: selectedDeliveryOrderId
           }
         });
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             ...exitsError,
@@ -1689,9 +1869,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       }
 
-      // Verificar que se insertaron correctamente
-      if (!insertedExits || insertedExits.length === 0) {
+      const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
+      if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
+        set({ loading: false, loadingMessage: null });
         return {
           error: {
             message:
@@ -1700,10 +1881,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         };
       }
 
-      if (insertedExits.length !== exits.length) {
-        console.warn(
-          `Se insertaron ${insertedExits.length} de ${exits.length} salidas`
+      if (insertedExitIds.length !== exitItems.length) {
+        console.error(
+          `Respuesta inválida: se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
+        set({ loading: false, loadingMessage: null });
+        return {
+          error: {
+            message:
+              'La respuesta del registro de salidas está incompleta. Intente nuevamente.'
+          }
+        };
       }
 
       // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
@@ -1721,18 +1909,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         let orderCompleted = false;
 
         try {
-          const { data: cancelledExits } = await supabase
-            .from('inventory_exit_cancellations')
-            .select('inventory_exit_id');
-
-          const cancelledExitIds = new Set(
-            (cancelledExits || []).map((c: any) => c.inventory_exit_id)
-          );
-
           const { data: exitsData, error: exitsRefreshError } = await supabase
             .from('inventory_exits')
             .select('id, product_id, warehouse_id, quantity')
             .eq('delivery_order_id', orderIdToRefresh);
+
+          const cancelledExitIds = await getActiveCancelledExitIds(
+            (exitsData || []).map((exit: any) => exit.id)
+          );
 
           if (!exitsRefreshError && exitsData) {
             const registeredByProduct: Record<string, number> = {};
@@ -1832,6 +2016,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       // Resetear todo después de finalizar
       get().reset();
+      pendingExitRequests.delete(requestFingerprint);
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });

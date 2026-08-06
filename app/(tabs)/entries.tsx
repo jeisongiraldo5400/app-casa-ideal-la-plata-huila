@@ -1,5 +1,6 @@
 import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { EntryItemsList } from '@/components/entries/components/EntryItemsList';
+import { EntrySessionContext } from '@/components/entries/components/EntrySessionContext';
 import { ProductForm } from '@/components/entries/components/ProductForm';
 import { ProductFound } from '@/components/entries/components/ProductFound';
 import { PurchaseOrderProgress } from '@/components/entries/components/PurchaseOrderProgress';
@@ -173,6 +174,7 @@ export default function EntriesScreen() {
 
         {step === 'scanning' && (
           <>
+            <EntrySessionContext />
             {!currentProduct && !currentScannedBarcode && (
               <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
                 <View style={styles.scanCardContent}>
@@ -254,11 +256,10 @@ export default function EntriesScreen() {
               </View>
             )}
 
-            {/* Productos escaneados (carrito) - se muestra primero */}
-            {entryItems.length > 0 && <EntryItemsList />}
-
-            {/* Progreso de orden de compra - mostrar siempre si hay OC seleccionada */}
+            {/* El detalle de la OC inicia compacto para priorizar el escaneo. */}
             {purchaseOrderId && <PurchaseOrderProgress />}
+
+            {entryItems.length > 0 && <EntryItemsList />}
           </>
         )}
 

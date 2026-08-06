@@ -3,9 +3,18 @@ import { create } from "zustand";
 // supabase
 import { supabase } from "@/lib/supabase";
 import { logOperationError } from "@/lib/operationLogger";
+import { createIdempotencyKey } from "@/lib/idempotency";
+import {
+  fetchBrands,
+  fetchCategories,
+  fetchPendingPurchaseOrders,
+  fetchPurchaseOrderItems,
+  fetchSuppliers,
+  fetchWarehouses,
+} from "../services/entriesService";
 
 // types
-import { Database } from "@/types/database.types";
+import { Database, type Json } from "@/types/database.types";
 
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Supplier = Database["public"]["Tables"]["suppliers"]["Row"];
@@ -15,8 +24,6 @@ type Brand = Database["public"]["Tables"]["brands"]["Row"];
 type PurchaseOrder = Database["public"]["Tables"]["purchase_orders"]["Row"];
 type PurchaseOrderItem =
   Database["public"]["Tables"]["purchase_order_items"]["Row"];
-type InventoryEntry =
-  Database["public"]["Tables"]["inventory_entries"]["Insert"];
 
 export type EntryType = "PO_ENTRY" | "ENTRY" | "INITIAL_LOAD";
 
@@ -61,6 +68,9 @@ export interface SelectedPurchaseOrderProgress {
   totalScanned: number;
   totalCompleted: number;
 }
+
+const pendingEntryRequests = new Map<string, string>();
+const pendingProductRequests = new Map<string, string>();
 
 interface EntriesState {
   // Sesión de entrada (null hasta elegir tipo en flow-selection)
@@ -444,18 +454,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadSuppliers: async () => {
     try {
-      const { data, error } = await supabase
-        .from("suppliers")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading suppliers:", error);
-        set({ suppliers: [] });
-        return;
-      }
-      set({ suppliers: data || [] });
+      const data = await fetchSuppliers();
+      set({ suppliers: data });
     } catch (error: any) {
       console.error("Error loading suppliers:", error);
       set({ suppliers: [] });
@@ -467,48 +467,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     try {
       // Cargar órdenes de compra pendientes para el proveedor
       // Solo órdenes no eliminadas y no canceladas
-      const { data: orders, error: ordersError } = await supabase
-        .from("purchase_orders")
-        .select("*")
-        .eq("supplier_id", supplierId)
-        .in("status", ["pending"])
-        .is("deleted_at", null) // Filtrar órdenes no eliminadas
-        .order("created_at", { ascending: false });
+      const orders = await fetchPendingPurchaseOrders(supplierId);
 
-      if (ordersError) {
-        console.error("Error loading purchase orders:", ordersError);
-        set({ purchaseOrders: [], loading: false, loadingMessage: null });
-        return;
-      }
-
-      // OPTIMIZADO: Cargar todos los items de todas las órdenes en una sola consulta
-      // Esto reduce de N consultas a 1 consulta
       const orderIds = (orders || []).map((order) => order.id);
 
       let allItems: any[] = [];
       if (orderIds.length > 0) {
-        const { data: itemsData, error: itemsError } = await supabase
-          .from("purchase_order_items")
-          .select(
-            `
-            *,
-            products!inner(id, name, barcode, sku, deleted_at),
-            purchase_order_id
-          `
-          )
-          .in("purchase_order_id", orderIds)
-          .is("deleted_at", null)
-          .is("products.deleted_at", null);
-
-        if (itemsError) {
+        try {
+          allItems = await fetchPurchaseOrderItems(orderIds);
+        } catch (itemsError) {
           console.error("Error loading purchase order items:", itemsError);
-        } else {
-          // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
-          allItems = (itemsData || []).filter((item: any) => 
-            !item.deleted_at && 
-            item.products && 
-            !item.products.deleted_at
-          );
         }
       }
 
@@ -794,18 +762,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadWarehouses: async () => {
     try {
-      const { data, error } = await supabase
-        .from("warehouses")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading warehouses:", error);
-        set({ warehouses: [] });
-        return;
-      }
-      set({ warehouses: data || [] });
+      const data = await fetchWarehouses();
+      set({ warehouses: data });
     } catch (error: any) {
       console.error("Error loading warehouses:", error);
       set({ warehouses: [] });
@@ -814,18 +772,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadCategories: async () => {
     try {
-      const { data, error } = await supabase
-        .from("category")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading categories:", error);
-        set({ categories: [] });
-        return;
-      }
-      set({ categories: data || [] });
+      const data = await fetchCategories();
+      set({ categories: data });
     } catch (error: any) {
       console.error("Error loading categories:", error);
       set({ categories: [] });
@@ -834,18 +782,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   loadBrands: async () => {
     try {
-      const { data, error } = await supabase
-        .from("brands")
-        .select("*")
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("Error loading brands:", error);
-        set({ brands: [] });
-        return;
-      }
-      set({ brands: data || [] });
+      const data = await fetchBrands();
+      set({ brands: data });
     } catch (error: any) {
       console.error("Error loading brands:", error);
       set({ brands: [] });
@@ -956,26 +894,21 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   searchProductByBarcode: async (barcode: string): Promise<Product | null> => {
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("barcode", barcode)
-        .is("deleted_at", null)
-        .single();
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .eq("barcode", barcode)
+      .is("deleted_at", null)
+      .single();
 
-      if (error) {
-        if (error.code === "PGRST116") {
-          return null;
-        }
-        throw error;
+    if (error) {
+      if (error.code === "PGRST116") {
+        return null;
       }
-
-      return data as Product;
-    } catch (error: any) {
-      console.error("Error searching product:", error);
-      return null;
+      throw error;
     }
+
+    return data as Product;
   },
 
   addProductToEntry: async (product, quantity, barcode) => {
@@ -993,6 +926,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       entryType,
       scannedItemsProgress,
     } = get();
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ error: "La cantidad debe ser un número mayor que cero" });
+      return;
+    }
 
     // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
     // Esto previene que se puedan agregar productos excediendo las cantidades de la orden
@@ -1080,7 +1018,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     if (!item) return;
 
     // Validar cantidad
-    if (quantity <= 0) {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
       set({
         error:
           "La cantidad debe ser mayor a 0. Si no desea el producto, elimínelo de la lista.",
@@ -1140,33 +1078,47 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     productData
   ): Promise<{ product: Product | null; error: any }> => {
     try {
-      const { data, error } = await supabase
-        .from("products")
-        .insert({
-          name: productData.name,
-          sku: productData.sku,
-          barcode: productData.barcode,
-          category_id: productData.category_id,
-          brand_id: productData.brand_id,
-          description: productData.description || null,
-          status: true,
-        })
-        .select()
-        .single();
+      const normalizedProduct = {
+        name: productData.name.trim(),
+        sku: productData.sku.trim(),
+        barcode: productData.barcode.trim(),
+        categoryId: productData.category_id,
+        brandId: productData.brand_id,
+        description: productData.description?.trim() || null,
+        supplierId: productData.supplier_id || null,
+      };
+      const requestFingerprint = JSON.stringify(normalizedProduct);
+      let idempotencyKey = pendingProductRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingProductRequests.set(requestFingerprint, idempotencyKey);
+      }
+
+      const { data, error } = await supabase.rpc("create_inventory_product", {
+        p_name: normalizedProduct.name,
+        p_sku: normalizedProduct.sku,
+        p_barcode: normalizedProduct.barcode,
+        p_category_id: normalizedProduct.categoryId,
+        p_brand_id: normalizedProduct.brandId,
+        p_description: normalizedProduct.description,
+        p_supplier_id: normalizedProduct.supplierId,
+        p_idempotency_key: idempotencyKey,
+      });
 
       if (error) {
         return { product: null, error };
       }
 
-      // Si hay supplier_id, crear relación en product_suppliers
-      if (productData.supplier_id) {
-        await supabase.from("product_suppliers").insert({
-          product_id: data.id,
-          supplier_id: productData.supplier_id,
-        });
+      const product = (data as Product | null);
+      if (!product?.id) {
+        return {
+          product: null,
+          error: { message: "La creación del producto no devolvió un producto válido" },
+        };
       }
 
-      return { product: data as Product, error: null };
+      pendingProductRequests.delete(requestFingerprint);
+      return { product, error: null };
     } catch (error: any) {
       return { product: null, error };
     }
@@ -1179,7 +1131,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     // que deshabilita el botón, un segundo tap puede disparar otra ejecución
     if (get().loading) {
       console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
-      return { error: null };
+      return { error: { message: "Ya se está procesando esta entrada" } };
     }
 
     const {
@@ -1252,7 +1204,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
         productIdSet.add(item.product.id);
 
-        if (item.quantity <= 0) {
+        if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
           return {
             valid: false,
             message:
@@ -1287,7 +1239,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       const { data: warehouseData, error: warehouseError } = await supabase
         .from("warehouses")
-        .select("id, is_active")
+        .select("id, is_active, deleted_at")
         .eq("id", warehouseId)
         .maybeSingle();
 
@@ -1299,7 +1251,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         };
       }
 
-      if (!warehouseData || !warehouseData.is_active) {
+      if (!warehouseData || !warehouseData.is_active || warehouseData.deleted_at) {
         return {
           valid: false,
           message:
@@ -1324,7 +1276,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       const deletedProducts =
         productsData?.filter((p) => p.deleted_at !== null) || [];
-      if (deletedProducts.length > 0) {
+      if ((productsData?.length || 0) !== productIds.length || deletedProducts.length > 0) {
         return {
           valid: false,
           message:
@@ -1439,20 +1391,38 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // Registrar cada producto en inventory_entries
       set({ loadingMessage: 'Guardando productos en el inventario...' });
       
-      const entries: InventoryEntry[] = entryItems.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-        supplier_id: supplierId,
-        purchase_order_id: purchaseOrderId,
-        warehouse_id: warehouseId,
-        barcode_scanned: item.barcode,
-        entry_type: entryType, // Usar el tipo seleccionado explícitamente
-        created_by: userId,
-      }));
+      const requestFingerprint = JSON.stringify({
+        warehouseId,
+        supplierId,
+        purchaseOrderId,
+        entryType,
+        entryItems: entryItems.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          barcode: item.barcode,
+        })),
+      });
+      let idempotencyKey = pendingEntryRequests.get(requestFingerprint);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        pendingEntryRequests.set(requestFingerprint, idempotencyKey);
+      }
 
-      const { error: entriesError } = await supabase
-        .from("inventory_entries")
-        .insert(entries);
+      const { data: entryResult, error: entriesError } = await supabase.rpc(
+        "register_inventory_entries_batch",
+        {
+          p_warehouse_id: warehouseId,
+          p_supplier_id: supplierId,
+          p_purchase_order_id: purchaseOrderId,
+          p_entry_type: entryType,
+          p_items: entryItems.map((item) => ({
+            product_id: item.product.id,
+            quantity: item.quantity,
+            barcode_scanned: item.barcode,
+          })) as unknown as Json,
+          p_idempotency_key: idempotencyKey,
+        }
+      );
 
       if (entriesError) {
         logOperationError({
@@ -1475,6 +1445,18 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         // Limpiar loading en caso de error al insertar
         set({ loading: false, loadingMessage: null });
         return { error: entriesError };
+      }
+
+      const insertedEntryIds =
+        (entryResult as { entry_ids?: string[] } | null)?.entry_ids || [];
+      if (insertedEntryIds.length !== entryItems.length) {
+        set({ loading: false, loadingMessage: null });
+        return {
+          error: {
+            message:
+              "La respuesta del registro de entradas está incompleta. Intente nuevamente.",
+          },
+        };
       }
 
       // NOTA: No actualizamos warehouse_stock manualmente aquí porque
@@ -1504,33 +1486,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         set({ registeredEntriesCache: updatedCache });
 
         // Verificar si la orden está completa y actualizar el estado automáticamente
-        const { data: progressData, error: progressError } = await supabase.rpc(
-          'update_purchase_order_progress',
-          {
-            order_id_param: purchaseOrderId,
-          }
-        );
-
-        if (progressError) {
-          console.error("Error updating purchase order progress:", progressError);
-          logOperationError({
-            error_code: "PURCHASE_PROGRESS_FAILED",
-            error_message: progressError.message || String(progressError),
-            module: "entries",
-            operation: "finalize_entry",
-            step: "rpc_update_progress",
-            entity_type: "purchase_order",
-            entity_id: purchaseOrderId,
-            context: {
-              warehouseId,
-              productIds: entryItems.map((i) => i.product.id),
-              quantities: entryItems.map((i) => i.quantity),
-              entryType,
-              purchaseOrderId,
-              supplierId,
-            },
-          });
-        } else if (progressData && progressData.success && progressData.all_complete) {
+        const progressData = (entryResult as {
+          purchase_order_progress?: { success?: boolean; all_complete?: boolean; updated?: boolean } | null;
+        } | null)?.purchase_order_progress;
+        if (progressData?.success && progressData.all_complete) {
           console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
           // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
           if (progressData.updated) {
@@ -1561,6 +1520,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchaseOrderValidations: updatedValidations,
         registeredEntriesCache: updatedCache,
       });
+      pendingEntryRequests.delete(requestFingerprint);
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });

@@ -1,0 +1,49 @@
+/** Etiquetas en español para estados de negocios y cuotas */
+
+export const NEGOCIO_STATUS_LABEL: Record<string, string> = {
+  borrador: "Borrador",
+  por_firmar: "Por firmar",
+  activo: "Activo",
+  entregado: "Entregado",
+  anulado: "Anulado",
+  cerrado: "Cerrado",
+};
+
+export const CUOTA_STATUS_LABEL: Record<string, string> = {
+  pendiente: "Pendiente",
+  parcial: "Parcial",
+  pagada: "Pagada",
+  mora: "En mora",
+  anulada: "Anulada",
+};
+
+export const NEGOCIO_STATUS_COLOR: Record<
+  string,
+  "default" | "warning" | "success" | "error" | "info"
+> = {
+  borrador: "default",
+  por_firmar: "warning",
+  activo: "success",
+  entregado: "info",
+  anulado: "error",
+  cerrado: "default",
+};
+
+export const CUOTA_STATUS_COLOR: Record<
+  string,
+  "default" | "warning" | "success" | "error" | "info"
+> = {
+  pendiente: "default",
+  parcial: "warning",
+  pagada: "success",
+  mora: "error",
+  anulada: "default",
+};
+
+export function labelNegocioStatus(status: string) {
+  return NEGOCIO_STATUS_LABEL[status] || status;
+}
+
+export function labelCuotaStatus(status: string) {
+  return CUOTA_STATUS_LABEL[status] || status;
+}

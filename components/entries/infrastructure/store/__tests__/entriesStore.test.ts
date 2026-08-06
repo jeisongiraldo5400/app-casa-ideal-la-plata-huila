@@ -5,6 +5,7 @@ import { useEntriesStore } from '../entriesStore';
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     from: jest.fn(),
+    rpc: jest.fn(),
   },
 }));
 
@@ -93,6 +94,14 @@ describe('entriesStore', () => {
   });
 
   describe('finalizeEntry', () => {
+    it('should return an error when another entry is already processing', async () => {
+      useEntriesStore.setState({ loading: true });
+
+      const { error } = await useEntriesStore.getState().finalizeEntry('user-1');
+
+      expect(error?.message).toMatch(/procesando/i);
+    });
+
     it('should return error for PO_ENTRY without purchase order before insert', async () => {
       const mockProduct = { id: 'product-1', name: 'P' } as any;
       useEntriesStore.setState({
@@ -164,6 +173,55 @@ describe('entriesStore', () => {
     });
   });
 
+  describe('searchProductByBarcode', () => {
+    it('should propagate query errors instead of treating them as a missing product', async () => {
+      (supabase.from as jest.Mock).mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              single: () =>
+                Promise.resolve({
+                  data: null,
+                  error: { code: '42501', message: 'permission denied' },
+                }),
+            }),
+          }),
+        }),
+      }));
+
+      await expect(
+        useEntriesStore.getState().searchProductByBarcode('123456')
+      ).rejects.toMatchObject({ code: '42501' });
+    });
+  });
+
+  describe('createProduct', () => {
+    it('should create the product through the idempotent RPC', async () => {
+      const product = { id: 'product-1', name: 'Producto' };
+      (supabase.rpc as jest.Mock).mockResolvedValue({ data: product, error: null });
+
+      const result = await useEntriesStore.getState().createProduct({
+        name: ' Producto ',
+        sku: ' SKU-1 ',
+        barcode: ' 123456 ',
+        category_id: 'category-1',
+        brand_id: 'brand-1',
+        supplier_id: 'supplier-1',
+      });
+
+      expect(result).toEqual({ product, error: null });
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'create_inventory_product',
+        expect.objectContaining({
+          p_name: 'Producto',
+          p_sku: 'SKU-1',
+          p_barcode: '123456',
+          p_idempotency_key: expect.any(String),
+        })
+      );
+    });
+  });
+
   describe('scannedItemsProgress', () => {
     it('should initialize with empty Map', () => {
       const state = useEntriesStore.getState();
@@ -204,4 +262,3 @@ describe('entriesStore', () => {
     });
   });
 });
-
