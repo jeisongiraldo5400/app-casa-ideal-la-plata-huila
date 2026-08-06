@@ -74,6 +74,9 @@ export interface SelectedDeliveryOrderProgress {
 const UNAUTHORIZED_EXIT_MESSAGE =
   'No estás autorizado para registrar la salida de inventario de esta orden.';
 
+/** Monotonic id so stale customer-search responses never overwrite newer ones. */
+let customerSearchSeq = 0;
+
 type ExitAuthorizationResult = {
   canRegister: boolean;
   message: string | null;
@@ -408,31 +411,37 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const normalizedSearchTerm = searchTerm.trim();
 
     if (!normalizedSearchTerm) {
+      customerSearchSeq += 1;
       set({ customerSearchTerm: '', customers: [], customersLoading: false });
       return;
     }
 
+    const { customerSearchTerm, customers, customersLoading } = get();
+    // Skip redundant fetch when the same term is already loaded or in flight
+    if (
+      customerSearchTerm === normalizedSearchTerm &&
+      (customersLoading || customers.length > 0)
+    ) {
+      return;
+    }
+
+    const requestSeq = ++customerSearchSeq;
     set({ customerSearchTerm: normalizedSearchTerm, customersLoading: true });
 
     try {
       // Buscar directamente en la tabla customers
-      let query = supabase
+      const { data, error } = await supabase
         .from('customers')
         .select('*')
         .is('deleted_at', null)
-        .order('name');
-
-      // Si hay término de búsqueda, filtrar por nombre o número de identificación
-      if (normalizedSearchTerm) {
-        query = query.or(
+        .or(
           `name.ilike.%${normalizedSearchTerm}%,id_number.ilike.%${normalizedSearchTerm}%`
-        );
-      }
-
-      const { data, error } = await query.limit(50);
+        )
+        .order('name')
+        .limit(50);
 
       // Evitar que respuestas antiguas sobrescriban resultados recientes
-      if (get().customerSearchTerm !== normalizedSearchTerm) {
+      if (requestSeq !== customerSearchSeq) {
         return;
       }
 
@@ -444,7 +453,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ customers: data || [], customersLoading: false });
     } catch (error: any) {
       console.error('Error searching customers:', error);
-      if (get().customerSearchTerm === normalizedSearchTerm) {
+      if (requestSeq === customerSearchSeq) {
         set({ customers: [], customersLoading: false });
       }
     }

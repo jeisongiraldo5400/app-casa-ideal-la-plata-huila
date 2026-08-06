@@ -12,82 +12,125 @@ import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
 import { UserSelectField } from './UserSelectField';
 
-const CUSTOMER_SEARCH_DEBOUNCE_MS = 800;
+const CUSTOMER_SEARCH_DEBOUNCE_MS = 550;
 const CUSTOMER_SEARCH_MIN_LENGTH = 4;
 
 export function SetupForm() {
-  const {
-    exitMode,
-    selectedUserId,
-    selectedCustomerId,
-    selectedDeliveryOrderId,
-    deliveryObservations,
-    users,
-    customers,
-    loading,
-    customersLoading,
-    loadUsers,
-    searchCustomers,
-    searchDeliveryOrdersByUser,
-    setExitMode,
-    setSelectedUser,
-    setSelectedCustomer,
-    setDeliveryObservations,
-    startExit,
-    reset,
-    error,
-    getSelectedDeliveryOrderProgress,
-    canRegisterExit,
-    authorizationMessage,
-  } = useExitsStore();
+  const exitMode = useExitsStore((s) => s.exitMode);
+  const selectedUserId = useExitsStore((s) => s.selectedUserId);
+  const selectedCustomerId = useExitsStore((s) => s.selectedCustomerId);
+  const selectedDeliveryOrderId = useExitsStore((s) => s.selectedDeliveryOrderId);
+  const deliveryObservations = useExitsStore((s) => s.deliveryObservations);
+  const users = useExitsStore((s) => s.users);
+  const customers = useExitsStore((s) => s.customers);
+  const loading = useExitsStore((s) => s.loading);
+  const customersLoading = useExitsStore((s) => s.customersLoading);
+  const loadUsers = useExitsStore((s) => s.loadUsers);
+  const searchCustomers = useExitsStore((s) => s.searchCustomers);
+  const searchDeliveryOrdersByUser = useExitsStore((s) => s.searchDeliveryOrdersByUser);
+  const setExitMode = useExitsStore((s) => s.setExitMode);
+  const setSelectedUser = useExitsStore((s) => s.setSelectedUser);
+  const setSelectedCustomer = useExitsStore((s) => s.setSelectedCustomer);
+  const setDeliveryObservations = useExitsStore((s) => s.setDeliveryObservations);
+  const startExit = useExitsStore((s) => s.startExit);
+  const reset = useExitsStore((s) => s.reset);
+  const error = useExitsStore((s) => s.error);
+  const getSelectedDeliveryOrderProgress = useExitsStore((s) => s.getSelectedDeliveryOrderProgress);
+  const canRegisterExit = useExitsStore((s) => s.canRegisterExit);
+  const authorizationMessage = useExitsStore((s) => s.authorizationMessage);
 
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const Colors = getColors(colorScheme === 'dark');
   const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
-  const skipNextCustomerSearchRef = useRef(false);
-  const lastSearchedTermRef = useRef('');
+  const [committedSearchTerm, setCommittedSearchTerm] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedSearchTermRef = useRef('');
   const selectedCustomerNameRef = useRef('');
+  const selectedCustomerIdRef = useRef(selectedCustomerId);
+  selectedCustomerIdRef.current = selectedCustomerId;
+
+  const clearDebounceTimer = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, []);
+
+  const commitSearchTerm = useCallback((term: string) => {
+    committedSearchTermRef.current = term;
+    setCommittedSearchTerm(term);
+  }, []);
+
+  const scheduleCustomerSearch = useCallback((text: string) => {
+    clearDebounceTimer();
+
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      const normalizedSearchTerm = text.trim();
+
+      // Skip refetch when a customer is selected and the input still shows their name
+      if (
+        selectedCustomerIdRef.current &&
+        normalizedSearchTerm.toLowerCase() === selectedCustomerNameRef.current.trim().toLowerCase()
+      ) {
+        commitSearchTerm(normalizedSearchTerm);
+        return;
+      }
+
+      if (normalizedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
+        if (normalizedSearchTerm !== committedSearchTermRef.current) {
+          commitSearchTerm(normalizedSearchTerm);
+          searchCustomers(normalizedSearchTerm);
+        }
+      } else if (committedSearchTermRef.current !== '') {
+        // Empty or below min length: drop stale results without hammering the API
+        commitSearchTerm('');
+        searchCustomers('');
+      }
+    }, CUSTOMER_SEARCH_DEBOUNCE_MS);
+  }, [clearDebounceTimer, commitSearchTerm, searchCustomers]);
 
   const handleCustomerInputChange = useCallback((text: string) => {
     setSearchInput(text);
 
     // Si el usuario cambia manualmente el nombre, invalidar la selección previa
-    if (!selectedCustomerId) {
-      return;
+    if (selectedCustomerId) {
+      const normalizedTyped = text.trim().toLowerCase();
+      const normalizedSelectedName = selectedCustomerNameRef.current.trim().toLowerCase();
+      if (normalizedTyped !== normalizedSelectedName) {
+        selectedCustomerNameRef.current = '';
+        setSelectedCustomer(null);
+      }
     }
 
-    const normalizedTyped = text.trim().toLowerCase();
-    const normalizedSelectedName = selectedCustomerNameRef.current.trim().toLowerCase();
-    if (normalizedTyped !== normalizedSelectedName) {
-      selectedCustomerNameRef.current = '';
-      setSelectedCustomer(null);
-    }
-  }, [selectedCustomerId, setSelectedCustomer]);
+    scheduleCustomerSearch(text);
+  }, [scheduleCustomerSearch, selectedCustomerId, setSelectedCustomer]);
 
   const handleClearCustomerSearch = useCallback(() => {
-    skipNextCustomerSearchRef.current = true;
-    lastSearchedTermRef.current = '';
+    clearDebounceTimer();
+    commitSearchTerm('');
     selectedCustomerNameRef.current = '';
     setSelectedCustomer(null);
     setSearchInput('');
     searchCustomers('');
     Keyboard.dismiss();
-  }, [searchCustomers, setSelectedCustomer]);
+  }, [clearDebounceTimer, commitSearchTerm, searchCustomers, setSelectedCustomer]);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
 
-  // Limpiar solo el input local cuando el componente se desmonta
+  // Limpiar solo el input local y el timer cuando el componente se desmonta
   // NO llamar reset() aquí porque se ejecuta al cambiar de step a 'scanning'
   // y eso limpia todo el estado, volviendo a 'setup'
   useEffect(() => {
     return () => {
-      setSearchInput(''); // Solo limpiar el input local
+      clearDebounceTimer();
+      setSearchInput('');
     };
-  }, []);
+  }, [clearDebounceTimer]);
 
   // Refrescar datos cuando la pantalla recibe foco (sin refrescar constantemente)
   useFocusEffect(
@@ -99,33 +142,21 @@ export function SetupForm() {
     }, []) // Sin dependencias para evitar refrescos constantes
   );
 
-  // Debounce customer search so typing stays fluid while the user enters a name/id.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const normalizedSearchTerm = searchInput.trim();
-
-      if (skipNextCustomerSearchRef.current) {
-        skipNextCustomerSearchRef.current = false;
-        lastSearchedTermRef.current = normalizedSearchTerm;
-        return;
-      }
-
-      if (normalizedSearchTerm.length >= CUSTOMER_SEARCH_MIN_LENGTH) {
-        if (normalizedSearchTerm !== lastSearchedTermRef.current) {
-          lastSearchedTermRef.current = normalizedSearchTerm;
-          searchCustomers(normalizedSearchTerm);
-        }
-      } else if (normalizedSearchTerm.length === 0) {
-        // Limpiar resultados cuando el input está vacío
-        lastSearchedTermRef.current = '';
-        searchCustomers('');
-      }
-    }, CUSTOMER_SEARCH_DEBOUNCE_MS);
-
-    return () => clearTimeout(timer);
-  }, [searchInput, searchCustomers]);
-
   // Las remisiones las carga solo DeliveryOrderSelector (evita doble fetch y loading global duplicado)
+  const normalizedSearchInput = searchInput.trim();
+  const searchMatchesCommittedQuery =
+    normalizedSearchInput.length >= CUSTOMER_SEARCH_MIN_LENGTH &&
+    normalizedSearchInput === committedSearchTerm;
+  const showCustomerResults =
+    !selectedCustomerId &&
+    searchMatchesCommittedQuery &&
+    !customersLoading &&
+    customers.length > 0;
+  const showNoCustomerResults =
+    !selectedCustomerId &&
+    searchMatchesCommittedQuery &&
+    !customersLoading &&
+    customers.length === 0;
 
   // Verificar si la orden está completa
   const deliveryOrderProgress = getSelectedDeliveryOrderProgress();
@@ -247,7 +278,7 @@ export function SetupForm() {
               <Text style={[styles.label, { color: Colors.text.primary }]}>Cliente *</Text>
               <View style={styles.inputContainer}>
                 <TextInput
-                  style={[styles.input, styles.inputWithClearButton, {
+                  style={[styles.input, styles.inputWithTrailingActions, {
                     backgroundColor: Colors.background.paper,
                     borderColor: Colors.divider,
                     color: Colors.text.primary
@@ -256,27 +287,32 @@ export function SetupForm() {
                   placeholderTextColor={Colors.text.secondary}
                   value={searchInput}
                   onChangeText={handleCustomerInputChange}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
                 />
-                {(searchInput.trim().length > 0 || selectedCustomerId) && (
-                  <TouchableOpacity
-                    style={styles.clearButton}
-                    onPress={handleClearCustomerSearch}
-                    accessibilityRole="button"
-                    accessibilityLabel="Limpiar búsqueda de cliente"
-                  >
-                    <MaterialIcons name="close" size={18} color={Colors.text.secondary} />
-                  </TouchableOpacity>
-                )}
+                <View style={styles.inputTrailingActions} pointerEvents="box-none">
+                  {customersLoading && (
+                    <ActivityIndicator
+                      size="small"
+                      color={Colors.primary.main}
+                      style={styles.inlineSpinner}
+                    />
+                  )}
+                  {(normalizedSearchInput.length > 0 || selectedCustomerId) && (
+                    <TouchableOpacity
+                      style={styles.clearButton}
+                      onPress={handleClearCustomerSearch}
+                      accessibilityRole="button"
+                      accessibilityLabel="Limpiar búsqueda de cliente"
+                    >
+                      <MaterialIcons name="close" size={18} color={Colors.text.secondary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
-              {customersLoading && (
-                <View style={[styles.loadingContainer, { backgroundColor: Colors.background.default }]}>
-                  <ActivityIndicator size="small" color={Colors.primary.main} />
-                  <Text style={[styles.loadingText, { color: Colors.text.secondary }]}>Buscando clientes...</Text>
-                </View>
-              )}
-
-              {searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length > 0 && (
+              {showCustomerResults && (
                 <View style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
@@ -290,11 +326,12 @@ export function SetupForm() {
                         selectedCustomerId === customer.id && { backgroundColor: Colors.primary.light + '20' }
                       ]}
                       onPress={() => {
+                        clearDebounceTimer();
                         setSelectedCustomer(customer.id);
-                        skipNextCustomerSearchRef.current = true;
                         selectedCustomerNameRef.current = customer.name;
+                        commitSearchTerm(customer.name.trim());
                         setSearchInput(customer.name);
-                        Keyboard.dismiss(); // Ocultar teclado al seleccionar cliente
+                        Keyboard.dismiss();
                       }}>
                       <Text style={[styles.customerName, { color: Colors.text.primary }]}>{customer.name}</Text>
                       <Text style={[styles.customerIdNumber, { color: Colors.text.secondary }]}>ID: {customer.id_number}</Text>
@@ -303,7 +340,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!customersLoading && searchInput.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && customers.length === 0 && (
+              {showNoCustomerResults && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
@@ -477,12 +514,23 @@ const styles = StyleSheet.create({
     position: 'relative',
     justifyContent: 'center',
   },
-  inputWithClearButton: {
-    paddingRight: 48,
+  inputWithTrailingActions: {
+    paddingRight: 72,
+  },
+  inputTrailingActions: {
+    position: 'absolute',
+    right: 8,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  inlineSpinner: {
+    width: 32,
+    height: 32,
   },
   clearButton: {
-    position: 'absolute',
-    right: 12,
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -492,17 +540,6 @@ const styles = StyleSheet.create({
   textArea: {
     height: 96,
     textAlignVertical: 'top',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-  },
-  loadingText: {
-    marginLeft: 12,
-    fontSize: 14,
   },
   customersList: {
     marginTop: 8,
