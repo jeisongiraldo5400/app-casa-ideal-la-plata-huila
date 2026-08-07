@@ -22,6 +22,7 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
+import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { createIdempotencyKey } from '@/lib/idempotency';
@@ -321,17 +322,17 @@ export default function NegocioDetailScreen() {
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',
-            dialogTitle: `Negocio #${negocio.numero}`,
+            dialogTitle: labelNegocioCodigo(negocio.numero),
           });
           return;
         }
       }
 
       await Share.share({
-        message: `Negocio #${negocio.numero} — ${customerName} — Total ${formatCOP(
+        message: `${labelNegocioCodigo(negocio.numero)} — ${customerName} — Total ${formatCOP(
           Number(negocio.total_credit)
         )}\n\n(Abra la web para imprimir el PDF completo)`,
-        title: `Negocio #${negocio.numero}`,
+        title: labelNegocioCodigo(negocio.numero),
       });
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo compartir');
@@ -494,7 +495,7 @@ export default function NegocioDetailScreen() {
             <Text style={[styles.backText, { color: colors.primary.main }]}>Volver</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
-            Negocio #{negocio.numero}
+            {labelNegocioCodigo(negocio.numero)}
           </Text>
           <TouchableOpacity style={styles.homeBtn} onPress={() => router.replace('/(tabs)' as any)} hitSlop={10}>
             <MaterialIcons name="home" size={23} color={colors.primary.main} />
@@ -764,7 +765,7 @@ export default function NegocioDetailScreen() {
                 </Pressable>
               </View>
               <Text style={{ color: colors.text.secondary }}>
-                Negocio #{negocio.numero} · {customerName}
+                {labelNegocioCodigo(negocio.numero)} · {customerName}
               </Text>
               <TextInput
                 placeholder="0,00"

@@ -47,3 +47,17 @@ export function labelNegocioStatus(status: string) {
 export function labelCuotaStatus(status: string) {
   return CUOTA_STATUS_LABEL[status] || status;
 }
+
+/**
+ * Código legible de negocio.
+ * Nuevos: YYYYNNN (ej. 2026001). Históricos: consecutivo corto (1, 2, …).
+ */
+export function formatNegocioCodigo(numero: number | null | undefined): string {
+  if (numero == null || Number.isNaN(Number(numero))) return "—";
+  return String(numero);
+}
+
+/** Etiqueta de UI: "Negocio 2026001" */
+export function labelNegocioCodigo(numero: number | null | undefined): string {
+  return `Negocio ${formatNegocioCodigo(numero)}`;
+}

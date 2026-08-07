@@ -14,6 +14,7 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import { formatCOP } from '@/lib/creditCalculator';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function NegociosScreen() {
@@ -78,7 +79,7 @@ export default function NegociosScreen() {
             >
               <View style={styles.row}>
                 <Text style={[styles.numero, { color: colors.text.primary }]}>
-                  #{item.numero}
+                  {formatNegocioCodigo(item.numero)}
                 </Text>
                 <Text style={{ color: colors.primary.main, fontWeight: '600' }}>
                   {item.status}

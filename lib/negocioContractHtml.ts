@@ -1,4 +1,5 @@
 import { formatCOP } from '@/lib/creditCalculator';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 
 export type NegocioContractData = {
   numero: number;
@@ -112,7 +113,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Solicitud de crédito #${data.numero} - Casa Ideal</title>
+<title>Solicitud de crédito ${formatNegocioCodigo(data.numero)} - Casa Ideal</title>
 <style>
   @page { size: A4; margin: 10mm 11mm 12mm; }
   * { box-sizing: border-box; }
@@ -166,13 +167,13 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
 </style>
 </head>
 <body>
-  <div class="footer">Casa Ideal de La Plata · Solicitud #${data.numero} · Documento generado ${new Date().toISOString().slice(0, 10)}</div>
+  <div class="footer">Casa Ideal de La Plata · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${new Date().toISOString().slice(0, 10)}</div>
   <header class="brand">
     <div class="mark">⌂</div>
     <div><h1>Casa Ideal de La Plata</h1><div class="tag">Muebles y Electrodomésticos</div></div>
     <div class="company"><b>NIT 12.279.584-1</b><br/>Rubén Darío Serrato Molina<br/>Calle 4 No. 2-18 - La Plata, Huila<br/>Cel. 311 2227014</div>
   </header>
-  <div class="title"><h2>Solicitud de crédito</h2><div class="number">N.º ${data.numero}</div></div>
+  <div class="title"><h2>Solicitud de crédito</h2><div class="number">N.º ${formatNegocioCodigo(data.numero)}</div></div>
   <div class="meta">
     <div><b>FECHA</b><br/>${esc(data.deal_date)}</div>
     <div><b>LUGAR</b><br/>${location}</div>

@@ -5,6 +5,7 @@ import { moveItem } from '@/lib/collection-routes/routeState';
 import { CandidateFilter, CollectionRouteCandidate } from '@/lib/collection-routes/types';
 import { fetchMunicipios, Municipio } from '@/lib/cartera/carteraService';
 import { localDateValue } from '@/lib/localDate';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
@@ -83,7 +84,7 @@ export default function CreateCollectionRouteScreen() {
           renderItem={({ item, index }) => (
             <View style={[styles.orderCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <View style={[styles.orderNumber, { backgroundColor: colors.primary.main }]}><Text style={{ color: '#fff', fontWeight: '900' }}>{index + 1}</Text></View>
-              <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{item.customer_name}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }} numberOfLines={1}>#{item.negocio_numero} · {item.customer_address}</Text></View>
+              <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{item.customer_name}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }} numberOfLines={1}>{formatNegocioCodigo(item.negocio_numero)} · {item.customer_address}</Text></View>
               <View><TouchableOpacity disabled={index === 0} onPress={() => setSelected(moveItem(selected, index, index - 1))}><MaterialIcons name="keyboard-arrow-up" size={27} color={index === 0 ? colors.divider : colors.primary.main} /></TouchableOpacity><TouchableOpacity disabled={index === selected.length - 1} onPress={() => setSelected(moveItem(selected, index, index + 1))}><MaterialIcons name="keyboard-arrow-down" size={27} color={index === selected.length - 1 ? colors.divider : colors.primary.main} /></TouchableOpacity></View>
             </View>
           )}
@@ -117,7 +118,7 @@ export default function CreateCollectionRouteScreen() {
         ListEmptyComponent={!loading ? <View style={styles.empty}><MaterialIcons name="search-off" size={40} color={colors.text.secondary} /><Text style={{ color: colors.text.secondary }}>No hay negocios para este filtro.</Text></View> : null}
         renderItem={({ item }) => {
           const checked = selected.some((selectedItem) => selectedItem.negocio_id === item.negocio_id);
-          return <TouchableOpacity onPress={() => toggle(item)} style={[styles.candidate, { backgroundColor: colors.background.paper, borderColor: checked ? colors.primary.main : colors.divider }]}><MaterialIcons name={checked ? 'check-circle' : 'radio-button-unchecked'} size={25} color={checked ? colors.primary.main : colors.text.secondary} /><View style={{ flex: 1 }}><View style={styles.row}><Text style={{ color: colors.text.primary, fontWeight: '900' }}>{item.customer_name}</Text><Text style={{ color: colors.primary.main, fontWeight: '800' }}>#{item.negocio_numero}</Text></View><Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 3 }} numberOfLines={2}>{[item.customer_address, item.municipality_name].filter(Boolean).join(', ')}</Text><View style={[styles.row, { marginTop: 8 }]}><Text style={{ color: colors.text.secondary, fontSize: 11 }}>{item.open_installments} cuota(s) · Próxima {item.next_due_date}</Text><Text style={{ color: colors.text.primary, fontWeight: '900' }}>{money(item.expected_balance)}</Text></View></View></TouchableOpacity>;
+          return <TouchableOpacity onPress={() => toggle(item)} style={[styles.candidate, { backgroundColor: colors.background.paper, borderColor: checked ? colors.primary.main : colors.divider }]}><MaterialIcons name={checked ? 'check-circle' : 'radio-button-unchecked'} size={25} color={checked ? colors.primary.main : colors.text.secondary} /><View style={{ flex: 1 }}><View style={styles.row}><Text style={{ color: colors.text.primary, fontWeight: '900' }}>{item.customer_name}</Text><Text style={{ color: colors.primary.main, fontWeight: '800' }}>{formatNegocioCodigo(item.negocio_numero)}</Text></View><Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 3 }} numberOfLines={2}>{[item.customer_address, item.municipality_name].filter(Boolean).join(', ')}</Text><View style={[styles.row, { marginTop: 8 }]}><Text style={{ color: colors.text.secondary, fontSize: 11 }}>{item.open_installments} cuota(s) · Próxima {item.next_due_date}</Text><Text style={{ color: colors.text.primary, fontWeight: '900' }}>{money(item.expected_balance)}</Text></View></View></TouchableOpacity>;
         }}
       />
       {selected.length > 0 && <TouchableOpacity style={[styles.bottomButton, { backgroundColor: colors.primary.main }]} onPress={() => setOrdering(true)}><Text style={styles.bottomButtonText}>Ordenar {selected.length} paradas</Text><MaterialIcons name="arrow-forward" size={20} color="#fff" /></TouchableOpacity>}

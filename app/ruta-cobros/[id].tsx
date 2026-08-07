@@ -16,6 +16,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
@@ -97,7 +98,7 @@ export default function CollectionRouteDetailScreen() {
         <View style={styles.overlay}><View style={[styles.sheet, { backgroundColor: colors.background.paper }]}>
           <View style={styles.sheetHandle} />
           {selectedStop && <>
-            <View style={styles.sheetHeader}><View><Text style={{ color: colors.primary.main, fontWeight: '900' }}>PARADA {selectedStop.position}</Text><Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{selectedStop.customer_name}</Text><Text style={{ color: colors.text.secondary }}>Negocio #{selectedStop.negocio_numero}</Text></View><TouchableOpacity onPress={() => setSelectedStop(null)}><MaterialIcons name="close" size={26} color={colors.text.secondary} /></TouchableOpacity></View>
+            <View style={styles.sheetHeader}><View><Text style={{ color: colors.primary.main, fontWeight: '900' }}>PARADA {selectedStop.position}</Text><Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{selectedStop.customer_name}</Text><Text style={{ color: colors.text.secondary }}>Negocio {formatNegocioCodigo(selectedStop.negocio_numero)}</Text></View><TouchableOpacity onPress={() => setSelectedStop(null)}><MaterialIcons name="close" size={26} color={colors.text.secondary} /></TouchableOpacity></View>
             <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}><Text style={{ color: colors.text.secondary }}>{[selectedStop.customer_address, selectedStop.municipality_name].filter(Boolean).join(', ')}</Text><Text style={[styles.balance, { color: colors.text.primary }]}>{money(selectedStop.expected_balance)}</Text></View>
             {selectedStop.customer_phone && <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => Linking.openURL(`tel:${selectedStop.customer_phone}`)}><MaterialIcons name="call" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Llamar al cliente</Text></TouchableOpacity>}
             <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => { setSelectedStop(null); router.push(`/negocio/${selectedStop.negocio_id}` as any); }}><MaterialIcons name="visibility" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Ver negocio</Text></TouchableOpacity>

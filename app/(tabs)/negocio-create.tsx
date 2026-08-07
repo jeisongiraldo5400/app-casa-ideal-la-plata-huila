@@ -24,6 +24,7 @@ import {
   formatCOP,
   type CreditFrequency,
 } from '@/lib/creditCalculator';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import {
   useNegociosStore,
   type NegocioItem,
@@ -385,8 +386,8 @@ export default function NegocioCreateScreen() {
       Alert.alert(
         '¡Éxito!',
         activate
-          ? `Negocio #${result?.numero} activado. Se creó la orden de entrega.`
-          : `Negocio #${result?.numero} guardado como borrador.`,
+          ? `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se creó la orden de entrega.`
+          : `Negocio ${formatNegocioCodigo(result?.numero)} guardado como borrador.`,
         [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
       );
     } catch (e: any) {
