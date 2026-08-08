@@ -32,6 +32,7 @@ import { createIdempotencyKey } from '@/lib/idempotency';
 import { localDateValue } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
 import {
   openPagoSupport,
@@ -119,7 +120,7 @@ export default function NegocioDetailScreen() {
       const [itemsRes, cuotasRes, pagosRes, custRes, settingsRes] = await Promise.all([
         supabase
           .from('negocio_items')
-          .select('*')
+          .select('*, warehouse:warehouses(name), product:products(name, sku)')
           .eq('negocio_id', id)
           .is('deleted_at', null),
         supabase
@@ -671,6 +672,12 @@ export default function NegocioDetailScreen() {
             </View>
             <Text style={styles.heroPlan}>{negocio.installments_count} cuotas de {formatCOP(Number(negocio.installment_amount))}{orderNumber ? ` · OE ${orderNumber}` : ''}</Text>
           </View>
+
+          <NegocioProductsSummary
+            items={items}
+            productsSubtotal={Number(negocio.products_subtotal)}
+            colors={colors}
+          />
 
           <View style={styles.sectionHeader}>
             <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
