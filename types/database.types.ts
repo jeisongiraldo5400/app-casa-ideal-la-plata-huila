@@ -3194,6 +3194,10 @@ export type Database = {
           name: string
         }[]
       }
+      search_customer_negocios: {
+        Args: { p_search?: string; p_limit?: number }
+        Returns: Json
+      }
       search_products_for_delivery_order: {
         Args: { p_search_term?: string }
         Returns: {

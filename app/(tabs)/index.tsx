@@ -106,6 +106,13 @@ export default function HomeScreen() {
               <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Cartera</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+            onPress={() => router.push('/(tabs)/buscar-cliente' as any)}
+          >
+            <MaterialIcons name="person-search" size={22} color={colors.primary.main} />
+            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Buscar por cliente</Text>
+          </TouchableOpacity>
         </View>
       )}
 

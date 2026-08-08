@@ -42,17 +42,28 @@ export default function NegociosScreen() {
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text.primary }]}>Negocios</Text>
-        {canCreate && (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
-            style={[styles.cta, { backgroundColor: colors.primary.main }]}
-            onPress={() => router.push('/(tabs)/negocio-create')}
+            style={[styles.cta, { backgroundColor: colors.background.paper, borderWidth: 1, borderColor: colors.divider }]}
+            onPress={() => router.push('/(tabs)/buscar-cliente' as any)}
           >
-            <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
-            <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-              Nuevo
+            <MaterialIcons name="person-search" size={22} color={colors.primary.main} />
+            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
+              Cliente
             </Text>
           </Pressable>
-        )}
+          {canCreate && (
+            <Pressable
+              style={[styles.cta, { backgroundColor: colors.primary.main }]}
+              onPress={() => router.push('/(tabs)/negocio-create')}
+            >
+              <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
+              <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
+                Nuevo
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {loading && !refreshing ? (

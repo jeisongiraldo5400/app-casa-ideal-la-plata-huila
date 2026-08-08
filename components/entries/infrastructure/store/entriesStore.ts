@@ -3,7 +3,11 @@ import { create } from "zustand";
 // supabase
 import { supabase } from "@/lib/supabase";
 import { logOperationError } from "@/lib/operationLogger";
-import { createIdempotencyKey } from "@/lib/idempotency";
+import {
+  clearPersistentIdempotencyKey,
+  createIdempotencyKey,
+  getOrCreatePersistentIdempotencyKey,
+} from "@/lib/idempotency";
 import {
   fetchBrands,
   fetchCategories,
@@ -69,7 +73,6 @@ export interface SelectedPurchaseOrderProgress {
   totalCompleted: number;
 }
 
-const pendingEntryRequests = new Map<string, string>();
 const pendingProductRequests = new Map<string, string>();
 
 interface EntriesState {
@@ -1402,11 +1405,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           barcode: item.barcode,
         })),
       });
-      let idempotencyKey = pendingEntryRequests.get(requestFingerprint);
-      if (!idempotencyKey) {
-        idempotencyKey = createIdempotencyKey();
-        pendingEntryRequests.set(requestFingerprint, idempotencyKey);
-      }
+      const idempotencyKey = await getOrCreatePersistentIdempotencyKey(
+        "register_inventory_entries_batch",
+        requestFingerprint
+      );
 
       const { data: entryResult, error: entriesError } = await supabase.rpc(
         "register_inventory_entries_batch",
@@ -1520,7 +1522,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         purchaseOrderValidations: updatedValidations,
         registeredEntriesCache: updatedCache,
       });
-      pendingEntryRequests.delete(requestFingerprint);
+      await clearPersistentIdempotencyKey(
+        "register_inventory_entries_batch",
+        requestFingerprint
+      );
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });

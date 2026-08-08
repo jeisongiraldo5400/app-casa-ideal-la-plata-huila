@@ -170,6 +170,16 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="buscar-cliente"
+        options={{
+          href: null,
+          title: 'Buscar por cliente',
+          headerLeft: () => <BackButton />,
+          headerRight: () => <ProfileHeaderButton />,
+        }}
+      />
+
+      <Tabs.Screen
         name="entries"
         options={{
           href: null,
