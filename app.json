@@ -20,7 +20,8 @@
       "icon": "./assets/images/icono.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras."
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras y capturar soportes de pago.",
+        "NSPhotoLibraryUsageDescription": "Permitir acceso a la galería para adjuntar soportes de pago."
       }
     },
     "android": {
@@ -59,6 +60,13 @@
         "expo-camera",
         {
           "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barras."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Permitir acceso a la cámara para capturar soportes de pago.",
+          "photosPermission": "Permitir acceso a la galería para adjuntar soportes de pago."
         }
       ]
     ],

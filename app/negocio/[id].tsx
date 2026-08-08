@@ -14,10 +14,13 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActionSheetIOS,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +33,12 @@ import { localDateValue } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import {
+  openPagoSupport,
+  uploadAndAttachPagoSupport,
+  validatePagoSupportLocalFile,
+  type PagoSupportLocalFile,
+} from '@/lib/uploadPagoSupport';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -63,6 +72,7 @@ export default function NegocioDetailScreen() {
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
+  const [paySupportFile, setPaySupportFile] = useState<PagoSupportLocalFile | null>(null);
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -208,6 +218,106 @@ export default function NegocioDetailScreen() {
     [cuotas]
   );
 
+  const pickSupportFromCamera = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permiso requerido', 'Activa la cámara para capturar el soporte.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const file: PagoSupportLocalFile = {
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'image/jpeg',
+      name: asset.fileName || `soporte-${Date.now()}.jpg`,
+      size: asset.fileSize,
+    };
+    const validationError = validatePagoSupportLocalFile(file);
+    if (validationError) return Alert.alert('Archivo inválido', validationError);
+    setPaySupportFile(file);
+  };
+
+  const pickSupportFromGallery = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permiso requerido', 'Activa la galería para adjuntar el soporte.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const file: PagoSupportLocalFile = {
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'image/jpeg',
+      name: asset.fileName || `soporte-${Date.now()}.jpg`,
+      size: asset.fileSize,
+    };
+    const validationError = validatePagoSupportLocalFile(file);
+    if (validationError) return Alert.alert('Archivo inválido', validationError);
+    setPaySupportFile(file);
+  };
+
+  const pickSupportDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const file: PagoSupportLocalFile = {
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'application/pdf',
+      name: asset.name || `soporte-${Date.now()}.pdf`,
+      size: asset.size,
+    };
+    const validationError = validatePagoSupportLocalFile(file);
+    if (validationError) return Alert.alert('Archivo inválido', validationError);
+    setPaySupportFile(file);
+  };
+
+  const choosePaySupport = () => {
+    const options = [
+      { label: 'Tomar foto', action: () => void pickSupportFromCamera() },
+      { label: 'Galería', action: () => void pickSupportFromGallery() },
+      { label: 'Archivo / PDF', action: () => void pickSupportDocument() },
+      ...(paySupportFile
+        ? [{ label: 'Quitar soporte', action: () => setPaySupportFile(null) }]
+        : []),
+    ];
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [...options.map((item) => item.label), 'Cancelar'],
+          cancelButtonIndex: options.length,
+          destructiveButtonIndex: paySupportFile ? options.length - 1 : undefined,
+        },
+        (index) => {
+          if (index == null || index >= options.length) return;
+          options[index].action();
+        }
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Soporte de pago',
+      'Selecciona una opción',
+      [
+        ...options.map((item) => ({ text: item.label, onPress: item.action })),
+        { text: 'Cancelar', style: 'cancel' as const },
+      ]
+    );
+  };
+
   const registerPago = async () => {
     if (!negocio) return;
     const amount = Number(payAmount);
@@ -220,11 +330,15 @@ export default function NegocioDetailScreen() {
         `El saldo pendiente es ${formatCOP(pendingBalance)}.`
       );
     }
+    if (paySupportFile) {
+      const validationError = validatePagoSupportLocalFile(paySupportFile);
+      if (validationError) return Alert.alert('Archivo inválido', validationError);
+    }
     try {
       setSaving(true);
       paymentIdempotencyKey.current ||= createIdempotencyKey();
       const paidAt = localDateValue();
-      const { error } = routeStopId
+      const { data, error } = routeStopId
         ? await supabase.rpc('register_collection_route_payment', {
             p_stop_id: routeStopId,
             p_amount: amount,
@@ -244,11 +358,43 @@ export default function NegocioDetailScreen() {
             p_idempotency_key: paymentIdempotencyKey.current,
           });
       if (error) throw error;
+      const pagoId = String(data || '');
       paymentIdempotencyKey.current = null;
+
+      let supportWarning = '';
+      if (paySupportFile && pagoId) {
+        try {
+          await uploadAndAttachPagoSupport({
+            negocioId: negocio.id,
+            pagoId,
+            file: paySupportFile,
+          });
+        } catch (supportError: any) {
+          supportWarning =
+            supportError?.message ||
+            'El pago quedó registrado, pero no se adjuntó el soporte.';
+        }
+      }
+
+      const hadSupport = Boolean(paySupportFile) && !supportWarning;
       setPayAmount('');
       setPayReceipt('');
+      setPaySupportFile(null);
       setPayModalOpen(false);
-      Alert.alert('Listo', routeStopId ? 'Pago registrado y parada completada' : 'Pago registrado');
+      if (supportWarning) {
+        Alert.alert('Pago registrado', supportWarning);
+      } else {
+        Alert.alert(
+          'Listo',
+          routeStopId
+            ? hadSupport
+              ? 'Pago con soporte registrado y parada completada'
+              : 'Pago registrado y parada completada'
+            : hadSupport
+              ? 'Pago registrado con soporte'
+              : 'Pago registrado'
+        );
+      }
       await load();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo registrar');
@@ -667,8 +813,33 @@ export default function NegocioDetailScreen() {
                 {pagos.slice(paymentPage * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE).map((pago) => (
                   <View key={pago.id} style={[styles.paymentCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
                     <View style={[styles.paymentIcon, { backgroundColor: `${colors.success.main}18` }]}><MaterialIcons name="receipt-long" size={23} color={colors.success.main} /></View>
-                    <View style={{ flex: 1 }}><Text style={[styles.paymentValue, { color: colors.text.primary }]}>{formatCOP(Number(pago.amount))}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }}>{pago.paid_at} · {pago.virtual_receipt_number}</Text><Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text></View>
-                    <Pressable style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]} onPress={() => shareReceipt(pago)}><MaterialIcons name="picture-as-pdf" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>PDF</Text></Pressable>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.paymentValue, { color: colors.text.primary }]}>{formatCOP(Number(pago.amount))}</Text>
+                      <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{pago.paid_at} · {pago.virtual_receipt_number}</Text>
+                      <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text>
+                      <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>
+                        Soporte: {pago.support_path ? (pago.support_file_name || 'Adjunto') : 'Sin adjunto'}
+                      </Text>
+                    </View>
+                    <View style={{ gap: 6, alignItems: 'flex-end' }}>
+                      {pago.support_path ? (
+                        <Pressable
+                          style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]}
+                          onPress={() => {
+                            void openPagoSupport(pago.support_path).catch((error: any) =>
+                              Alert.alert('Error', error?.message || 'No se pudo abrir el soporte')
+                            );
+                          }}
+                        >
+                          <MaterialIcons name="attach-file" size={20} color={colors.primary.main} />
+                          <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>Soporte</Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]} onPress={() => shareReceipt(pago)}>
+                        <MaterialIcons name="picture-as-pdf" size={20} color={colors.primary.main} />
+                        <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>PDF</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -793,6 +964,34 @@ export default function NegocioDetailScreen() {
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
                 placeholderTextColor={colors.text.secondary}
               />
+              <Pressable
+                onPress={choosePaySupport}
+                disabled={saving}
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.divider,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  },
+                ]}
+              >
+                <Text
+                  style={{ color: paySupportFile ? colors.text.primary : colors.text.secondary, flex: 1 }}
+                  numberOfLines={1}
+                >
+                  {paySupportFile
+                    ? paySupportFile.name
+                    : 'Soporte de pago (opcional)'}
+                </Text>
+                <MaterialIcons
+                  name={paySupportFile ? 'check-circle' : 'attach-file'}
+                  size={20}
+                  color={paySupportFile ? colors.success.main : colors.text.secondary}
+                />
+              </Pressable>
               <View style={styles.modalActions}>
                 <Pressable
                   style={[styles.modalButton, { borderColor: colors.divider }]}

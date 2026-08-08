@@ -33,6 +33,9 @@ export type ManagerPayment = {
   virtual_receipt_number: string; receipt_number: string | null;
   receipt_status: 'emitido' | 'anulado'; created_by_name: string; remaining_balance: number;
   currently_assigned: boolean;
+  support_path: string | null;
+  support_mime: string | null;
+  support_file_name: string | null;
 };
 
 export type CarteraDashboard = {

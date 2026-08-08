@@ -103,6 +103,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
     'Saldo pendiente negocio',
     'Registrado por',
     'Asignación actual',
+    'Tiene soporte',
   ];
 
   const detailLines = rows.map((payment) =>
@@ -120,6 +121,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
       Number(payment.remaining_balance),
       payment.created_by_name,
       payment.currently_assigned ? 'Sí' : 'No',
+      payment.support_path ? 'Sí' : 'No',
     ]
       .map(csvEscape)
       .join(',')

@@ -26,6 +26,7 @@ import {
   type ManagerPayment,
 } from '@/lib/cartera/carteraService';
 import { exportAndShareManagerPaymentsCsv } from '@/lib/cartera/exportManagerPaymentsCsv';
+import { openPagoSupport } from '@/lib/uploadPagoSupport';
 
 export function CollectionManagerPaymentsModal({
   visible,
@@ -469,13 +470,33 @@ export function CollectionManagerPaymentsModal({
                   >
                     {p.receipt_status === 'anulado' ? 'Anulado' : 'Vigente'}
                   </Text>
-                  <Pressable onPress={() => shareReceipt(p)}>
-                    <MaterialIcons
-                      name="picture-as-pdf"
-                      size={22}
-                      color={colors.primary.main}
-                    />
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {p.support_path ? (
+                      <Pressable
+                        onPress={() => {
+                          void openPagoSupport(p.support_path!).catch((error: any) =>
+                            Alert.alert(
+                              'Error',
+                              error?.message || 'No se pudo abrir el soporte'
+                            )
+                          );
+                        }}
+                      >
+                        <MaterialIcons
+                          name="attach-file"
+                          size={22}
+                          color={colors.primary.main}
+                        />
+                      </Pressable>
+                    ) : null}
+                    <Pressable onPress={() => shareReceipt(p)}>
+                      <MaterialIcons
+                        name="picture-as-pdf"
+                        size={22}
+                        color={colors.primary.main}
+                      />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             ))

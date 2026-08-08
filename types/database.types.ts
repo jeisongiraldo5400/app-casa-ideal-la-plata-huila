@@ -1356,6 +1356,9 @@ export type Database = {
           paid_at: string
           receipt_number: string | null
           receipt_status: string
+          support_file_name: string | null
+          support_mime: string | null
+          support_path: string | null
           virtual_receipt_number: string
           voided_at: string | null
           voided_by: string | null
@@ -1372,6 +1375,9 @@ export type Database = {
           paid_at?: string
           receipt_number?: string | null
           receipt_status?: string
+          support_file_name?: string | null
+          support_mime?: string | null
+          support_path?: string | null
           virtual_receipt_number?: string
           voided_at?: string | null
           voided_by?: string | null
@@ -1388,6 +1394,9 @@ export type Database = {
           paid_at?: string
           receipt_number?: string | null
           receipt_status?: string
+          support_file_name?: string | null
+          support_mime?: string | null
+          support_path?: string | null
           virtual_receipt_number?: string
           voided_at?: string | null
           voided_by?: string | null
@@ -2750,6 +2759,15 @@ export type Database = {
           p_cuota_id?: string | null
           p_notes?: string | null
           p_idempotency_key?: string | null
+        }
+        Returns: string
+      }
+      attach_negocio_pago_support: {
+        Args: {
+          p_pago_id: string
+          p_path: string
+          p_mime: string
+          p_file_name?: string | null
         }
         Returns: string
       }
