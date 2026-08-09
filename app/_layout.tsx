@@ -4,9 +4,10 @@ import { useTheme, useThemeStore } from '@/components/theme';
 import Constants from 'expo-constants';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
@@ -34,6 +35,15 @@ function RootLayoutNav() {
   const router = useRouter();
   const [appIsReady, setAppIsReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.PORTRAIT_UP
+    ).catch((error) => {
+      console.warn('No se pudo fijar la orientación vertical inicial:', error);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

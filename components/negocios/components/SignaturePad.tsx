@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import {
   View,
   StyleSheet,
@@ -9,9 +10,17 @@ import {
   Image,
   useWindowDimensions,
   StatusBar,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, SvgUri, SvgXml } from 'react-native-svg';
+import Svg, { Path, Rect, SvgUri, SvgXml } from 'react-native-svg';
+import {
+  fitSignaturePad,
+  mapPointToSignature,
+  SIGNATURE_CANVAS_HEIGHT,
+  SIGNATURE_CANVAS_WIDTH,
+} from '@/lib/signatureGeometry';
 
 interface Props {
   label: string;
@@ -101,11 +110,11 @@ function SignatureFullscreenModal({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
+  const [orientationReady, setOrientationReady] = useState(Platform.OS === 'web');
 
-  const padW = Math.max(280, width - (landscape ? 48 : 24));
-  const padH = Math.max(
-    280,
-    height - insets.top - insets.bottom - (landscape ? 120 : 180)
+  const { width: padW, height: padH } = fitSignaturePad(
+    width - (landscape ? 48 : 24),
+    height - insets.top - insets.bottom - (landscape ? 150 : 210)
   );
 
   const pathsRef = useRef<string[]>([]);
@@ -123,53 +132,98 @@ function SignatureFullscreenModal({
   // Reset al abrir
   React.useEffect(() => {
     if (visible) reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  React.useEffect(() => {
+    if (!visible) {
+      setOrientationReady(Platform.OS === 'web');
+      return;
+    }
+    if (Platform.OS === 'web') return;
+
+    let disposed = false;
+    setOrientationReady(false);
+
+    const prepareLandscape = async () => {
+      try {
+        await ScreenOrientation.lockAsync(
+          ScreenOrientation.OrientationLock.LANDSCAPE
+        );
+      } catch (error) {
+        console.warn('No se pudo fijar la orientación horizontal:', error);
+      } finally {
+        if (disposed) {
+          await ScreenOrientation.lockAsync(
+            ScreenOrientation.OrientationLock.PORTRAIT_UP
+          ).catch(() => undefined);
+        } else {
+          setOrientationReady(true);
+        }
+      }
+    };
+
+    void prepareLandscape();
+
+    return () => {
+      disposed = true;
+      void ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP
+      ).catch((error) => {
+        console.warn('No se pudo restaurar la orientación vertical:', error);
+      });
+    };
   }, [visible]);
 
   const confirmPng = () => {
     svgRef.current?.toDataURL(
       (base64: string) => onConfirm(`data:image/png;base64,${base64}`),
-      { width: Math.round(padW), height: Math.round(padH) }
+      { width: SIGNATURE_CANVAS_WIDTH, height: SIGNATURE_CANVAS_HEIGHT }
     );
   };
+
+  const finishStroke = React.useCallback(() => {
+    if (!currentRef.current) return;
+    pathsRef.current.push(currentRef.current);
+    currentRef.current = '';
+    setTick((t) => t + 1);
+  }, []);
 
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => orientationReady,
+        onMoveShouldSetPanResponder: () => orientationReady,
         onPanResponderGrant: (evt) => {
           const { locationX, locationY } = evt.nativeEvent;
-          currentRef.current = `M${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          const point = mapPointToSignature(
+            locationX,
+            locationY,
+            padW,
+            padH
+          );
+          currentRef.current = `M${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
           setTick((t) => t + 1);
         },
         onPanResponderMove: (evt) => {
           const { locationX, locationY } = evt.nativeEvent;
-          currentRef.current += ` L${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          const point = mapPointToSignature(
+            locationX,
+            locationY,
+            padW,
+            padH
+          );
+          currentRef.current += ` L${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
           setTick((t) => t + 1);
         },
-        onPanResponderRelease: () => {
-          if (currentRef.current) {
-            pathsRef.current.push(
-              `<path d="${currentRef.current}" stroke="#111" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
-            );
-            currentRef.current = '';
-            setTick((t) => t + 1);
-          }
-        },
+        onPanResponderRelease: finishStroke,
+        onPanResponderTerminate: finishStroke,
       }),
-    []
+    [finishStroke, orientationReady, padH, padW]
   );
 
   const displayPath = useMemo(() => {
     void tick;
-    return [
-      ...pathsRef.current.map((p) => {
-        const m = p.match(/d="([^"]+)"/);
-        return m?.[1] || '';
-      }),
-      currentRef.current,
-    ].filter(Boolean);
+    return [...pathsRef.current, currentRef.current].filter(Boolean);
   }, [tick]);
 
   return (
@@ -204,13 +258,27 @@ function SignatureFullscreenModal({
           style={[styles.fullPad, { width: padW, height: padH }]}
           {...pan.panHandlers}
         >
-          <Svg ref={svgRef} width={padW} height={padH} style={{ backgroundColor: '#fff' }}>
+          <Svg
+            ref={svgRef}
+            width={padW}
+            height={padH}
+            viewBox={`0 0 ${SIGNATURE_CANVAS_WIDTH} ${SIGNATURE_CANVAS_HEIGHT}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ backgroundColor: '#fff' }}
+          >
+            <Rect
+              x={0}
+              y={0}
+              width={SIGNATURE_CANVAS_WIDTH}
+              height={SIGNATURE_CANVAS_HEIGHT}
+              fill="#fff"
+            />
             {displayPath.map((d, i) => (
               <Path
                 key={`${i}-${d.slice(0, 12)}`}
                 d={d}
                 stroke="#111"
-                strokeWidth={2.5}
+                strokeWidth={8}
                 fill="none"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -219,7 +287,14 @@ function SignatureFullscreenModal({
           </Svg>
           {!hasStroke && (
             <View style={styles.padPlaceholder} pointerEvents="none">
-              <Text style={styles.padPlaceholderText}>Firme aquí</Text>
+              {orientationReady ? (
+                <Text style={styles.padPlaceholderText}>Firme aquí</Text>
+              ) : (
+                <View style={styles.orientationLoading}>
+                  <ActivityIndicator color="#1565c0" />
+                  <Text style={styles.padPlaceholderText}>Preparando modo horizontal…</Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -298,6 +373,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   padPlaceholderText: { color: '#bbb', fontSize: 20, fontWeight: '500' },
+  orientationLoading: { alignItems: 'center', gap: 10 },
   modalActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
