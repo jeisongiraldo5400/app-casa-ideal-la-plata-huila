@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 
@@ -82,6 +83,27 @@ export function useUserRoles() {
     };
 
     loadUserRoles();
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void loadUserRoles();
+    });
+    const rolesChannel = supabase
+      .channel(`user-roles-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadUserRoles()
+      )
+      .subscribe();
+
+    return () => {
+      appStateSubscription.remove();
+      void supabase.removeChannel(rolesChannel);
+    };
   }, [user]);
 
   const hasRole = (roleName: string): boolean => {

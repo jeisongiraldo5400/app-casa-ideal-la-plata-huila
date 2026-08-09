@@ -33,7 +33,10 @@ import { localDateValue } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
-import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import {
+  resolveNegocioSignatureUrl,
+  uploadNegocioSignature,
+} from '@/lib/uploadSignature';
 import {
   openPagoSupport,
   uploadAndAttachPagoSupport,
@@ -70,6 +73,7 @@ export default function NegocioDetailScreen() {
   const [sellerName, setSellerName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
@@ -102,8 +106,11 @@ export default function NegocioDetailScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setLoadWarning(null);
     try {
-      await supabase.rpc('mark_cuotas_en_mora', { p_negocio_id: id });
+      const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
+        p_negocio_id: id,
+      });
 
       const { data: n, error } = await supabase
         .from('negocios')
@@ -112,12 +119,18 @@ export default function NegocioDetailScreen() {
         .single();
       if (error) throw error;
       setNegocio(n);
-      setCustomerSignature(n.customer_signature_url || '');
-      setGuarantorSignature(n.guarantor_signature_url || '');
-      setSellerSignature(n.seller_signature_url || '');
       setSignaturesDirty(false);
 
-      const [itemsRes, cuotasRes, pagosRes, custRes, settingsRes] = await Promise.all([
+      const [
+        itemsRes,
+        cuotasRes,
+        pagosRes,
+        custRes,
+        settingsRes,
+        customerSignatureUrl,
+        guarantorSignatureUrl,
+        sellerSignatureUrl,
+      ] = await Promise.all([
         supabase
           .from('negocio_items')
           .select('*, warehouse:warehouses(name), product:products(name, sku)')
@@ -147,7 +160,23 @@ export default function NegocioDetailScreen() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        resolveNegocioSignatureUrl(n.customer_signature_url),
+        resolveNegocioSignatureUrl(n.guarantor_signature_url),
+        resolveNegocioSignatureUrl(n.seller_signature_url),
       ]);
+
+      const sectionErrors = [
+        ['productos', itemsRes.error],
+        ['cuotas', cuotasRes.error],
+        ['pagos', pagosRes.error],
+        ['cliente', custRes.error],
+        ['configuración', settingsRes.error],
+      ].filter((entry): entry is [string, NonNullable<typeof itemsRes.error>] => Boolean(entry[1]));
+      if (sectionErrors.length) {
+        throw new Error(
+          `No se pudieron cargar ${sectionErrors.map(([section]) => section).join(', ')}`
+        );
+      }
 
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
@@ -157,36 +186,45 @@ export default function NegocioDetailScreen() {
       setCustomerName(custRes.data?.name || '');
       setCustomerMeta(custRes.data || {});
       setLegalText(settingsRes.data?.legal_text || null);
+      setCustomerSignature(customerSignatureUrl || '');
+      setGuarantorSignature(guarantorSignatureUrl || '');
+      setSellerSignature(sellerSignatureUrl || '');
 
       if (n.codeudor_customer_id) {
-        const { data: codeudor } = await supabase
+        const { data: codeudor, error: codeudorError } = await supabase
           .from('customers')
           .select('name, id_number, phone, email, address')
           .eq('id', n.codeudor_customer_id)
           .maybeSingle();
+        if (codeudorError) throw codeudorError;
         setCodeudorMeta(codeudor || {});
       } else {
         setCodeudorMeta({});
       }
 
       if (n.seller_id) {
-        const { data: seller } = await supabase
+        const { data: seller, error: sellerError } = await supabase
           .from('profiles')
           .select('full_name')
           .eq('id', n.seller_id)
           .maybeSingle();
+        if (sellerError) throw sellerError;
         setSellerName(seller?.full_name || '');
       } else {
         setSellerName('');
       }
 
       if (n.delivery_order_id) {
-        const { data: oe } = await supabase
+        const { data: oe, error: orderError } = await supabase
           .from('delivery_orders')
           .select('order_number')
           .eq('id', n.delivery_order_id)
           .maybeSingle();
+        if (orderError) throw orderError;
         setOrderNumber(oe?.order_number || null);
+      }
+      if (moraError) {
+        setLoadWarning('No fue posible actualizar automáticamente las cuotas en mora.');
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo cargar');
@@ -435,9 +473,9 @@ export default function NegocioDetailScreen() {
       installment_amount: Number(negocio.installment_amount),
       frequency: negocio.frequency,
       legal_text: legalText,
-      customer_signature_url: negocio.customer_signature_url,
-      guarantor_signature_url: negocio.guarantor_signature_url,
-      seller_signature_url: negocio.seller_signature_url,
+      customer_signature_url: customerSignature,
+      guarantor_signature_url: guarantorSignature,
+      seller_signature_url: sellerSignature,
       delivery_order_number: orderNumber,
       items: items.map((i) => ({
         quantity: Number(i.quantity),
@@ -653,6 +691,11 @@ export default function NegocioDetailScreen() {
           style={{ flex: 1, backgroundColor: colors.background.default }}
           contentContainerStyle={{ padding: 16, gap: 12 }}
         >
+          {loadWarning && (
+            <View style={[styles.warningCard, { borderColor: colors.warning.main }]}>
+              <Text style={{ color: colors.warning.main }}>{loadWarning}</Text>
+            </View>
+          )}
           <View style={[styles.creditHero, { backgroundColor: colors.primary.main }]}>
             <View style={styles.creditHeroTop}>
               <View style={{ flex: 1 }}>
@@ -887,14 +930,14 @@ export default function NegocioDetailScreen() {
             </>
           )}
 
-          {!canActivate && (negocio.customer_signature_url || negocio.guarantor_signature_url || negocio.seller_signature_url) && (
+          {!canActivate && (customerSignature || guarantorSignature || sellerSignature) && (
             <>
               <Text style={[styles.section, { color: colors.text.primary }]}>Firmas</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                 {[
-                  ['Cliente', negocio.customer_signature_url],
-                  ['Fiador', negocio.guarantor_signature_url],
-                  ['Vendedor', negocio.seller_signature_url],
+                  ['Cliente', customerSignature],
+                  ['Fiador', guarantorSignature],
+                  ['Vendedor', sellerSignature],
                 ].filter(([, url]) => Boolean(url)).map(([label, url]) => (
                   <View key={label as string}>
                     {(url as string).toLowerCase().includes('.svg') ? (
@@ -1104,6 +1147,11 @@ export default function NegocioDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  warningCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerBar: {
     flexDirection: 'row',

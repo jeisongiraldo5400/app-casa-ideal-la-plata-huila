@@ -5,7 +5,10 @@ import {
   type CreditFrequency,
   type CreditSettingsInput,
 } from '@/lib/creditCalculator';
-import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import {
+  removeNegocioSignatures,
+  uploadNegocioSignature,
+} from '@/lib/uploadSignature';
 import {
   validateNegocioItemsInput,
   validateNegocioItemsStock,
@@ -244,7 +247,27 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         subtotal: item.unit_price * item.quantity,
       })) as unknown as Json,
     });
-    if (error || !negocioId) throw error || new Error('No se pudo crear el negocio');
+    if (error || !negocioId) {
+      const { data: persisted } = await supabase
+        .from('negocios')
+        .select('id')
+        .eq('id', request.draftId)
+        .maybeSingle();
+      if (!persisted) {
+        const uploaded = [
+          input.customer_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.customer : null,
+          input.guarantor_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.guarantor : null,
+          input.seller_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.seller : null,
+        ];
+        await removeNegocioSignatures(uploaded).catch((cleanupError) => {
+          console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
+        });
+        request.signatureUrls = undefined;
+        request.signaturePromise = undefined;
+        pendingCreateRequests.delete(requestFingerprint);
+      }
+      throw error || new Error('No se pudo crear el negocio');
+    }
 
     const { data: negocio, error: loadError } = await supabase
       .from('negocios')

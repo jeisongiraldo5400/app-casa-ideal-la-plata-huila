@@ -31,14 +31,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error,
       } = await supabase.auth.getSession();
 
-      if (error) {
-        console.log('Auth error during initialization:', error.message);
+      let verifiedUser: User | null = null;
+      if (!error && session) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) {
+          await supabase.auth.signOut();
+        } else {
+          const { data: activeProfile, error: profileError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', userData.user.id)
+            .is('deleted_at', null)
+            .maybeSingle();
+          if (!profileError && activeProfile) verifiedUser = userData.user;
+          else await supabase.auth.signOut();
+        }
+      }
+
+      if (error || (session && !verifiedUser)) {
+        console.log('Auth error during initialization:', error?.message || 'sesión o perfil inválido');
         await supabase.auth.signOut();
         set({ session: null, user: null, loading: false, initialized: true });
       } else {
         set({
-          session,
-          user: session?.user ?? null,
+          session: session && verifiedUser ? { ...session, user: verifiedUser } : null,
+          user: verifiedUser,
           loading: false,
           initialized: true,
         });
@@ -83,10 +100,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    if (error || !data.user) return { error };
+    const { data: activeProfile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', data.user.id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (profileError || !activeProfile) {
+      await supabase.auth.signOut();
+      return { error: new Error('La cuenta está inactiva o fue eliminada') };
+    }
     return { error };
   },
 
