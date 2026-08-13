@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useBluetoothPrinter } from '@/components/printing';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -19,6 +20,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { roles } = useUserRoles();
   const pendingCount = useSyncStore((state) => state.pendingCount);
+  const { savedPrinter, openPicker } = useBluetoothPrinter();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const roleNames = roles
     .map((r) => r.role?.nombre)
@@ -97,6 +99,24 @@ export default function ProfileScreen() {
           <View style={styles.infoContent}>
             <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Contraseña</Text>
             <Text style={[styles.infoValue, { color: colors.primary.main }]}>Cambiar contraseña</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
+      </Card>
+
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Impresora Bluetooth</Text>
+        <TouchableOpacity
+          style={styles.changePasswordRow}
+          onPress={openPicker}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="print" size={20} color={colors.text.secondary} />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>PT-210</Text>
+            <Text style={[styles.infoValue, { color: savedPrinter ? colors.text.primary : colors.primary.main }]}>
+              {savedPrinter ? savedPrinter.name : 'Vincular impresora'}
+            </Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
         </TouchableOpacity>

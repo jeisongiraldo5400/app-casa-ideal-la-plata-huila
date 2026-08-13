@@ -27,6 +27,7 @@ import {
 } from '@/lib/cartera/carteraService';
 import { exportAndShareManagerPaymentsCsv } from '@/lib/cartera/exportManagerPaymentsCsv';
 import { openPagoSupport } from '@/lib/uploadPagoSupport';
+import { useBluetoothPrinter } from '@/components/printing';
 
 export function CollectionManagerPaymentsModal({
   visible,
@@ -54,6 +55,7 @@ export function CollectionManagerPaymentsModal({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const { printPayment, printing: printingTicket } = useBluetoothPrinter();
 
   useEffect(() => {
     if (!visible || !managerId) return;
@@ -116,6 +118,20 @@ export function CollectionManagerPaymentsModal({
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No fue posible compartir el recibo');
     }
+  };
+
+  const printReceipt = async (payment: ManagerPayment) => {
+    await printPayment({
+      receiptNumber: payment.virtual_receipt_number,
+      status: payment.receipt_status,
+      paidAt: payment.paid_at,
+      amount: Number(payment.amount),
+      physicalReceiptNumber: payment.receipt_number,
+      negocioNumero: payment.negocio_numero,
+      customerName: payment.customer_name,
+      sellerName: payment.created_by_name,
+      remainingBalance: Number(payment.remaining_balance),
+    });
   };
 
   const exportCsv = async () => {
@@ -492,6 +508,16 @@ export function CollectionManagerPaymentsModal({
                     <Pressable onPress={() => shareReceipt(p)}>
                       <MaterialIcons
                         name="picture-as-pdf"
+                        size={22}
+                        color={colors.primary.main}
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void printReceipt(p)}
+                      disabled={printingTicket}
+                    >
+                      <MaterialIcons
+                        name="print"
                         size={22}
                         color={colors.primary.main}
                       />

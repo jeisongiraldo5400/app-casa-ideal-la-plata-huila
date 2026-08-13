@@ -11,6 +11,7 @@ import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
+import { PrinterPickerModal } from '@/components/printing';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
@@ -124,6 +125,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <OfflineProvider>
         <RootLayoutNav />
+        <PrinterPickerModal />
         <StatusBar style={isDark ? 'light' : 'dark'} />
       </OfflineProvider>
     </GestureHandlerRootView>

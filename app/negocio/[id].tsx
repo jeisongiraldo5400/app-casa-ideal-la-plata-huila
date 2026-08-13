@@ -28,6 +28,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
+import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { localDateValue } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
@@ -91,6 +92,7 @@ export default function NegocioDetailScreen() {
   const [signaturesDirty, setSignaturesDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
+  const { printPayment, printNegocio, printing: printingTicket } = useBluetoothPrinter();
   const paymentIdempotencyKey = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
   const cancelIdempotencyKey = useRef<string | null>(null);
@@ -581,6 +583,55 @@ export default function NegocioDetailScreen() {
     }
   };
 
+  const printReceipt = async (pago: any) => {
+    if (!negocio) return;
+    const remainingBalance = Math.max(
+      cuotas
+        .filter((cuota) => cuota.status !== 'anulada')
+        .reduce((total, cuota) => total + Math.max(
+          Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
+          0
+        ), 0),
+      0
+    );
+    await printPayment({
+      receiptNumber: pago.virtual_receipt_number,
+      status: pago.receipt_status,
+      paidAt: pago.paid_at,
+      amount: Number(pago.amount),
+      physicalReceiptNumber: pago.receipt_number,
+      negocioNumero: negocio.numero,
+      customerName,
+      sellerName,
+      remainingBalance,
+    });
+  };
+
+  const printNegocioTicket = async () => {
+    if (!negocio) return;
+    await printNegocio({
+      numero: negocio.numero,
+      dealDate: negocio.deal_date,
+      status: negocio.status,
+      customerName: customerName || 'Cliente',
+      customerIdNumber: customerMeta.id_number,
+      sellerName,
+      productsSubtotal: Number(negocio.products_subtotal),
+      interestAmount: Number(negocio.interest_amount),
+      totalCredit: Number(negocio.total_credit),
+      downPayment: Number(negocio.down_payment),
+      financedAmount: Number(negocio.financed_amount),
+      installmentsCount: negocio.installments_count,
+      installmentAmount: Number(negocio.installment_amount),
+      frequency: negocio.frequency,
+      items: items.map((item) => ({
+        quantity: Number(item.quantity),
+        description: item.description || 'Producto',
+        subtotal: Number(item.subtotal),
+      })),
+    });
+  };
+
   const activateDraft = async () => {
     if (!customerSignature) {
       return Alert.alert('Firma requerida', 'El cliente debe firmar antes de activar el negocio.');
@@ -913,6 +964,14 @@ export default function NegocioDetailScreen() {
                         <MaterialIcons name="picture-as-pdf" size={20} color={colors.primary.main} />
                         <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>PDF</Text>
                       </Pressable>
+                      <Pressable
+                        style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]}
+                        onPress={() => void printReceipt(pago)}
+                        disabled={printingTicket}
+                      >
+                        <MaterialIcons name="print" size={20} color={colors.primary.main} />
+                        <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>Imprimir</Text>
+                      </Pressable>
                     </View>
                   </View>
                 ))}
@@ -978,14 +1037,25 @@ export default function NegocioDetailScreen() {
             </>
           )}
 
-          <Pressable
-            style={[styles.btn, { backgroundColor: colors.background.paper, marginTop: 8 }]}
-            onPress={sharePdf}
-          >
-            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
-              Compartir / PDF
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <Pressable
+              style={[styles.btn, { flex: 1, backgroundColor: colors.background.paper }]}
+              onPress={sharePdf}
+            >
+              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
+                Compartir / PDF
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.btn, { flex: 1, backgroundColor: colors.primary.main }]}
+              onPress={() => void printNegocioTicket()}
+              disabled={printingTicket}
+            >
+              <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
+                {printingTicket ? 'Imprimiendo...' : 'Imprimir negocio'}
+              </Text>
+            </Pressable>
+          </View>
         </ScrollView>
 
         <Modal

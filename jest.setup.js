@@ -66,3 +66,43 @@ jest.mock('@nozbe/watermelondb', () => ({
   tableSchema: jest.fn((value) => value),
 }));
 
+jest.mock('react-native-thermal-printer-driver', () => ({
+  __esModule: true,
+  default: {
+    scan: jest.fn(async () => ({ paired: [], found: [] })),
+    stopScan: jest.fn(async () => undefined),
+    connect: jest.fn(async () => undefined),
+    disconnect: jest.fn(async () => undefined),
+    isConnected: jest.fn(async () => false),
+    print: jest.fn(async () => ({ success: true })),
+    printRaw: jest.fn(async () => ({ success: true })),
+    onDeviceFound: jest.fn(() => ({ remove: jest.fn() })),
+    onScanCompleted: jest.fn(() => ({ remove: jest.fn() })),
+    onConnectionChanged: jest.fn(() => ({ remove: jest.fn() })),
+  },
+  text: jest.fn((content, style) => ({ type: 'text', content, style })),
+  line: jest.fn((options) => ({ type: 'line', ...options })),
+  feed: jest.fn((lines) => ({ type: 'feed', lines })),
+  ErrorCode: {
+    BLUETOOTH_DISABLED: 'BLUETOOTH_DISABLED',
+    BLUETOOTH_NOT_SUPPORTED: 'BLUETOOTH_NOT_SUPPORTED',
+    BLUETOOTH_PERMISSION_DENIED: 'BLUETOOTH_PERMISSION_DENIED',
+    DEVICE_NOT_FOUND: 'DEVICE_NOT_FOUND',
+    CONNECTION_FAILED: 'CONNECTION_FAILED',
+    CONNECTION_LOST: 'CONNECTION_LOST',
+    CONNECTION_TIMEOUT: 'CONNECTION_TIMEOUT',
+    WRITE_FAILED: 'WRITE_FAILED',
+    PRINT_TIMEOUT: 'PRINT_TIMEOUT',
+    UNSUPPORTED_TRANSPORT: 'UNSUPPORTED_TRANSPORT',
+  },
+  ThermalPrinterError: class ThermalPrinterError extends Error {
+    code: string;
+    retryable: boolean;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+      this.retryable = true;
+    }
+  },
+}));
+
