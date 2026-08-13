@@ -21,7 +21,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras y capturar soportes de pago.",
-        "NSPhotoLibraryUsageDescription": "Permitir acceso a la galería para adjuntar soportes de pago."
+        "NSPhotoLibraryUsageDescription": "Permitir acceso a la galería para adjuntar soportes de pago.",
+        "NSFaceIDUsageDescription": "Usamos Face ID para proteger la cartera y los datos de clientes en este dispositivo."
       }
     },
     "android": {
@@ -74,6 +75,11 @@
           "cameraPermission": "Permitir acceso a la cámara para capturar soportes de pago.",
           "photosPermission": "Permitir acceso a la galería para adjuntar soportes de pago."
         }
+      ],
+      "expo-local-authentication",
+      [
+        "@morrowdigital/watermelondb-expo-plugin",
+        { "disableJsi": false }
       ]
     ],
     "experiments": {

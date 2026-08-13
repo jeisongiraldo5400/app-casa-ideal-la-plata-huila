@@ -43,6 +43,8 @@ import {
   validatePagoSupportLocalFile,
   type PagoSupportLocalFile,
 } from '@/lib/uploadPagoSupport';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { canUseLocalDb, registerPagoOffline } from '@/lib/offline/repositories/offlineRepository';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -377,64 +379,86 @@ export default function NegocioDetailScreen() {
       setSaving(true);
       paymentIdempotencyKey.current ||= createIdempotencyKey();
       const paidAt = localDateValue();
-      const { data, error } = routeStopId
-        ? await supabase.rpc('register_collection_route_payment', {
-            p_stop_id: routeStopId,
-            p_amount: amount,
-            p_paid_at: paidAt,
-            p_receipt_number: payReceipt || null,
-            p_cuota_id: null,
-            p_notes: null,
-            p_idempotency_key: paymentIdempotencyKey.current,
-          })
-        : await supabase.rpc('register_negocio_pago', {
-            p_negocio_id: negocio.id,
-            p_amount: amount,
-            p_paid_at: paidAt,
-            p_receipt_number: payReceipt || null,
-            p_cuota_id: null,
-            p_notes: null,
-            p_idempotency_key: paymentIdempotencyKey.current,
-          });
-      if (error) throw error;
-      const pagoId = String(data || '');
-      paymentIdempotencyKey.current = null;
+      try {
+        const { data, error } = routeStopId
+          ? await supabase.rpc('register_collection_route_payment', {
+              p_stop_id: routeStopId,
+              p_amount: amount,
+              p_paid_at: paidAt,
+              p_receipt_number: payReceipt || null,
+              p_cuota_id: null,
+              p_notes: null,
+              p_idempotency_key: paymentIdempotencyKey.current,
+            })
+          : await supabase.rpc('register_negocio_pago', {
+              p_negocio_id: negocio.id,
+              p_amount: amount,
+              p_paid_at: paidAt,
+              p_receipt_number: payReceipt || null,
+              p_cuota_id: null,
+              p_notes: null,
+              p_idempotency_key: paymentIdempotencyKey.current,
+            });
+        if (error) throw error;
+        const pagoId = String(data || '');
+        paymentIdempotencyKey.current = null;
 
-      let supportWarning = '';
-      if (paySupportFile && pagoId) {
-        try {
-          await uploadAndAttachPagoSupport({
-            negocioId: negocio.id,
-            pagoId,
-            file: paySupportFile,
-          });
-        } catch (supportError: any) {
-          supportWarning =
-            supportError?.message ||
-            'El pago quedó registrado, pero no se adjuntó el soporte.';
+        let supportWarning = '';
+        if (paySupportFile && pagoId) {
+          try {
+            await uploadAndAttachPagoSupport({
+              negocioId: negocio.id,
+              pagoId,
+              file: paySupportFile,
+            });
+          } catch (supportError: any) {
+            supportWarning =
+              supportError?.message ||
+              'El pago quedó registrado, pero no se adjuntó el soporte.';
+          }
         }
-      }
 
-      const hadSupport = Boolean(paySupportFile) && !supportWarning;
-      setPayAmount('');
-      setPayReceipt('');
-      setPaySupportFile(null);
-      setPayModalOpen(false);
-      if (supportWarning) {
-        Alert.alert('Pago registrado', supportWarning);
-      } else {
+        const hadSupport = Boolean(paySupportFile) && !supportWarning;
+        setPayAmount('');
+        setPayReceipt('');
+        setPaySupportFile(null);
+        setPayModalOpen(false);
+        if (supportWarning) {
+          Alert.alert('Pago registrado', supportWarning);
+        } else {
+          Alert.alert(
+            'Listo',
+            routeStopId
+              ? hadSupport
+                ? 'Pago con soporte registrado y parada completada'
+                : 'Pago registrado y parada completada'
+              : hadSupport
+                ? 'Pago registrado con soporte'
+                : 'Pago registrado'
+          );
+        }
+        await load();
+      } catch (onlineError: any) {
+        if (!isNetworkError(onlineError) || !canUseLocalDb()) throw onlineError;
+        await registerPagoOffline({
+          negocioId: negocio.id,
+          amount,
+          paidAt,
+          receiptNumber: payReceipt || null,
+          routeStopId: routeStopId || null,
+          supportFile: paySupportFile,
+        });
+        paymentIdempotencyKey.current = null;
+        setPayAmount('');
+        setPayReceipt('');
+        setPaySupportFile(null);
+        setPayModalOpen(false);
         Alert.alert(
-          'Listo',
-          routeStopId
-            ? hadSupport
-              ? 'Pago con soporte registrado y parada completada'
-              : 'Pago registrado y parada completada'
-            : hadSupport
-              ? 'Pago registrado con soporte'
-              : 'Pago registrado'
+          'Pago guardado sin conexión',
+          'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.'
         );
+        await load();
       }
-      await load();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo registrar');
     } finally {

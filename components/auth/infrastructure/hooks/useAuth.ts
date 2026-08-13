@@ -8,6 +8,7 @@ export function useAuth() {
   const user = useAuthStore((state) => state.user);
   const loading = useAuthStore((state) => state.loading);
   const initialized = useAuthStore((state) => state.initialized);
+  const offlineSession = useAuthStore((state) => state.offlineSession);
   const signIn = useAuthStore((state) => state.signIn);
   const signOut = useAuthStore((state) => state.signOut);
   const initialize = useAuthStore((state) => state.initialize);
@@ -22,6 +23,7 @@ export function useAuth() {
     signOut,
     initialize,
     changePassword,
+    offlineSession,
     isAuthenticated: !!session,
   };
 }

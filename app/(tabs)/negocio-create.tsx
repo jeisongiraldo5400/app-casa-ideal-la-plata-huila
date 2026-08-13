@@ -41,6 +41,7 @@ import {
   parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
 
 type Customer = {
   id: string;
@@ -153,16 +154,14 @@ export default function NegocioCreateScreen() {
     if (!query) { setCustomers([]); return; }
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const pattern = `%${query}%`;
-      const [byName, byDocument] = await Promise.all([
-        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('name', pattern).order('name').limit(20),
-        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('id_number', pattern).order('name').limit(20),
-      ]);
-      if (!cancelled) {
-        const error = byName.error || byDocument.error;
-        if (error) Alert.alert('Error', 'No fue posible buscar clientes');
-        const unique = new Map([...(byName.data || []), ...(byDocument.data || [])].map((row) => [row.id, row]));
-        setCustomers(error ? [] : [...unique.values()].slice(0, 20));
+      try {
+        const rows = await searchCustomersForNegocio(query);
+        if (!cancelled) setCustomers(rows);
+      } catch {
+        if (!cancelled) {
+          Alert.alert('Error', 'No fue posible buscar clientes');
+          setCustomers([]);
+        }
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -308,17 +307,11 @@ export default function NegocioCreateScreen() {
     }
     try {
       setCreatingCustomer(true);
-      const { data, error } = await supabase
-        .from('customers')
-        .insert({
-          name: newCustomerName.trim(),
-          id_number: newCustomerId.trim(),
-          phone: newCustomerPhone.trim() || null,
-        })
-        .select('id, name, id_number')
-        .single();
-
-      if (error) throw error;
+      const data = await createCustomer({
+        name: newCustomerName.trim(),
+        idNumber: newCustomerId.trim(),
+        phone: newCustomerPhone.trim() || null,
+      });
 
       setCustomers((prev) => [data, ...prev]);
       if (pickingCodeudor) {

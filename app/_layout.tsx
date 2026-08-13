@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import { OfflineProvider } from '@/components/offline';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
@@ -121,8 +122,10 @@ export default function RootLayout() {
   const { isDark } = useTheme();
   return (
     <GestureHandlerRootView style={styles.root}>
-      <RootLayoutNav />
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <OfflineProvider>
+        <RootLayoutNav />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </OfflineProvider>
     </GestureHandlerRootView>
   );
 }

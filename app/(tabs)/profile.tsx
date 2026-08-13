@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -17,6 +18,7 @@ export default function ProfileScreen() {
   const colors = getColors(isDark);
   const router = useRouter();
   const { roles } = useUserRoles();
+  const pendingCount = useSyncStore((state) => state.pendingCount);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const roleNames = roles
     .map((r) => r.role?.nombre)
@@ -26,7 +28,9 @@ export default function ProfileScreen() {
   const handleSignOut = async () => {
     Alert.alert(
       'Cerrar sesión',
-      '¿Estás seguro de que deseas cerrar sesión?',
+      pendingCount
+        ? `Hay ${pendingCount} cambio${pendingCount === 1 ? '' : 's'} sin sincronizar. Si cierras sesión se borrarán del dispositivo.`
+        : '¿Estás seguro de que deseas cerrar sesión?',
       [
         {
           text: 'Cancelar',

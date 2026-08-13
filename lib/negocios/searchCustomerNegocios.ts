@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { searchCustomerNegociosFromLocal } from '@/lib/offline/repositories/offlineRepository';
 
 export type CustomerNegocioRole = 'titular' | 'codeudor' | 'titular_y_codeudor';
 
@@ -29,27 +31,30 @@ export async function searchCustomerNegocios(
   const term = search.trim();
   if (term.length < 2) return [];
 
-  const { data, error } = await supabase.rpc('search_customer_negocios', {
-    p_search: term,
-    p_limit: limit,
-  });
+  try {
+    const { data, error } = await supabase.rpc('search_customer_negocios', {
+      p_search: term,
+      p_limit: limit,
+    });
 
-  if (error) {
-    throw new Error(error.message || 'No fue posible buscar clientes');
+    if (error) throw new Error(error.message || 'No fue posible buscar clientes');
+
+    const payload = data as { customers?: CustomerWithNegocios[] } | null;
+    const customers = payload?.customers || [];
+
+    return customers.map((customer) => ({
+      ...customer,
+      negocios: (customer.negocios || []).map((negocio) => ({
+        ...negocio,
+        total_credit: Number(negocio.total_credit || 0),
+        remaining_balance: Number(negocio.remaining_balance || 0),
+        negocio_numero: Number(negocio.negocio_numero || 0),
+      })),
+    }));
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    return searchCustomerNegociosFromLocal(term, limit);
   }
-
-  const payload = data as { customers?: CustomerWithNegocios[] } | null;
-  const customers = payload?.customers || [];
-
-  return customers.map((customer) => ({
-    ...customer,
-    negocios: (customer.negocios || []).map((negocio) => ({
-      ...negocio,
-      total_credit: Number(negocio.total_credit || 0),
-      remaining_balance: Number(negocio.remaining_balance || 0),
-      negocio_numero: Number(negocio.negocio_numero || 0),
-    })),
-  }));
 }
 
 export function labelCustomerNegocioRole(role: CustomerNegocioRole | string) {

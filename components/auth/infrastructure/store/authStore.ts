@@ -1,12 +1,19 @@
 import { supabase } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
+import {
+  getLastOnlineVerifiedAt,
+  setLastOnlineVerifiedAt,
+} from '@/lib/offline/security/secureKeys';
+import { isNetworkError, isOfflineSessionValid } from '@/lib/offline/security/sessionPolicy';
+import { wipeLocalOfflineData } from '@/lib/offline/security/wipe';
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   loading: boolean;
   initialized: boolean;
+  offlineSession: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -21,6 +28,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   loading: true,
   initialized: false,
+  offlineSession: false,
 
   initialize: async () => {
     if (get().initialized) return;
@@ -31,34 +39,58 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error,
       } = await supabase.auth.getSession();
 
-      let verifiedUser: User | null = null;
-      if (!error && session) {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (userError || !userData.user) {
-          await supabase.auth.signOut();
-        } else {
-          const { data: activeProfile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', userData.user.id)
-            .is('deleted_at', null)
-            .maybeSingle();
-          if (!profileError && activeProfile) verifiedUser = userData.user;
-          else await supabase.auth.signOut();
-        }
-      }
-
-      if (error || (session && !verifiedUser)) {
-        console.log('Auth error during initialization:', error?.message || 'sesión o perfil inválido');
-        await supabase.auth.signOut();
-        set({ session: null, user: null, loading: false, initialized: true });
+      if (error || !session) {
+        set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
       } else {
-        set({
-          session: session && verifiedUser ? { ...session, user: verifiedUser } : null,
-          user: verifiedUser,
-          loading: false,
-          initialized: true,
-        });
+        try {
+          const { data: userData, error: userError } = await supabase.auth.getUser();
+          if (userError) throw userError;
+          if (!userData.user) {
+            await supabase.auth.signOut();
+            set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+          } else {
+            const { data: activeProfile, error: profileError } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', userData.user.id)
+              .is('deleted_at', null)
+              .maybeSingle();
+            if (profileError) throw profileError;
+            if (!activeProfile) {
+              await supabase.auth.signOut();
+              await wipeLocalOfflineData();
+              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+            } else {
+              await setLastOnlineVerifiedAt();
+              set({
+                session: { ...session, user: userData.user },
+                user: userData.user,
+                loading: false,
+                initialized: true,
+                offlineSession: false,
+              });
+            }
+          }
+        } catch (verifyError) {
+          if (isNetworkError(verifyError)) {
+            const lastVerified = await getLastOnlineVerifiedAt();
+            if (isOfflineSessionValid(lastVerified)) {
+              set({
+                session,
+                user: session.user,
+                loading: false,
+                initialized: true,
+                offlineSession: true,
+              });
+            } else {
+              await supabase.auth.signOut();
+              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+            }
+          } else {
+            await supabase.auth.signOut();
+            set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+          }
+        }
       }
 
       if (authSubscription) {
@@ -70,12 +102,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         data: { subscription },
       } = supabase.auth.onAuthStateChange((event, nextSession) => {
         if (event === 'TOKEN_REFRESHED' && !nextSession) {
-          set({ session: null, user: null, loading: false });
+          set({ session: null, user: null, loading: false, offlineSession: false });
+        } else if (event === 'TOKEN_REFRESHED' && nextSession) {
+          void setLastOnlineVerifiedAt();
+          set({
+            session: nextSession,
+            user: nextSession.user ?? null,
+            loading: false,
+            offlineSession: false,
+          });
         } else {
           set({
             session: nextSession,
             user: nextSession?.user ?? null,
             loading: false,
+            offlineSession: false,
           });
         }
       });
@@ -88,7 +129,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ) {
         await supabase.auth.signOut();
       }
-      set({ session: null, user: null, loading: false, initialized: true });
+      set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
     }
   },
 
@@ -115,12 +156,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await supabase.auth.signOut();
       return { error: new Error('La cuenta está inactiva o fue eliminada') };
     }
+    await setLastOnlineVerifiedAt();
     return { error };
   },
 
   signOut: async () => {
+    await wipeLocalOfflineData();
     await supabase.auth.signOut();
-    set({ session: null, user: null });
+    set({ session: null, user: null, offlineSession: false });
   },
 
   changePassword: async (newPassword: string) => {

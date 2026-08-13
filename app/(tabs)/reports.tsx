@@ -3,6 +3,7 @@ import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -14,6 +15,8 @@ export default function ReportsScreen() {
   const colors = getColors(isDark);
   const { isAdmin, isBodeguero, loading: loadingRoles } = useUserRoles();
   const { loading, error, reportData, executiveReport, dateRange, periodType, setDateRange, setPeriodType, loadReports, loadExecutiveReport, clearError } = useReports();
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const online = useSyncStore((state) => state.online);
   const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90'>('30');
   const canSeeExecutive = isAdmin();
   const canSeeOperational = canSeeExecutive || isBodeguero();
@@ -54,6 +57,15 @@ export default function ReportsScreen() {
     <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[colors.primary.main]} />}>
       <Text style={[styles.title, { color: colors.text.primary }]}>Reportes</Text>
       <Text style={[styles.subtitle, { color: colors.text.secondary }]}>{canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
+      {!online || lastSyncedAt ? (
+        <Text style={[styles.range, { color: colors.text.secondary }]}>
+          {online
+            ? lastSyncedAt
+              ? `Datos al ${new Date(lastSyncedAt).toLocaleString('es-CO')}`
+              : ''
+            : `Sin conexión${lastSyncedAt ? ` · último corte ${new Date(lastSyncedAt).toLocaleString('es-CO')}` : ''}`}
+        </Text>
+      ) : null}
       <View style={styles.periods}>{(['7', '30', '90'] as const).map((period) => <TouchableOpacity key={period} onPress={() => handlePeriodChange(period)} style={[styles.period, { borderColor: colors.divider, backgroundColor: selectedPeriod === period ? colors.primary.main : colors.background.paper }]}><Text style={{ color: selectedPeriod === period ? colors.primary.contrastText : colors.text.primary }}>{period} días</Text></TouchableOpacity>)}</View>
       <Text style={[styles.range, { color: colors.text.secondary }]}>{range}</Text>
 

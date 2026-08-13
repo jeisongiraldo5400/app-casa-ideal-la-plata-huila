@@ -31,3 +31,38 @@ global.console = {
   info: jest.fn(),
 };
 
+jest.mock('@react-native-community/netinfo', () => ({
+  addEventListener: jest.fn(() => jest.fn()),
+  fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+}));
+
+jest.mock('expo-local-authentication', () => ({
+  hasHardwareAsync: jest.fn(async () => false),
+  isEnrolledAsync: jest.fn(async () => false),
+  authenticateAsync: jest.fn(async () => ({ success: true })),
+}));
+
+jest.mock('expo-secure-store', () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock('@nozbe/watermelondb/decorators', () => ({
+  field: () => () => undefined,
+  date: () => () => undefined,
+  readonly: () => () => undefined,
+}));
+
+jest.mock('@nozbe/watermelondb', () => ({
+  Q: {
+    where: jest.fn((...args) => args),
+    oneOf: jest.fn((values) => values),
+  },
+  Database: class Database {},
+  Model: class Model {},
+  appSchema: jest.fn((value) => value),
+  tableSchema: jest.fn((value) => value),
+}));
+

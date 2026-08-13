@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { getCachedRoles, setCachedRoles } from '@/lib/offline/security/secureKeys';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 
 interface UserRole {
   id: string;
@@ -36,10 +38,7 @@ export function useUserRoles() {
           .eq('user_id', user.id);
 
         if (userRolesError) {
-          console.error('Error loading user roles:', userRolesError);
-          setRoles([]);
-          setLoading(false);
-          return;
+          throw userRolesError;
         }
 
         if (!userRolesData || userRolesData.length === 0) {
@@ -57,10 +56,7 @@ export function useUserRoles() {
           .is('deleted_at', null);
 
         if (rolesError) {
-          console.error('Error loading roles:', rolesError);
-          setRoles([]);
-          setLoading(false);
-          return;
+          throw rolesError;
         }
 
         // Combinar user_roles con roles
@@ -74,9 +70,15 @@ export function useUserRoles() {
         });
 
         setRoles(transformedRoles);
+        await setCachedRoles({ userId: user.id, roles: transformedRoles });
       } catch (error) {
         console.error('Error loading user roles:', error);
-        setRoles([]);
+        const cached = await getCachedRoles();
+        if (cached?.userId === user.id) {
+          setRoles(cached.roles);
+        } else if (!isNetworkError(error)) {
+          setRoles([]);
+        }
       } finally {
         setLoading(false);
       }
