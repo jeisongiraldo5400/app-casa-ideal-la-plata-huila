@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import {
+  canUseLocalDb,
+  fetchNegociosListFromLocal,
+} from '@/lib/offline/repositories/offlineRepository';
 import {
   calculateCredit,
   type CreditFrequency,
@@ -27,6 +32,7 @@ export interface NegocioItem {
 interface NegociosState {
   list: any[];
   loading: boolean;
+  fromCache: boolean;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
   fetchList: () => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
@@ -77,6 +83,7 @@ const isValidDateValue = (value: string) => {
 export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
   loading: false,
+  fromCache: false,
   creditSettings: null,
 
   fetchList: async () => {
@@ -89,10 +96,15 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      set({ list: data || [] });
+      set({ list: data || [], fromCache: false });
     } catch (e) {
+      if (isNetworkError(e) && canUseLocalDb()) {
+        const local = await fetchNegociosListFromLocal();
+        set({ list: local, fromCache: true });
+        return;
+      }
       console.error(e);
-      set({ list: [] });
+      set({ list: [], fromCache: false });
     } finally {
       set({ loading: false });
     }

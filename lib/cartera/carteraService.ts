@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
+  fetchCarteraDashboardFromLocal,
   fetchCarteraFromLocal,
   fetchMunicipiosFromLocal,
   loadReportSnapshot,
@@ -63,7 +64,7 @@ export async function fetchCarteraPage(params: {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
       p_negocio_id: null,
     });
-    if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
+    if (moraError) console.warn(moraError.message || 'No fue posible actualizar la mora');
 
     const { data, error } = await supabase.rpc('get_cartera_cuotas', {
       p_filter: params.filter, p_days: params.days, p_search: params.search,
@@ -88,7 +89,7 @@ export async function fetchCarteraDashboard(municipioId = '') {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
       p_negocio_id: null,
     });
-    if (moraError) throw new Error(moraError.message || 'No fue posible actualizar la mora');
+    if (moraError) console.warn(moraError.message || 'No fue posible actualizar la mora');
 
     const { data, error } = await supabase.rpc('get_cartera_management_dashboard', {
       p_municipio_id: municipioId || null,
@@ -100,8 +101,10 @@ export async function fetchCarteraDashboard(municipioId = '') {
   } catch (error) {
     if (!isNetworkError(error)) throw error;
     const snapshot = await loadReportSnapshot<CarteraDashboard>(`cartera-dashboard:${municipioId}`);
-    if (!snapshot) throw error;
-    return snapshot.payload;
+    if (snapshot) return snapshot.payload;
+    const local = await fetchCarteraDashboardFromLocal();
+    if (local) return local;
+    throw error;
   }
 }
 

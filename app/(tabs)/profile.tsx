@@ -1,3 +1,4 @@
+import { DownloadDataButton } from '@/components/offline';
 import { ChangePasswordForm } from '@/components/auth/components/ChangePasswordForm';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
@@ -102,6 +103,11 @@ export default function ProfileScreen() {
           </View>
           <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
         </TouchableOpacity>
+      </Card>
+
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Datos sin conexión</Text>
+        <DownloadDataButton />
       </Card>
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>

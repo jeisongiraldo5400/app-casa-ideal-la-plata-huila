@@ -16,7 +16,14 @@ import {
   NegocioPago,
   ReportSnapshot,
 } from '../models';
-import { applyPagoToCuotas, filterCarteraCuotas, searchCustomersLocal } from '../domain/carteraLocal';
+import {
+  applyPagoToCuotas,
+  emptyCarteraDashboard,
+  filterCarteraCuotas,
+  searchCustomersLocal,
+  summarizeCarteraFromCuotas,
+} from '../domain/carteraLocal';
+import { mapNegocioDetailFromLocal, mapNegociosListFromLocal } from '../domain/negociosLocal';
 import { enqueueOutbox } from '../sync/outbox';
 import { runSync } from '../sync/syncEngine';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
@@ -126,6 +133,123 @@ export async function createCustomerOffline(input: {
   );
   void runSync('mutation');
   return { id: customerId, name: input.name, id_number: input.idNumber };
+}
+
+export async function fetchNegociosListFromLocal() {
+  if (!canUseLocalDb()) return [];
+  const database = getDatabase();
+  const [negocios, customers, cuotas] = await Promise.all([
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<Customer>('customers').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+  ]);
+  return mapNegociosListFromLocal(
+    negocios.map((row) => ({
+      id: row.id,
+      numero: row.numero,
+      status: row.status,
+      dealDate: row.dealDate,
+      totalCredit: row.totalCredit,
+      remainingBalance: row.remainingBalance,
+      customerId: row.customerId,
+      codeudorCustomerId: row.codeudorCustomerId,
+      direccion: row.direccion,
+      municipioId: row.municipioId,
+      municipioName: row.municipioName,
+      sellerId: row.sellerId,
+    })),
+    customers.map((row) => ({
+      id: row.id,
+      name: row.name,
+      idNumber: row.idNumber,
+      phone: row.phone,
+    })),
+    cuotas.map((row) => ({
+      id: row.id,
+      negocioId: row.negocioId,
+      installmentNumber: row.installmentNumber,
+      dueDate: row.dueDate,
+      amount: row.amount,
+      paidAmount: row.paidAmount,
+      lateFeeAmount: row.lateFeeAmount,
+      status: row.status,
+    }))
+  );
+}
+
+export async function fetchNegocioDetailFromLocal(negocioId: string) {
+  if (!canUseLocalDb()) return null;
+  const database = getDatabase();
+  let negocio: Negocio;
+  try {
+    negocio = await database.get<Negocio>('negocios').find(negocioId);
+  } catch {
+    return null;
+  }
+  const [customers, cuotas, pagos] = await Promise.all([
+    database.get<Customer>('customers').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query(Q.where('negocio_id', negocioId)).fetch(),
+    database.get<NegocioPago>('negocio_pagos').query(Q.where('negocio_id', negocioId)).fetch(),
+  ]);
+  return mapNegocioDetailFromLocal({
+    negocio: {
+      id: negocio.id,
+      numero: negocio.numero,
+      status: negocio.status,
+      dealDate: negocio.dealDate,
+      totalCredit: negocio.totalCredit,
+      remainingBalance: negocio.remainingBalance,
+      customerId: negocio.customerId,
+      codeudorCustomerId: negocio.codeudorCustomerId,
+      direccion: negocio.direccion,
+      municipioId: negocio.municipioId,
+      municipioName: negocio.municipioName,
+      sellerId: negocio.sellerId,
+    },
+    customers: customers.map((row) => ({
+      id: row.id,
+      name: row.name,
+      idNumber: row.idNumber,
+      phone: row.phone,
+    })),
+    cuotas: cuotas.map((row) => ({
+      id: row.id,
+      negocioId: row.negocioId,
+      installmentNumber: row.installmentNumber,
+      dueDate: row.dueDate,
+      amount: row.amount,
+      paidAmount: row.paidAmount,
+      lateFeeAmount: row.lateFeeAmount,
+      status: row.status,
+    })),
+    pagos: pagos.map((row) => ({
+      id: row.id,
+      negocioId: row.negocioId,
+      cuotaId: row.cuotaId,
+      amount: row.amount,
+      paidAt: row.paidAt,
+      receiptNumber: row.receiptNumber,
+      virtualReceiptNumber: row.virtualReceiptNumber,
+      receiptStatus: row.receiptStatus,
+      notes: row.notes,
+    })),
+  });
+}
+
+export async function fetchCarteraDashboardFromLocal() {
+  if (!canUseLocalDb()) return null;
+  const cuotas = await getDatabase().get<NegocioCuota>('negocio_cuotas').query().fetch();
+  const summary = summarizeCarteraFromCuotas(
+    cuotas.map((cuota) => ({
+      id: cuota.id,
+      dueDate: cuota.dueDate,
+      amount: cuota.amount,
+      paidAmount: cuota.paidAmount,
+      lateFeeAmount: cuota.lateFeeAmount,
+      status: cuota.status,
+    }))
+  );
+  return emptyCarteraDashboard(summary);
 }
 
 export async function fetchCarteraFromLocal(params: {

@@ -12,17 +12,21 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
+import { DownloadDataButton } from '@/components/offline';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function NegociosScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { list, loading, fetchList } = useNegociosStore();
+  const { list, loading, fromCache, fetchList } = useNegociosStore();
   const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -76,9 +80,21 @@ export default function NegociosScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
           ListEmptyComponent={
-            <Text style={{ textAlign: 'center', marginTop: 40, color: colors.text.secondary }}>
-              No hay negocios. Crea el primero.
-            </Text>
+            <View style={{ alignItems: 'center', marginTop: 40, paddingHorizontal: 16 }}>
+              <Text style={{ textAlign: 'center', color: colors.text.secondary }}>
+                {fromCache
+                  ? 'No hay datos locales. Conéctese y pulse Descargar información.'
+                  : 'No hay negocios. Crea el primero.'}
+              </Text>
+              <DownloadDataButton variant="cta" />
+            </View>
+          }
+          ListHeaderComponent={
+            fromCache ? (
+              <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 8 }}>
+                {formatLocalDataLabel(lastSyncedAt)}
+              </Text>
+            ) : null
           }
           renderItem={({ item }) => (
             <Pressable
@@ -103,8 +119,12 @@ export default function NegociosScreen() {
                 {formatCOP(Number(item.total_credit))}
               </Text>
               <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                {item.installments_count} cuotas ·{' '}
-                {item.delivery_order_id ? 'OE creada' : 'Sin OE'}
+                Saldo {formatCOP(Number(item.remaining_balance ?? 0))}
+                {item.installments_count != null
+                  ? ` · ${item.installments_count} cuotas · ${
+                      item.delivery_order_id ? 'OE creada' : 'Sin OE'
+                    }`
+                  : ''}
               </Text>
             </Pressable>
           )}

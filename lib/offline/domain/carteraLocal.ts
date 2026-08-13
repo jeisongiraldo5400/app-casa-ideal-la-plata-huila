@@ -83,6 +83,92 @@ export function filterCarteraCuotas<
   });
 }
 
+export type CarteraLocalSummary = {
+  total_balance: number;
+  overdue_balance: number;
+  collected_month: number;
+  collection_compliance: number;
+  upcoming_7: number;
+  upcoming_15: number;
+  upcoming_30: number;
+};
+
+export function emptyCarteraDashboard(summary: Partial<CarteraLocalSummary> = {}) {
+  return {
+    summary: {
+      total_balance: 0,
+      overdue_balance: 0,
+      collected_month: 0,
+      collection_compliance: 0,
+      upcoming_7: 0,
+      upcoming_15: 0,
+      upcoming_30: 0,
+      ...summary,
+    } as Record<string, number | null>,
+    aging: [] as { label: string; balance: number; businesses: number; customers: number }[],
+    managers: [] as {
+      gestor_cobro_id: string;
+      manager_name: string;
+      assigned_businesses: number;
+      overdue_balance: number;
+      collected_month: number;
+      collection_compliance: number;
+    }[],
+    municipalities: [] as {
+      municipality_id: string | null;
+      municipality_name: string;
+      active_businesses: number;
+      overdue_balance: number;
+      collected_month: number;
+      overdue_rate: number;
+    }[],
+    monthly: [] as { month: string; expected: number; collected: number }[],
+    alerts: {} as Record<string, number>,
+    critical_businesses: [] as {
+      id: string;
+      numero: number;
+      customer_name: string;
+      overdue_balance: number;
+      overdue_installments: number;
+      overdue_days: number;
+    }[],
+    customer_concentration: [] as { customer_id: string; customer_name: string; balance: number }[],
+  };
+}
+
+export function summarizeCarteraFromCuotas(
+  cuotas: LocalCuota[],
+  today = new Date().toISOString().slice(0, 10)
+): CarteraLocalSummary {
+  const summary: CarteraLocalSummary = {
+    total_balance: 0,
+    overdue_balance: 0,
+    collected_month: 0,
+    collection_compliance: 0,
+    upcoming_7: 0,
+    upcoming_15: 0,
+    upcoming_30: 0,
+  };
+
+  for (const cuota of cuotas) {
+    if (cuota.status === 'pagada' || cuota.status === 'anulada') continue;
+    const open = saldo(cuota);
+    summary.total_balance += open;
+    if (cuota.status === 'mora' || cuota.dueDate < today) {
+      summary.overdue_balance += open;
+      continue;
+    }
+    const due = new Date(`${cuota.dueDate}T12:00:00`);
+    const now = new Date(`${today}T12:00:00`);
+    const days = Math.round((due.getTime() - now.getTime()) / 86400000);
+    if (days <= 7) summary.upcoming_7 += open;
+    if (days <= 15) summary.upcoming_15 += open;
+    if (days <= 30) summary.upcoming_30 += open;
+  }
+
+  return summary;
+}
+
 export function searchCustomersLocal<T extends { name: string; idNumber: string | null }>(
   customers: T[],
   term: string,

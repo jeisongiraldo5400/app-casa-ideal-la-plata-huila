@@ -2,6 +2,7 @@ import {
   applyPagoToCuotas,
   filterCarteraCuotas,
   searchCustomersLocal,
+  summarizeCarteraFromCuotas,
 } from '../carteraLocal';
 
 const cuotas = [
@@ -45,5 +46,21 @@ describe('searchCustomersLocal', () => {
   it('exige al menos 2 caracteres y prioriza documento exacto', () => {
     expect(searchCustomersLocal(customers, 'a')).toEqual([]);
     expect(searchCustomersLocal(customers, '123')[0].name).toBe('Ana Pérez');
+  });
+});
+
+describe('summarizeCarteraFromCuotas', () => {
+  it('separa saldo pendiente y vencido', () => {
+    const summary = summarizeCarteraFromCuotas(
+      [
+        { id: 'c1', dueDate: '2026-08-20', amount: 100, paidAmount: 20, lateFeeAmount: 0, status: 'pendiente' },
+        { id: 'c2', dueDate: '2026-07-01', amount: 50, paidAmount: 0, lateFeeAmount: 10, status: 'mora' },
+        { id: 'c3', dueDate: '2026-08-01', amount: 30, paidAmount: 30, lateFeeAmount: 0, status: 'pagada' },
+      ],
+      '2026-08-12'
+    );
+    expect(summary.total_balance).toBe(140);
+    expect(summary.overdue_balance).toBe(60);
+    expect(summary.upcoming_15).toBe(80);
   });
 });

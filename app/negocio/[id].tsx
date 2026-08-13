@@ -45,7 +45,13 @@ import {
   type PagoSupportLocalFile,
 } from '@/lib/uploadPagoSupport';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
-import { canUseLocalDb, registerPagoOffline } from '@/lib/offline/repositories/offlineRepository';
+import {
+  canUseLocalDb,
+  fetchNegocioDetailFromLocal,
+  registerPagoOffline,
+} from '@/lib/offline/repositories/offlineRepository';
+import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -107,10 +113,41 @@ export default function NegocioDetailScreen() {
     }
   };
 
-  const load = useCallback(async () => {
+  const applyLocalDetail = useCallback(
+    (local: NonNullable<Awaited<ReturnType<typeof fetchNegocioDetailFromLocal>>>) => {
+      setNegocio(local.negocio);
+      setSignaturesDirty(false);
+      setItems([]);
+      setCuotas(local.cuotas);
+      setPagos(local.pagos);
+      setInstallmentPage(0);
+      setPaymentPage(0);
+      setCustomerName(local.customer.name || '');
+      setCustomerMeta(local.customer);
+      setLegalText(null);
+      setCustomerSignature('');
+      setGuarantorSignature('');
+      setSellerSignature('');
+      setCodeudorMeta(local.codeudor || {});
+      setSellerName('');
+      setOrderNumber(null);
+      setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));
+    },
+    []
+  );
+
+  const load = useCallback(async (options?: { preferLocal?: boolean }) => {
     if (!id) return;
     setLoading(true);
     setLoadWarning(null);
+    if (options?.preferLocal && canUseLocalDb()) {
+      const local = await fetchNegocioDetailFromLocal(id);
+      if (local) {
+        applyLocalDetail(local);
+        setLoading(false);
+        return;
+      }
+    }
     try {
       const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
         p_negocio_id: id,
@@ -231,11 +268,23 @@ export default function NegocioDetailScreen() {
         setLoadWarning('No fue posible actualizar automáticamente las cuotas en mora.');
       }
     } catch (e: any) {
+      if (isNetworkError(e) && canUseLocalDb()) {
+        const local = await fetchNegocioDetailFromLocal(id);
+        if (local) {
+          applyLocalDetail(local);
+          return;
+        }
+        Alert.alert(
+          'Sin datos locales',
+          'No hay datos locales de este negocio. Conéctese y pulse Descargar información.'
+        );
+        return;
+      }
       Alert.alert('Error', e.message || 'No se pudo cargar');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, applyLocalDetail]);
 
   useFocusEffect(
     useCallback(() => {
@@ -514,7 +563,7 @@ export default function NegocioDetailScreen() {
           'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
           printed
         );
-        await load();
+        await load({ preferLocal: true });
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo registrar');
