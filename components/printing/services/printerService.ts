@@ -14,6 +14,8 @@ import {
   filterDevicesForPlatform,
   iosClassicOnlyHint,
   normalizePrinterAddress,
+  scanRetryDelayMs,
+  scanWatchdogMs,
   type AppPlatform,
   type PrinterDevice,
 } from '../domain/printerTransport';
@@ -113,15 +115,13 @@ function ticketToNodes(ticket: TicketLine[]): Node[] {
   return nodes;
 }
 
-export async function scanPrinters(): Promise<{
-  devices: PrinterDevice[];
-  iosClassicOnly: boolean;
-}> {
-  if (currentPlatform() === 'web') {
-    throw new Error('La impresión Bluetooth no está disponible en web.');
-  }
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  const result = await ThermalPrinter.scan();
+let scanEpoch = 0;
+
+function mapScanResult(result: { paired?: Device[]; found?: Device[] }) {
   const all = uniqueDevices([
     ...(result.paired ?? []).map(toPrinterDevice),
     ...(result.found ?? []).map(toPrinterDevice),
@@ -133,12 +133,64 @@ export async function scanPrinters(): Promise<{
   };
 }
 
+async function scanOnce(watchdogMs: number) {
+  let finished = false;
+  const watchdog = setTimeout(() => {
+    if (!finished) void ThermalPrinter.stopScan();
+  }, watchdogMs);
+
+  try {
+    const result = await ThermalPrinter.scan();
+    return mapScanResult(result);
+  } finally {
+    finished = true;
+    clearTimeout(watchdog);
+  }
+}
+
+export async function scanPrinters(
+  onPartial?: (result: { devices: PrinterDevice[]; iosClassicOnly: boolean }) => void
+): Promise<{
+  devices: PrinterDevice[];
+  iosClassicOnly: boolean;
+}> {
+  if (currentPlatform() === 'web') {
+    throw new Error('La impresión Bluetooth no está disponible en web.');
+  }
+
+  const epoch = ++scanEpoch;
+  const platform = currentPlatform();
+  const maxAttempts = platform === 'ios' ? 3 : 1;
+  let last = { devices: [] as PrinterDevice[], iosClassicOnly: false };
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (epoch !== scanEpoch) return last;
+
+    last = await scanOnce(scanWatchdogMs(platform, attempt));
+    if (epoch !== scanEpoch) return last;
+
+    onPartial?.(last);
+    const retryIn = scanRetryDelayMs(last.devices.length, attempt, maxAttempts);
+    if (retryIn == null) return last;
+
+    await ThermalPrinter.stopScan();
+    await delay(retryIn);
+  }
+
+  return last;
+}
+
 export async function stopPrinterScan(): Promise<void> {
   try {
     await ThermalPrinter.stopScan();
   } catch {
     // ignore
   }
+}
+
+export function cancelPrinterScan() {
+  scanEpoch += 1;
+  void stopPrinterScan();
 }
 
 export async function connectPrinter(address: string): Promise<void> {

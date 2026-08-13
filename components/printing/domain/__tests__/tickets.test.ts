@@ -15,6 +15,8 @@ import {
   isUsableOnPlatform,
   looksLikePt210,
   normalizePrinterAddress,
+  scanRetryDelayMs,
+  scanWatchdogMs,
 } from '../printerTransport';
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 
@@ -179,6 +181,18 @@ describe('printerTransport', () => {
         'android'
       )
     ).toBe('bt:AA:BB:CC:DD:EE:FF');
+  });
+
+  it('reintenta el escaneo si la primera pasada vuelve vacia', () => {
+    expect(scanRetryDelayMs(0, 0, 3)).toBe(400);
+    expect(scanRetryDelayMs(1, 0, 3)).toBeNull();
+    expect(scanRetryDelayMs(0, 2, 3)).toBeNull();
+  });
+
+  it('limita el primer escaneo de iOS para no quedar colgado', () => {
+    expect(scanWatchdogMs('ios', 0)).toBe(4000);
+    expect(scanWatchdogMs('ios', 1)).toBe(8000);
+    expect(scanWatchdogMs('android', 0)).toBe(15000);
   });
 
   it('en iOS solo deja BLE o dual', () => {

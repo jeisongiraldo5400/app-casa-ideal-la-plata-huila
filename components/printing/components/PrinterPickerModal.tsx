@@ -19,7 +19,7 @@ import {
   mapPrinterError,
   printTicket,
   scanPrinters,
-  stopPrinterScan,
+  cancelPrinterScan,
 } from '../services/printerService';
 import { usePrinterStore } from '../store/printerStore';
 
@@ -37,6 +37,7 @@ export function PrinterPickerModal() {
   const [devices, setDevices] = useState<PrinterDevice[]>([]);
   const [iosClassicOnly, setIosClassicOnly] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [scanNonce, setScanNonce] = useState(0);
 
   useEffect(() => {
     void usePrinterStore.getState().hydrate();
@@ -44,25 +45,32 @@ export function PrinterPickerModal() {
 
   useEffect(() => {
     if (!pickerOpen) return;
-    void runScan();
-    return () => {
-      void stopPrinterScan();
-    };
-  }, [pickerOpen]);
-
-  const runScan = async () => {
+    let cancelled = false;
     setScanning(true);
     setIosClassicOnly(false);
-    try {
-      const result = await scanPrinters();
-      setDevices(result.devices);
-      setIosClassicOnly(result.iosClassicOnly);
-    } catch (error) {
-      Alert.alert('Bluetooth', mapPrinterError(error));
-    } finally {
-      setScanning(false);
-    }
-  };
+    void scanPrinters((partial) => {
+      if (cancelled) return;
+      if (partial.devices.length > 0) {
+        setDevices(partial.devices);
+        setIosClassicOnly(partial.iosClassicOnly);
+      }
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setDevices(result.devices);
+        setIosClassicOnly(result.iosClassicOnly);
+      })
+      .catch((error) => {
+        if (!cancelled) Alert.alert('Bluetooth', mapPrinterError(error));
+      })
+      .finally(() => {
+        if (!cancelled) setScanning(false);
+      });
+    return () => {
+      cancelled = true;
+      cancelPrinterScan();
+    };
+  }, [pickerOpen, scanNonce]);
 
   const close = () => {
     setPendingTicket(null);
@@ -73,7 +81,7 @@ export function PrinterPickerModal() {
     setConnectingAddress(device.address);
     setScanning(false);
     try {
-      await stopPrinterScan();
+      await cancelPrinterScan();
       await connectPrinter(device.address);
       await setSavedPrinter({
         name: device.name,
@@ -155,7 +163,11 @@ export function PrinterPickerModal() {
 
           <View style={styles.scanRow}>
             <Text style={[styles.section, { color: colors.text.primary }]}>Dispositivos</Text>
-            <Pressable onPress={() => void runScan()} disabled={scanning || Boolean(connectingAddress)} style={styles.scanBtn}>
+            <Pressable
+              onPress={() => setScanNonce((value) => value + 1)}
+              disabled={scanning || Boolean(connectingAddress)}
+              style={styles.scanBtn}
+            >
               {scanning ? (
                 <ActivityIndicator size="small" color={colors.primary.main} />
               ) : (
@@ -165,9 +177,14 @@ export function PrinterPickerModal() {
           </View>
 
           <ScrollView style={styles.list} contentContainerStyle={{ gap: 8 }}>
+            {scanning && sortedDevices.length === 0 ? (
+              <Text style={{ color: colors.text.secondary }}>
+                Buscando impresoras cercanas…
+              </Text>
+            ) : null}
             {sortedDevices.length === 0 && !scanning ? (
               <Text style={{ color: colors.text.secondary }}>
-                No se encontraron impresoras. Empareje la PT-210 en Ajustes del celular y pulse Buscar.
+                No se encontraron impresoras. Encienda la RPP02N / PT-210, acérquela y pulse Buscar.
               </Text>
             ) : (
               sortedDevices.map((device) => {

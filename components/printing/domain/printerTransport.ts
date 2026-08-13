@@ -76,3 +76,23 @@ export function iosClassicOnlyHint(devices: PrinterDevice[], platform: AppPlatfo
 
 export const IOS_BLE_UNAVAILABLE_MESSAGE =
   'Esta impresora no es visible por Bluetooth en iPhone. La PT-210 debe aparecer como BLE. En Android funciona con Bluetooth clásico.';
+
+/** iOS often returns an empty first scan while CoreBluetooth is still starting. */
+export function scanRetryDelayMs(
+  foundCount: number,
+  attempt: number,
+  maxAttempts: number
+): number | null {
+  if (foundCount > 0) return null;
+  if (attempt + 1 >= maxAttempts) return null;
+  return 400;
+}
+
+/**
+ * Native iOS scan can hang until stopScan (timer is not on the main run loop).
+ * Force-complete so the picker does not spin until the user closes it.
+ */
+export function scanWatchdogMs(platform: AppPlatform, attempt: number): number {
+  if (platform === 'ios') return attempt === 0 ? 4000 : 8000;
+  return 15000;
+}
