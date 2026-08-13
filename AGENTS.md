@@ -22,7 +22,7 @@ El proyecto utiliza:
 - Supabase (`@supabase/supabase-js`)
 - AsyncStorage / SecureStore según el caso
 - Jest + jest-expo + Testing Library
-- **pnpm** como package manager
+- **bun** como package manager
 
 No hay TanStack Query ni MUI en esta app. No introducirlos sin justificación y aprobación.
 
@@ -142,14 +142,14 @@ Buscar duplicidad en: JSX nativo, stores, services, validaciones, formularios, t
 
 ## 7. Testing
 
-- Jest (`pnpm test` / `pnpm test:ci`).
+- Jest (`bun test` / `bun run test:ci`).
 - Priorizar tests de dominio/services/utils y reglas (FIFO, credit, route state, stores parciales).
 - Hay tests en `lib/__tests__/`, `components/entries/.../__tests__/`, `lib/collection-routes/__tests__/`, etc. — seguir esos patrones.
 - Diseñar código nuevo para ser testeable (services puros, menos I/O dentro de UI).
 
 ## 8. Reglas de interacción del agente
 
-- Package manager: **pnpm**.
+- Package manager: **bun**.
 - No alucinar dependencias nativas/Expo; cualquier lib nueva debe justificarse (y considerar EAS/build).
 - **Planificación previa:** viñetas con archivos a crear/modificar y propósito antes del código.
 - Entregas completas: no dejar `// TODO: implementar el resto`.
@@ -168,7 +168,7 @@ Buscar duplicidad en: JSX nativo, stores, services, validaciones, formularios, t
 ## 10. Al implementar (tras aprobación)
 
 - Extracciones incrementales; no reescribir stores enteros de una vez sin plan.
-- Ejecutar `pnpm test` y, si aplica, flujos manuales de escaneo/login por rol.
+- Ejecutar `bun test` y, si aplica, flujos manuales de escaneo/login por rol.
 - Mantener comportamiento existente salvo que el requerimiento diga lo contrario.
 - Si tocas lógica compartida con el web (`creditCalculator`, labels, fechas), alinear ambos lados o documentar la divergencia.
 

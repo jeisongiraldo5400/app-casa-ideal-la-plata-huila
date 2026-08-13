@@ -9,7 +9,7 @@ export type PrinterDevice = {
 
 export type AppPlatform = 'ios' | 'android' | 'web';
 
-const THERMAL_PRINTER_NAME = /pt-?210|goojprt|caysn|rpp\d|rongta|mtp-?|pos[_-]?printer/i;
+const THERMAL_PRINTER_NAME = /pt-?210|goojprt|caysn|rpp\d|rongta|mtp-?|pos[_-]?printer|\bpr-?\d{3}\b/i;
 const UUID_PATTERN =
   /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const MAC_PATTERN = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;

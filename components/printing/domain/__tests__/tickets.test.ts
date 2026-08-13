@@ -165,6 +165,7 @@ describe('printerTransport', () => {
     expect(looksLikePt210('Goojprt PT210')).toBe(true);
     expect(looksLikePt210('CaysnPrinter')).toBe(true);
     expect(looksLikePt210('RPP02N_C0E9')).toBe(true);
+    expect(looksLikePt210('PR-812')).toBe(true);
     expect(looksLikePt210('iPhone')).toBe(false);
   });
 

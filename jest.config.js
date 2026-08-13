@@ -2,9 +2,9 @@ module.exports = {
   preset: 'jest-expo',
   setupFiles: ['<rootDir>/jest.setup.js'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.after.js'],
-  // pnpm instala dependencias reales bajo node_modules/.pnpm. Transformar las
-  // dependencias evita que Jest intente ejecutar directamente los módulos ESM
-  // usados por React Native y Expo.
+  // bun instala dependencias reales bajo node_modules/.pnpm (linker aislado).
+  // Transformar las dependencias evita que Jest intente ejecutar módulos ESM
+  // de React Native y Expo.
   transformIgnorePatterns: [],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',

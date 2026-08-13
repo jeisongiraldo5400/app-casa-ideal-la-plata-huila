@@ -12,7 +12,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:ci": "jest --ci --coverage --maxWorkers=2"
+    "test:ci": "jest --ci --coverage --maxWorkers=2",
+    "postinstall": "node ./scripts/patch-watermelon-jsi-cmake.js && node ./scripts/patch-thermal-printer-android.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -78,9 +79,6 @@
     "typescript": "~5.9.2"
   },
   "private": true,
-  "workspaces": [
-    "."
-  ],
   "overrides": {
     "@xmldom/xmldom": "0.8.13",
     "brace-expansion@1.1.12": "1.1.17",

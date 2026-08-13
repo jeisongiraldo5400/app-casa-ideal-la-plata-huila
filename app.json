@@ -90,6 +90,8 @@
         "@morrowdigital/watermelondb-expo-plugin",
         { "disableJsi": false }
       ],
+      "./plugins/withWatermelonJsiCmakePath",
+      "./plugins/withAndroidBluetoothPrinterPermissions",
       [
         "react-native-thermal-printer-driver",
         {

@@ -136,7 +136,8 @@ export function PrinterPickerModal() {
           </View>
 
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Encienda la impresora y acérquela. En iPhone elija el nombre tipo RPP02N, PT-210 o Goojprt — no el televisor ni el Mac.
+            Encienda la impresora y acérquela. En Android elija PR-812, PT-210 o RPP02N y acepte los permisos de
+            Bluetooth y ubicación. Si no conecta, vincúlela primero en Ajustes → Bluetooth del celular.
           </Text>
 
           {savedPrinter ? (

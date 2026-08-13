@@ -20,6 +20,7 @@ import {
   type PrinterDevice,
 } from '../domain/printerTransport';
 import type { TicketLine } from '../domain/ticketLayout';
+import { ensureAndroidBluetoothPermissions } from './printerPermissions';
 
 const PRINT_OPTIONS = {
   paperWidthMm: 58 as const,
@@ -158,6 +159,8 @@ export async function scanPrinters(
     throw new Error('La impresión Bluetooth no está disponible en web.');
   }
 
+  await ensureAndroidBluetoothPermissions();
+
   const epoch = ++scanEpoch;
   const platform = currentPlatform();
   const maxAttempts = platform === 'ios' ? 3 : 1;
@@ -194,6 +197,7 @@ export function cancelPrinterScan() {
 }
 
 export async function connectPrinter(address: string): Promise<void> {
+  await ensureAndroidBluetoothPermissions();
   await stopPrinterScan();
   await ThermalPrinter.connect(address, { timeout: 20000 });
 }
