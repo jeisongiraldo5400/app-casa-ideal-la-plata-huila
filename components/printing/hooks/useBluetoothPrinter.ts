@@ -44,6 +44,25 @@ export function useBluetoothPrinter() {
     [setPendingTicket, setPickerOpen]
   );
 
+  const printPaymentIfReady = useCallback(
+    async (data: NegocioReceiptData): Promise<boolean> => {
+      await hydrate();
+      const printer = usePrinterStore.getState().savedPrinter;
+      if (!printer) return false;
+
+      setPrinting(true);
+      try {
+        await sendTicket(printer.address, buildPaymentTicket(data));
+        return true;
+      } catch {
+        return false;
+      } finally {
+        setPrinting(false);
+      }
+    },
+    [hydrate]
+  );
+
   const printPayment = useCallback(
     async (data: NegocioReceiptData) => {
       await printLines(buildPaymentTicket(data));
@@ -79,6 +98,7 @@ export function useBluetoothPrinter() {
     pickerOpen,
     printing,
     printPayment,
+    printPaymentIfReady,
     printNegocio,
     printTest,
     openPicker,

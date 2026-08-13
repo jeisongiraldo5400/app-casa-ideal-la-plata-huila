@@ -92,7 +92,7 @@ export default function NegocioDetailScreen() {
   const [signaturesDirty, setSignaturesDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
-  const { printPayment, printNegocio, printing: printingTicket } = useBluetoothPrinter();
+  const { printPayment, printPaymentIfReady, printNegocio, printing: printingTicket } = useBluetoothPrinter();
   const paymentIdempotencyKey = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
   const cancelIdempotencyKey = useRef<string | null>(null);
@@ -361,6 +361,35 @@ export default function NegocioDetailScreen() {
     );
   };
 
+  const printReceiptAfterPago = async (input: {
+    receiptNumber: string;
+    paidAt: string;
+    amount: number;
+    physicalReceiptNumber: string | null;
+  }) => {
+    if (!negocio) return false;
+    return printPaymentIfReady({
+      receiptNumber: input.receiptNumber,
+      status: 'emitido',
+      paidAt: input.paidAt,
+      amount: input.amount,
+      physicalReceiptNumber: input.physicalReceiptNumber,
+      negocioNumero: negocio.numero,
+      customerName,
+      sellerName,
+      remainingBalance: Math.max(pendingBalance - input.amount, 0),
+    });
+  };
+
+  const notifyPagoResult = (title: string, body: string, printed: boolean) => {
+    Alert.alert(
+      title,
+      printed
+        ? `${body}\n\nRecibo impreso.`
+        : `${body}\n\nLa impresora no está conectada. Puede imprimir el recibo desde Pagos.`
+    );
+  };
+
   const registerPago = async () => {
     if (!negocio) return;
     const amount = Number(payAmount);
@@ -425,19 +454,38 @@ export default function NegocioDetailScreen() {
         setPayReceipt('');
         setPaySupportFile(null);
         setPayModalOpen(false);
+
+        let receiptNumber = payReceipt || 'Provisional';
+        let physicalReceiptNumber = payReceipt || null;
+        if (pagoId) {
+          const { data: pagoRow } = await supabase
+            .from('negocio_pagos')
+            .select('virtual_receipt_number, receipt_number')
+            .eq('id', pagoId)
+            .maybeSingle();
+          if (pagoRow?.virtual_receipt_number) {
+            receiptNumber = pagoRow.virtual_receipt_number;
+            physicalReceiptNumber = pagoRow.receipt_number;
+          }
+        }
+        const printed = await printReceiptAfterPago({
+          receiptNumber,
+          paidAt,
+          amount,
+          physicalReceiptNumber,
+        });
+
+        const successBody = routeStopId
+          ? hadSupport
+            ? 'Pago con soporte registrado y parada completada.'
+            : 'Pago registrado y parada completada.'
+          : hadSupport
+            ? 'Pago registrado con soporte.'
+            : 'Pago registrado.';
         if (supportWarning) {
-          Alert.alert('Pago registrado', supportWarning);
+          notifyPagoResult('Pago registrado', supportWarning, printed);
         } else {
-          Alert.alert(
-            'Listo',
-            routeStopId
-              ? hadSupport
-                ? 'Pago con soporte registrado y parada completada'
-                : 'Pago registrado y parada completada'
-              : hadSupport
-                ? 'Pago registrado con soporte'
-                : 'Pago registrado'
-          );
+          notifyPagoResult('Listo', successBody, printed);
         }
         await load();
       } catch (onlineError: any) {
@@ -455,9 +503,16 @@ export default function NegocioDetailScreen() {
         setPayReceipt('');
         setPaySupportFile(null);
         setPayModalOpen(false);
-        Alert.alert(
+        const printed = await printReceiptAfterPago({
+          receiptNumber: payReceipt || 'Provisional',
+          paidAt,
+          amount,
+          physicalReceiptNumber: payReceipt || null,
+        });
+        notifyPagoResult(
           'Pago guardado sin conexión',
-          'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.'
+          'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
+          printed
         );
         await load();
       }
