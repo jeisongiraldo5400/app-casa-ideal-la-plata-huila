@@ -41,6 +41,12 @@ import {
   parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import {
+  fetchAvailableDeliveryOrders,
+  formatDeliveryOrderOptionLabel,
+  stockMapFromDeliveryOrder,
+  type DeliveryOrderOption,
+} from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
 
 type Customer = {
@@ -63,6 +69,17 @@ const WIZARD_STEPS = [
   { id: 2, label: 'Crédito', icon: 'calculate' },
   { id: 3, label: 'Firma', icon: 'draw' },
 ];
+
+const PICKER_NONE = '__none__';
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'object' && error && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
 
 const localDateValue = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -113,12 +130,15 @@ export default function NegocioCreateScreen() {
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
+  const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderOption[]>([]);
+  const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m] = await Promise.all([
+        const [, d, m, orders] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -132,16 +152,18 @@ export default function NegocioCreateScreen() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .order('nombre'),
+        fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
         if (!cancelled) {
           setDepartamentos(d.data || []);
           setMunicipios(m.data || []);
+          setDeliveryOrders(orders || []);
           setInitialDataError('');
         }
-      } catch (error: any) {
-        if (!cancelled) setInitialDataError(error.message || 'No fue posible cargar los datos requeridos');
+      } catch (error: unknown) {
+        if (!cancelled) setInitialDataError(errorMessage(error, 'No fue posible cargar los datos requeridos'));
       } finally {
         if (!cancelled) setLoadingInitialData(false);
       }
@@ -198,6 +220,16 @@ export default function NegocioCreateScreen() {
   const stockProductIdsKey = [...new Set(items.map((i) => i.product_id))].sort().join(',');
 
   useEffect(() => {
+    if (originType === 'orden_entrega') {
+      try {
+        setStockByProduct(stockMapFromDeliveryOrder(selectedDeliveryOrder));
+      } catch (error: unknown) {
+        setStockByProduct({});
+        Alert.alert('Error', errorMessage(error, 'No se pudieron cargar los productos de la orden'));
+      }
+      return;
+    }
+
     const productIds = stockProductIdsKey ? stockProductIdsKey.split(',') : [];
     if (!productIds.length) {
       setStockByProduct({});
@@ -209,16 +241,16 @@ export default function NegocioCreateScreen() {
       .then((map) => {
         if (!cancelled) setStockByProduct(map);
       })
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          Alert.alert('Error', error.message || 'No se pudo consultar stock');
+          Alert.alert('Error', errorMessage(error, 'No se pudo consultar stock'));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [stockProductIdsKey]);
+  }, [stockProductIdsKey, originType, selectedDeliveryOrder]);
 
   const handleStockLoaded = useCallback(
     (productId: string, stock: ProductWarehouseStock[]) => {
@@ -251,8 +283,8 @@ export default function NegocioCreateScreen() {
     return customers
       .filter(
         (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.id_number.toLowerCase().includes(q)
+          (c.name || '').toLowerCase().includes(q) ||
+          (c.id_number || '').toLowerCase().includes(q)
       )
       .slice(0, 8);
   }, [customers, customerQuery]);
@@ -295,6 +327,9 @@ export default function NegocioCreateScreen() {
     });
   };
 
+  const customerLocked =
+    originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'customer';
+
   const canAdvanceProductsStep = () => {
     if (!items.length) return false;
     if (items.some((i) => i.unit_price <= 0 || i.quantity <= 0)) return false;
@@ -325,8 +360,8 @@ export default function NegocioCreateScreen() {
       setNewCustomerPhone('');
       setShowNewCustomerModal(false);
       Alert.alert('¡Éxito!', `Cliente ${data.name} creado y seleccionado.`);
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo crear el cliente');
+    } catch (e: unknown) {
+      Alert.alert('Error', errorMessage(e, 'No se pudo crear el cliente'));
     } finally {
       setCreatingCustomer(false);
     }
@@ -344,8 +379,10 @@ export default function NegocioCreateScreen() {
     }
     if (!itemsHaveValidStock(items, stockByProduct)) {
       return Alert.alert(
-        'Stock insuficiente',
-        'Revise la bodega y cantidad de cada producto.'
+        originType === 'orden_entrega' ? 'Cantidad no disponible' : 'Stock insuficiente',
+        originType === 'orden_entrega'
+          ? 'Revise la cantidad respecto a la orden de entrega.'
+          : 'Revise la bodega y cantidad de cada producto.'
       );
     }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
@@ -366,6 +403,12 @@ export default function NegocioCreateScreen() {
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
+        source_delivery_order_id:
+          originType === 'orden_entrega' ? selectedDeliveryOrder?.id || null : null,
+        remission_id:
+          originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'remission'
+            ? selectedDeliveryOrder.id
+            : null,
         items,
         down_payment: parsedDownPayment,
         installments_count: installmentsNumber,
@@ -379,12 +422,14 @@ export default function NegocioCreateScreen() {
       Alert.alert(
         '¡Éxito!',
         activate
-          ? `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se creó la orden de entrega.`
+          ? originType === 'orden_entrega'
+            ? `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se vinculó la orden de entrega existente.`
+            : `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se creó la orden de entrega.`
           : `Negocio ${formatNegocioCodigo(result?.numero)} guardado como borrador.`,
         [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
       );
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo crear el negocio');
+    } catch (e: unknown) {
+      Alert.alert('Error', errorMessage(e, 'No se pudo crear el negocio'));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -468,6 +513,110 @@ export default function NegocioCreateScreen() {
       >
         {step === 0 && (
           <View style={styles.block}>
+            <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Origen del inventario
+            </Text>
+            <View style={styles.rowWrap}>
+              {([
+                { id: 'bodega' as const, label: 'Bodega central' },
+                { id: 'orden_entrega' as const, label: 'Orden de entrega existente' },
+              ]).map((option) => (
+                <Pressable
+                  key={option.id}
+                  onPress={() => {
+                    setOriginType(option.id);
+                    setSelectedDeliveryOrder(null);
+                    setItems([]);
+                    if (option.id === 'bodega') {
+                      setStockByProduct({});
+                    }
+                  }}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor:
+                        originType === option.id ? colors.primary.main : colors.background.paper,
+                      borderColor: colors.divider,
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color:
+                        originType === option.id
+                          ? colors.primary.contrastText
+                          : colors.text.primary,
+                      fontWeight: '700',
+                      fontSize: 12,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+              {originType === 'bodega'
+                ? 'Se genera una orden de entrega nueva y se reserva stock.'
+                : 'Se usan productos ya salidos o reservados. No se vuelve a descontar stock.'}
+            </Text>
+            {originType === 'orden_entrega' && (
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                  Orden de entrega *
+                </Text>
+                {deliveryOrders.length === 0 ? (
+                  <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                    No hay órdenes con productos disponibles.
+                  </Text>
+                ) : (
+                  deliveryOrders.map((order) => {
+                    const selected = selectedDeliveryOrder?.id === order.id;
+                    return (
+                      <Pressable
+                        key={order.id}
+                        onPress={() => {
+                          setSelectedDeliveryOrder(order);
+                          setItems([]);
+                          if (order.order_type === 'customer' && order.customer_id) {
+                            setCustomer({
+                              id: order.customer_id,
+                              name: order.customer_name || 'Cliente',
+                              id_number: order.customer_id_number || '',
+                            });
+                          }
+                        }}
+                        style={[
+                          styles.selectedCard,
+                          {
+                            backgroundColor: selected
+                              ? colors.primary.main + '12'
+                              : colors.background.paper,
+                            borderColor: selected ? colors.primary.main : colors.divider,
+                          },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name={selected ? 'check-circle' : 'local-shipping'}
+                          size={22}
+                          color={selected ? colors.primary.main : colors.text.secondary}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.selectedCardTitle, { color: colors.text.primary }]}>
+                            {formatDeliveryOrderOptionLabel(order)}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.text.secondary }}>
+                            {order.items?.length || 0} producto(s) disponible(s)
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            )}
+
             {/* SECCIÓN CLIENTE */}
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               {pickingCodeudor ? '1. Selección de Codeudor' : '1. Selección de Cliente'}
@@ -491,8 +640,11 @@ export default function NegocioCreateScreen() {
                 <TouchableOpacity
                   style={[styles.changeBtn, { borderColor: colors.primary.main }]}
                   onPress={() => setCustomer(null)}
+                  disabled={customerLocked}
                 >
-                  <Text style={{ color: colors.primary.main, fontSize: 12, fontWeight: '700' }}>Cambiar</Text>
+                  <Text style={{ color: colors.primary.main, fontSize: 12, fontWeight: '700' }}>
+                    {customerLocked ? 'Fijado por la OE' : 'Cambiar'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : pickingCodeudor && codeudor ? (
@@ -622,16 +774,21 @@ export default function NegocioCreateScreen() {
                   </Text>
                   <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0 }]}>
                     <Picker
-                      selectedValue={departamentoId}
+                      selectedValue={departamentoId || PICKER_NONE}
                       onValueChange={(value) => {
-                        setDepartamentoId(String(value));
+                        const next = String(value) === PICKER_NONE ? '' : String(value);
+                        setDepartamentoId(next);
                         setMunicipioId('');
                       }}
                       style={{ color: colors.text.primary }}
                     >
-                      <Picker.Item label="Seleccione departamento" value="" />
+                      <Picker.Item label="Seleccione departamento" value={PICKER_NONE} />
                       {departamentos.map((departamento) => (
-                        <Picker.Item key={departamento.id} label={departamento.nombre} value={departamento.id} />
+                        <Picker.Item
+                          key={departamento.id}
+                          label={departamento.nombre || 'Departamento'}
+                          value={departamento.id}
+                        />
                       ))}
                     </Picker>
                   </View>
@@ -643,15 +800,22 @@ export default function NegocioCreateScreen() {
                   <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0, opacity: departamentoId ? 1 : 0.55 }]}>
                     <Picker
                       enabled={Boolean(departamentoId)}
-                      selectedValue={municipioId}
-                      onValueChange={(value) => setMunicipioId(String(value))}
+                      selectedValue={municipioId || PICKER_NONE}
+                      onValueChange={(value) => {
+                        const next = String(value) === PICKER_NONE ? '' : String(value);
+                        setMunicipioId(next);
+                      }}
                       style={{ color: colors.text.primary }}
                     >
-                      <Picker.Item label="Seleccione municipio" value="" />
+                      <Picker.Item label="Seleccione municipio" value={PICKER_NONE} />
                       {municipios
                         .filter((municipio) => municipio.departamento_id === departamentoId)
                         .map((municipio) => (
-                          <Picker.Item key={municipio.id} label={municipio.nombre} value={municipio.id} />
+                          <Picker.Item
+                            key={municipio.id}
+                            label={municipio.nombre || 'Municipio'}
+                            value={municipio.id}
+                          />
                         ))}
                     </Picker>
                   </View>
@@ -678,19 +842,89 @@ export default function NegocioCreateScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               2. Selección de Productos
             </Text>
-            <NegocioProductAddSection
-              products={products}
-              productQuery={productQuery}
-              onProductQueryChange={setProductQuery}
-              items={items}
-              onAdd={handleAddItem}
-              onStockLoaded={handleStockLoaded}
-              colors={colors}
-            />
+            {originType === 'orden_entrega' ? (
+              <View style={{ gap: 8 }}>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                  {selectedDeliveryOrder
+                    ? `Productos de la orden #${selectedDeliveryOrder.order_number}`
+                    : 'Regrese y seleccione una orden de entrega.'}
+                </Text>
+                {(selectedDeliveryOrder?.items || []).map((remItem) => {
+                  const alreadyAdded = items.find((i) => i.product_id === remItem.product_id);
+                  return (
+                    <View
+                      key={`${remItem.product_id}-${remItem.warehouse_id}`}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingVertical: 8,
+                        borderBottomWidth: 1,
+                        borderBottomColor: colors.divider,
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ color: colors.text.primary, fontWeight: '600' }}>
+                          {remItem.product_name}
+                        </Text>
+                        <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                          {remItem.warehouse_name} · Disp: {remItem.available_quantity}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        disabled={Boolean(alreadyAdded)}
+                        onPress={() =>
+                          handleAddItem({
+                            product_id: remItem.product_id,
+                            warehouse_id: remItem.warehouse_id,
+                            quantity: 1,
+                            description: remItem.product_name,
+                            unit_price: remItem.sale_price || 0,
+                          })
+                        }
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: alreadyAdded
+                              ? colors.background.paper
+                              : colors.primary.main,
+                            borderWidth: 1,
+                            borderColor: colors.divider,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: alreadyAdded
+                              ? colors.text.secondary
+                              : colors.primary.contrastText,
+                            fontWeight: '700',
+                            fontSize: 12,
+                          }}
+                        >
+                          {alreadyAdded ? 'Agregado' : '+ Agregar'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <NegocioProductAddSection
+                products={products}
+                productQuery={productQuery}
+                onProductQueryChange={setProductQuery}
+                items={items}
+                onAdd={handleAddItem}
+                onStockLoaded={handleStockLoaded}
+                colors={colors}
+              />
+            )}
 
             <NegocioItemsList
               items={items}
               stockByProduct={stockByProduct}
+              warehouseLocked={originType === 'orden_entrega'}
               onUpdateItem={updateItem}
               onRemoveItem={(index) =>
                 setItems((prev) => prev.filter((_, i) => i !== index))
@@ -845,7 +1079,7 @@ export default function NegocioCreateScreen() {
                 opacity:
                   loadingInitialData || initialDataError
                     ? 0.5
-                    : step === 0 && (!customer || !departamentoId || !municipioId || !direccion.trim())
+                    : step === 0 && (originType === 'orden_entrega' && !selectedDeliveryOrder || !customer || !departamentoId || !municipioId || !direccion.trim())
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
@@ -857,6 +1091,9 @@ export default function NegocioCreateScreen() {
             disabled={loadingInitialData || Boolean(initialDataError)}
             onPress={() => {
               if (step === 0) {
+                if (originType === 'orden_entrega' && !selectedDeliveryOrder) {
+                  return Alert.alert('Selección requerida', 'Seleccione una orden de entrega.');
+                }
                 if (!customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
                 if (!departamentoId) return Alert.alert('Campo requerido', 'Seleccione un departamento.');
                 if (!municipioId) return Alert.alert('Campo requerido', 'Seleccione un municipio.');

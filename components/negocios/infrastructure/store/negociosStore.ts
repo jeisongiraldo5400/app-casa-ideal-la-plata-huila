@@ -19,6 +19,7 @@ import {
   validateNegocioItemsStock,
 } from '../services/negociosStockService';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { negocioSkipsWarehouseStock } from '../services/negociosDeliveryOrdersService';
 import type { Json } from '@/types/database.types';
 
 export interface NegocioItem {
@@ -43,6 +44,7 @@ interface NegociosState {
     customer_id: string;
     codeudor_customer_id?: string | null;
     remission_id?: string | null;
+    source_delivery_order_id?: string | null;
     items: NegocioItem[];
     down_payment: number;
     installments_count: number;
@@ -72,6 +74,59 @@ interface PendingCreateRequest {
 }
 
 const pendingCreateRequests = new Map<string, PendingCreateRequest>();
+
+function toUserError(error: unknown, fallback: string): Error {
+  if (error instanceof Error && error.message.trim()) {
+    return error;
+  }
+  if (typeof error === 'object' && error && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return new Error(message);
+    }
+  }
+  return new Error(fallback);
+}
+
+function createRequestFingerprint(input: {
+  deal_date: string;
+  municipio_id: string;
+  direccion: string;
+  customer_id: string;
+  codeudor_customer_id?: string | null;
+  remission_id?: string | null;
+  source_delivery_order_id?: string | null;
+  items: NegocioItem[];
+  down_payment: number;
+  installments_count: number;
+  frequency: CreditFrequency;
+  first_due_date: string;
+  notes?: string;
+  customer_signature_data_url: string;
+  guarantor_signature_data_url?: string;
+  seller_signature_data_url?: string;
+  activate: boolean;
+}): string {
+  return JSON.stringify({
+    deal_date: input.deal_date,
+    municipio_id: input.municipio_id,
+    direccion: input.direccion,
+    customer_id: input.customer_id,
+    codeudor_customer_id: input.codeudor_customer_id || null,
+    remission_id: input.remission_id || null,
+    source_delivery_order_id: input.source_delivery_order_id || null,
+    items: input.items,
+    down_payment: input.down_payment,
+    installments_count: input.installments_count,
+    frequency: input.frequency,
+    first_due_date: input.first_due_date,
+    notes: input.notes || null,
+    activate: input.activate,
+    has_customer_signature: Boolean(input.customer_signature_data_url),
+    has_guarantor_signature: Boolean(input.guarantor_signature_data_url),
+    has_seller_signature: Boolean(input.seller_signature_data_url),
+  });
+}
 
 const isValidDateValue = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -176,7 +231,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
     if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
 
-    if (!input.remission_id) {
+    if (!negocioSkipsWarehouseStock(input)) {
       const stockCheck = await validateNegocioItemsStock(input.items);
       if (!stockCheck.ok) {
         throw new Error(stockCheck.message);
@@ -200,7 +255,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       throw new Error('Se requiere firma del cliente para activar');
     }
 
-    const requestFingerprint = JSON.stringify(input);
+    const requestFingerprint = createRequestFingerprint(input);
     let request = pendingCreateRequests.get(requestFingerprint);
     if (!request) {
       request = {
@@ -239,6 +294,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
         remission_id: input.remission_id || null,
+        source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
         products_subtotal: calc.productsSubtotal,
         interest_amount: calc.interestAmount,
         total_credit: calc.totalCredit,
@@ -278,7 +334,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         request.signaturePromise = undefined;
         pendingCreateRequests.delete(requestFingerprint);
       }
-      throw error || new Error('No se pudo crear el negocio');
+      throw toUserError(error, 'No se pudo crear el negocio');
     }
 
     const { data: negocio, error: loadError } = await supabase
@@ -286,7 +342,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       .select('id, numero')
       .eq('id', negocioId)
       .single();
-    if (loadError || !negocio) throw loadError || new Error('No se pudo cargar el negocio creado');
+    if (loadError || !negocio) {
+      throw toUserError(loadError, 'No se pudo cargar el negocio creado');
+    }
 
     pendingCreateRequests.delete(requestFingerprint);
 

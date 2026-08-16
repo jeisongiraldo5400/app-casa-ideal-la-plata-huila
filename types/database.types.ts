@@ -1121,6 +1121,7 @@ export type Database = {
           seller_id: string
           seller_signature_url: string | null
           signed_at: string | null
+          source_delivery_order_id: string | null
           status: string
           total_credit: number
           updated_at: string
@@ -1156,6 +1157,7 @@ export type Database = {
           seller_id: string
           seller_signature_url?: string | null
           signed_at?: string | null
+          source_delivery_order_id?: string | null
           status?: string
           total_credit?: number
           updated_at?: string
@@ -1191,6 +1193,7 @@ export type Database = {
           seller_id?: string
           seller_signature_url?: string | null
           signed_at?: string | null
+          source_delivery_order_id?: string | null
           status?: string
           total_credit?: number
           updated_at?: string
@@ -1198,6 +1201,7 @@ export type Database = {
         Relationships: [
           { foreignKeyName: "negocios_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
           { foreignKeyName: "negocios_municipio_id_fkey"; columns: ["municipio_id"]; isOneToOne: false; referencedRelation: "municipios"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocios_source_delivery_order_id_fkey"; columns: ["source_delivery_order_id"]; isOneToOne: false; referencedRelation: "delivery_orders"; referencedColumns: ["id"] },
         ]
       }
       negocio_gestor_historial: {

@@ -19,6 +19,7 @@ type ThemeColors = {
 type Props = {
   items: NegocioItem[];
   stockByProduct: Record<string, ProductWarehouseStock[]>;
+  warehouseLocked?: boolean;
   onUpdateItem: (
     index: number,
     patch: Partial<Pick<NegocioItem, 'quantity' | 'unit_price' | 'warehouse_id'>>
@@ -30,6 +31,7 @@ type Props = {
 export function NegocioItemsList({
   items,
   stockByProduct,
+  warehouseLocked = false,
   onUpdateItem,
   onRemoveItem,
   colors,
@@ -70,7 +72,11 @@ export function NegocioItemsList({
             <Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 4 }}>
               Bodega
             </Text>
-            {stockOptions.length === 0 ? (
+            {warehouseLocked ? (
+              <Text style={{ color: colors.text.primary, fontSize: 13 }}>
+                {warehouseName}
+              </Text>
+            ) : stockOptions.length === 0 ? (
               <Text style={{ color: 'crimson', fontSize: 12 }}>Sin stock</Text>
             ) : (
               <View style={styles.rowWrap}>
