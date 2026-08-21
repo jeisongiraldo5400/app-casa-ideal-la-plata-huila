@@ -328,12 +328,13 @@ export async function registerPagoOffline(input: {
   amount: number;
   paidAt: string;
   receiptNumber: string | null;
+  idempotencyKey?: string | null;
   routeStopId?: string | null;
   supportFile?: PagoSupportLocalFile | null;
 }) {
   const database = getDatabase();
   const pagoLocalId = createIdempotencyKey();
-  const idempotencyKey = createIdempotencyKey();
+  const idempotencyKey = input.idempotencyKey || createIdempotencyKey();
   const cuotas = await database
     .get<NegocioCuota>('negocio_cuotas')
     .query(Q.where('negocio_id', input.negocioId))

@@ -1,4 +1,4 @@
-import { localDateValue } from '../localDate';
+import { formatPaymentDateTime, localDateValue } from '../localDate';
 
 describe('localDateValue', () => {
   it('formatea la fecha calendario local como YYYY-MM-DD', () => {
@@ -13,5 +13,17 @@ describe('localDateValue', () => {
       String(lateLocal.getDate()).padStart(2, '0'),
     ].join('-');
     expect(localDateValue(lateLocal)).toBe(expected);
+  });
+});
+
+describe('formatPaymentDateTime', () => {
+  it('presenta el timestamp en hora Colombia', () => {
+    expect(formatPaymentDateTime('2026-08-22T02:35:00.000Z')).toBe(
+      '21/08/2026 21:35'
+    );
+  });
+
+  it('tolera pagos antiguos que solo tienen fecha', () => {
+    expect(formatPaymentDateTime('2026-08-21')).toBe('21/08/2026');
   });
 });

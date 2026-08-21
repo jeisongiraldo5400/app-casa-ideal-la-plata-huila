@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { formatPaymentDateTime } from '@/lib/localDate';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import {
   fetchManagerBusinesses,
@@ -461,7 +462,7 @@ export function CollectionManagerPaymentsModal({
                     {formatNegocioCodigo(p.negocio_numero)} · {p.customer_name}
                   </Text>
                   <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                    {p.paid_at} ·{' '}
+                    {formatPaymentDateTime(p.paid_at)} ·{' '}
                     {p.installment_number
                       ? `Cuota ${p.installment_number}`
                       : 'Auto (FIFO)'}

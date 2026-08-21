@@ -1,5 +1,6 @@
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { formatPaymentDateTime } from '@/lib/localDate';
 import {
   formatTicketMoney,
   padRow,
@@ -22,7 +23,7 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...textLines(`Recibo: ${data.receiptNumber}`),
     ...textLines(`Negocio: ${formatNegocioCodigo(data.negocioNumero)}`),
     ...textLines(`Cliente: ${data.customerName}`),
-    ...textLines(`Fecha: ${data.paidAt}`),
+    ...textLines(`Fecha y hora: ${formatPaymentDateTime(data.paidAt)}`),
     ...textLines(`Recibo fisico: ${data.physicalReceiptNumber || 'No aplica'}`),
     ...textLines(`Registrado por: ${data.sellerName || 'Casa Ideal'}`),
     { type: 'separator' },

@@ -23,7 +23,7 @@ import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 const receipt: NegocioReceiptData = {
   receiptNumber: 'RV-2026-001',
   status: 'emitido',
-  paidAt: '2026-08-12',
+  paidAt: '2026-08-12T15:45:00.000Z',
   amount: 150000,
   physicalReceiptNumber: 'F-88',
   negocioNumero: 2026001,
@@ -84,6 +84,7 @@ describe('buildPaymentTicket', () => {
     expect(texts).toContain('2026001');
     expect(texts).toContain('José Peña Restrepo');
     expect(texts).toContain('F-88');
+    expect(texts).toContain('12/08/2026 10:45');
     expect(texts).toContain('Valor recibido');
     expect(texts).toContain('Saldo pendiente');
     expect(texts).not.toContain('RECIBO ANULADO');

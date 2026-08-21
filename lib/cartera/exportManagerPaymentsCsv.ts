@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { formatPaymentDateTime } from '@/lib/localDate';
 import {
   fetchManagerPayments,
   type CollectionManager,
@@ -92,7 +93,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
   const generatedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const header = [
-    'Fecha pago',
+    'Fecha y hora pago',
     'Código negocio',
     'Cliente',
     'Cuota',
@@ -108,7 +109,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
 
   const detailLines = rows.map((payment) =>
     [
-      payment.paid_at,
+      formatPaymentDateTime(payment.paid_at),
       formatNegocioCodigo(payment.negocio_numero),
       payment.customer_name,
       payment.installment_number != null

@@ -30,7 +30,7 @@ import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
-import { localDateValue } from '@/lib/localDate';
+import { formatPaymentDateTime } from '@/lib/localDate';
 import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
@@ -100,6 +100,7 @@ export default function NegocioDetailScreen() {
   const [actionSaving, setActionSaving] = useState(false);
   const { printPayment, printPaymentIfReady, printNegocio, printing: printingTicket } = useBluetoothPrinter();
   const paymentIdempotencyKey = useRef<string | null>(null);
+  const paymentPaidAt = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
   const cancelIdempotencyKey = useRef<string | null>(null);
 
@@ -458,7 +459,8 @@ export default function NegocioDetailScreen() {
     try {
       setSaving(true);
       paymentIdempotencyKey.current ||= createIdempotencyKey();
-      const paidAt = localDateValue();
+      paymentPaidAt.current ||= new Date().toISOString();
+      const paidAt = paymentPaidAt.current;
       try {
         const { data, error } = routeStopId
           ? await supabase.rpc('register_collection_route_payment', {
@@ -482,6 +484,7 @@ export default function NegocioDetailScreen() {
         if (error) throw error;
         const pagoId = String(data || '');
         paymentIdempotencyKey.current = null;
+        paymentPaidAt.current = null;
 
         let supportWarning = '';
         if (paySupportFile && pagoId) {
@@ -506,20 +509,22 @@ export default function NegocioDetailScreen() {
 
         let receiptNumber = payReceipt || 'Provisional';
         let physicalReceiptNumber = payReceipt || null;
+        let persistedPaidAt = paidAt;
         if (pagoId) {
           const { data: pagoRow } = await supabase
             .from('negocio_pagos')
-            .select('virtual_receipt_number, receipt_number')
+            .select('virtual_receipt_number, receipt_number, paid_at')
             .eq('id', pagoId)
             .maybeSingle();
           if (pagoRow?.virtual_receipt_number) {
             receiptNumber = pagoRow.virtual_receipt_number;
             physicalReceiptNumber = pagoRow.receipt_number;
           }
+          if (pagoRow?.paid_at) persistedPaidAt = pagoRow.paid_at;
         }
         const printed = await printReceiptAfterPago({
           receiptNumber,
-          paidAt,
+          paidAt: persistedPaidAt,
           amount,
           physicalReceiptNumber,
         });
@@ -544,10 +549,12 @@ export default function NegocioDetailScreen() {
           amount,
           paidAt,
           receiptNumber: payReceipt || null,
+          idempotencyKey: paymentIdempotencyKey.current,
           routeStopId: routeStopId || null,
           supportFile: paySupportFile,
         });
         paymentIdempotencyKey.current = null;
+        paymentPaidAt.current = null;
         setPayAmount('');
         setPayReceipt('');
         setPaySupportFile(null);
@@ -1044,7 +1051,7 @@ export default function NegocioDetailScreen() {
                     <View style={[styles.paymentIcon, { backgroundColor: `${colors.success.main}18` }]}><MaterialIcons name="receipt-long" size={23} color={colors.success.main} /></View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.paymentValue, { color: colors.text.primary }]}>{formatCOP(Number(pago.amount))}</Text>
-                      <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{pago.paid_at} · {pago.virtual_receipt_number}</Text>
+                      <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{formatPaymentDateTime(pago.paid_at)} · {pago.virtual_receipt_number}</Text>
                       <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text>
                       <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>
                         Soporte: {pago.support_path ? (pago.support_file_name || 'Adjunto') : 'Sin adjunto'}
@@ -1196,6 +1203,7 @@ export default function NegocioDetailScreen() {
                 }}
                 onChangeText={(value) => {
                   paymentIdempotencyKey.current = null;
+                  paymentPaidAt.current = null;
                   setPayAmount(value.split(',')[0].replace(/\D/g, '').slice(0, 12));
                 }}
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
@@ -1207,6 +1215,7 @@ export default function NegocioDetailScreen() {
                 value={payReceipt}
                 onChangeText={(value) => {
                   paymentIdempotencyKey.current = null;
+                  paymentPaidAt.current = null;
                   setPayReceipt(value);
                 }}
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
