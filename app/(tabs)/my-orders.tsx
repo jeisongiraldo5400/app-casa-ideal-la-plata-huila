@@ -7,7 +7,7 @@ import { Database } from '@/types/database.types';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,7 @@ export default function MyOrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [startingOrderId, setStartingOrderId] = useState<string | null>(null);
+  const openingOrderRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -88,8 +89,9 @@ export default function MyOrdersScreen() {
   }, [orders, search]);
 
   const openExit = async (order: AuthorizedDeliveryOrder) => {
-    if (!user || order.pending_quantity <= 0) return;
+    if (!user || order.pending_quantity <= 0 || openingOrderRef.current) return;
 
+    openingOrderRef.current = true;
     setStartingOrderId(order.id);
     try {
       const exits = useExitsStore.getState();
@@ -142,6 +144,7 @@ export default function MyOrdersScreen() {
       const message = error instanceof Error ? error.message : 'No fue posible preparar la salida.';
       Alert.alert('No se pudo abrir la salida', message);
     } finally {
+      openingOrderRef.current = false;
       setStartingOrderId(null);
     }
   };
@@ -217,7 +220,23 @@ export default function MyOrdersScreen() {
               const isCustomerOrder = Boolean(order.customer_id);
 
               return (
-                <View key={order.id} style={[styles.orderCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+                <TouchableOpacity
+                  key={order.id}
+                  testID={`assigned-order-${order.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Registrar salida de ${order.order_number || 'orden sin consecutivo'}`}
+                  style={[
+                    styles.orderCard,
+                    {
+                      backgroundColor: colors.background.paper,
+                      borderColor: colors.divider,
+                      opacity: startingOrderId && !isStarting ? 0.6 : 1,
+                    },
+                  ]}
+                  disabled={Boolean(startingOrderId) || order.pending_quantity <= 0}
+                  onPress={() => openExit(order)}
+                  activeOpacity={0.82}
+                >
                   <View style={styles.orderTopRow}>
                     <View>
                       <Text style={[styles.orderNumber, { color: colors.text.primary }]}>{order.order_number || 'Orden sin consecutivo'}</Text>
@@ -250,16 +269,13 @@ export default function MyOrdersScreen() {
                   </View>
                   <Text style={[styles.itemsText, { color: colors.text.secondary }]}>{order.total_items} {order.total_items === 1 ? 'producto' : 'productos'}</Text>
 
-                  <TouchableOpacity
+                  <View
                     style={[styles.exitButton, { backgroundColor: colors.primary.main, opacity: isStarting ? 0.7 : 1 }]}
-                    disabled={isStarting || order.pending_quantity <= 0}
-                    onPress={() => openExit(order)}
-                    activeOpacity={0.85}
                   >
                     {isStarting ? <ActivityIndicator color={colors.primary.contrastText} /> : <MaterialIcons name="local-shipping" size={19} color={colors.primary.contrastText} />}
                     <Text style={[styles.exitButtonText, { color: colors.primary.contrastText }]}>{isStarting ? 'Preparando…' : 'Registrar salida'}</Text>
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                </TouchableOpacity>
               );
             })}
           </>
