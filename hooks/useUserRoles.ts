@@ -43,6 +43,7 @@ export function useUserRoles() {
 
         if (!userRolesData || userRolesData.length === 0) {
           setRoles([]);
+          await setCachedRoles({ userId: user.id, roles: [] });
           setLoading(false);
           return;
         }

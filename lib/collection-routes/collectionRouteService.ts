@@ -94,6 +94,7 @@ export async function fetchCollectionRoute(routeId: string) {
     await cacheActiveRoute(route);
     return route;
   } catch (error) {
+    if (!isNetworkError(error)) throw error;
     const local = await fetchRouteFromLocal(routeId);
     if (local) return local;
     throw error;

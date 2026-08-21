@@ -1,6 +1,7 @@
 import { classifyPushError, nextRetryAt, canRetry } from '../retryPolicy';
 import { resolveCustomerIdNumberConflict } from '../conflictPolicy';
 import { isOfflineSessionValid, isNetworkError, shouldLockApp } from '../../security/sessionPolicy';
+import { assertPullIsComplete, type PullPayload } from '../types';
 
 describe('retryPolicy', () => {
   it('clasifica errores de negocio vs red', () => {
@@ -14,6 +15,15 @@ describe('retryPolicy', () => {
     expect(canRetry('error', 8, Date.now() - 1)).toBe(false);
     expect(canRetry('pending', 0, Date.now() - 1)).toBe(true);
     expect(nextRetryAt(0, 1_000)).toBe(2_000);
+  });
+});
+
+describe('pullPolicy', () => {
+  it('rechaza un pull truncado antes de avanzar el cursor local', () => {
+    expect(() => assertPullIsComplete({ truncated: true } as PullPayload, 2000))
+      .toThrow(/2000 negocios/i);
+    expect(() => assertPullIsComplete({ truncated: false } as PullPayload, 2000))
+      .not.toThrow();
   });
 });
 

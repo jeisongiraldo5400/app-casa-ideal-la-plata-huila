@@ -17,6 +17,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
@@ -32,14 +33,23 @@ export default function CollectionRouteDetailScreen() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
+    setLoading(true);
+    setLoadError('');
     try { setRoute(await fetchCollectionRoute(id)); }
     catch (e: any) {
-      const cached = await getCachedActiveRoute();
-      if (cached?.id === id) setRoute(cached);
-      else Alert.alert('No fue posible cargar la ruta', e.message);
+      if (isNetworkError(e)) {
+        const cached = await getCachedActiveRoute();
+        if (cached?.id === id) {
+          setRoute(cached);
+          return;
+        }
+      }
+      setRoute(null);
+      setLoadError(e.message || 'No fue posible cargar la ruta');
     }
     finally { setLoading(false); }
   }, [id]);
@@ -51,7 +61,8 @@ export default function CollectionRouteDetailScreen() {
     finally { setSaving(false); }
   };
 
-  if (loading || !route) return <View style={styles.center}><ActivityIndicator color={colors.primary.main} /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator color={colors.primary.main} /></View>;
+  if (!route) return <View style={styles.center}><MaterialIcons name="error-outline" size={42} color={colors.error.main} /><Text style={{ color: colors.text.primary, textAlign: 'center' }}>{loadError || 'No fue posible cargar la ruta'}</Text><TouchableOpacity onPress={() => void load()} style={[styles.primaryButton, { backgroundColor: colors.primary.main }]}><Text style={styles.buttonText}>Reintentar</Text></TouchableOpacity></View>;
   const progress = getRouteProgress(route.stops);
   const allDone = progress.total > 0 && progress.completed === progress.total;
   const activeStop = route.stops.find((stop) => stop.status === 'actual');

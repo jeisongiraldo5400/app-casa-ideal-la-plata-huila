@@ -11,15 +11,18 @@ import {
   markOutboxRetry,
   markOutboxSyncing,
   markOutboxTerminal,
+  recoverInterruptedOutbox,
   setMeta,
 } from './outbox';
 import { pushOutboxItem } from './pushCommands';
 import { canRetry, OUTBOX_MAX_ATTEMPTS } from './retryPolicy';
-import type { PullPayload } from './types';
+import { assertPullIsComplete, type PullPayload } from './types';
 import { useSyncStore } from '../store/syncStore';
 import { wipeLocalOfflineData } from '../security/wipe';
 import { setCachedRoles, setLastOnlineVerifiedAt } from '../security/secureKeys';
 import { FileUpload, NegocioPago } from '../models';
+
+const PULL_LIMIT = 2000;
 
 let started = false;
 let inFlight: Promise<void> | null = null;
@@ -57,6 +60,7 @@ export async function runSync(reason: 'manual' | 'reconnect' | 'foreground' | 'm
     if (!userId) return;
     useSyncStore.getState().setStatus('syncing');
     try {
+      await recoverInterruptedOutbox(getDatabase());
       await pushDueOutbox();
       await pullRemote(userId);
       await refreshPendingCount();
@@ -64,6 +68,12 @@ export async function runSync(reason: 'manual' | 'reconnect' | 'foreground' | 'm
       useSyncStore.getState().setLastError(null);
       useSyncStore.getState().setLastSyncedAt(Date.now());
     } catch (error: any) {
+      if (!useSyncStore.getState().userId) {
+        useSyncStore.getState().setStatus('idle');
+        useSyncStore.getState().setPendingCount(0);
+        useSyncStore.getState().setLastError(null);
+        return;
+      }
       useSyncStore.getState().setStatus('error');
       useSyncStore.getState().setLastError(error?.message || 'No se pudo sincronizar');
     }
@@ -78,27 +88,28 @@ async function pullRemote(userId: string) {
   const lastPulledAt = await getMeta(database, 'last_pulled_at');
   const { data, error } = await supabase.rpc('pull_mobile_sync', {
     p_last_pulled_at: lastPulledAt,
-    p_limit: 500,
+    p_limit: PULL_LIMIT,
   });
   if (error) throw error;
   const payload = data as PullPayload;
   if (payload.must_wipe) {
     await wipeLocalOfflineData();
+    useSyncStore.getState().setUserId(null);
+    await supabase.auth.signOut({ scope: 'local' });
     throw new Error('Este dispositivo debe volver a iniciar sesión');
   }
+  assertPullIsComplete(payload, PULL_LIMIT);
   await applyPullPayload(database, payload, userId);
   await setMeta(database, 'last_pulled_at', payload.server_time);
   await setLastOnlineVerifiedAt();
-  if (payload.roles?.length) {
-    await setCachedRoles({
-      userId,
-      roles: payload.roles.map((role) => ({
-        id: role.id,
-        role_id: role.role_id,
-        role: { id: role.role_id, nombre: role.nombre },
-      })),
-    });
-  }
+  await setCachedRoles({
+    userId,
+    roles: (payload.roles || []).map((role) => ({
+      id: role.id,
+      role_id: role.role_id,
+      role: { id: role.role_id, nombre: role.nombre },
+    })),
+  });
 }
 
 async function pushDueOutbox() {

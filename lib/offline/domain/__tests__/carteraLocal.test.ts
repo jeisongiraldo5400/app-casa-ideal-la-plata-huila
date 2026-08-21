@@ -4,6 +4,7 @@ import {
   searchCustomersLocal,
   summarizeCarteraFromCuotas,
 } from '../carteraLocal';
+import * as localDate from '@/lib/localDate';
 
 const cuotas = [
   { id: 'c1', dueDate: '2026-08-01', amount: 100, paidAmount: 0, lateFeeAmount: 10, status: 'pendiente' },
@@ -34,6 +35,14 @@ describe('filterCarteraCuotas', () => {
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
+  });
+
+  it('usa la fecha calendario local por defecto', () => {
+    jest.spyOn(localDate, 'localDateValue').mockReturnValue('2026-08-20');
+    expect(filterCarteraCuotas(rows, {
+      filter: 'vencidas', search: '', days: 15, municipioId: '',
+    })).toHaveLength(1);
+    jest.restoreAllMocks();
   });
 });
 

@@ -48,6 +48,7 @@ import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalDb,
   fetchNegocioDetailFromLocal,
+  queuePagoSupportUpload,
   registerPagoOffline,
 } from '@/lib/offline/repositories/offlineRepository';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
@@ -492,9 +493,27 @@ export default function NegocioDetailScreen() {
               file: paySupportFile,
             });
           } catch (supportError: any) {
-            supportWarning =
-              supportError?.message ||
-              'El pago quedó registrado, pero no se adjuntó el soporte.';
+            if (canUseLocalDb()) {
+              try {
+                await queuePagoSupportUpload({
+                  negocioId: negocio.id,
+                  pagoLocalId: null,
+                  pagoServerId: pagoId,
+                  file: paySupportFile,
+                });
+                supportWarning =
+                  'El pago quedó registrado. El soporte se adjuntará automáticamente cuando se recupere la conexión.';
+              } catch (queueError: unknown) {
+                supportWarning =
+                  (queueError instanceof Error ? queueError.message : '') ||
+                  supportError?.message ||
+                  'El pago quedó registrado, pero no se pudo conservar el soporte.';
+              }
+            } else {
+              supportWarning =
+                supportError?.message ||
+                'El pago quedó registrado, pero no se adjuntó el soporte.';
+            }
           }
         }
 
@@ -541,7 +560,7 @@ export default function NegocioDetailScreen() {
         await load();
       } catch (onlineError: any) {
         if (!isNetworkError(onlineError) || !canUseLocalDb()) throw onlineError;
-        await registerPagoOffline({
+        const offlineResult = await registerPagoOffline({
           negocioId: negocio.id,
           amount,
           paidAt,
@@ -564,7 +583,9 @@ export default function NegocioDetailScreen() {
         });
         notifyPagoResult(
           'Pago guardado sin conexión',
-          'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
+          offlineResult.supportWarning
+            ? `Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.\n\nSoporte: ${offlineResult.supportWarning}`
+            : 'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
           printed
         );
         await load({ preferLocal: true });

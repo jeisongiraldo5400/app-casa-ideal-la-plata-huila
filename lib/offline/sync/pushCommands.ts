@@ -4,6 +4,7 @@ import { getDatabase } from '../database';
 import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
 import { classifyPushError } from './retryPolicy';
+import { deleteLocalPagoSupportFile } from '../security/localFiles';
 import type {
   AttachPagoSupportPayload,
   CreateCustomerPayload,
@@ -147,6 +148,9 @@ async function pushAttachSupport(payload: AttachPagoSupportPayload): Promise<Pus
   } catch {
     return { outcome: 'fail', message: 'No se encontró el archivo de soporte local' };
   }
+  if (upload.status === 'done') {
+    return { outcome: 'done' };
+  }
   if (!upload.pagoServerId) {
     return { outcome: 'retry', message: 'El pago aún no tiene id de servidor' };
   }
@@ -162,5 +166,6 @@ async function pushAttachSupport(payload: AttachPagoSupportPayload): Promise<Pus
   await upload.update((record) => {
     record.status = 'done';
   });
+  await deleteLocalPagoSupportFile(upload.localUri);
   return { outcome: 'done' };
 }

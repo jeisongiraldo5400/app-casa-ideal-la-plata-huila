@@ -1,5 +1,4 @@
 import { Q } from '@nozbe/watermelondb';
-import * as FileSystem from 'expo-file-system/legacy';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import type { CarteraFilter, CarteraRow, Municipio } from '@/lib/cartera/carteraService';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
@@ -24,10 +23,14 @@ import {
   summarizeCarteraFromCuotas,
 } from '../domain/carteraLocal';
 import { mapNegocioDetailFromLocal, mapNegociosListFromLocal } from '../domain/negociosLocal';
-import { enqueueOutbox } from '../sync/outbox';
+import { createOutboxRecord, enqueueOutbox } from '../sync/outbox';
 import { runSync } from '../sync/syncEngine';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
 import { PAGO_SUPPORT_BUCKET } from '@/lib/uploadPagoSupport';
+import {
+  deleteLocalPagoSupportFile,
+  persistPagoSupportFile,
+} from '../security/localFiles';
 
 export function canUseLocalDb() {
   return isDatabaseOpen();
@@ -335,6 +338,16 @@ export async function registerPagoOffline(input: {
   const database = getDatabase();
   const pagoLocalId = createIdempotencyKey();
   const idempotencyKey = input.idempotencyKey || createIdempotencyKey();
+  const paymentCommandType = input.routeStopId ? 'register_route_pago' : 'register_pago';
+  const paymentPayload = {
+    pagoLocalId,
+    negocioId: input.negocioId,
+    amount: input.amount,
+    paidAt: input.paidAt,
+    receiptNumber: input.receiptNumber,
+    notes: null,
+    routeStopId: input.routeStopId || null,
+  };
   const cuotas = await database
     .get<NegocioCuota>('negocio_cuotas')
     .query(Q.where('negocio_id', input.negocioId))
@@ -392,55 +405,77 @@ export async function registerPagoOffline(input: {
         // Stop may not be cached yet.
       }
     }
+    await createOutboxRecord(
+      database,
+      paymentCommandType,
+      paymentPayload,
+      idempotencyKey
+    );
   });
 
+  let supportWarning: string | null = null;
   if (input.supportFile) {
-    const destDir = `${FileSystem.documentDirectory || FileSystem.cacheDirectory || ''}pago-soportes`;
-    const dest = `${destDir}/${pagoLocalId}-${input.supportFile.name}`;
-    await FileSystem.makeDirectoryAsync(destDir, {
-      intermediates: true,
-    }).catch(() => undefined);
-    await FileSystem.copyAsync({ from: input.supportFile.uri, to: dest });
-    await database.write(async () => {
-      await database.get<FileUpload>('file_uploads').create((record) => {
-        record.localUri = dest;
-        record.mime = input.supportFile!.mimeType;
-        record.fileName = input.supportFile!.name;
-        record.bucket = PAGO_SUPPORT_BUCKET;
-        record.negocioId = input.negocioId;
-        record.pagoLocalId = pagoLocalId;
-        record.pagoServerId = null;
-        record.status = 'pending';
-        record.lastError = null;
-      });
-    });
-    const uploads = await database.get<FileUpload>('file_uploads').query().fetch();
-    const created = uploads.find((row) => row.pagoLocalId === pagoLocalId);
-    if (created) {
-      await enqueueOutbox(database, 'attach_pago_support', {
-        fileUploadId: created.id,
+    try {
+      await queuePagoSupportUpload({
         negocioId: input.negocioId,
         pagoLocalId,
+        pagoServerId: null,
+        file: input.supportFile,
       });
+    } catch (error) {
+      supportWarning =
+        error instanceof Error
+          ? error.message
+          : 'El pago quedó guardado, pero no se pudo conservar el soporte';
     }
   }
 
-  await enqueueOutbox(
-    database,
-    input.routeStopId ? 'register_route_pago' : 'register_pago',
-    {
-      pagoLocalId,
-      negocioId: input.negocioId,
-      amount: input.amount,
-      paidAt: input.paidAt,
-      receiptNumber: input.receiptNumber,
-      notes: null,
-      routeStopId: input.routeStopId || null,
-    },
-    idempotencyKey
-  );
   void runSync('mutation');
-  return { pagoLocalId, pendingReceipt: true };
+  return { pagoLocalId, pendingReceipt: true, supportWarning };
+}
+
+export async function queuePagoSupportUpload(input: {
+  negocioId: string;
+  pagoLocalId: string | null;
+  pagoServerId: string | null;
+  file: PagoSupportLocalFile;
+}) {
+  const database = getDatabase();
+  const fileLocalId = createIdempotencyKey();
+  const localUri = await persistPagoSupportFile(
+    input.file.uri,
+    fileLocalId,
+    input.file.name
+  );
+
+  let upload: FileUpload;
+  try {
+    upload = await database.write(async () => {
+      const created = await database.get<FileUpload>('file_uploads').create((record) => {
+        record.localUri = localUri;
+        record.mime = input.file.mimeType;
+        record.fileName = input.file.name;
+        record.bucket = PAGO_SUPPORT_BUCKET;
+        record.negocioId = input.negocioId;
+        record.pagoLocalId = input.pagoLocalId;
+        record.pagoServerId = input.pagoServerId;
+        record.status = 'pending';
+        record.lastError = null;
+      });
+      await createOutboxRecord(database, 'attach_pago_support', {
+        fileUploadId: created.id,
+        negocioId: input.negocioId,
+        pagoLocalId: input.pagoLocalId || input.pagoServerId || '',
+      });
+      return created;
+    });
+  } catch (error) {
+    await deleteLocalPagoSupportFile(localUri);
+    throw error;
+  }
+
+  void runSync('mutation');
+  return upload;
 }
 
 export async function fetchRoutesFromLocal(): Promise<CollectionRouteSummary[] | null> {

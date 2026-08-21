@@ -152,6 +152,13 @@ export type PullPayload = {
   municipios: CollectionChanges<PullMunicipio>;
 };
 
+export function assertPullIsComplete(payload: PullPayload, limit: number) {
+  if (!payload.truncated) return;
+  throw new Error(
+    `La descarga supera el límite seguro de ${limit} negocios. No se reemplazaron los datos locales; se requiere paginación en el servidor.`
+  );
+}
+
 export function toEpoch(value: string | null | undefined): number | null {
   if (!value) return null;
   const parsed = Date.parse(value);

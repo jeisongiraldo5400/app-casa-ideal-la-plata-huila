@@ -3,7 +3,6 @@ import { create } from 'zustand';
 
 import { Database } from '@/types/database.types';
 
-type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 
 // Tipo para el resultado de get_products_dashboard RPC
@@ -36,7 +35,7 @@ interface InventoryState {
   totalCount: number;
   hasMore: boolean;
   loadWarehouses: () => Promise<void>;
-  loadInventory: (warehouseId?: string) => Promise<void>;
+  loadInventory: (warehouseId?: string, append?: boolean) => Promise<void>;
   setSelectedWarehouse: (warehouseId: string | null) => void;
   setSearchQuery: (query: string) => void;
   setPage: (page: number) => void;
@@ -44,6 +43,8 @@ interface InventoryState {
   loadNextPage: () => Promise<void>;
   clearError: () => void;
 }
+
+let latestInventoryRequestId = 0;
 
 export const useInventoryStore = create<InventoryState>((set, get) => ({
   inventory: [],
@@ -83,9 +84,10 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     }
   },
 
-  loadInventory: async (warehouseId?: string) => {
+  loadInventory: async (warehouseId?: string, append = false) => {
     const { searchQuery, currentPage, pageSize } = get();
     const targetWarehouseId = warehouseId || get().selectedWarehouseId;
+    const requestId = ++latestInventoryRequestId;
 
     set({ loading: true, error: null });
 
@@ -97,14 +99,26 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         search_term: searchQuery || null,
       });
 
+      if (requestId !== latestInventoryRequestId) return;
+
       if (error) {
         console.error('Error loading inventory:', error);
-        set({ inventory: [], loading: false, error: error.message });
+        set((state) => ({
+          inventory: append ? state.inventory : [],
+          currentPage: append ? Math.max(currentPage - 1, 1) : currentPage,
+          loading: false,
+          error: error.message,
+        }));
         return;
       }
 
       if (!data || data.length === 0) {
-        set({ inventory: [], loading: false, totalCount: 0, hasMore: false });
+        set((state) => ({
+          inventory: append ? state.inventory : [],
+          loading: false,
+          totalCount: append ? state.totalCount : 0,
+          hasMore: false,
+        }));
         return;
       }
 
@@ -160,15 +174,28 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
 
       const hasMore = totalCount > currentPage * pageSize;
 
-      set({
-        inventory: filteredItems,
+      set((state) => ({
+        inventory: append
+          ? [
+              ...state.inventory,
+              ...filteredItems.filter(
+                (item) => !state.inventory.some((current) => current.id === item.id)
+              ),
+            ]
+          : filteredItems,
         loading: false,
         totalCount,
         hasMore,
-      });
+      }));
     } catch (error: any) {
+      if (requestId !== latestInventoryRequestId) return;
       console.error('Error loading inventory (catch):', error);
-      set({ inventory: [], loading: false, error: error.message || 'Error al cargar el inventario' });
+      set((state) => ({
+        inventory: append ? state.inventory : [],
+        currentPage: append ? Math.max(currentPage - 1, 1) : currentPage,
+        loading: false,
+        error: error.message || 'Error al cargar el inventario',
+      }));
     }
   },
 
@@ -198,7 +225,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     if (!hasMore || loading) return;
 
     set({ currentPage: currentPage + 1 });
-    await get().loadInventory();
+    await get().loadInventory(undefined, true);
   },
 
   clearError: () => {

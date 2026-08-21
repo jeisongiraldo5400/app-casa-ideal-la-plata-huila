@@ -15,10 +15,10 @@ export function InventoryList() {
     loadInventory,
   } = useInventory();
 
-  // Recargar cuando cambia el searchQuery (con debounce manejado en el componente padre)
+  // Las respuestas antiguas se descartan en el store si el usuario sigue escribiendo.
   useEffect(() => {
     loadInventory();
-  }, [searchQuery]);
+  }, [loadInventory, searchQuery]);
 
   if (loading && inventory.length === 0) {
     return (
@@ -35,6 +35,15 @@ export function InventoryList() {
         <Text style={styles.emptyText}>
           {searchQuery ? 'No se encontraron productos' : 'No hay productos en el inventario'}
         </Text>
+        {hasMore && (
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={loadNextPage}
+            disabled={loading}
+          >
+            <Text style={styles.loadMoreText}>Buscar en más productos</Text>
+          </TouchableOpacity>
+        )}
       </Card>
     );
   }
@@ -278,4 +287,3 @@ const styles = StyleSheet.create({
     height: 20,
   },
 });
-

@@ -12,18 +12,29 @@ export async function enqueueOutbox(
   idempotencyKey = createIdempotencyKey()
 ) {
   return database.write(async () =>
-    database.get<SyncOutboxItem>('sync_outbox').create((record) => {
-      record.type = type;
-      record.payloadJson = JSON.stringify(payload);
-      record.idempotencyKey = idempotencyKey;
-      record.status = 'pending';
-      record.attempts = 0;
-      record.lastError = null;
-      record.nextRetryAt = Date.now();
-      record.queuedAt = Date.now();
-      record.resultJson = null;
-    })
+    createOutboxRecord(database, type, payload, idempotencyKey)
   );
+}
+
+/** Creates a command inside an existing WatermelonDB writer. */
+export async function createOutboxRecord(
+  database: Database,
+  type: OutboxCommandType,
+  payload: unknown,
+  idempotencyKey = createIdempotencyKey()
+) {
+  const now = Date.now();
+  return database.get<SyncOutboxItem>('sync_outbox').create((record) => {
+    record.type = type;
+    record.payloadJson = JSON.stringify(payload);
+    record.idempotencyKey = idempotencyKey;
+    record.status = 'pending';
+    record.attempts = 0;
+    record.lastError = null;
+    record.nextRetryAt = now;
+    record.queuedAt = now;
+    record.resultJson = null;
+  });
 }
 
 export async function listDueOutbox(database: Database, now = Date.now()) {
@@ -34,6 +45,32 @@ export async function listDueOutbox(database: Database, now = Date.now()) {
   return items
     .filter((item) => item.nextRetryAt <= now)
     .sort((a, b) => a.queuedAt - b.queuedAt);
+}
+
+/**
+ * A process can be terminated after persisting `syncing` and before storing the
+ * server result. Idempotency keys make replay safe, so interrupted commands
+ * must be returned to the pending queue on the next synchronization attempt.
+ */
+export async function recoverInterruptedOutbox(database: Database, now = Date.now()) {
+  const interrupted = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('status', 'syncing'))
+    .fetch();
+
+  if (!interrupted.length) return 0;
+
+  await database.write(async () => {
+    for (const item of interrupted) {
+      await item.update((record) => {
+        record.status = 'pending';
+        record.lastError = 'Sincronización interrumpida; se reintentará automáticamente';
+        record.nextRetryAt = now;
+      });
+    }
+  });
+
+  return interrupted.length;
 }
 
 export async function countPendingOutbox(database: Database) {

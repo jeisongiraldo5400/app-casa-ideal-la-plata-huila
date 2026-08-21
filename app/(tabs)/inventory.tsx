@@ -7,18 +7,15 @@ import React, { useEffect } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function InventoryScreen() {
-  const { loadInventory, loadWarehouses, loading, inventory, searchQuery } = useInventory();
+  const { loadWarehouses, loading, inventory, searchQuery, setPage } = useInventory();
 
   useEffect(() => {
     loadWarehouses();
-    loadInventory();
-  }, []);
+  }, [loadWarehouses]);
 
   const handleRefresh = () => {
-    loadInventory();
+    setPage(1);
   };
-
-  const totalItems = inventory.reduce((sum, item) => sum + (item.total_stock || 0), 0);
 
   return (
     <ScrollView
@@ -66,5 +63,3 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
   },
 });
-
-

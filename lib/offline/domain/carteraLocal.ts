@@ -1,3 +1,5 @@
+import { localDateValue } from '@/lib/localDate';
+
 export type LocalCuota = {
   id: string;
   dueDate: string;
@@ -63,7 +65,7 @@ export function filterCarteraCuotas<
     today?: string;
   }
 ) {
-  const today = params.today || new Date().toISOString().slice(0, 10);
+  const today = params.today || localDateValue();
   const search = params.search.trim().toLowerCase();
   const horizon = new Date(`${today}T12:00:00`);
   horizon.setDate(horizon.getDate() + params.days);
@@ -138,7 +140,7 @@ export function emptyCarteraDashboard(summary: Partial<CarteraLocalSummary> = {}
 
 export function summarizeCarteraFromCuotas(
   cuotas: LocalCuota[],
-  today = new Date().toISOString().slice(0, 10)
+  today = localDateValue()
 ): CarteraLocalSummary {
   const summary: CarteraLocalSummary = {
     total_balance: 0,

@@ -5,17 +5,20 @@ import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { getSecureJson, SECURE_KEYS, setSecureJson } from '@/lib/offline/security/secureKeys';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 
 export function AppLockGate() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const locked = useSyncStore((state) => state.locked);
   const setLocked = useSyncStore((state) => state.setLocked);
+  const { signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Desbloquea para ver cartera y clientes');
 
   const unlock = useCallback(async () => {
     setBusy(true);
+    setMessage('Desbloquea para ver cartera y clientes');
     try {
       const enabled = await getSecureJson<boolean>(SECURE_KEYS.appLockEnabled);
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -35,8 +38,7 @@ export function AppLockGate() {
       if (result.success) setLocked(false);
       else setMessage('No se pudo desbloquear. Inténtalo de nuevo.');
     } catch {
-      setMessage('La autenticación biométrica no está disponible.');
-      setLocked(false);
+      setMessage('La autenticación biométrica no está disponible. Inténtalo de nuevo o cierra sesión.');
     } finally {
       setBusy(false);
     }
@@ -55,9 +57,14 @@ export function AppLockGate() {
       {busy ? (
         <ActivityIndicator color={colors.primary.main} />
       ) : (
-        <Pressable onPress={() => void unlock()} style={[styles.button, { backgroundColor: colors.primary.main }]}>
-          <Text style={styles.buttonText}>Desbloquear</Text>
-        </Pressable>
+        <>
+          <Pressable onPress={() => void unlock()} style={[styles.button, { backgroundColor: colors.primary.main }]}>
+            <Text style={styles.buttonText}>Desbloquear</Text>
+          </Pressable>
+          <Pressable onPress={() => void signOut()} style={styles.signOutButton}>
+            <Text style={[styles.signOutText, { color: colors.error.main }]}>Cerrar sesión</Text>
+          </Pressable>
+        </>
       )}
     </View>
   );
@@ -76,4 +83,6 @@ const styles = StyleSheet.create({
   subtitle: { textAlign: 'center', marginBottom: 8 },
   button: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 },
   buttonText: { color: '#fff', fontWeight: '700' },
+  signOutButton: { paddingHorizontal: 16, paddingVertical: 10 },
+  signOutText: { fontWeight: '700' },
 });
