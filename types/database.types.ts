@@ -3153,6 +3153,53 @@ export type Database = {
           total_quantity: number
         }[]
       }
+      get_my_registered_delivery_order_items: {
+        Args: { p_order_id: string }
+        Returns: {
+          cancellation_observations: string | null
+          created_at: string
+          delivery_observations: string | null
+          exit_id: string
+          is_cancelled: boolean
+          product_barcode: string | null
+          product_id: string
+          product_name: string
+          product_sku: string | null
+          quantity: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_my_registered_delivery_orders: {
+        Args: {
+          p_page?: number
+          p_page_size?: number
+          p_search_term?: string | null
+        }
+        Returns: {
+          created_at: string
+          customer_id: string | null
+          customer_id_number: string | null
+          customer_name: string | null
+          delivered_quantity: number
+          delivery_address: string | null
+          id: string
+          last_exit_at: string
+          my_active_exit_count: number
+          my_active_quantity: number
+          my_cancelled_exit_count: number
+          my_cancelled_quantity: number
+          order_number: string | null
+          order_type: string
+          pending_quantity: number
+          recipient_name: string | null
+          recipient_type: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
       get_users_dashboard: {
         Args: { page?: number; page_size?: number; search_term?: string }
         Returns: {
