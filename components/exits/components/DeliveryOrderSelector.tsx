@@ -1,8 +1,8 @@
 import { useExitsStore, type DeliveryOrder } from '@/components/exits/infrastructure/store/exitsStore';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { getVisibleDeliveryOrders, ORDER_PAGE_SIZE } from '../utils/deliveryOrderPagination';
 
@@ -24,14 +24,17 @@ export function DeliveryOrderSelector() {
     deliveryOrders,
     selectedDeliveryOrderId,
     loading,
+    error,
     searchDeliveryOrdersByCustomer,
     searchDeliveryOrdersByUser,
     selectDeliveryOrder,
   } = useExitsStore();
 
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
   const [visibleCount, setVisibleCount] = useState(ORDER_PAGE_SIZE);
+  const [selectingOrderId, setSelectingOrderId] = useState<string | null>(null);
+  const selectingRef = useRef(false);
   const destinationId = exitMode === 'direct_user' ? selectedUserId : selectedCustomerId;
   const isRemissionMode = exitMode === 'direct_user';
   const pluralLabel = isRemissionMode ? 'remisiones' : 'órdenes de entrega';
@@ -56,6 +59,23 @@ export function DeliveryOrderSelector() {
     [deliveryOrders, visibleCount],
   );
   const hasMore = visibleOrders.length < deliveryOrders.length;
+
+  const handleSelectOrder = useCallback(async (order: DeliveryOrder) => {
+    if (selectingRef.current || useExitsStore.getState().loading) return;
+
+    selectingRef.current = true;
+    setSelectingOrderId(order.id);
+    try {
+      await selectDeliveryOrder(order.id, order);
+      const state = useExitsStore.getState();
+      if (state.selectedDeliveryOrderId === order.id) {
+        state.openExitConfirmation();
+      }
+    } finally {
+      selectingRef.current = false;
+      setSelectingOrderId(null);
+    }
+  }, [selectDeliveryOrder]);
 
   if (loading && deliveryOrders.length === 0) {
     return (
@@ -92,6 +112,13 @@ export function DeliveryOrderSelector() {
         </TouchableOpacity>
       </View>
 
+      {error ? (
+        <View style={[styles.inlineError, { backgroundColor: `${Colors.error.main}14`, borderColor: Colors.error.main }]} accessibilityLiveRegion="assertive">
+          <MaterialIcons name="error-outline" size={19} color={Colors.error.main} />
+          <Text style={[styles.inlineErrorText, { color: Colors.error.main }]}>{error}</Text>
+        </View>
+      ) : null}
+
       <View style={[styles.table, { backgroundColor: Colors.background.paper, borderColor: Colors.divider }]}>
         <View style={[styles.tableHeader, { borderBottomColor: Colors.divider }]}>
           <Text style={[styles.headerMain, { color: Colors.text.secondary }]}>ENTREGA</Text>
@@ -104,9 +131,10 @@ export function DeliveryOrderSelector() {
             order={order}
             isLast={index === visibleOrders.length - 1}
             selected={selectedDeliveryOrderId === order.id}
-            disabled={loading}
+            disabled={loading || selectingOrderId !== null}
+            selecting={selectingOrderId === order.id}
             colors={Colors}
-            onPress={() => void selectDeliveryOrder(order.id)}
+            onPress={() => void handleSelectOrder(order)}
           />
         ))}
       </View>
@@ -132,11 +160,12 @@ type OrderRowProps = {
   selected: boolean;
   isLast: boolean;
   disabled: boolean;
+  selecting: boolean;
   colors: ReturnType<typeof getColors>;
   onPress: () => void;
 };
 
-function OrderRow({ order, selected, isLast, disabled, colors, onPress }: OrderRowProps) {
+function OrderRow({ order, selected, selecting, isLast, disabled, colors, onPress }: OrderRowProps) {
   const total = asQuantity(order.total_quantity);
   const delivered = Math.min(total, asQuantity(order.delivered_quantity));
   const pending = Math.max(0, total - delivered);
@@ -179,7 +208,11 @@ function OrderRow({ order, selected, isLast, disabled, colors, onPress }: OrderR
         <Text style={[styles.pendingQuantity, { color: pending > 0 ? colors.text.primary : colors.success.main }]}>{pending}</Text>
         <Text style={[styles.unitsLabel, { color: colors.text.secondary }]}>unid.</Text>
       </View>
-      <MaterialIcons name={selected ? 'check-circle' : 'chevron-right'} size={22} color={selected ? colors.primary.main : colors.text.secondary} />
+      {selecting ? (
+        <ActivityIndicator size="small" color={colors.primary.main} />
+      ) : (
+        <MaterialIcons name={selected ? 'check-circle' : 'chevron-right'} size={22} color={selected ? colors.primary.main : colors.text.secondary} />
+      )}
     </TouchableOpacity>
   );
 }
@@ -215,4 +248,6 @@ const styles = StyleSheet.create({
   stateText: { fontSize: 13, marginTop: 7, textAlign: 'center' },
   emptyTitle: { fontSize: 15, fontWeight: '800', marginTop: 8 },
   retryButton: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 12, padding: 8 },
+  inlineError: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 8, marginBottom: 10, padding: 10 },
+  inlineErrorText: { flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 17 },
 });

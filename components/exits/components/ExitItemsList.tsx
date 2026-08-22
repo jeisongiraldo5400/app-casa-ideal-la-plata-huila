@@ -2,11 +2,15 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/components/theme';
+import { getColors, type ThemeColors } from '@/constants/theme';
 import React from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function ExitItemsList() {
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const styles = createStyles(Colors);
   const {
     exitItems,
     removeProductFromExit,
@@ -155,7 +159,7 @@ export function ExitItemsList() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ThemeColors) => StyleSheet.create({
   container: {
     marginTop: 16,
   },
@@ -212,7 +216,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.error.light,
+    backgroundColor: Colors.error.main + '24',
     justifyContent: 'center',
     alignItems: 'center',
   },

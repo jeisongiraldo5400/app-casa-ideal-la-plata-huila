@@ -1,7 +1,8 @@
 import { EntriesVsExitsChart, useReports } from '@/components/reports';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
-import { getColors } from '@/constants/theme';
+import { ScreenHeader, SegmentedControl } from '@/components/ui';
+import { Spacing, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -55,8 +56,7 @@ export default function ReportsScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[colors.primary.main]} />}>
-      <Text style={[styles.title, { color: colors.text.primary }]}>Reportes</Text>
-      <Text style={[styles.subtitle, { color: colors.text.secondary }]}>{canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
+      <ScreenHeader icon="insights" title="Reportes" subtitle={canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'} />
       {!online || lastSyncedAt ? (
         <Text style={[styles.range, { color: colors.text.secondary }]}>
           {online
@@ -66,7 +66,7 @@ export default function ReportsScreen() {
             : `Sin conexión${lastSyncedAt ? ` · último corte ${new Date(lastSyncedAt).toLocaleString('es-CO')}` : ''}`}
         </Text>
       ) : null}
-      <View style={styles.periods}>{(['7', '30', '90'] as const).map((period) => <TouchableOpacity key={period} onPress={() => handlePeriodChange(period)} style={[styles.period, { borderColor: colors.divider, backgroundColor: selectedPeriod === period ? colors.primary.main : colors.background.paper }]}><Text style={{ color: selectedPeriod === period ? colors.primary.contrastText : colors.text.primary }}>{period} días</Text></TouchableOpacity>)}</View>
+      <View style={styles.periods}><SegmentedControl value={selectedPeriod} onChange={(value) => handlePeriodChange(value as '7' | '30' | '90')} items={[{ value: '7', label: '7 días' }, { value: '30', label: '30 días' }, { value: '90', label: '90 días' }]} /></View>
       <Text style={[styles.range, { color: colors.text.secondary }]}>{range}</Text>
 
       {error && <Card style={[styles.error, { borderColor: colors.error.main }]}><Text style={{ color: colors.error.main }}>{error}</Text><TouchableOpacity onPress={() => { clearError(); void refresh(); }}><Text style={{ color: colors.primary.main, fontWeight: '700' }}>Reintentar</Text></TouchableOpacity></Card>}
@@ -105,12 +105,14 @@ export default function ReportsScreen() {
 }
 
 function Metric({ label, value, detail, color }: { label: string; value: string; detail?: string; color: string }) {
-  return <Card style={styles.metric}><View style={[styles.dot, { backgroundColor: color }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={[styles.metricValue, { color }]} numberOfLines={1}>{value}</Text>{detail && <Text style={styles.metricDetail}>{detail}</Text>}</Card>;
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  return <Card style={styles.metric}><View style={[styles.dot, { backgroundColor: color }]} /><Text style={[styles.metricLabel, { color: colors.text.secondary }]}>{label}</Text><Text style={[styles.metricValue, { color }]} numberOfLines={1}>{value}</Text>{detail && <Text style={[styles.metricDetail, { color: colors.text.secondary }]}>{detail}</Text>}</Card>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 }, content: { padding: 20, paddingBottom: 40 }, centered: { alignItems: 'center', flex: 1, gap: 14, justifyContent: 'center', padding: 28 },
-  title: { fontSize: 30, fontWeight: '800' }, subtitle: { fontSize: 15, marginTop: 5 }, periods: { flexDirection: 'row', gap: 8, marginTop: 22 }, period: { borderRadius: 9, borderWidth: 1, paddingHorizontal: 15, paddingVertical: 9 }, range: { fontSize: 12, marginTop: 10 },
-  section: { fontSize: 18, fontWeight: '800', marginBottom: 16, marginTop: 30 }, grid: { columnGap: 20, flexDirection: 'row', flexWrap: 'wrap', rowGap: 20 }, metric: { elevation: 1, flexGrow: 1, flexBasis: '44%', marginBottom: 2, minWidth: '44%', padding: 14, shadowOpacity: 0.04, shadowRadius: 4 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { color: '#6B7280', fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { color: '#6B7280', fontSize: 11, marginTop: 3 },
+  container: { flex: 1 }, content: { padding: Spacing.xl, paddingBottom: 40 }, centered: { alignItems: 'center', flex: 1, gap: 14, justifyContent: 'center', padding: 28 },
+  periods: { marginTop: Spacing.xl }, range: { fontSize: 12, marginTop: 10 },
+  section: { fontSize: 18, fontWeight: '800', marginBottom: 16, marginTop: 30 }, grid: { columnGap: 20, flexDirection: 'row', flexWrap: 'wrap', rowGap: 20 }, metric: { elevation: 1, flexGrow: 1, flexBasis: '44%', marginBottom: 2, minWidth: '44%', padding: 14, shadowOpacity: 0.04, shadowRadius: 4 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { fontSize: 11, marginTop: 3 },
   error: { borderWidth: 1, gap: 10, marginTop: 18, padding: 14 }, accessTitle: { fontSize: 20, fontWeight: '800' }, accessText: { fontSize: 14, textAlign: 'center' },
 });

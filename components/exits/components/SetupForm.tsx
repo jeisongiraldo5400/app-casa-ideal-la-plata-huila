@@ -2,7 +2,7 @@ import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStor
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -21,7 +21,6 @@ export function SetupForm() {
     selectedUserId,
     selectedCustomerId,
     selectedDeliveryOrderId,
-    deliveryObservations,
     users,
     customers,
     loading,
@@ -32,8 +31,6 @@ export function SetupForm() {
     setExitMode,
     setSelectedUser,
     setSelectedCustomer,
-    setDeliveryObservations,
-    startExit,
     reset,
     getSelectedDeliveryOrderProgress,
     canRegisterExit,
@@ -41,9 +38,9 @@ export function SetupForm() {
   } = useExitsStore();
 
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const uiColorScheme = isDark ? 'dark' : 'light';
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const skipNextCustomerSearchRef = useRef(false);
@@ -144,15 +141,6 @@ export function SetupForm() {
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const currentStep = !exitMode ? 1 : !selectedDeliveryOrderId ? 2 : 3;
 
-  // La bodega ya no es requerida al inicio - se resuelve automáticamente desde la orden de entrega
-  const canStart =
-    exitMode !== null &&
-    canRegisterExit &&
-    (
-      (exitMode === 'direct_user' && selectedUserId !== null && selectedDeliveryOrderId !== null && !isOrderComplete) ||
-      (exitMode === 'direct_customer' && selectedCustomerId !== null && selectedDeliveryOrderId !== null && !isOrderComplete)
-    );
-
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: Colors.background.default }]}
@@ -180,10 +168,12 @@ export function SetupForm() {
                 <View key={label} style={styles.stepperItem}>
                   <View style={[
                     styles.stepperDot,
+                    { backgroundColor: Colors.divider },
                     (isActive || isComplete) && { backgroundColor: Colors.primary.main },
                   ]}>
                     <Text style={[
                       styles.stepperNumber,
+                      { color: Colors.text.secondary },
                       (isActive || isComplete) && { color: Colors.primary.contrastText },
                     ]}>{isComplete ? '✓' : stepNumber}</Text>
                   </View>
@@ -361,27 +351,6 @@ export function SetupForm() {
             <DeliveryOrderSelector />
           )}
 
-          {/* Observaciones de entrega (opcional, cuando hay cliente/usuario y orden seleccionada) */}
-          {((exitMode === 'direct_customer' && selectedCustomerId && selectedDeliveryOrderId) ||
-            (exitMode === 'direct_user' && selectedUserId && selectedDeliveryOrderId)) && (
-              <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: Colors.text.primary }]}>Observaciones de la entrega (opcional)</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea, {
-                    backgroundColor: Colors.background.paper,
-                    borderColor: Colors.divider,
-                    color: Colors.text.primary
-                  }]}
-                  placeholder="Ej: Recibe portería, cambio de destinatario, novedades en la entrega..."
-                  placeholderTextColor={Colors.text.secondary}
-                  value={deliveryObservations}
-                  onChangeText={setDeliveryObservations}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-            )}
-
           {selectedDeliveryOrderId && !canRegisterExit && (
             <View style={[styles.errorContainer, {
               backgroundColor: Colors.error.light + '20',
@@ -394,12 +363,6 @@ export function SetupForm() {
           )}
 
           <View style={styles.buttonsContainer}>
-            <Button
-              title="Iniciar Registro de Salida"
-              onPress={startExit}
-              disabled={!canStart}
-              style={styles.startButton}
-            />
             {((exitMode === 'direct_customer' && selectedDeliveryOrderId) ||
               (exitMode === 'direct_user' && selectedDeliveryOrderId)) && isOrderComplete && (
                 <View style={[styles.warningContainer, {
@@ -479,13 +442,12 @@ const styles = StyleSheet.create({
   stepperItem: { alignItems: 'center', flex: 1 },
   stepperDot: {
     alignItems: 'center',
-    backgroundColor: '#D1D5DB',
     borderRadius: 14,
     height: 28,
     justifyContent: 'center',
     width: 28,
   },
-  stepperNumber: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  stepperNumber: { fontSize: 13, fontWeight: '700' },
   stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   formGroup: {
     marginBottom: 20,
@@ -553,10 +515,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  textArea: {
-    height: 96,
-    textAlignVertical: 'top',
-  },
   loadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -607,9 +565,6 @@ const styles = StyleSheet.create({
   buttonsContainer: {
     marginTop: 8,
     gap: 12,
-  },
-  startButton: {
-    marginTop: 0,
   },
   cancelButton: {
     marginTop: 0,

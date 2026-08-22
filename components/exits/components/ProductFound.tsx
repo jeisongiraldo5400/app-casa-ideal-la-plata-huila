@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Card } from '@/components/ui/Card';
+import { useTheme } from '@/components/theme';
 import { Database } from '@/types/database.types';
-import { Colors } from '@/constants/theme';
+import { getColors, type ThemeColors } from '@/constants/theme';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -12,6 +13,10 @@ interface ProductFoundProps {
 }
 
 export function ProductFound({ product, availableStock }: ProductFoundProps) {
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const styles = createStyles(Colors);
+
   return (
     <Card style={styles.card}>
       <View style={styles.content}>
@@ -39,7 +44,7 @@ export function ProductFound({ product, availableStock }: ProductFoundProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ThemeColors) => StyleSheet.create({
   card: {
     marginBottom: 16,
     marginHorizontal: 20,
@@ -64,10 +69,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   stockAvailable: {
-    backgroundColor: Colors.success.light,
+    backgroundColor: Colors.success.main + '24',
   },
   stockUnavailable: {
-    backgroundColor: Colors.error.light,
+    backgroundColor: Colors.error.main + '24',
   },
   stockText: {
     color: Colors.text.primary,

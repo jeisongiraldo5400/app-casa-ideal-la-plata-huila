@@ -1,6 +1,6 @@
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
-import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
+import { Radius, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -20,8 +20,8 @@ type Row =
 
 export function WarehouseFilter() {
   const { warehouses, selectedWarehouseId, setSelectedWarehouse } = useInventory();
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
   const [open, setOpen] = React.useState(false);
 
   const selectedLabel = React.useMemo(() => {
@@ -113,17 +113,17 @@ export function WarehouseFilter() {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   row: {
     minHeight: 56,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.control,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',

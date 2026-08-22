@@ -1,6 +1,6 @@
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
-import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
+import { Radius, Spacing, getColors } from '@/constants/theme';
 import { Picker } from '@react-native-picker/picker';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -9,8 +9,8 @@ const ALL_WAREHOUSES_VALUE = '__all__';
 
 export function WarehouseFilter() {
   const { warehouses, selectedWarehouseId, setSelectedWarehouse } = useInventory();
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
 
   const handleWarehouseChange = (value: string) => {
     setSelectedWarehouse(value === ALL_WAREHOUSES_VALUE ? null : value);
@@ -50,15 +50,15 @@ export function WarehouseFilter() {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   pickerContainer: {
-    borderRadius: 8,
+    borderRadius: Radius.control,
     borderWidth: 1,
     minHeight: 56,
     justifyContent: 'center',

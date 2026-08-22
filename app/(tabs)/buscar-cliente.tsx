@@ -5,13 +5,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { ScreenHeader, SearchField } from '@/components/ui';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import {
   formatNegocioCodigo,
@@ -146,29 +146,8 @@ export default function BuscarClienteScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <View
-        style={[
-          styles.searchBox,
-          { backgroundColor: colors.background.paper, borderColor: colors.divider },
-        ]}
-      >
-        <MaterialIcons name="search" size={22} color={colors.text.secondary} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Nombre o documento del cliente"
-          placeholderTextColor={colors.text.secondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={[styles.input, { color: colors.text.primary }]}
-          clearButtonMode="while-editing"
-        />
-        {query.length > 0 && (
-          <Pressable onPress={() => setQuery('')} hitSlop={10}>
-            <MaterialIcons name="close" size={20} color={colors.text.secondary} />
-          </Pressable>
-        )}
-      </View>
+      <ScreenHeader style={styles.header} icon="person-search" title="Buscar cliente" subtitle="Consulta negocios como titular o codeudor" />
+      <SearchField value={query} onChangeText={setQuery} placeholder="Nombre o documento del cliente" autoCapitalize="none" autoCorrect={false} />
 
       <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 8 }}>
         Busca un cliente para ver los negocios donde es titular o codeudor.
@@ -255,21 +234,11 @@ export default function BuscarClienteScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-  },
-  input: { flex: 1, fontSize: 16, paddingVertical: 0 },
+  container: { flex: 1, padding: Spacing.xl },
+  header: { marginBottom: Spacing.lg },
   customerCard: {
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: Radius.card,
     overflow: 'hidden',
   },
   customerHeader: {
@@ -282,9 +251,10 @@ const styles = StyleSheet.create({
   negociosWrap: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
   negocioCard: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.card,
     padding: 12,
     gap: 6,
+    ...Shadows.card,
   },
   negocioTop: {
     flexDirection: 'row',
@@ -294,7 +264,7 @@ const styles = StyleSheet.create({
   },
   negocioCodigo: { fontSize: 15, fontWeight: '900' },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radius.pill },
   negocioMetrics: {
     flexDirection: 'row',
     justifyContent: 'space-between',

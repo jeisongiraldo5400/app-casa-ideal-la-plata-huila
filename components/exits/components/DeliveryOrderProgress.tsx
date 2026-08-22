@@ -1,11 +1,15 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
-import { Colors } from '@/constants/theme';
+import { getColors, type ThemeColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export function DeliveryOrderProgress() {
+    const { isDark } = useTheme();
+    const Colors = getColors(isDark);
+    const styles = createStyles(Colors);
     // Suscribirse directamente a todos los valores necesarios para el cálculo del progreso
     // Esto asegura que el componente se re-renderice cuando cualquiera de estos valores cambie
     const selectedDeliveryOrder = useExitsStore((state) => state.selectedDeliveryOrder);
@@ -248,7 +252,7 @@ export function DeliveryOrderProgress() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ThemeColors) => StyleSheet.create({
     card: {
         margin: 20,
     },

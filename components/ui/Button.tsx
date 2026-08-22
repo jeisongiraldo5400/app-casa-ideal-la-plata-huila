@@ -1,23 +1,25 @@
+import { useTheme } from '@/components/theme';
+import { Radius, Spacing, getColors } from '@/constants/theme';
 import React from 'react';
 import {
-  TouchableOpacity,
-  Text,
-  StyleSheet,
   ActivityIndicator,
-  ViewStyle,
-  TextStyle,
+  Pressable,
   StyleProp,
+  StyleSheet,
+  Text,
+  TextStyle,
+  ViewStyle,
 } from 'react-native';
-import { Colors } from '@/constants/theme';
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  accessibilityLabel?: string;
 }
 
 export function Button({
@@ -28,110 +30,74 @@ export function Button({
   loading = false,
   style,
   textStyle,
+  accessibilityLabel,
 }: ButtonProps) {
-  const getButtonStyle = () => {
-    if (disabled || loading) {
-      return [styles.button, styles.buttonDisabled, style];
-    }
-    switch (variant) {
-      case 'primary':
-        return [styles.button, styles.buttonPrimary, style];
-      case 'secondary':
-        return [styles.button, styles.buttonSecondary, style];
-      case 'outline':
-        return [styles.button, styles.buttonOutline, style];
-      default:
-        return [styles.button, styles.buttonPrimary, style];
-    }
-  };
-
-  const getTextStyle = () => {
-    if (disabled || loading) {
-      return [styles.text, styles.textDisabled, textStyle];
-    }
-    switch (variant) {
-      case 'primary':
-        return [styles.text, styles.textPrimary, textStyle];
-      case 'secondary':
-        return [styles.text, styles.textSecondary, textStyle];
-      case 'outline':
-        return [styles.text, styles.textOutline, textStyle];
-      default:
-        return [styles.text, styles.textPrimary, textStyle];
-    }
-  };
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const unavailable = disabled || loading;
+  const backgroundColor =
+    variant === 'primary'
+      ? colors.primary.main
+      : variant === 'secondary'
+        ? colors.secondary.main
+        : variant === 'destructive'
+          ? colors.error.main
+          : 'transparent';
+  const foregroundColor =
+    variant === 'outline' || variant === 'ghost'
+      ? colors.primary.main
+      : colors.primary.contrastText;
 
   return (
-    <TouchableOpacity
-      style={getButtonStyle()}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityState={{ disabled: unavailable, busy: loading }}
       onPress={onPress}
-      disabled={disabled || loading}
-      activeOpacity={0.8}>
+      disabled={unavailable}
+      style={({ pressed }) => [
+        styles.button,
+        { backgroundColor },
+        variant === 'outline' && { borderColor: colors.primary.main, borderWidth: 1.5 },
+        variant === 'ghost' && styles.ghost,
+        unavailable && { backgroundColor: colors.divider, opacity: 0.58 },
+        pressed && !unavailable && styles.pressed,
+        style,
+      ]}>
       {loading ? (
         <ActivityIndicator
           testID="activity-indicator"
-          color={variant === 'outline' ? Colors.primary.main : Colors.primary.contrastText}
+          color={variant === 'outline' || variant === 'ghost' ? colors.primary.main : colors.primary.contrastText}
         />
       ) : (
-        <Text style={getTextStyle()}>{title}</Text>
+        <Text style={[styles.text, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
+          {title}
+        </Text>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    minHeight: 52,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xxl,
+    borderRadius: Radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
-    shadowColor: Colors.primary.main,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  buttonPrimary: {
-    backgroundColor: Colors.primary.main,
+  ghost: {
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
   },
-  buttonSecondary: {
-    backgroundColor: Colors.secondary.main,
-    shadowColor: Colors.secondary.main,
-  },
-  buttonOutline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: Colors.primary.main,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  buttonDisabled: {
-    backgroundColor: Colors.divider,
-    opacity: 0.5,
-    shadowOpacity: 0,
-    elevation: 0,
+  pressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.99 }],
   },
   text: {
     fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'System',
-  },
-  textPrimary: {
-    color: Colors.primary.contrastText,
-  },
-  textSecondary: {
-    color: Colors.secondary.contrastText,
-  },
-  textOutline: {
-    color: Colors.primary.main,
-  },
-  textDisabled: {
-    color: Colors.text.secondary,
+    lineHeight: 20,
+    fontWeight: '700',
   },
 });
-

@@ -1,10 +1,14 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/components/theme';
+import { getColors, type ThemeColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 export function ExitSessionContext() {
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const styles = createStyles(Colors);
   const selectedDeliveryOrder = useExitsStore((state) => state.selectedDeliveryOrder);
   const registeredExitsCache = useExitsStore((state) => state.registeredExitsCache);
   const scannedItemsProgress = useExitsStore((state) =>
@@ -40,7 +44,7 @@ export function ExitSessionContext() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ThemeColors) => StyleSheet.create({
   container: {
     alignItems: 'center',
     backgroundColor: Colors.primary.light + '24',

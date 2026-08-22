@@ -1,10 +1,14 @@
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
+import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
-import { Colors } from '@/constants/theme';
+import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function InventoryList() {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const styles = createStyles(colors);
   const {
     inventory,
     loading,
@@ -23,7 +27,7 @@ export function InventoryList() {
   if (loading && inventory.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary.main} />
+        <ActivityIndicator size="large" color={colors.primary.main} />
         <Text style={styles.loadingText}>Cargando inventario...</Text>
       </View>
     );
@@ -130,7 +134,7 @@ export function InventoryList() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={Colors.primary.main} />
+            <ActivityIndicator size="small" color={colors.primary.main} />
           ) : (
             <Text style={styles.loadMoreText}>Cargar más productos</Text>
           )}
@@ -142,7 +146,7 @@ export function InventoryList() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -155,7 +159,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   emptyCard: {
     padding: 24,
@@ -163,12 +167,12 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   itemCard: {
-    marginBottom: 12,
-    padding: 16,
+    marginBottom: Spacing.md,
+    padding: Spacing.lg,
   },
   itemHeader: {
     flexDirection: 'row',
@@ -183,43 +187,43 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 4,
   },
   productSku: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   productBarcode: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   productBrand: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   productCategory: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   productColor: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   warehousesList: {
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: Colors.divider,
+    borderTopColor: colors.divider,
   },
   warehousesTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 4,
   },
   warehouseItem: {
@@ -230,58 +234,58 @@ const styles = StyleSheet.create({
   },
   warehouseItemName: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginRight: 4,
   },
   warehouseItemQuantity: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.info.main,
+    color: colors.info.main,
   },
   quantityContainer: {
     alignItems: 'flex-end',
   },
   quantityLabel: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 4,
   },
   quantityValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.primary.main,
+    color: colors.primary.main,
   },
   warehouseInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.divider,
+    borderTopColor: colors.divider,
   },
   warehouseLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginRight: 8,
   },
   warehouseName: {
     fontSize: 14,
-    color: Colors.primary.main,
+    color: colors.primary.main,
   },
   loadMoreButton: {
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 16,
-    backgroundColor: Colors.background.paper,
-    borderRadius: 8,
+    backgroundColor: colors.background.paper,
+    borderRadius: Radius.control,
     borderWidth: 1,
-    borderColor: Colors.primary.main,
+    borderColor: colors.primary.main,
   },
   loadMoreText: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.primary.main,
+    color: colors.primary.main,
   },
   bottomPadding: {
     height: 20,

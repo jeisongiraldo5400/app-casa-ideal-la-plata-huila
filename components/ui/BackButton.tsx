@@ -26,13 +26,12 @@ export function BackButton({ onPress, color, size = 24 }: BackButtonProps) {
     }
   };
 
-  // Si no se especifica color, usar blanco para el header (contrastText)
-  const iconColor = color || colors.primary.contrastText;
+  const iconColor = color || colors.text.primary;
 
   return (
     <TouchableOpacity
       onPress={handlePress}
-      style={styles.button}
+      style={[styles.button, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
       activeOpacity={0.7}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
@@ -47,7 +46,11 @@ export function BackButton({ onPress, color, size = 24 }: BackButtonProps) {
 
 const styles = StyleSheet.create({
   button: {
-    padding: 8,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginLeft: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },

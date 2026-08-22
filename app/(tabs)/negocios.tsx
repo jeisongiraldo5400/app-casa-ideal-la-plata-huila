@@ -11,7 +11,8 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { ScreenHeader } from '@/components/ui';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { DownloadDataButton } from '@/components/offline';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import { formatCOP } from '@/lib/creditCalculator';
@@ -45,8 +46,8 @@ export default function NegociosScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Negocios</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <ScreenHeader icon="handshake" title="Negocios" subtitle="Créditos, clientes y recaudos" />
+        <View style={styles.headerActions}>
           <Pressable
             style={[styles.cta, { backgroundColor: colors.background.paper, borderWidth: 1, borderColor: colors.divider }]}
             onPress={() => router.push('/(tabs)/buscar-cliente' as any)}
@@ -135,28 +136,28 @@ export default function NegociosScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  container: { flex: 1, padding: Spacing.xl },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    gap: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
-  title: { fontSize: 24, fontWeight: '700' },
+  headerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.sm },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 44,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: Radius.control,
   },
   card: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: Radius.card,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
     gap: 4,
+    ...Shadows.card,
   },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   numero: { fontSize: 18, fontWeight: '700' },

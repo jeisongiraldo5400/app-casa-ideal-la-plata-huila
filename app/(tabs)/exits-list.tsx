@@ -1,12 +1,17 @@
 import { ExitsList } from '@/components/exits-list/components/ExitsList';
 import { ExitsSearchBar } from '@/components/exits-list/components/ExitsSearchBar';
 import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/components/theme';
+import { ScreenHeader } from '@/components/ui';
+import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ExitsListScreen() {
   const { loadExits, loading, exits } = useExitsList();
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
 
   useEffect(() => {
     loadExits();
@@ -19,46 +24,30 @@ export default function ExitsListScreen() {
   const totalItems = exits.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background.default }]} edges={['top']}>
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background.default }]}
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
       }>
-      <View style={styles.header}>
-        <Text style={styles.title}>Salidas</Text>
-        {/*<Text style={styles.subtitle}>
-          {exits.length} registro(s) - {totalItems} unidad(es) despachadas
-        </Text>*/}
-      </View>
+      <ScreenHeader icon="local-shipping" iconColor={colors.error.main} title="Salidas" subtitle={`${exits.length} registros · ${totalItems} unidades despachadas`} />
 
       <ExitsSearchBar />
 
       <ExitsList />
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
   container: {
     flex: 1,
-    backgroundColor: Colors.background.default,
   },
   content: {
-    padding: 20,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+    padding: Spacing.xl,
+    gap: Spacing.xl,
   },
 });
-

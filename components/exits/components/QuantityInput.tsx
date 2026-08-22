@@ -1,6 +1,6 @@
-import { Button } from '@/components/ui/Button';
+import { useTheme } from '@/components/theme';
 import { Input } from '@/components/ui/Input';
-import { Colors } from '@/constants/theme';
+import { getColors, type ThemeColors } from '@/constants/theme';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -15,6 +15,10 @@ export function QuantityInput({
   maxQuantity,
   onQuantityChange,
 }: QuantityInputProps) {
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const styles = createStyles(Colors);
+
   const handleIncrement = () => {
     if (quantity < maxQuantity) {
       onQuantityChange(quantity + 1);
@@ -83,7 +87,7 @@ export function QuantityInput({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ThemeColors) => StyleSheet.create({
   container: {
     marginTop: 0,
   },
@@ -130,7 +134,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonText: {
-    color: Colors.background.paper,
+    color: Colors.primary.contrastText,
     fontSize: 24,
     fontWeight: '600',
   },

@@ -1,11 +1,15 @@
 import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
+import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
-import { Colors } from '@/constants/theme';
+import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function ExitsList() {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const styles = createStyles(colors);
   const {
     exits,
     loading,
@@ -38,7 +42,7 @@ export function ExitsList() {
   if (loading && exits.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary.main} />
+        <ActivityIndicator size="large" color={colors.primary.main} />
         <Text style={styles.loadingText}>Cargando salidas...</Text>
       </View>
     );
@@ -81,7 +85,7 @@ export function ExitsList() {
 
             {item.is_cancelled && (
               <View style={styles.cancelledBanner}>
-                <MaterialIcons name="cancel" size={16} color={Colors.error.main} />
+                <MaterialIcons name="cancel" size={16} color={colors.error.main} />
                 <Text style={styles.cancelledText}>CANCELADA</Text>
               </View>
             )}
@@ -90,13 +94,13 @@ export function ExitsList() {
 
             <View style={styles.detailsContainer}>
               <View style={styles.detailRow}>
-                <MaterialIcons name="local-shipping" size={16} color={Colors.text.secondary} />
+                <MaterialIcons name="local-shipping" size={16} color={colors.text.secondary} />
                 <Text style={styles.detailLabel}>Bodega: </Text>
                 <Text style={styles.detailValue}>{item.warehouse_name || 'Sin bodega'}</Text>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="person" size={16} color={Colors.text.secondary} />
+                <MaterialIcons name="person" size={16} color={colors.text.secondary} />
                 <Text style={styles.detailLabel}>Registrado por: </Text>
                 <Text style={styles.detailValue} numberOfLines={1}>
                   {creatorName}
@@ -104,13 +108,13 @@ export function ExitsList() {
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="calendar-today" size={16} color={Colors.text.secondary} />
+                <MaterialIcons name="calendar-today" size={16} color={colors.text.secondary} />
                 <Text style={styles.detailLabel}>Fecha: </Text>
                 <Text style={styles.detailValue}>{date}</Text>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="access-time" size={16} color={Colors.text.secondary} />
+                <MaterialIcons name="access-time" size={16} color={colors.text.secondary} />
                 <Text style={styles.detailLabel}>Hora: </Text>
                 <Text style={styles.detailValue}>{time}</Text>
               </View>
@@ -127,7 +131,7 @@ export function ExitsList() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={Colors.primary.main} />
+            <ActivityIndicator size="small" color={colors.primary.main} />
           ) : (
             <Text style={styles.loadMoreText}>Cargar más salidas</Text>
           )}
@@ -139,7 +143,7 @@ export function ExitsList() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -152,7 +156,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   emptyCard: {
     padding: 24,
@@ -160,31 +164,31 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   itemCard: {
-    marginBottom: 12,
-    padding: 16,
+    marginBottom: Spacing.md,
+    padding: Spacing.lg,
   },
   cancelledCard: {
     opacity: 0.7,
-    borderColor: Colors.error.main,
+    borderColor: colors.error.main,
     borderWidth: 1,
   },
   cancelledBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.error.light,
+    backgroundColor: `${colors.error.main}14`,
     padding: 8,
-    borderRadius: 4,
+    borderRadius: Radius.control,
     marginBottom: 8,
     gap: 6,
   },
   cancelledText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.error.main,
+    color: colors.error.main,
   },
   itemHeader: {
     flexDirection: 'row',
@@ -199,34 +203,34 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 4,
   },
   productSku: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   productBarcode: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   quantityContainer: {
     alignItems: 'flex-end',
   },
   quantityLabel: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginBottom: 4,
   },
   quantityValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.error.main,
+    color: colors.error.main,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.divider,
+    backgroundColor: colors.divider,
     marginVertical: 12,
   },
   detailsContainer: {
@@ -240,13 +244,13 @@ const styles = StyleSheet.create({
   detailLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginLeft: 6,
     minWidth: 100,
   },
   detailValue: {
     fontSize: 14,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     flex: 1,
   },
   loadMoreButton: {
@@ -254,15 +258,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 16,
-    backgroundColor: Colors.background.paper,
-    borderRadius: 8,
+    backgroundColor: colors.background.paper,
+    borderRadius: Radius.control,
     borderWidth: 1,
-    borderColor: Colors.primary.main,
+    borderColor: colors.primary.main,
   },
   loadMoreText: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.primary.main,
+    color: colors.primary.main,
   },
   bottomPadding: {
     height: 20,

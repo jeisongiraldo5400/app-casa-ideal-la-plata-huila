@@ -1,7 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -210,16 +210,18 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
-    borderRadius: 16,
+    borderRadius: Radius.panel,
     borderWidth: 1,
-    padding: 24,
+    padding: Spacing.xxl,
+    ...Shadows.card,
   },
   formHeader: {
     marginBottom: 20,
   },
   formTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 27,
+    lineHeight: 33,
+    fontWeight: '800',
     marginBottom: 6,
   },
   formSubtitle: {
@@ -228,7 +230,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 16,
@@ -248,7 +250,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1.5,
-    borderRadius: 12,
+    borderRadius: Radius.control,
     minHeight: 52,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -258,7 +260,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderRadius: 12,
+    borderRadius: Radius.control,
     minHeight: 52,
   },
   passwordInput: {

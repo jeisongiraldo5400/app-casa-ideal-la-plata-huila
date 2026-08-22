@@ -1,22 +1,23 @@
 import { useTheme } from '@/components/theme';
 import { BackButton } from '@/components/ui/BackButton';
+import { FloatingTabBar, IconButton } from '@/components/ui';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 function ProfileHeaderButton() {
   const router = useRouter();
-  const { isDark } = useTheme();
-  const colors = getColors(isDark);
   return (
-    <TouchableOpacity
+    <IconButton
+      icon="person"
       onPress={() => router.push('/(tabs)/profile')}
-      style={{ marginRight: 16 }}>
-      <MaterialIcons name="account-circle" size={28} color={colors.primary.contrastText} />
-    </TouchableOpacity>
+      accessibilityLabel="Abrir perfil"
+      size={21}
+      style={{ width: 42, height: 42, marginRight: 12 }}
+    />
   );
 }
 
@@ -35,31 +36,25 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: colors.primary.main,
-        tabBarInactiveTintColor: colors.text.secondary,
+        sceneStyle: { backgroundColor: colors.background.default },
         headerShown: true,
         headerStyle: {
-          backgroundColor: colors.primary.main,
+          backgroundColor: colors.background.default,
         },
-        headerTintColor: colors.primary.contrastText,
+        headerTintColor: colors.text.primary,
+        headerTitleStyle: { fontSize: 18, fontWeight: '800' },
+        headerTitle: '',
         headerShadowVisible: false,
-        tabBarStyle: {
-          backgroundColor: colors.background.paper,
-          borderTopColor: colors.primary.main,
-          borderTopWidth: 2,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
-          elevation: 5,
-        },
+        tabBarHideOnKeyboard: true,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
           tabBarLabel: 'Inicio',
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="house.fill" color={color} />
           ),
@@ -73,10 +68,10 @@ export default function TabLayout() {
           title: 'Negocios',
           tabBarLabel: 'Negocios',
           href: null,
+          headerLeft: () => <BackButton />,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="handshake" size={28} color={color} />
           ),
-          headerRight: () => <ProfileHeaderButton />,
         }}
       />
 
@@ -86,10 +81,10 @@ export default function TabLayout() {
           title: 'Cartera',
           tabBarLabel: 'Cartera',
           href: null,
+          headerLeft: () => <BackButton />,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="account-balance-wallet" size={28} color={color} />
           ),
-          headerRight: () => <ProfileHeaderButton />,
         }}
       />
 
@@ -117,6 +112,7 @@ export default function TabLayout() {
         options={{
           title: 'Inventario',
           tabBarLabel: 'Inventario',
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="inventory" size={28} color={color} />
           ),
@@ -141,6 +137,7 @@ export default function TabLayout() {
         options={{
           title: 'Salidas',
           tabBarLabel: 'Salidas',
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="local-shipping" size={28} color={color} />
           ),
@@ -156,7 +153,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="account-circle" size={28} color={color} />
           ),
-          headerShown: true,
+          headerShown: false,
         }}
       />
 

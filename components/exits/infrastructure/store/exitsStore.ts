@@ -23,6 +23,7 @@ type Customer = Database['public']['Tables']['customers']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
 export type ExitMode = 'direct_user' | 'direct_customer';
+export type ExitStep = 'setup' | 'confirmation' | 'scanning';
 
 export interface ExitItem {
   product: Product;
@@ -272,7 +273,7 @@ interface ExitsState {
   customersLoading: boolean;
   loadingMessage: string | null;
   error: string | null;
-  step: 'setup' | 'scanning';
+  step: ExitStep;
 
   // Datos para formularios
   warehouses: Warehouse[];
@@ -302,6 +303,7 @@ interface ExitsState {
   loadWarehouses: () => Promise<void>;
   loadUsers: () => Promise<void>;
   searchCustomers: (searchTerm: string) => Promise<void>;
+  openExitConfirmation: () => boolean;
   startExit: () => void;
 
   // Actions - Delivery Orders
@@ -346,7 +348,41 @@ interface ExitsState {
   resetAll: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
+  changeDeliveryOrder: () => void;
   goBackToSetup: () => void;
+}
+
+function getExitSetupError(state: ExitsState): string | null {
+  if (!state.exitMode) {
+    return 'Debe seleccionar un modo de salida';
+  }
+
+  if (state.exitMode === 'direct_user' && !state.selectedUserId) {
+    return 'Debe seleccionar un usuario destinatario';
+  }
+
+  if (state.exitMode === 'direct_customer' && !state.selectedCustomerId) {
+    return 'Debe seleccionar un cliente destinatario';
+  }
+
+  if (!state.canRegisterExit) {
+    return state.authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE;
+  }
+
+  if (!state.selectedDeliveryOrderId || !state.selectedDeliveryOrder) {
+    return state.exitMode === 'direct_user'
+      ? 'Debe seleccionar una remisión'
+      : 'Debe seleccionar una orden de entrega';
+  }
+
+  const progress = state.getSelectedDeliveryOrderProgress();
+  if (progress?.items.length && progress.items.every((item) => item.isComplete)) {
+    return state.exitMode === 'direct_user'
+      ? 'Esta remisión ya está completa. No se pueden registrar más productos.'
+      : 'Esta orden de entrega ya está completa. No se pueden registrar más productos.';
+  }
+
+  return null;
 }
 
 export const useExitsStore = create<ExitsState>((set, get) => ({
@@ -404,7 +440,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       scannedItemsProgress: new Map(),
       registeredExitsCache: {},
       canRegisterExit: true,
-      authorizationMessage: null
+      authorizationMessage: null,
+      deliveryObservations: ''
     });
   },
 
@@ -416,7 +453,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       canRegisterExit: true,
-      authorizationMessage: null
+      authorizationMessage: null,
+      deliveryObservations: ''
     });
   },
 
@@ -428,7 +466,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder: null,
       deliveryOrders: [],
       canRegisterExit: true,
-      authorizationMessage: null
+      authorizationMessage: null,
+      deliveryObservations: ''
     });
   },
 
@@ -845,6 +884,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   selectDeliveryOrder: async (orderId: string, authorizedHeader) => {
+    const previousOrderId = get().selectedDeliveryOrderId;
+
     set({
       loading: true,
       loadingMessage: 'Cargando detalles de la orden...',
@@ -1023,6 +1064,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         registeredExitsCache: updatedCache,
         canRegisterExit: authorizationResult.canRegister,
         authorizationMessage: authorizationResult.message,
+        deliveryObservations:
+          previousOrderId !== orderId ? '' : get().deliveryObservations,
         loading: false,
         loadingMessage: null
       });
@@ -1201,82 +1244,22 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       };
     },
 
+  openExitConfirmation: () => {
+    const error = getExitSetupError(get());
+    if (error) {
+      set({ error, step: 'setup' });
+      return false;
+    }
+
+    set({ step: 'confirmation', error: null });
+    return true;
+  },
+
   startExit: () => {
-    const {
-      warehouseId,
-      exitMode,
-      selectedUserId,
-      selectedCustomerId,
-      selectedDeliveryOrderId,
-      selectedDeliveryOrder,
-      canRegisterExit,
-      authorizationMessage
-    } = get();
-
-    if (!exitMode) {
-      set({ error: 'Debe seleccionar un modo de salida' });
+    const error = getExitSetupError(get());
+    if (error) {
+      set({ error });
       return;
-    }
-
-    // Validar según el modo
-    if (exitMode === 'direct_user') {
-      if (!selectedUserId) {
-        set({ error: 'Debe seleccionar un usuario destinatario' });
-        return;
-      }
-
-      if (!canRegisterExit) {
-        set({ error: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
-        return;
-      }
-
-      if (!selectedDeliveryOrderId) {
-        set({ error: 'Debe seleccionar una remisión' });
-        return;
-      }
-
-      // Validar que la remisión no esté completa
-      const progress = get().getSelectedDeliveryOrderProgress();
-      if (progress) {
-        const isOrderComplete = progress.items.every((item) => item.isComplete);
-        if (isOrderComplete) {
-          set({
-            error:
-              'Esta remisión ya está completa. No se pueden registrar más productos.'
-          });
-          return;
-        }
-      }
-    }
-
-    if (exitMode === 'direct_customer') {
-      if (!selectedCustomerId) {
-        set({ error: 'Debe seleccionar un cliente destinatario' });
-        return;
-      }
-
-      if (!canRegisterExit) {
-        set({ error: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
-        return;
-      }
-
-      if (!selectedDeliveryOrderId) {
-        set({ error: 'Debe seleccionar una orden de entrega' });
-        return;
-      }
-
-      // Validar que la orden no esté completa
-      const progress = get().getSelectedDeliveryOrderProgress();
-      if (progress) {
-        const isOrderComplete = progress.items.every((item) => item.isComplete);
-        if (isOrderComplete) {
-          set({
-            error:
-              'Esta orden de entrega ya está completa. No se pueden registrar más productos.'
-          });
-          return;
-        }
-      }
     }
 
     set({ step: 'scanning', error: null });
@@ -2105,9 +2088,28 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     });
   },
 
-  goBackToSetup: () => {
+  changeDeliveryOrder: () => {
     set({
       step: 'setup',
+      selectedDeliveryOrderId: null,
+      selectedDeliveryOrder: null,
+      deliveryObservations: '',
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      currentAvailableStock: 0,
+      targetOrderItemId: null,
+      exitItems: [],
+      scannedItemsProgress: new Map(),
+      canRegisterExit: true,
+      authorizationMessage: null,
+      error: null
+    });
+  },
+
+  goBackToSetup: () => {
+    set({
+      step: get().selectedDeliveryOrder ? 'confirmation' : 'setup',
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,

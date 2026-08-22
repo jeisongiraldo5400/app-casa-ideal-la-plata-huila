@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
@@ -29,6 +32,8 @@ import {
 import { exportAndShareManagerPaymentsCsv } from '@/lib/cartera/exportManagerPaymentsCsv';
 import { openPagoSupport } from '@/lib/uploadPagoSupport';
 import { useBluetoothPrinter } from '@/components/printing';
+
+const BUSINESS_PAGE_SIZE = 15;
 
 export function CollectionManagerPaymentsModal({
   visible,
@@ -48,6 +53,8 @@ export function CollectionManagerPaymentsModal({
   const [businesses, setBusinesses] = useState<ManagerBusiness[]>([]);
   const [businessId, setBusinessId] = useState('');
   const [businessOpen, setBusinessOpen] = useState(false);
+  const [businessSearch, setBusinessSearch] = useState('');
+  const [businessVisibleCount, setBusinessVisibleCount] = useState(BUSINESS_PAGE_SIZE);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'todos' | 'emitido' | 'anulado'>('todos');
   const [dateFrom, setDateFrom] = useState('');
@@ -56,6 +63,7 @@ export function CollectionManagerPaymentsModal({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const insets = useSafeAreaInsets();
   const { printPayment, printing: printingTicket } = useBluetoothPrinter();
 
   useEffect(() => {
@@ -63,6 +71,9 @@ export function CollectionManagerPaymentsModal({
     setData(null);
     setScope('performed');
     setBusinessId('');
+    setBusinessOpen(false);
+    setBusinessSearch('');
+    setBusinessVisibleCount(BUSINESS_PAGE_SIZE);
     setSearch('');
     setStatus('todos');
     setDateFrom('');
@@ -91,10 +102,26 @@ export function CollectionManagerPaymentsModal({
       .finally(() => setLoading(false));
   }, [visible, managerId, scope, businessId, dateFrom, dateTo, status, search, page]);
 
-  const options =
-    scope === 'portfolio'
-      ? businesses.filter((b) => b.current_assignment)
-      : businesses;
+  const options = useMemo(
+    () => scope === 'portfolio'
+      ? businesses.filter((business) => business.current_assignment)
+      : businesses,
+    [businesses, scope],
+  );
+  const filteredBusinessOptions = useMemo(() => {
+    const term = businessSearch.trim().toLocaleLowerCase('es');
+    if (!term) return options;
+
+    return options.filter((business) =>
+      [
+        business.customer_name,
+        business.customer_id_number || '',
+        String(business.negocio_numero),
+        formatNegocioCodigo(business.negocio_numero),
+      ].some((value) => value.toLocaleLowerCase('es').includes(term)),
+    );
+  }, [businessSearch, options]);
+  const visibleBusinessOptions = filteredBusinessOptions.slice(0, businessVisibleCount);
 
   const shareReceipt = async (payment: ManagerPayment) => {
     try {
@@ -169,20 +196,43 @@ export function CollectionManagerPaymentsModal({
 
   const summary = data?.summary;
   const selectedBusiness = options.find((b) => b.negocio_id === businessId);
+  const selectBusiness = (nextBusinessId: string) => {
+    setBusinessId(nextBusinessId);
+    setBusinessOpen(false);
+    setBusinessSearch('');
+    setBusinessVisibleCount(BUSINESS_PAGE_SIZE);
+    setPage(1);
+  };
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
-      statusBarTranslucent={false}
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
-      <SafeAreaView
-        edges={['top', 'bottom']}
-        style={[styles.root, { backgroundColor: colors.background.default }]}
+      <View
+        style={[
+          styles.root,
+          {
+            backgroundColor: colors.background.default,
+            paddingTop: Math.max(insets.top, 8),
+            paddingBottom: insets.bottom,
+          },
+        ]}
       >
         <View style={[styles.header, { borderBottomColor: colors.divider }]}>
+          <Pressable
+            onPress={onClose}
+            hitSlop={8}
+            style={[styles.backButton, { backgroundColor: colors.background.paper }]}
+            accessibilityRole="button"
+            accessibilityLabel="Volver a cartera"
+          >
+            <MaterialIcons name="arrow-back" size={24} color={colors.text.primary} />
+          </Pressable>
           <View style={{ flex: 1, paddingRight: 12 }}>
             <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>
               Cobros de {manager?.full_name || 'gestor'}
@@ -203,9 +253,6 @@ export function CollectionManagerPaymentsModal({
             ) : (
               <MaterialIcons name="file-download" size={24} color={colors.primary.main} />
             )}
-          </Pressable>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.closeButton}>
-            <MaterialIcons name="close" size={26} color={colors.text.primary} />
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -333,56 +380,26 @@ export function CollectionManagerPaymentsModal({
             ]}
           />
           <Pressable
-            onPress={() => setBusinessOpen(!businessOpen)}
+            onPress={() => {
+              setBusinessSearch('');
+              setBusinessVisibleCount(BUSINESS_PAGE_SIZE);
+              setBusinessOpen(true);
+            }}
             style={[
               styles.select,
               { borderColor: colors.divider, backgroundColor: colors.background.paper },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Seleccionar negocio relacionado"
+            accessibilityState={{ expanded: businessOpen }}
           >
-            <Text style={{ color: colors.text.primary }}>
+            <Text style={{ color: colors.text.primary, flex: 1 }} numberOfLines={1}>
               {selectedBusiness
                 ? `${formatNegocioCodigo(selectedBusiness.negocio_numero)} · ${selectedBusiness.customer_name}`
                 : 'Todos los negocios relacionados'}
             </Text>
-            <MaterialIcons name="expand-more" size={22} color={colors.text.secondary} />
+            <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
           </Pressable>
-          {businessOpen && (
-            <View
-              style={[
-                styles.options,
-                { borderColor: colors.divider, backgroundColor: colors.background.paper },
-              ]}
-            >
-              <Pressable
-                onPress={() => {
-                  setBusinessId('');
-                  setBusinessOpen(false);
-                  setPage(1);
-                }}
-                style={styles.option}
-              >
-                <Text style={{ color: colors.text.primary }}>Todos los negocios</Text>
-              </Pressable>
-              {options.slice(0, 30).map((b) => (
-                <Pressable
-                  key={b.negocio_id}
-                  onPress={() => {
-                    setBusinessId(b.negocio_id);
-                    setBusinessOpen(false);
-                    setPage(1);
-                  }}
-                  style={styles.option}
-                >
-                  <Text style={{ color: colors.text.primary }}>
-                    {formatNegocioCodigo(b.negocio_numero)} · {b.customer_name}
-                  </Text>
-                  <Text style={{ color: colors.text.secondary, fontSize: 11 }}>
-                    {b.current_assignment ? 'Actual' : 'Histórico'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
           <View style={styles.filters}>
             <View style={styles.date}>
               <NegocioDatePicker
@@ -564,7 +581,140 @@ export function CollectionManagerPaymentsModal({
             </Pressable>
           </View>
         </ScrollView>
-      </SafeAreaView>
+
+        {businessOpen ? (
+          <View style={styles.businessPickerOverlay}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setBusinessOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar selector de negocios"
+            />
+            <KeyboardAvoidingView
+              style={styles.businessPickerKeyboard}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              pointerEvents="box-none"
+            >
+              <View
+                style={[
+                  styles.businessPickerSheet,
+                  {
+                    backgroundColor: colors.background.paper,
+                    borderColor: colors.divider,
+                    marginBottom: Math.max(insets.bottom, 8),
+                  },
+                ]}
+              >
+                <View style={[styles.businessPickerHeader, { borderBottomColor: colors.divider }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.businessPickerTitle, { color: colors.text.primary }]}>Seleccionar negocio</Text>
+                    <Text style={[styles.businessPickerCount, { color: colors.text.secondary }]}>Mostrando {visibleBusinessOptions.length} de {filteredBusinessOptions.length}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setBusinessOpen(false)}
+                    style={styles.closeButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cerrar selector de negocios"
+                  >
+                    <MaterialIcons name="close" size={25} color={colors.text.primary} />
+                  </Pressable>
+                </View>
+
+                <View style={[styles.businessSearchContainer, { backgroundColor: colors.background.default, borderColor: colors.divider }]}>
+                  <MaterialIcons name="search" size={20} color={colors.text.secondary} />
+                  <TextInput
+                    value={businessSearch}
+                    onChangeText={(value) => {
+                      setBusinessSearch(value);
+                      setBusinessVisibleCount(BUSINESS_PAGE_SIZE);
+                    }}
+                    placeholder="Buscar cliente, identificación o negocio"
+                    placeholderTextColor={colors.text.secondary}
+                    style={[styles.businessSearchInput, { color: colors.text.primary }]}
+                    accessibilityLabel="Buscar negocio relacionado"
+                  />
+                  {businessSearch ? (
+                    <Pressable
+                      onPress={() => setBusinessSearch('')}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Limpiar búsqueda de negocio"
+                    >
+                      <MaterialIcons name="close" size={20} color={colors.text.secondary} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                <FlatList
+                  data={visibleBusinessOptions}
+                  keyExtractor={(item) => item.negocio_id}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.businessListContent}
+                  ListHeaderComponent={
+                    <Pressable
+                      onPress={() => selectBusiness('')}
+                      style={[
+                        styles.businessOption,
+                        { borderBottomColor: colors.divider },
+                        !businessId && { backgroundColor: colors.surface?.muted || colors.background.default },
+                      ]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: !businessId }}
+                    >
+                      <View style={styles.businessOptionCopy}>
+                        <Text style={[styles.businessOptionTitle, { color: colors.text.primary }]}>Todos los negocios relacionados</Text>
+                        <Text style={[styles.businessOptionMeta, { color: colors.text.secondary }]}>{filteredBusinessOptions.length} disponibles</Text>
+                      </View>
+                      {!businessId ? <MaterialIcons name="check-circle" size={22} color={colors.primary.main} /> : null}
+                    </Pressable>
+                  }
+                  renderItem={({ item }) => {
+                    const selected = businessId === item.negocio_id;
+                    return (
+                      <Pressable
+                        onPress={() => selectBusiness(item.negocio_id)}
+                        style={[
+                          styles.businessOption,
+                          { borderBottomColor: colors.divider },
+                          selected && { backgroundColor: colors.surface?.muted || colors.background.default },
+                        ]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: selected }}
+                      >
+                        <View style={styles.businessOptionCopy}>
+                          <Text style={[styles.businessOptionTitle, { color: colors.text.primary }]} numberOfLines={1}>{formatNegocioCodigo(item.negocio_numero)} · {item.customer_name}</Text>
+                          <Text style={[styles.businessOptionMeta, { color: colors.text.secondary }]}>{item.customer_id_number ? `${item.customer_id_number} · ` : ''}{item.current_assignment ? 'Asignación actual' : 'Asignación histórica'}</Text>
+                        </View>
+                        {selected ? <MaterialIcons name="check-circle" size={22} color={colors.primary.main} /> : <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />}
+                      </Pressable>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.businessEmpty}>
+                      <MaterialIcons name="search-off" size={32} color={colors.text.secondary} />
+                      <Text style={{ color: colors.text.secondary }}>No se encontraron negocios</Text>
+                    </View>
+                  }
+                  ListFooterComponent={
+                    filteredBusinessOptions.length > visibleBusinessOptions.length ? (
+                      <Pressable
+                        onPress={() => setBusinessVisibleCount((count) => count + BUSINESS_PAGE_SIZE)}
+                        style={[styles.businessLoadMore, { borderColor: colors.divider }]}
+                        accessibilityRole="button"
+                      >
+                        <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Cargar {Math.min(BUSINESS_PAGE_SIZE, filteredBusinessOptions.length - visibleBusinessOptions.length)} más</Text>
+                        <MaterialIcons name="expand-more" size={20} color={colors.primary.main} />
+                      </Pressable>
+                    ) : visibleBusinessOptions.length ? (
+                      <Text style={[styles.businessEnd, { color: colors.text.secondary }]}>Todos los negocios encontrados están visibles</Text>
+                    ) : null
+                  }
+                />
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        ) : null}
+      </View>
     </Modal>
   );
 }
@@ -618,6 +768,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 21,
   },
+  backButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    marginRight: 10,
+  },
   title: { fontSize: 18, fontWeight: '700' },
   content: { padding: 14, gap: 10 },
   segment: { flexDirection: 'row', gap: 6 },
@@ -640,8 +798,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  options: { borderWidth: 1, borderRadius: 9, maxHeight: 220 },
-  option: { padding: 11, borderBottomWidth: 1 },
   filters: { flexDirection: 'row', gap: 8 },
   date: { flex: 1 },
   statuses: { flexDirection: 'row', gap: 7 },
@@ -658,5 +814,95 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 12,
+  },
+  businessPickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.48)',
+    elevation: 20,
+    zIndex: 1000,
+  },
+  businessPickerKeyboard: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  businessPickerSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    height: '74%',
+    maxHeight: 640,
+    overflow: 'hidden',
+  },
+  businessPickerHeader: {
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 68,
+    paddingHorizontal: 16,
+  },
+  businessPickerTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  businessPickerCount: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  businessSearchContainer: {
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    margin: 14,
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  businessSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 10,
+  },
+  businessListContent: {
+    paddingBottom: 14,
+  },
+  businessOption: {
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 66,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  businessOptionCopy: {
+    flex: 1,
+    marginRight: 10,
+  },
+  businessOptionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  businessOptionMeta: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+  businessEmpty: {
+    alignItems: 'center',
+    gap: 8,
+    padding: 32,
+  },
+  businessLoadMore: {
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    margin: 14,
+    minHeight: 48,
+  },
+  businessEnd: {
+    fontSize: 12,
+    padding: 18,
+    textAlign: 'center',
   },
 });

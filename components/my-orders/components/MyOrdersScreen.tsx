@@ -1,7 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -96,10 +96,10 @@ export function MyOrdersScreen() {
         return;
       }
 
-      selectedState.startExit();
+      selectedState.openExitConfirmation();
       selectedState = useExitsStore.getState();
-      if (selectedState.step !== 'scanning') {
-        Alert.alert('No se pudo iniciar la salida', selectedState.error || 'Revisa los datos de la orden e intenta nuevamente.');
+      if (selectedState.step !== 'confirmation') {
+        Alert.alert('No se pudo confirmar la salida', selectedState.error || 'Revisa los datos de la orden e intenta nuevamente.');
         return;
       }
       router.push('/(tabs)/exits');
@@ -300,7 +300,7 @@ export function MyOrdersScreen() {
 
       <View style={[styles.tabs, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
         <TabButton label="Pendientes" count={orders.pendingOrders.length} selected={isPending} onPress={() => setActiveTab('pending')} />
-        <TabButton label="Registradas por mí" count={orders.historyTotalCount} selected={!isPending} onPress={() => setActiveTab('history')} />
+        <TabButton label="Mis entregas" count={orders.historyTotalCount} selected={!isPending} onPress={() => setActiveTab('history')} />
       </View>
 
       <SearchBox
@@ -440,29 +440,29 @@ export function MyOrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.md },
   headerIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1 },
-  title: { fontSize: 25, fontWeight: '800' },
+  title: { fontSize: 28, lineHeight: 34, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 3 },
-  tabs: { flexDirection: 'row', marginHorizontal: 20, borderWidth: 1, borderRadius: 13, padding: 4, gap: 4 },
+  tabs: { flexDirection: 'row', marginHorizontal: Spacing.xl, borderWidth: 1, borderRadius: Radius.control, padding: 4, gap: 4 },
   tabButton: { flex: 1, minHeight: 40, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 7 },
   tabLabel: { fontSize: 12, fontWeight: '800', flexShrink: 1 },
   tabCount: { minWidth: 23, height: 23, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tabCountText: { fontSize: 11, fontWeight: '800' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 12, paddingHorizontal: 13, height: 46, borderWidth: 1, borderRadius: 13, gap: 9 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', marginHorizontal: Spacing.xl, marginTop: Spacing.md, paddingHorizontal: Spacing.lg, height: 52, borderWidth: 1, borderRadius: Radius.control, gap: Spacing.sm },
   searchInput: { flex: 1, fontSize: 14, height: '100%' },
-  listContent: { padding: 20, paddingTop: 14, gap: 12, flexGrow: 1 },
+  listContent: { padding: Spacing.xl, paddingTop: Spacing.lg, gap: Spacing.md, flexGrow: 1 },
   emptyListContent: { justifyContent: 'center' },
   stateContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 30 },
   stateText: { fontSize: 14 },
-  messageCard: { borderWidth: 1, borderRadius: 16, padding: 24, alignItems: 'center', gap: 10, marginHorizontal: 20, marginVertical: 24 },
+  messageCard: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.xxl, alignItems: 'center', gap: 10, marginHorizontal: Spacing.xl, marginVertical: Spacing.xxl },
   messageTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
   messageText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   retryButton: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, marginTop: 4 },
   inlineError: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 2 },
   inlineErrorText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  orderCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 },
+  orderCard: { borderWidth: 1, borderRadius: Radius.card, padding: Spacing.lg, gap: 10, ...Shadows.card },
   orderTopRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   orderTitleArea: { flex: 1 },
   orderNumber: { fontSize: 17, fontWeight: '800' },

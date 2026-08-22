@@ -1,6 +1,6 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
 import React from 'react';
 import {
@@ -35,7 +35,8 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
         showsVerticalScrollIndicator={false}>
-        <View style={styles.brandPanel}>
+        <View style={[styles.brandPanel, { backgroundColor: Colors.navigation.background }]}>
+          <Text style={styles.portalLabel}>PORTAL OPERATIVO</Text>
           <View
             style={[
               styles.logoContainer,
@@ -51,8 +52,8 @@ export default function LoginScreen() {
               accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
             />
           </View>
-          <Text style={[styles.brandTagline, { color: Colors.text.secondary }]}>
-            Portal operativo
+          <Text style={styles.brandTagline}>
+            Inventario, órdenes y gestión comercial en un solo lugar
           </Text>
         </View>
 
@@ -78,21 +79,36 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.xxl,
   },
   brandPanel: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 400,
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.xxxl,
+    borderRadius: Radius.panel,
+    ...Shadows.floating,
+  },
+  portalLabel: {
+    color: '#bfdbfe',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    marginBottom: Spacing.lg,
   },
   logoContainer: {
     alignItems: 'center',
-    borderRadius: 18,
+    borderRadius: Radius.card,
     borderWidth: 1,
     elevation: 2,
     justifyContent: 'center',
     width: '100%',
-    maxWidth: 300,
+    maxWidth: 280,
     paddingHorizontal: 18,
     paddingVertical: 16,
     shadowColor: '#0F172A',
@@ -105,13 +121,15 @@ const styles = StyleSheet.create({
     height: 76,
   },
   brandTagline: {
-    marginTop: 10,
-    fontSize: 14,
+    color: '#dbeafe',
+    marginTop: Spacing.md,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   footer: {
-    marginTop: 28,
+    marginTop: Spacing.xxl,
     alignItems: 'center',
     gap: 4,
   },

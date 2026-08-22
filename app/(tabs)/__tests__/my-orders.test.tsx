@@ -8,7 +8,7 @@ const mockSetExitMode = jest.fn();
 const mockSetSelectedCustomer = jest.fn();
 const mockSetSelectedUser = jest.fn();
 const mockSelectDeliveryOrder = jest.fn();
-const mockStartExit = jest.fn();
+const mockOpenExitConfirmation = jest.fn();
 const mockUser = { id: 'operator-1' };
 
 let mockExitState: {
@@ -16,12 +16,12 @@ let mockExitState: {
   canRegisterExit: boolean;
   authorizationMessage: string | null;
   error: string | null;
-  step: 'setup' | 'scanning';
+  step: 'setup' | 'confirmation' | 'scanning';
   setExitMode: typeof mockSetExitMode;
   setSelectedCustomer: typeof mockSetSelectedCustomer;
   setSelectedUser: typeof mockSetSelectedUser;
   selectDeliveryOrder: typeof mockSelectDeliveryOrder;
-  startExit: typeof mockStartExit;
+  openExitConfirmation: typeof mockOpenExitConfirmation;
 };
 
 jest.mock('expo-router', () => ({
@@ -44,6 +44,9 @@ jest.mock('@/components/theme', () => ({
 }));
 
 jest.mock('@/constants/theme', () => ({
+  Spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 },
+  Radius: { control: 12, card: 18, panel: 24, pill: 999 },
+  Shadows: { card: { shadowOpacity: 0.07, elevation: 2 } },
   getColors: () => ({
     background: { default: '#fff', paper: '#fff' },
     text: { primary: '#111', secondary: '#666' },
@@ -134,7 +137,7 @@ describe('MyOrdersScreen', () => {
       setSelectedCustomer: mockSetSelectedCustomer,
       setSelectedUser: mockSetSelectedUser,
       selectDeliveryOrder: mockSelectDeliveryOrder,
-      startExit: mockStartExit,
+      openExitConfirmation: mockOpenExitConfirmation,
     };
 
     mockRpc.mockImplementation((functionName: string) => {
@@ -152,12 +155,13 @@ describe('MyOrdersScreen', () => {
     mockSelectDeliveryOrder.mockImplementation(async (orderId: string) => {
       mockExitState.selectedDeliveryOrderId = orderId;
     });
-    mockStartExit.mockImplementation(() => {
-      mockExitState.step = 'scanning';
+    mockOpenExitConfirmation.mockImplementation(() => {
+      mockExitState.step = 'confirmation';
+      return true;
     });
   });
 
-  it('abre directamente la salida al pulsar cualquier parte de la orden asignada', async () => {
+  it('abre la confirmación al pulsar cualquier parte de la orden asignada', async () => {
     const screen = render(<MyOrdersScreen />);
     const orderCard = await screen.findByTestId('assigned-order-order-1');
 
@@ -170,7 +174,7 @@ describe('MyOrdersScreen', () => {
       'order-1',
       expect.objectContaining({ id: 'order-1', customer_id: 'customer-1' }),
     );
-    expect(mockStartExit).toHaveBeenCalledTimes(1);
+    expect(mockOpenExitConfirmation).toHaveBeenCalledTimes(1);
   });
 
   it('ignora un segundo toque mientras prepara la salida', async () => {
@@ -199,7 +203,7 @@ describe('MyOrdersScreen', () => {
     const screen = render(<MyOrdersScreen />);
     await screen.findByTestId('assigned-order-order-1');
 
-    fireEvent.press(screen.getByText('Registradas por mí'));
+    fireEvent.press(screen.getByText('Mis entregas'));
     const historyCard = await screen.findByTestId('registered-order-history-order-1');
     expect(screen.getByText('Registrado por ti')).toBeTruthy();
     expect(screen.getByText('1 cancelado')).toBeTruthy();

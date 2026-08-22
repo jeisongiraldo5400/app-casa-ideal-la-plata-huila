@@ -4,7 +4,7 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useBluetoothPrinter } from '@/components/printing';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -13,10 +13,11 @@ import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const { themeMode, isDark, setThemeMode } = useTheme();
+  const { isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
   const { roles } = useUserRoles();
@@ -52,15 +53,17 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          <MaterialIcons name="account-circle" size={80} color={colors.primary.main} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.default }]} edges={['top']}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={[styles.header, { backgroundColor: colors.navigation.background }]}>
+        <View style={[styles.avatarContainer, { backgroundColor: colors.primary.main }]}>
+          <MaterialIcons name="person" size={42} color={colors.primary.contrastText} />
         </View>
-        <Text style={[styles.userName, { color: colors.text.primary }]}>{user?.email?.split('@')[0] || 'Usuario'}</Text>
-        <Text style={[styles.userEmail, { color: colors.text.secondary }]}>{user?.email}</Text>
+        <Text style={styles.profileLabel}>MI PERFIL</Text>
+        <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Usuario'}</Text>
+        <Text style={styles.userEmail}>{user?.email}</Text>
         {!!roleNames && (
-          <Text style={[styles.userEmail, { color: colors.primary.main, marginTop: 4 }]}>
+          <Text style={styles.roleText}>
             Rol: {roleNames}
           </Text>
         )}
@@ -184,6 +187,7 @@ export default function ProfileScreen() {
         onClose={() => setShowChangePasswordModal(false)}
       />
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -192,33 +196,56 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
-    paddingTop: 20,
+    padding: Spacing.xl,
+    paddingTop: Spacing.lg,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 32,
-    marginTop: 20,
+    marginBottom: Spacing.xxl,
+    padding: Spacing.xxl,
+    borderRadius: Radius.panel,
+    ...Shadows.floating,
   },
   avatarContainer: {
-    marginBottom: 16,
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  profileLabel: {
+    color: '#bfdbfe',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 4,
   },
   userName: {
-    fontSize: 24,
-    fontWeight: '700',
+    color: '#ffffff',
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '800',
     marginBottom: 4,
     textTransform: 'capitalize',
   },
   userEmail: {
-    fontSize: 16,
+    color: '#cbd5e1',
+    fontSize: 14,
+  },
+  roleText: {
+    color: '#93c5fd',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
   },
   card: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
+    fontWeight: '800',
+    marginBottom: Spacing.lg,
   },
   infoRow: {
     flexDirection: 'row',
@@ -263,4 +290,3 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 });
-

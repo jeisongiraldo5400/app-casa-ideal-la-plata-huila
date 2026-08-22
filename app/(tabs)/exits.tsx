@@ -2,6 +2,7 @@ import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
 import { DeliveryOrderProgress } from '@/components/exits/components/DeliveryOrderProgress';
 import { ExitSessionContext } from '@/components/exits/components/ExitSessionContext';
 import { ExitItemsList } from '@/components/exits/components/ExitItemsList';
+import { ExitOrderConfirmation } from '@/components/exits/components/ExitOrderConfirmation';
 import { ProductFound } from '@/components/exits/components/ProductFound';
 import { QuantityInput } from '@/components/exits/components/QuantityInput';
 import { SetupForm } from '@/components/exits/components/SetupForm';
@@ -9,7 +10,7 @@ import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
@@ -105,7 +106,7 @@ export default function ExitsScreen() {
     clearError();
     try {
       await addProductToExit(currentProduct, currentQuantity, currentScannedBarcode || '');
-    } catch (error: any) {
+    } catch {
       // El error ya está en el store
     }
   };
@@ -141,10 +142,13 @@ export default function ExitsScreen() {
         </View>
       </Modal>
 
-      <ScrollView
-        style={[styles.container, { backgroundColor: colors.background.default }]}
-        contentContainerStyle={styles.content}
-      >
+      {step === 'confirmation' ? (
+        <ExitOrderConfirmation />
+      ) : (
+        <ScrollView
+          style={[styles.container, { backgroundColor: colors.background.default }]}
+          contentContainerStyle={styles.content}
+        >
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
@@ -198,7 +202,7 @@ export default function ExitsScreen() {
                     style={styles.scanButton}
                   />
                   <Button
-                    title="Volver a configuración"
+                    title="Volver a confirmación"
                     onPress={goBackToSetup}
                     variant="outline"
                     style={styles.cancelScanButton}
@@ -262,7 +266,8 @@ export default function ExitsScreen() {
           {exitItems.length > 0 && <ExitItemsList />}
         </>
       )}
-    </ScrollView>
+        </ScrollView>
+      )}
     </>
   );
 }
@@ -272,22 +277,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 20,
+    paddingBottom: Spacing.xl,
   },
   header: {
-    marginBottom: 24,
-    marginTop: 20,
-    paddingHorizontal: 20,
+    marginBottom: Spacing.xxl,
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: Spacing.lg,
   },
   iconContainer: {
     width: 56,
     height: 56,
-    borderRadius: 16,
+    borderRadius: Radius.card,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -296,7 +301,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: 4,
     letterSpacing: -0.5,
   },
@@ -306,10 +311,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   scanCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 24,
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.lg,
+    padding: Spacing.xxl,
   },
   scanCardContent: {
     alignItems: 'center',
@@ -317,7 +322,7 @@ const styles = StyleSheet.create({
   scanIconContainer: {
     width: 80,
     height: 80,
-    borderRadius: 20,
+    borderRadius: Radius.panel,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -346,7 +351,7 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   productSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.xl,
   },
   quantityCard: {
     marginTop: 16,
@@ -369,7 +374,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: Radius.control,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -388,17 +393,10 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     padding: 32,
-    borderRadius: 16,
+    borderRadius: Radius.card,
     alignItems: 'center',
     minWidth: 200,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...Shadows.floating,
   },
   loadingText: {
     marginTop: 16,
