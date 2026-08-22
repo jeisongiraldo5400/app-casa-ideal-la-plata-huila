@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import { formatCOP } from '@/lib/creditCalculator';
 import type { NegocioItem } from '@/components/negocios/infrastructure/store/negociosStore';
@@ -27,6 +28,60 @@ type Props = {
   onRemoveItem: (index: number) => void;
   colors: ThemeColors;
 };
+
+function EditableMoneyInput({
+  value,
+  label,
+  colors,
+  onChange,
+}: {
+  value: number;
+  label: string;
+  colors: ThemeColors;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatNegocioMoneyInput(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(formatNegocioMoneyInput(value));
+  }, [focused, value]);
+
+  const handleChange = (text: string) => {
+    const formatted = formatNegocioMoneyInput(text);
+    setDraft(formatted);
+
+    const parsed = parseNegocioMoney(formatted);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) onChange(parsed);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    const parsed = parseNegocioMoney(draft);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) {
+      onChange(parsed);
+      setDraft(formatNegocioMoneyInput(parsed));
+    } else {
+      setDraft(formatNegocioMoneyInput(value));
+    }
+  };
+
+  return (
+    <TextInput
+      accessibilityLabel={label}
+      keyboardType="numeric"
+      selectTextOnFocus
+      style={[
+        styles.input,
+        { borderColor: colors.divider, color: colors.text.primary },
+      ]}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onBlur={handleBlur}
+      onChangeText={handleChange}
+    />
+  );
+}
 
 export function NegocioItemsList({
   items,
@@ -157,17 +212,11 @@ export function NegocioItemsList({
                 <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
                   Vr. unitario
                 </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    { borderColor: colors.divider, color: colors.text.primary },
-                  ]}
-                  value={formatNegocioMoneyInput(item.unit_price)}
-                  onChangeText={(text) => {
-                    const unit_price = parseNegocioMoney(text);
-                    if (unit_price >= 0) onUpdateItem(idx, { unit_price });
-                  }}
+                <EditableMoneyInput
+                  value={item.unit_price}
+                  label={`Valor unitario de ${item.description}`}
+                  colors={colors}
+                  onChange={(unit_price) => onUpdateItem(idx, { unit_price })}
                 />
               </View>
             </View>

@@ -43,9 +43,6 @@ export default function HomeScreen() {
           eyebrow="Casa Ideal"
           title={`Hola, ${userName}`}
           subtitle={dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}
-          actionIcon="person"
-          actionLabel="Abrir perfil"
-          onActionPress={() => router.push('/(tabs)/profile')}
         />
 
         <View style={[styles.hero, { backgroundColor: colors.primary.main }]}>

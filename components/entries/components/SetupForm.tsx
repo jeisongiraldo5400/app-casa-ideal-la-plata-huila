@@ -8,7 +8,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
 
 // Local
 import { PurchaseOrderSelector } from './PurchaseOrderSelector';
@@ -37,16 +37,22 @@ export function SetupForm() {
     setWarehouse,
     setSetupStep,
     setSupplierSearchQuery,
-    startEntry,
+    openEntryConfirmation,
     entryType,
     setEntryType,
     purchaseOrderValidations,
   } = useEntriesStore();
 
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const uiColorScheme = isDark ? 'dark' : 'light';
   const currentStep = !entryType ? 1 : setupStep === 'supplier' ? 1 : setupStep === 'purchase-order' ? 2 : 3;
+  const stepLabels = entryType === 'PO_ENTRY'
+    ? ['Proveedor', 'Orden', 'Bodega']
+    : entryType === 'ENTRY'
+      ? ['Proveedor', 'Bodega']
+      : ['Bodega'];
+  const dynamicStep = !entryType ? 1 : entryType === 'PO_ENTRY' ? currentStep : setupStep === 'warehouse' ? stepLabels.length : 1;
 
   useEffect(() => {
     loadSuppliers();
@@ -91,25 +97,11 @@ export function SetupForm() {
         Seleccione el tipo de entrada de inventario que va a realizar
       </Text>
 
-      <Button
-        title="Registrar entrada con orden de compra"
-        onPress={() => setEntryType('PO_ENTRY')}
-        style={styles.flowButton}
-      />
-
-      <Button
-        title="Registrar entrada manual"
-        onPress={() => setEntryType('ENTRY')}
-        style={styles.flowButton}
-        variant="secondary"
-      />
-
-      <Button
-        title="Realizar carga inicial"
-        onPress={() => setEntryType('INITIAL_LOAD')}
-        style={styles.flowButton}
-        variant="outline"
-      />
+      <View style={styles.flowCards}>
+        <FlowCard icon="receipt-long" title="Con orden de compra" description="Recibe únicamente productos y cantidades pendientes de una OC." color={Colors.primary.main} secondaryColor={Colors.text.secondary} background={Colors.surface.muted} onPress={() => setEntryType('PO_ENTRY')} />
+        <FlowCard icon="add-box" title="Entrada manual" description="Registra mercancía sin asociarla a una orden de compra." color={Colors.info.main} secondaryColor={Colors.text.secondary} background={Colors.background.default} onPress={() => setEntryType('ENTRY')} />
+        <FlowCard icon="inventory" title="Carga inicial" description="Establece el inventario inicial de una bodega." color={Colors.success.main} secondaryColor={Colors.text.secondary} background={`${Colors.success.main}12`} onPress={() => setEntryType('INITIAL_LOAD')} />
+      </View>
     </View>
   );
 
@@ -264,6 +256,7 @@ export function SetupForm() {
     const selectedOrder = purchaseOrders.find(order => order.id === purchaseOrderId);
     const orderItemsCount = selectedOrder?.items?.length || 0;
     const totalUnits = selectedOrder?.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+    const warehouseStepNumber = entryType === 'INITIAL_LOAD' ? 1 : entryType === 'ENTRY' ? 2 : 3;
 
     return (
       <View>
@@ -283,7 +276,7 @@ export function SetupForm() {
           </TouchableOpacity>
           <View style={styles.stepHeaderText}>
             <Text style={[styles.stepTitle, { color: Colors.text.primary }]}>
-              {entryType === 'INITIAL_LOAD' ? 'Paso 1' : 'Paso 3'}: Seleccionar bodega
+              Paso {warehouseStepNumber}: Seleccionar bodega
             </Text>
             <Text style={[styles.stepDescription, { color: Colors.text.secondary }]}>
               Seleccione la bodega de destino para la entrada
@@ -352,7 +345,7 @@ export function SetupForm() {
           return (
             <Button
               title={isOrderComplete ? 'Orden completa — no se puede escanear' : 'Comenzar entrada'}
-              onPress={startEntry}
+              onPress={openEntryConfirmation}
               disabled={!canStart}
               style={styles.button}
             />
@@ -370,15 +363,19 @@ export function SetupForm() {
           Complete los pasos para configurar la entrada de productos
         </Text>
 
-        <View style={styles.stepper} accessibilityLabel={`Paso ${currentStep} de 3`}>
-          {['Origen', 'Orden', 'Bodega'].map((label, index) => {
+        {entryType ? <View style={styles.stepper} accessibilityLabel={`Paso ${dynamicStep} de ${stepLabels.length}`}>
+          {stepLabels.map((label, index) => {
             const stepNumber = index + 1;
-            const active = stepNumber === currentStep;
-            const complete = stepNumber < currentStep;
+            const active = stepNumber === dynamicStep;
+            const complete = stepNumber < dynamicStep;
             return (
               <View key={label} style={styles.stepperItem}>
-                <View style={[styles.stepperDot, (active || complete) && { backgroundColor: Colors.primary.main }]}>
-                  <Text style={[styles.stepperNumber, (active || complete) && { color: Colors.primary.contrastText }]}>
+                <View
+                  style={[styles.stepperDot, { backgroundColor: Colors.divider }, (active || complete) && { backgroundColor: Colors.primary.main }]}
+                >
+                  <Text
+                    style={[styles.stepperNumber, { color: Colors.text.secondary }, (active || complete) && { color: Colors.primary.contrastText }]}
+                  >
                     {complete ? '✓' : stepNumber}
                   </Text>
                 </View>
@@ -386,7 +383,7 @@ export function SetupForm() {
               </View>
             );
           })}
-        </View>
+        </View> : null}
 
         {!entryType ? (
           renderFlowSelectionStep()
@@ -399,6 +396,24 @@ export function SetupForm() {
         )}
       </Card>
     </View>
+  );
+}
+
+function FlowCard({ icon, title, description, color, secondaryColor, background, onPress }: {
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  title: string;
+  description: string;
+  color: string;
+  secondaryColor: string;
+  background: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.78} style={[styles.flowCard, { backgroundColor: background, borderColor: `${color}45` }]}>
+      <View style={[styles.flowIcon, { backgroundColor: `${color}18` }]}><MaterialIcons name={icon} size={25} color={color} /></View>
+      <View style={styles.flowCopy}><Text style={[styles.flowTitle, { color }]}>{title}</Text><Text style={[styles.flowDescription, { color: secondaryColor }]}>{description}</Text></View>
+      <MaterialIcons name="chevron-right" size={25} color={color} />
+    </TouchableOpacity>
   );
 }
 
@@ -420,9 +435,15 @@ const styles = StyleSheet.create({
   },
   stepper: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
   stepperItem: { alignItems: 'center', flex: 1 },
-  stepperDot: { alignItems: 'center', backgroundColor: '#D1D5DB', borderRadius: 14, height: 28, justifyContent: 'center', width: 28 },
-  stepperNumber: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  stepperDot: { alignItems: 'center', borderRadius: 14, height: 28, justifyContent: 'center', width: 28 },
+  stepperNumber: { fontSize: 13, fontWeight: '700' },
   stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
+  flowCards: { gap: 12 },
+  flowCard: { alignItems: 'center', borderRadius: 18, borderWidth: 1, flexDirection: 'row', padding: 16 },
+  flowIcon: { alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 },
+  flowCopy: { flex: 1, marginHorizontal: 12 },
+  flowTitle: { fontSize: 16, fontWeight: '800' },
+  flowDescription: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   stepHeader: {
     flexDirection: 'row',
     alignItems: 'center',

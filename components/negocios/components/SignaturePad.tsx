@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useState } from 'react';
-import * as ScreenOrientation from 'expo-screen-orientation';
 import {
   View,
   StyleSheet,
@@ -10,8 +9,6 @@ import {
   Image,
   useWindowDimensions,
   StatusBar,
-  ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect, SvgUri, SvgXml } from 'react-native-svg';
@@ -110,7 +107,6 @@ function SignatureFullscreenModal({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
-  const [orientationReady, setOrientationReady] = useState(Platform.OS === 'web');
 
   const { width: padW, height: padH } = fitSignaturePad(
     width - (landscape ? 48 : 24),
@@ -134,46 +130,6 @@ function SignatureFullscreenModal({
     if (visible) reset();
   }, [visible]);
 
-  React.useEffect(() => {
-    if (!visible) {
-      setOrientationReady(Platform.OS === 'web');
-      return;
-    }
-    if (Platform.OS === 'web') return;
-
-    let disposed = false;
-    setOrientationReady(false);
-
-    const prepareLandscape = async () => {
-      try {
-        await ScreenOrientation.lockAsync(
-          ScreenOrientation.OrientationLock.LANDSCAPE
-        );
-      } catch (error) {
-        console.warn('No se pudo fijar la orientación horizontal:', error);
-      } finally {
-        if (disposed) {
-          await ScreenOrientation.lockAsync(
-            ScreenOrientation.OrientationLock.PORTRAIT_UP
-          ).catch(() => undefined);
-        } else {
-          setOrientationReady(true);
-        }
-      }
-    };
-
-    void prepareLandscape();
-
-    return () => {
-      disposed = true;
-      void ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP
-      ).catch((error) => {
-        console.warn('No se pudo restaurar la orientación vertical:', error);
-      });
-    };
-  }, [visible]);
-
   const confirmPng = () => {
     svgRef.current?.toDataURL(
       (base64: string) => onConfirm(`data:image/png;base64,${base64}`),
@@ -191,8 +147,8 @@ function SignatureFullscreenModal({
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => orientationReady,
-        onMoveShouldSetPanResponder: () => orientationReady,
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (evt) => {
           const { locationX, locationY } = evt.nativeEvent;
           const point = mapPointToSignature(
@@ -218,7 +174,7 @@ function SignatureFullscreenModal({
         onPanResponderRelease: finishStroke,
         onPanResponderTerminate: finishStroke,
       }),
-    [finishStroke, orientationReady, padH, padW]
+    [finishStroke, padH, padW]
   );
 
   const displayPath = useMemo(() => {
@@ -231,6 +187,7 @@ function SignatureFullscreenModal({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
+      supportedOrientations={['portrait']}
       onRequestClose={onCancel}
       statusBarTranslucent
     >
@@ -248,9 +205,7 @@ function SignatureFullscreenModal({
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{title}</Text>
           <Text style={styles.modalHint}>
-            {landscape
-              ? 'Firme en el área blanca · Confirme al terminar'
-              : 'Gire el teléfono (horizontal) si le resulta más cómodo'}
+            Firme en el área blanca y confirme al terminar
           </Text>
         </View>
 
@@ -287,14 +242,7 @@ function SignatureFullscreenModal({
           </Svg>
           {!hasStroke && (
             <View style={styles.padPlaceholder} pointerEvents="none">
-              {orientationReady ? (
-                <Text style={styles.padPlaceholderText}>Firme aquí</Text>
-              ) : (
-                <View style={styles.orientationLoading}>
-                  <ActivityIndicator color="#1565c0" />
-                  <Text style={styles.padPlaceholderText}>Preparando modo horizontal…</Text>
-                </View>
-              )}
+              <Text style={styles.padPlaceholderText}>Firme aquí</Text>
             </View>
           )}
         </View>
@@ -373,7 +321,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   padPlaceholderText: { color: '#bbb', fontSize: 20, fontWeight: '500' },
-  orientationLoading: { alignItems: 'center', gap: 10 },
   modalActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',

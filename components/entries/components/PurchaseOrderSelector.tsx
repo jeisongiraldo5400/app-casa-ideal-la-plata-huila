@@ -14,7 +14,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 // UI
 import { Card } from "@/components/ui/Card";
 import { getColors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useTheme } from '@/components/theme';
 
 // Hooks
 import { useUserRoles } from "@/hooks/useUserRoles";
@@ -44,8 +44,8 @@ export function PurchaseOrderSelector({
 
   // Hooks
   const { canMarkOrderAsReceived } = useUserRoles();
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
 
   if (purchaseOrders.length === 0) {
     return (

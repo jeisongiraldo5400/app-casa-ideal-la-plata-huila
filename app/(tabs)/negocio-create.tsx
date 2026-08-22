@@ -1015,9 +1015,6 @@ export default function NegocioCreateScreen() {
               <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
                 Valor cuota: {formatCOP(calc.installmentAmount)}
               </Text>
-              <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                Interés: {formatCOP(calc.interestAmount)} · {settings.formula_type}
-              </Text>
             </View>
           </View>
         )}

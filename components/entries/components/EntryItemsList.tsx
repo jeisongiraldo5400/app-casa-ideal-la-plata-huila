@@ -16,6 +16,7 @@ export function EntryItemsList() {
     loading,
     purchaseOrderId,
     selectedPurchaseOrder,
+    reset,
   } = useEntriesStore();
 
   const { user } = useAuth();
@@ -91,6 +92,7 @@ export function EntryItemsList() {
               } else {
                 if (purchaseOrderId) await loadRegisteredQuantities();
                 Alert.alert('Entrada registrada', 'El inventario y el progreso de la orden fueron actualizados correctamente.');
+                reset();
               }
             },
           },

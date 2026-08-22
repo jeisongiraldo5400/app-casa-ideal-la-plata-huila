@@ -30,6 +30,29 @@ type PurchaseOrderItem =
   Database["public"]["Tables"]["purchase_order_items"]["Row"];
 
 export type EntryType = "PO_ENTRY" | "ENTRY" | "INITIAL_LOAD";
+export type EntryStep = "flow-selection" | "setup" | "confirmation" | "scanning" | "product-form";
+export type EntryUiStage = "idle" | "product_review" | "entry_review" | "success";
+
+export type EntryScanResult =
+  | { status: "found"; product: Product; error: null }
+  | { status: "not_found"; product: null; error: null }
+  | { status: "error"; product: null; error: string };
+
+export type EntryActionResult =
+  | { ok: true; error: null }
+  | { ok: false; error: string };
+
+export interface FinalizeEntrySummary {
+  entryType: EntryType;
+  orderNumber: string | null;
+  productCount: number;
+  totalUnits: number;
+  orderCompleted: boolean;
+}
+
+export type FinalizeEntryResult =
+  | { ok: true; error: null; summary: FinalizeEntrySummary }
+  | { ok: false; error: any; summary: null };
 
 export interface EntryItem {
   product: Product;
@@ -97,7 +120,8 @@ interface EntriesState {
   loading: boolean;
   loadingMessage: string | null;
   error: string | null;
-  step: "flow-selection" | "setup" | "scanning" | "product-form";
+  step: EntryStep;
+  uiStage: EntryUiStage;
   setupStep: "supplier" | "purchase-order" | "warehouse"; // Paso actual en el setup
 
   // Datos para formularios
@@ -147,16 +171,17 @@ interface EntriesState {
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
+  openEntryConfirmation: () => boolean;
   startEntry: () => void;
 
   // Actions - Scanning
-  scanBarcode: (barcode: string) => Promise<void>;
+  scanBarcode: (barcode: string) => Promise<EntryScanResult>;
   searchProductByBarcode: (barcode: string) => Promise<Product | null>;
   addProductToEntry: (
     product: Product,
     quantity: number,
     barcode: string
-  ) => Promise<void>;
+  ) => Promise<EntryActionResult>;
   removeProductFromEntry: (index: number) => void;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
@@ -167,7 +192,8 @@ interface EntriesState {
   ) => Promise<{ product: Product | null; error: any }>;
 
   // Actions - Finalize
-  finalizeEntry: (userId: string) => Promise<{ error: any }>;
+  finalizeEntry: (userId: string) => Promise<FinalizeEntryResult>;
+  setUiStage: (stage: EntryUiStage) => void;
 
   // Actions - Reset
   reset: () => void;
@@ -194,6 +220,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   loadingMessage: null,
   error: null,
   step: "flow-selection",
+  uiStage: "idle",
   setupStep: "supplier",
   suppliers: [],
   purchaseOrders: [],
@@ -215,6 +242,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         selectedPurchaseOrder: null,
         scannedItemsProgress: new Map(),
         selectedOrderProductId: null,
+        uiStage: "idle",
       });
       return;
     }
@@ -226,6 +254,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       selectedPurchaseOrder: null,
       scannedItemsProgress: new Map(),
       selectedOrderProductId: null,
+      uiStage: "idle",
     });
   },
 
@@ -793,7 +822,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
-  startEntry: () => {
+  openEntryConfirmation: () => {
     const {
       supplierId,
       warehouseId,
@@ -804,24 +833,24 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     if (!warehouseId) {
       set({ error: "Debe seleccionar una bodega" });
-      return;
+      return false;
     }
 
     if (!entryType) {
       set({ error: "Debe seleccionar un tipo de entrada" });
-      return;
+      return false;
     }
 
     if (entryType === "PO_ENTRY" && !supplierId) {
       set({
         error: "Debe seleccionar un proveedor para entrada con orden de compra",
       });
-      return;
+      return false;
     }
 
     if (entryType === "PO_ENTRY" && !purchaseOrderId) {
       set({ error: "Debe seleccionar una orden de compra" });
-      return;
+      return false;
     }
 
     // Validar si hay una orden de compra seleccionada y si está completa
@@ -832,15 +861,22 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           error:
             "Esta orden de compra ya está completa. No se pueden escanear más productos.",
         });
-        return;
+        return false;
       }
     }
 
-    set({ step: "scanning", error: null });
+    set({ step: "confirmation", error: null });
+    return true;
+  },
+
+  startEntry: () => {
+    const opened = get().openEntryConfirmation();
+    if (!opened) return;
+    set({ step: "scanning", uiStage: "idle", error: null });
   },
 
   // Scanning actions
-  scanBarcode: async (barcode: string) => {
+  scanBarcode: async (barcode: string): Promise<EntryScanResult> => {
     set({
       loading: true,
       loadingMessage: 'Buscando producto...',
@@ -851,7 +887,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     try {
       const product = await get().searchProductByBarcode(barcode);
       if (product) {
-        const { purchaseOrderId, entryType, selectedOrderProductId } = get();
+        const { purchaseOrderId } = get();
 
         // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
         // Esto previene que se puedan escanear productos excediendo las cantidades de la orden
@@ -866,7 +902,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
               currentProduct: null,
               currentScannedBarcode: null,
             });
-            return;
+            return {
+              status: "error",
+              product: null,
+              error: validation.error || "Producto no válido para esta orden",
+            };
           }
 
           // NOTA: Ya no se requiere seleccionar un producto específico de la orden
@@ -874,8 +914,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           // Esto permite escanear cualquier producto de la OC sin preselección (similar a Exits)
         }
 
-        set({ currentProduct: product, loading: false, loadingMessage: null, step: "scanning" });
+        set({ currentProduct: product, loading: false, loadingMessage: null, step: "scanning", uiStage: "product_review" });
+        return { status: "found", product, error: null };
       } else {
+        const { entryType, purchaseOrderId } = get();
+        if (entryType === "PO_ENTRY" || purchaseOrderId) {
+          const message = "El código no corresponde a un producto registrado en esta orden de compra";
+          set({
+            currentProduct: null,
+            currentScannedBarcode: null,
+            loading: false,
+            loadingMessage: null,
+            step: "scanning",
+            uiStage: "idle",
+            error: message,
+          });
+          return { status: "error", product: null, error: message };
+        }
         set({
           currentProduct: null,
           loading: false,
@@ -883,6 +938,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           step: "product-form",
           error: null, // No es error, es flujo normal
         });
+        return { status: "not_found", product: null, error: null };
       }
     } catch (error: any) {
       set({
@@ -893,6 +949,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         currentProduct: null,
         currentScannedBarcode: null, // Limpiar para que reaparezcan los botones del escáner
       });
+      return {
+        status: "error",
+        product: null,
+        error: error.message || "Error al buscar el producto",
+      };
     }
   },
 
@@ -919,20 +980,20 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     // Si currentProduct ya fue limpiado por una ejecución previa, ignorar
     if (!get().currentProduct) {
       console.warn('[addProductToEntry] currentProduct es null, ignorando llamada duplicada');
-      return;
+      return { ok: false, error: "El producto ya fue procesado" };
     }
 
     const {
       entryItems,
       purchaseOrderId,
-      selectedOrderProductId,
       entryType,
       scannedItemsProgress,
     } = get();
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      set({ error: "La cantidad debe ser un número mayor que cero" });
-      return;
+      const error = "La cantidad debe ser un número mayor que cero";
+      set({ error });
+      return { ok: false, error };
     }
 
     // Si hay una orden de compra seleccionada, SIEMPRE validar contra ella (independiente del entryType)
@@ -944,8 +1005,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         quantity
       );
       if (!validation.valid) {
-        set({ error: validation.error });
-        return;
+        const error = validation.error || "Producto no válido para esta orden";
+        set({ error });
+        return { ok: false, error };
       }
 
       // NOTA: Ya no se requiere seleccionar un producto específico de la orden
@@ -980,6 +1042,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     // Resetear el escaneo actual
     get().resetCurrentScan();
+    return { ok: true, error: null };
   },
 
   removeProductFromEntry: (index) => {
@@ -1128,13 +1191,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   // Finalize entry
-  finalizeEntry: async (userId): Promise<{ error: any }> => {
+  finalizeEntry: async (userId): Promise<FinalizeEntryResult> => {
+    const failure = (error: any): FinalizeEntryResult => ({ ok: false, error, summary: null });
     // GUARD: Prevenir doble ejecución por doble-tap o race condition
     // Esto es crítico porque entre el tap del usuario y el re-render de React
     // que deshabilita el botón, un segundo tap puede disparar otra ejecución
     if (get().loading) {
       console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
-      return { error: { message: "Ya se está procesando esta entrada" } };
+      return failure({ message: "Ya se está procesando esta entrada" });
     }
 
     const {
@@ -1147,38 +1211,32 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } = get();
 
     if (entryItems.length === 0) {
-      return { error: { message: "No hay productos para registrar" } };
+      return failure({ message: "No hay productos para registrar" });
     }
 
     if (!warehouseId) {
-      return { error: { message: "Debe seleccionar una bodega" } };
+      return failure({ message: "Debe seleccionar una bodega" });
     }
 
     if (!entryType) {
-      return { error: { message: "Tipo de entrada no definido" } };
+      return failure({ message: "Tipo de entrada no definido" });
     }
 
     if (!userId) {
-      return { error: { message: "Usuario no autenticado" } };
+      return failure({ message: "Usuario no autenticado" });
     }
 
     // Validación adicional para entradas con orden de compra
     if (entryType === "PO_ENTRY" && !supplierId) {
-      return {
-        error: {
-          message:
-            "Debe seleccionar un proveedor para entrada con orden de compra",
-        },
-      };
+      return failure({
+        message: "Debe seleccionar un proveedor para entrada con orden de compra",
+      });
     }
 
     if (entryType === "PO_ENTRY" && !purchaseOrderId) {
-      return {
-        error: {
-          message:
-            "Debe seleccionar una orden de compra para registrar la entrada.",
-        },
-      };
+      return failure({
+        message: "Debe seleccionar una orden de compra para registrar la entrada.",
+      });
     }
 
     // Establecer loading al inicio del proceso
@@ -1355,7 +1413,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
                     `Cantidad en orden: ${orderItem.quantity}\n` +
                     `Ya registrado en el sistema: ${registeredInBD}\n` +
                     `Intentando registrar en esta sesión: ${sessionQty}\n` +
-                    `Máximo permitido: ${orderItem.quantity}, Total después de esta sesión sería: ${totalAfterSession}`,
+                    `Pendiente disponible: ${pending}, Total después de esta sesión sería: ${totalAfterSession}`,
                 };
               }
             }
@@ -1387,7 +1445,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       });
       // Limpiar loading si la validación falla
       set({ loading: false, loadingMessage: null });
-      return { error: { message: validationResult.message } };
+      return failure({ message: validationResult.message });
     }
 
     try {
@@ -1446,19 +1504,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         });
         // Limpiar loading en caso de error al insertar
         set({ loading: false, loadingMessage: null });
-        return { error: entriesError };
+        return failure(entriesError);
       }
 
       const insertedEntryIds =
         (entryResult as { entry_ids?: string[] } | null)?.entry_ids || [];
       if (insertedEntryIds.length !== entryItems.length) {
         set({ loading: false, loadingMessage: null });
-        return {
-          error: {
-            message:
-              "La respuesta del registro de entradas está incompleta. Intente nuevamente.",
-          },
-        };
+        return failure({
+          message: "La respuesta del registro de entradas está incompleta. Intente nuevamente.",
+        });
       }
 
       // NOTA: No actualizamos warehouse_stock manualmente aquí porque
@@ -1468,6 +1523,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       // Actualizar el cache de entradas registradas inmediatamente
       // y verificar si la orden está completa para actualizar el estado automáticamente
+      let orderCompleted = false;
       if (purchaseOrderId) {
         set({ loadingMessage: 'Actualizando progreso de la orden...' });
         const { registeredEntriesCache } = get();
@@ -1491,6 +1547,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         const progressData = (entryResult as {
           purchase_order_progress?: { success?: boolean; all_complete?: boolean; updated?: boolean } | null;
         } | null)?.purchase_order_progress;
+        orderCompleted = Boolean(progressData?.success && progressData.all_complete);
         if (progressData?.success && progressData.all_complete) {
           console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
           // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
@@ -1501,39 +1558,28 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
       }
 
-      // Guardar las órdenes antes de resetear
-      const currentPurchaseOrders = get().purchaseOrders;
-
-      // NOTA: No llamamos validateAllPurchaseOrders aquí porque:
-      // 1. Ya actualizamos el cache manualmente arriba (líneas 1368-1376)
-      // 2. validateAllPurchaseOrders consultaría toda la BD y sobrescribiría el cache
-      // 3. Esto causaría recálculos innecesarios y posibles inconsistencias
-      // Si se necesitan actualizar las validaciones, se pueden actualizar solo para esta orden
-      // o esperar a que el usuario recargue las órdenes
-
-      // Resetear todo después de finalizar (excepto las validaciones y cache que se actualizaron)
-      const updatedValidations = get().purchaseOrderValidations;
-      const updatedCache = get().registeredEntriesCache;
-      get().reset();
-
-      // Restaurar las órdenes, validaciones y cache actualizados
-      set({
-        purchaseOrders: currentPurchaseOrders,
-        purchaseOrderValidations: updatedValidations,
-        registeredEntriesCache: updatedCache,
-      });
       await clearPersistentIdempotencyKey(
         "register_inventory_entries_batch",
         requestFingerprint
       );
 
       // Limpiar loading después de finalizar exitosamente
-      set({ loading: false, loadingMessage: null });
-      return { error: null };
+      set({ loading: false, loadingMessage: null, uiStage: "success" });
+      return {
+        ok: true,
+        error: null,
+        summary: {
+          entryType,
+          orderNumber: selectedPurchaseOrder?.order_number || null,
+          productCount: entryItems.length,
+          totalUnits: entryItems.reduce((sum, item) => sum + item.quantity, 0),
+          orderCompleted,
+        },
+      };
     } catch (error: any) {
       // Limpiar loading en caso de error
       set({ loading: false, loadingMessage: null });
-      return { error };
+      return failure(error);
     }
   },
 
@@ -1548,6 +1594,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       loading: false,
       loadingMessage: null,
       step: "flow-selection",
+      uiStage: "idle",
       setupStep: "supplier",
       entryType: null,
       supplierId: null,
@@ -1573,6 +1620,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       loading: false,
       loadingMessage: null,
       step: "flow-selection",
+      uiStage: "idle",
       setupStep: "supplier",
       entryType: null,
       supplierId: null,
@@ -1594,6 +1642,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       step: "scanning",
+      uiStage: "idle",
     });
   },
 
@@ -1601,9 +1650,12 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     set({ error: null });
   },
 
+  setUiStage: (uiStage) => set({ uiStage }),
+
   goBackToSetup: () => {
     set({
       step: "setup", // Regresar al setup del flujo actual
+      uiStage: "idle",
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,

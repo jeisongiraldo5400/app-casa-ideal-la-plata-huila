@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
 import { PrinterPickerModal } from '@/components/printing';
+import { startSupabaseAuthLifecycle } from '@/lib/supabase';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
@@ -37,6 +38,8 @@ function RootLayoutNav() {
   const router = useRouter();
   const [appIsReady, setAppIsReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
+
+  useEffect(() => startSupabaseAuthLifecycle(), []);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;

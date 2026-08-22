@@ -91,6 +91,66 @@ describe('entriesStore', () => {
       expect(state.step).toBe('setup');
       expect(state.error).toMatch(/orden de compra/i);
     });
+
+    it('uses a real confirmation step before scanning', () => {
+      useEntriesStore.setState({ entryType: 'INITIAL_LOAD', warehouseId: 'warehouse-1', step: 'setup' });
+
+      expect(useEntriesStore.getState().openEntryConfirmation()).toBe(true);
+      expect(useEntriesStore.getState().step).toBe('confirmation');
+
+      useEntriesStore.getState().startEntry();
+      expect(useEntriesStore.getState().step).toBe('scanning');
+      expect(useEntriesStore.getState().uiStage).toBe('idle');
+    });
+  });
+
+  describe('guided scanning', () => {
+    const originalSearch = useEntriesStore.getState().searchProductByBarcode;
+
+    afterEach(() => {
+      useEntriesStore.setState({ searchProductByBarcode: originalSearch });
+    });
+
+    it('opens product creation only for a manual entry', async () => {
+      useEntriesStore.setState({
+        entryType: 'ENTRY',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(result.status).toBe('not_found');
+      expect(useEntriesStore.getState().step).toBe('product-form');
+      expect(useEntriesStore.getState().currentScannedBarcode).toBe('UNKNOWN');
+    });
+
+    it('does not create an unknown product inside a purchase order', async () => {
+      useEntriesStore.setState({
+        entryType: 'PO_ENTRY',
+        purchaseOrderId: 'order-1',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(result.status).toBe('error');
+      expect(useEntriesStore.getState().step).toBe('scanning');
+      expect(useEntriesStore.getState().error).toMatch(/orden de compra/i);
+    });
+
+    it('returns a typed result and retains an invalid product for correction', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      useEntriesStore.setState({ currentProduct: product, currentScannedBarcode: '123' });
+
+      const result = await useEntriesStore.getState().addProductToEntry(product, 0, '123');
+
+      expect(result).toEqual({ ok: false, error: 'La cantidad debe ser un número mayor que cero' });
+      expect(useEntriesStore.getState().currentProduct).toBe(product);
+    });
   });
 
   describe('finalizeEntry', () => {

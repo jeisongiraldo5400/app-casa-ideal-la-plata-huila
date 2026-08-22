@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/components/theme';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -43,12 +43,11 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     loadCategories,
     loadBrands,
     createProduct,
-    currentQuantity,
   } = useEntriesStore();
 
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const uiColorScheme = isDark ? 'dark' : 'light';
   const [loading, setLoading] = useState(false);
 
   const categoryOptions = useMemo(
@@ -63,7 +62,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
   useEffect(() => {
     loadCategories();
     loadBrands();
-  }, []);
+  }, [loadBrands, loadCategories]);
 
   const initialValues: ProductFormValues = {
     name: '',
@@ -93,9 +92,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
       if (error) {
         Alert.alert('Error', error.message || 'Error al crear el producto');
       } else if (product) {
-        // Agregar el producto a la entrada automáticamente
-        useEntriesStore.getState().addProductToEntry(product, currentQuantity, barcode);
-        Alert.alert('Éxito', 'Producto creado y agregado a la entrada');
+        // El producto debe pasar por la misma verificación de cantidad que uno escaneado.
+        useEntriesStore.setState({
+          currentProduct: product,
+          currentScannedBarcode: barcode,
+          currentQuantity: 1,
+          step: 'scanning',
+          uiStage: 'product_review',
+          error: null,
+        });
         onProductCreated(product.id);
       }
     } catch (error: any) {
@@ -265,4 +270,3 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-
