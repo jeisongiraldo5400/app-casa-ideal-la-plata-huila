@@ -25,6 +25,22 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 export type ExitMode = 'direct_user' | 'direct_customer';
 export type ExitStep = 'setup' | 'confirmation' | 'scanning';
 
+export type ExitActionResult =
+  | { ok: true; error: null }
+  | { ok: false; error: string };
+
+export type FinalizeExitSummary = {
+  orderNumber: string;
+  recipientName: string;
+  productCount: number;
+  totalUnits: number;
+  orderCompleted: boolean;
+};
+
+export type FinalizeExitResult =
+  | { ok: true; error: null; summary: FinalizeExitSummary }
+  | { ok: false; error: any; summary: null };
+
 export interface ExitItem {
   product: Product;
   quantity: number;
@@ -335,13 +351,13 @@ interface ExitsState {
     product: Product,
     quantity: number,
     barcode: string
-  ) => Promise<void>;
+  ) => Promise<ExitActionResult>;
   removeProductFromExit: (index: number) => void;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
 
   // Actions - Finalize
-  finalizeExit: (userId: string) => Promise<{ error: any }>;
+  finalizeExit: (userId: string) => Promise<FinalizeExitResult>;
 
   // Actions - Reset
   reset: () => void;
@@ -1456,30 +1472,30 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const {
       exitItems,
       warehouseId,
-      currentProduct,
-      currentAvailableStock,
-      exitMode,
       scannedItemsProgress,
       selectedDeliveryOrderId
     } = get();
 
     // warehouseId se resuelve automáticamente desde scanBarcode (de la orden de entrega)
     if (!warehouseId) {
-      set({ error: 'No se pudo determinar la bodega del producto' });
-      return;
+      const error = 'No se pudo determinar la bodega del producto';
+      set({ error });
+      return { ok: false, error };
     }
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      set({ error: 'La cantidad debe ser un número mayor que cero' });
-      return;
+      const error = 'La cantidad debe ser un número mayor que cero';
+      set({ error });
+      return { ok: false, error };
     }
 
     // Validar que haya una orden de entrega seleccionada (siempre requerida)
     const { selectedDeliveryOrder, registeredExitsCache, targetOrderItemId } =
       get();
     if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
-      set({ error: 'Debe seleccionar una orden de entrega primero' });
-      return;
+      const error = 'Debe seleccionar una orden de entrega primero';
+      set({ error });
+      return { ok: false, error };
     }
 
     const validation = get().validateProductAgainstOrder(
@@ -1489,8 +1505,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       targetOrderItemId
     );
     if (!validation.valid) {
-      set({ error: validation.error });
-      return;
+      const error = validation.error || 'El producto no es válido para esta orden';
+      set({ error });
+      return { ok: false, error };
     }
 
     const key = compositeKey(product.id, warehouseId);
@@ -1520,10 +1537,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const totalQuantityInExit = (existingItem?.quantity || 0) + quantity;
 
     if (totalQuantityInExit > maxCartForKey) {
-      set({
-        error: `No hay suficiente stock. Disponible: ${maxCartForKey}, Intentando sacar: ${totalQuantityInExit}`
-      });
-      return;
+      const error = `No hay suficiente stock. Disponible: ${maxCartForKey}, Intentando sacar: ${totalQuantityInExit}`;
+      set({ error });
+      return { ok: false, error };
     }
 
     const availableStock = Math.max(maxCartForKey - totalQuantityInExit, 0);
@@ -1557,6 +1573,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     // Resetear escaneo actual
     get().resetCurrentScan();
+    return { ok: true, error: null };
   },
 
   removeProductFromExit: (index: number) => {
@@ -1679,10 +1696,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   // Finalize exit
-  finalizeExit: async (userId: string): Promise<{ error: any }> => {
+  finalizeExit: async (userId: string): Promise<FinalizeExitResult> => {
+    const failure = (error: any): FinalizeExitResult => ({ ok: false, error, summary: null });
+
     if (get().loading) {
       console.warn('[finalizeExit] Ya se está procesando una salida, ignorando llamada duplicada');
-      return { error: { message: 'Ya se está procesando esta salida' } };
+      return failure({ message: 'Ya se está procesando esta salida' });
     }
 
     const {
@@ -1691,29 +1710,30 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedUserId,
       selectedCustomerId,
       selectedDeliveryOrderId,
+      selectedDeliveryOrder,
       deliveryObservations,
       canRegisterExit,
       authorizationMessage
     } = get();
 
     if (exitItems.length === 0) {
-      return { error: { message: 'No hay productos para registrar' } };
+      return failure({ message: 'No hay productos para registrar' });
     }
 
     if (!exitMode) {
-      return { error: { message: 'Debe seleccionar un modo de salida' } };
+      return failure({ message: 'Debe seleccionar un modo de salida' });
     }
 
     if (exitMode === 'direct_user' && !selectedUserId) {
-      return { error: { message: 'Debe seleccionar un usuario destinatario' } };
+      return failure({ message: 'Debe seleccionar un usuario destinatario' });
     }
 
     if (exitMode === 'direct_customer' && !selectedCustomerId) {
-      return { error: { message: 'Debe seleccionar un cliente destinatario' } };
+      return failure({ message: 'Debe seleccionar un cliente destinatario' });
     }
 
     if (!selectedDeliveryOrderId) {
-      return { error: { message: 'Debe seleccionar una orden de entrega' } };
+      return failure({ message: 'Debe seleccionar una orden de entrega' });
     }
 
     if (
@@ -1721,27 +1741,31 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         (item) => !Number.isFinite(item.quantity) || item.quantity <= 0
       )
     ) {
-      return {
-        error: { message: 'Todas las cantidades deben ser números mayores que cero' }
-      };
+      return failure({ message: 'Todas las cantidades deben ser números mayores que cero' });
     }
 
     if (selectedDeliveryOrderId && !canRegisterExit) {
-      return {
-        error: { message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE }
-      };
+      return failure({ message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
     }
 
     // Verificar que todos los items tengan warehouseId (resuelto desde la orden)
     const itemsWithoutWarehouse = exitItems.filter((item) => !item.warehouseId);
     if (itemsWithoutWarehouse.length > 0) {
-      return {
-        error: {
-          message:
-            'Algunos productos no tienen bodega asignada. Por favor, vuelva a escanearlos.'
-        }
-      };
+      return failure({
+        message: 'Algunos productos no tienen bodega asignada. Por favor, vuelva a escanearlos.'
+      });
     }
+
+    const successSummary: FinalizeExitSummary = {
+      orderNumber: selectedDeliveryOrder?.order_number || selectedDeliveryOrderId.slice(0, 8),
+      recipientName:
+        selectedDeliveryOrder?.customer_name ||
+        selectedDeliveryOrder?.assigned_to_user_name ||
+        'Destinatario',
+      productCount: exitItems.length,
+      totalUnits: exitItems.reduce((sum, item) => sum + item.quantity, 0),
+      orderCompleted: false
+    };
 
     // Establecer loading al inicio del proceso
     set({ loading: true, loadingMessage: 'Registrando salida...' });
@@ -1761,11 +1785,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             authorizationMessage:
               authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
           });
-          return {
-            error: {
-              message: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
-            }
-          };
+          return failure({
+            message: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
+          });
         }
 
         set({ canRegisterExit: true, authorizationMessage: null });
@@ -1844,24 +1866,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           }
         });
         set({ loading: false, loadingMessage: null });
-        return {
-          error: {
-            ...exitsError,
-            message: backendDeniedMessage || exitsError.message
-          }
-        };
+        return failure({
+          ...exitsError,
+          message: backendDeniedMessage || exitsError.message
+        });
       }
 
       const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
       if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
         set({ loading: false, loadingMessage: null });
-        return {
-          error: {
-            message:
-              'Error al registrar las salidas. No se insertaron registros.'
-          }
-        };
+        return failure({
+          message: 'Error al registrar las salidas. No se insertaron registros.'
+        });
       }
 
       if (insertedExitIds.length !== exitItems.length) {
@@ -1869,16 +1886,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           `Respuesta inválida: se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
         set({ loading: false, loadingMessage: null });
-        return {
-          error: {
-            message:
-              'La respuesta del registro de salidas está incompleta. Intente nuevamente.'
-          }
-        };
+        return failure({
+          message: 'La respuesta del registro de salidas está incompleta. Intente nuevamente.'
+        });
       }
 
       // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
       // Refrescar caché local desde inventory_exits + delivery_order_items.
+      let orderCompleted = false;
       if (selectedDeliveryOrderId) {
         set({ loadingMessage: 'Sincronizando orden...' });
 
@@ -1888,8 +1903,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         if (!finalCache[orderIdToRefresh]) {
           finalCache[orderIdToRefresh] = {};
         }
-
-        let orderCompleted = false;
 
         try {
           const { data: exitsData, error: exitsRefreshError } = await supabase
@@ -1997,18 +2010,22 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         }
       }
 
-      // Resetear todo después de finalizar
-      get().reset();
+      // La UI conserva el resumen para mostrar la confirmación de éxito.
+      // El estado se reinicia cuando el operador elige su siguiente destino.
       pendingExitRequests.delete(requestFingerprint);
 
       // Limpiar loading después de finalizar exitosamente
       set({ loading: false, loadingMessage: null });
-      return { error: null };
+      return {
+        ok: true,
+        error: null,
+        summary: { ...successSummary, orderCompleted }
+      };
     } catch (error: any) {
       console.error('Error finalizing exit:', error);
       // Limpiar loading en caso de error
       set({ loading: false, loadingMessage: null });
-      return { error };
+      return failure(error);
     }
   },
 

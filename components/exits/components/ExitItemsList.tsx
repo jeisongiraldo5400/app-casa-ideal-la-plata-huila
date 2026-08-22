@@ -21,6 +21,7 @@ export function ExitItemsList() {
     authorizationMessage,
     selectedDeliveryOrder,
     exitMode,
+    reset,
   } = useExitsStore();
 
   const { user } = useAuth();
@@ -61,6 +62,7 @@ export function ExitItemsList() {
                 Alert.alert('Error', errorMessage);
               } else {
                 Alert.alert('Salida registrada', 'El inventario y el progreso de la orden fueron actualizados correctamente.');
+                reset();
               }
             } catch (error: any) {
               Alert.alert('Error', error?.message || 'Error inesperado al finalizar la salida');

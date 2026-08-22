@@ -1,4 +1,4 @@
-import { useExitsStore, type DeliveryOrder } from '../exitsStore';
+import { useExitsStore, type DeliveryOrder, type ExitItem } from '../exitsStore';
 
 jest.mock('@/lib/supabase', () => ({
   supabase: {},
@@ -102,5 +102,53 @@ describe('flujo de confirmación de salidas', () => {
     expect(state.step).toBe('confirmation');
     expect(state.selectedDeliveryOrderId).toBe(order.id);
     expect(state.deliveryObservations).toBe('Recibe portería');
+  });
+
+  it('devuelve un resultado tipado y conserva el producto cuando la cantidad es inválida', async () => {
+    const product = {
+      id: 'product-1',
+      name: 'Producto 1',
+      sku: 'P-1',
+      barcode: '123',
+    } as ExitItem['product'];
+    useExitsStore.setState({
+      warehouseId: 'warehouse-1',
+      targetOrderItemId: 'item-1',
+      currentProduct: product,
+      currentScannedBarcode: '123',
+    });
+
+    const result = await useExitsStore.getState().addProductToExit(product, 0, '123');
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'La cantidad debe ser un número mayor que cero',
+    });
+    expect(useExitsStore.getState().currentProduct).toBe(product);
+    expect(useExitsStore.getState().exitItems).toHaveLength(0);
+  });
+
+  it('agrega un producto y solo entonces limpia la lectura actual', async () => {
+    const product = {
+      id: 'product-1',
+      name: 'Producto 1',
+      sku: 'P-1',
+      barcode: '123',
+    } as ExitItem['product'];
+    useExitsStore.setState({
+      warehouseId: 'warehouse-1',
+      targetOrderItemId: 'item-1',
+      currentProduct: product,
+      currentScannedBarcode: '123',
+    });
+
+    const result = await useExitsStore.getState().addProductToExit(product, 2, '123');
+
+    expect(result).toEqual({ ok: true, error: null });
+    expect(useExitsStore.getState().exitItems).toEqual([
+      expect.objectContaining({ product, quantity: 2, warehouseId: 'warehouse-1' }),
+    ]);
+    expect(useExitsStore.getState().currentProduct).toBeNull();
+    expect(useExitsStore.getState().scannedItemsProgress.get('product-1-warehouse-1')).toBe(2);
   });
 });

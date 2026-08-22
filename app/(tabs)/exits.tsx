@@ -1,22 +1,14 @@
-import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
-import { DeliveryOrderProgress } from '@/components/exits/components/DeliveryOrderProgress';
-import { ExitSessionContext } from '@/components/exits/components/ExitSessionContext';
-import { ExitItemsList } from '@/components/exits/components/ExitItemsList';
 import { ExitOrderConfirmation } from '@/components/exits/components/ExitOrderConfirmation';
-import { ProductFound } from '@/components/exits/components/ProductFound';
-import { QuantityInput } from '@/components/exits/components/QuantityInput';
+import { ExitScanningWorkspace } from '@/components/exits/components/ExitScanningWorkspace';
 import { SetupForm } from '@/components/exits/components/SetupForm';
 import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
 import { useTheme } from '@/components/theme';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -27,27 +19,14 @@ import {
 export default function ExitsScreen() {
   const {
     step,
-    selectedDeliveryOrderId,
-    currentProduct,
-    currentScannedBarcode,
-    currentQuantity,
-    currentAvailableStock,
-    exitItems,
     error,
     loading,
     loadingMessage,
-    scanBarcode,
-    addProductToExit,
-    setQuantity,
-    resetCurrentScan,
-    clearError,
-    goBackToSetup,
     resetAll,
   } = useExits();
 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [showScanner, setShowScanner] = useState(false);
 
   // Reset state when screen loses focus (tab navigation)
   useFocusEffect(
@@ -59,66 +38,6 @@ export default function ExitsScreen() {
       };
     }, [resetAll])
   );
-
-  const handleScan = async (barcode: string) => {
-    try {
-      if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
-        console.warn('Barcode vacío o inválido:', barcode);
-        return;
-      }
-
-      const trimmedBarcode = barcode.trim();
-
-      // Cerrar el scanner primero para evitar problemas
-      setShowScanner(false);
-
-      // Pequeño delay para asegurar que el scanner se cerró
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Procesar el escaneo con manejo de errores mejorado
-      try {
-        await scanBarcode(trimmedBarcode);
-      } catch (scanError: any) {
-        console.error('Error en scanBarcode:', scanError);
-        // El error ya está manejado en el store, solo asegurar que el scanner esté cerrado
-        setShowScanner(false);
-      }
-    } catch (error: any) {
-      console.error('Error al escanear código:', error);
-      // Asegurar que el scanner esté cerrado incluso si hay error
-      setShowScanner(false);
-      // Limpiar cualquier estado de error previo
-      clearError();
-    }
-  };
-
-  const handleAddProduct = async () => {
-    if (!currentProduct || currentQuantity <= 0) {
-      Alert.alert('Error', 'Por favor ingrese una cantidad válida');
-      return;
-    }
-
-    if (currentQuantity > currentAvailableStock) {
-      Alert.alert('Error', `La cantidad no puede exceder el stock disponible: ${currentAvailableStock}`);
-      return;
-    }
-
-    clearError();
-    try {
-      await addProductToExit(currentProduct, currentQuantity, currentScannedBarcode || '');
-    } catch {
-      // El error ya está en el store
-    }
-  };
-
-  if (showScanner) {
-    return (
-      <BarcodeScanner
-        onScan={handleScan}
-        onClose={() => setShowScanner(false)}
-      />
-    );
-  }
 
   return (
     <>
@@ -144,6 +63,8 @@ export default function ExitsScreen() {
 
       {step === 'confirmation' ? (
         <ExitOrderConfirmation />
+      ) : step === 'scanning' ? (
+        <ExitScanningWorkspace />
       ) : (
         <ScrollView
           style={[styles.container, { backgroundColor: colors.background.default }]}
@@ -165,7 +86,7 @@ export default function ExitsScreen() {
         </View>
       </View>
 
-      {step === 'setup' && <SetupForm />}
+      <SetupForm />
 
       {error && (
         <View style={[styles.errorContainer, { 
@@ -177,95 +98,6 @@ export default function ExitsScreen() {
         </View>
       )}
 
-      {step === 'scanning' && (
-        <>
-          <ExitSessionContext />
-          {!currentProduct && !currentScannedBarcode && (
-            <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
-              <View style={styles.scanCardContent}>
-                <View style={[styles.scanIconContainer, { backgroundColor: colors.primary.main + '15' }]}>
-                  <MaterialIcons name="qr-code-scanner" size={48} color={colors.primary.main} />
-                </View>
-                <Text style={[styles.scanTitle, { color: colors.text.primary }]}>
-                  Escanear Producto
-                </Text>
-                <Text style={[styles.scanSubtitle, { color: colors.text.secondary }]}>
-                  Use el escáner para buscar productos por código de barras
-                </Text>
-                <View style={styles.scanButtons}>
-                  <Button
-                    title="Escanear código de barras"
-                    onPress={() => {
-                      clearError();
-                      setShowScanner(true);
-                    }}
-                    style={styles.scanButton}
-                  />
-                  <Button
-                    title="Volver a confirmación"
-                    onPress={goBackToSetup}
-                    variant="outline"
-                    style={styles.cancelScanButton}
-                  />
-                </View>
-              </View>
-            </Card>
-          )}
-
-          {error && !currentProduct && !currentScannedBarcode && (
-            <Card style={[styles.scanCard, { backgroundColor: colors.background.paper }]}>
-              <View style={styles.scanCardContent}>
-                <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
-                <Text style={[styles.scanTitle, { color: colors.text.primary }]}>
-                  Error al escanear
-                </Text>
-                <Text style={[styles.scanSubtitle, { color: colors.text.secondary }]}>
-                  {error}
-                </Text>
-                <Button
-                  title="Intentar escanear de nuevo"
-                  onPress={() => {
-                    clearError();
-                    setShowScanner(true);
-                  }}
-                  style={styles.scanButton}
-                />
-              </View>
-            </Card>
-          )}
-
-          {currentProduct && (
-            <View style={styles.productSection}>
-              <ProductFound product={currentProduct} availableStock={currentAvailableStock} />
-              <Card style={[styles.quantityCard, { backgroundColor: colors.background.paper }]}>
-                <QuantityInput
-                  quantity={currentQuantity}
-                  maxQuantity={currentAvailableStock}
-                  onQuantityChange={setQuantity}
-                />
-              </Card>
-              <View style={styles.actionsContainer}>
-                <Button
-                  title="Agregar a la salida"
-                  onPress={handleAddProduct}
-                  style={styles.addButton}
-                />
-                <Button
-                  title="Cancelar"
-                  onPress={resetCurrentScan}
-                  variant="outline"
-                  style={styles.cancelButton}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* El detalle inicia colapsado; se expande solo cuando el operador lo necesita. */}
-          {selectedDeliveryOrderId && <DeliveryOrderProgress />}
-
-          {exitItems.length > 0 && <ExitItemsList />}
-        </>
-      )}
         </ScrollView>
       )}
     </>

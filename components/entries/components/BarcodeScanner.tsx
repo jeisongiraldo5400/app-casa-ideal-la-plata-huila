@@ -2,13 +2,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
   onClose: () => void;
+  title?: string;
+  instruction?: string;
+  contextLabel?: string;
 }
 
-export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
+export function BarcodeScanner({
+  onScan,
+  onClose,
+  title = 'Escanear producto',
+  instruction = 'Escanea el código de barras del producto',
+  contextLabel,
+}: BarcodeScannerProps) {
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +104,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   }, [onScan]);
 
   const onCameraReady = useCallback(() => {
+    setError(null);
     setCameraReady(true);
   }, []);
 
@@ -119,8 +131,11 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   }
 
   // Keep a stable function reference for onBarcodeScanned when enabled — toggling undefined/function on iOS can crash (expo/expo#35386).
+  // Android puede comenzar a emitir lecturas antes de notificar onCameraReady.
+  // En iOS conservamos la espera porque evita la carrera al montar la sesión nativa.
+  const canReadBarcode = Platform.OS !== 'ios' || cameraReady;
   const barcodeHandler =
-    permission?.granted && cameraReady && deferMountCamera ? handleBarCodeScanned : undefined;
+    permission?.granted && canReadBarcode && deferMountCamera ? handleBarCodeScanned : undefined;
 
   return (
     <View style={styles.container}>
@@ -129,13 +144,35 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
           style={StyleSheet.absoluteFillObject}
           facing="back"
           onCameraReady={onCameraReady}
+          onMountError={({ message }) => setError(message || 'No fue posible iniciar la cámara')}
           onBarcodeScanned={barcodeHandler}
           barcodeScannerSettings={{
-            barcodeTypes: ['ean13', 'ean8', 'code128'],
+            barcodeTypes: [
+              'ean13',
+              'ean8',
+              'upc_a',
+              'upc_e',
+              'code128',
+              'code39',
+              'code93',
+              'codabar',
+              'itf14',
+              'qr',
+              'datamatrix',
+              'pdf417',
+              'aztec',
+            ],
           }}
         />
       )}
-      <View style={styles.overlay}>
+      <View
+        pointerEvents="none"
+        style={[styles.contextHeader, { top: Math.max(insets.top, 16) }]}
+      >
+        <Text style={styles.contextTitle}>{title}</Text>
+        {contextLabel ? <Text style={styles.contextLabel} numberOfLines={1}>{contextLabel}</Text> : null}
+      </View>
+      <View pointerEvents="none" style={styles.overlay}>
         <View style={styles.scanArea} />
         {scanned ? (
           <Text style={styles.processingText}>Procesando código...</Text>
@@ -148,12 +185,12 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
           </View>
         ) : (
           <Text style={styles.instructionText}>
-            Escanea el código de barras del producto
+            {instruction}
           </Text>
         )}
       </View>
       <TouchableOpacity 
-        style={styles.closeButton} 
+        style={[styles.closeButton, { bottom: Math.max(insets.bottom + 20, 40) }]}
         onPress={() => {
           isProcessingRef.current = false;
           scannedRef.current = false;
@@ -179,6 +216,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  contextHeader: {
+    alignItems: 'center',
+    left: 20,
+    position: 'absolute',
+    right: 20,
+    zIndex: 2,
+  },
+  contextTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  contextLabel: {
+    color: '#D1D5DB',
+    fontSize: 13,
+    marginTop: 4,
   },
   scanArea: {
     width: 250,
