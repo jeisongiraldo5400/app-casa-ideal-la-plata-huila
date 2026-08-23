@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TouchableOpacity,
   TextInput,
   Alert,
   ActivityIndicator,
@@ -22,6 +21,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '@/components/theme';
+import { BackButton } from '@/components/ui/BackButton';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
@@ -851,16 +851,10 @@ export default function NegocioDetailScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={[styles.headerBar, { borderBottomColor: colors.divider, backgroundColor: colors.background.paper }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={handleGoBack}>
-            <MaterialIcons name="arrow-back" size={24} color={colors.primary.main} />
-            <Text style={[styles.backText, { color: colors.primary.main }]}>Volver</Text>
-          </TouchableOpacity>
+          <BackButton onPress={handleGoBack} style={styles.headerBackButton} />
           <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
             {labelNegocioCodigo(negocio.numero)}
           </Text>
-          <TouchableOpacity style={styles.homeBtn} onPress={() => router.replace('/(tabs)' as any)} hitSlop={10}>
-            <MaterialIcons name="home" size={23} color={colors.primary.main} />
-          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -1275,22 +1269,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
+  headerBackButton: { marginLeft: 0 },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     flex: 1,
+    marginLeft: 12,
   },
-  homeBtn: { width: 42, height: 42, alignItems: 'flex-end', justifyContent: 'center' },
   creditHero: { borderRadius: 20, padding: 17, gap: 15 },
   creditHeroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   heroEyebrow: { color: '#bfdbfe', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
