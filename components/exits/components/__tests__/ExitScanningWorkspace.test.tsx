@@ -43,7 +43,7 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
-jest.mock('@/components/entries/components/BarcodeScanner', () => {
+jest.mock('@/components/scanning', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
   const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return {

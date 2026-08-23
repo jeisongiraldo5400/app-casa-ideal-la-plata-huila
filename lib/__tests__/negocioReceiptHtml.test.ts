@@ -13,6 +13,6 @@ describe('buildNegocioReceiptHtml', () => {
     });
 
     expect(html).toContain('Fecha y hora de pago');
-    expect(html).toContain('21/08/2026 21:35');
+    expect(html).toContain('21/08/2026 9:35 p. m.');
   });
 });

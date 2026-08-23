@@ -35,6 +35,7 @@ export function formatLastDownloadTime(lastSyncedAt: number | null) {
   return new Date(lastSyncedAt).toLocaleTimeString('es-CO', {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
 }
 

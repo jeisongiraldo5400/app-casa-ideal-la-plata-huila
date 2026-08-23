@@ -48,6 +48,10 @@ import {
   type DeliveryOrderOption,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
+import {
+  searchProductsForNegocio,
+  type NegocioProduct,
+} from '@/components/negocios/infrastructure/services/negociosProductsService';
 
 type Customer = {
   id: string;
@@ -55,11 +59,7 @@ type Customer = {
   id_number: string;
 };
 
-type Product = {
-  id: string;
-  name: string;
-  sale_price: number;
-};
+type Product = NegocioProduct;
 type Departamento = { id: string; nombre: string };
 type Municipio = { id: string; nombre: string; departamento_id: string };
 
@@ -194,17 +194,14 @@ export default function NegocioCreateScreen() {
     if (!query) { setProducts([]); return; }
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, sale_price')
-        .is('deleted_at', null)
-        .eq('status', true)
-        .ilike('name', `%${query}%`)
-        .order('name')
-        .limit(20);
-      if (!cancelled) {
-        if (error) Alert.alert('Error', 'No fue posible buscar productos');
-        setProducts(error ? [] : data || []);
+      try {
+        const rows = await searchProductsForNegocio(query);
+        if (!cancelled) setProducts(rows);
+      } catch (error) {
+        if (!cancelled) {
+          Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          setProducts([]);
+        }
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };

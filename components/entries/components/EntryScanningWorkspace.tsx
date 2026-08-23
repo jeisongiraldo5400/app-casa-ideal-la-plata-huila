@@ -1,5 +1,5 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { BarcodeScanner } from '@/components/scanning';
 import { type EntryItem, type FinalizeEntrySummary, type SelectedPurchaseOrderProgressItem, useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';

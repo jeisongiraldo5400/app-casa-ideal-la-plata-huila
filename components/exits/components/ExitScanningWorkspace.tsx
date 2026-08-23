@@ -1,4 +1,4 @@
-import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { BarcodeScanner } from '@/components/scanning';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import {
   type ExitItem,

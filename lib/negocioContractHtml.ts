@@ -1,5 +1,9 @@
 import { formatCOP } from '@/lib/creditCalculator';
-import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import {
+  formatNegocioCodigo,
+  labelCuotaStatus,
+  labelNegocioStatus,
+} from '@/lib/negocioLabels';
 
 export type NegocioContractData = {
   numero: number;
@@ -86,7 +90,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
         <td>${c.installment_number}</td>
         <td>${esc(c.due_date)}</td>
         <td class="r">${formatCOP(c.amount)}</td>
-        <td>${esc(c.status)}</td>
+        <td>${esc(labelCuotaStatus(c.status))}</td>
       </tr>`
     )
     .join('');
@@ -210,7 +214,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>
     <div><span>Plan de pago</span><strong>${data.installments_count} cuotas ${frequency} de ${formatCOP(data.installment_amount)}</strong></div>
     <div><span>Primera cuota</span><strong>${esc(data.first_due_date) || '—'}</strong></div>
-    <div><span>Estado</span><strong>${esc(data.status)}</strong></div>
+    <div><span>Estado</span><strong>${esc(labelNegocioStatus(data.status))}</strong></div>
     <div><span>Orden de entrega</span><strong>${esc(data.delivery_order_number) || 'Pendiente'}</strong></div>
   </div>
   ${data.legal_text ? `<div class="section">Condiciones adicionales</div><div class="additional">${esc(data.legal_text)}</div>` : ''}

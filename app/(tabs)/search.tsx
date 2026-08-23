@@ -1,4 +1,4 @@
-import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { BarcodeScanner } from '@/components/scanning';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';

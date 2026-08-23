@@ -19,7 +19,13 @@ describe('localDateValue', () => {
 describe('formatPaymentDateTime', () => {
   it('presenta el timestamp en hora Colombia', () => {
     expect(formatPaymentDateTime('2026-08-22T02:35:00.000Z')).toBe(
-      '21/08/2026 21:35'
+      '21/08/2026 9:35 p. m.'
+    );
+  });
+
+  it('distingue las horas de la mañana', () => {
+    expect(formatPaymentDateTime('2026-08-21T15:05:00.000Z')).toBe(
+      '21/08/2026 10:05 a. m.'
     );
   });
 

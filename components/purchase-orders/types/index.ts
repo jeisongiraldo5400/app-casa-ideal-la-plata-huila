@@ -161,6 +161,7 @@ export function formatDate(dateString: string | null): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
   } catch {
     return 'Fecha inválida';

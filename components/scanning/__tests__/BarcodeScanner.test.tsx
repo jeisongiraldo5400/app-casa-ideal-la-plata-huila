@@ -1,6 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { BarcodeScanner } from '../BarcodeScanner';
+import { BarcodeScanner } from '@/components/scanning';
 
 let mockCameraProps: Record<string, any> = {};
 const mockRequestPermission = jest.fn(async () => undefined);

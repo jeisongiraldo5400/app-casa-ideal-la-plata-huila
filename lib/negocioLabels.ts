@@ -2,7 +2,7 @@
 
 export const NEGOCIO_STATUS_LABEL: Record<string, string> = {
   borrador: "Borrador",
-  por_firmar: "Por firmar",
+  por_firmar: "Por activar",
   activo: "Activo",
   entregado: "Entregado",
   anulado: "Anulado",

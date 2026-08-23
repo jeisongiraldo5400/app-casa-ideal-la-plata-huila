@@ -61,9 +61,9 @@ export default function ReportsScreen() {
         <Text style={[styles.range, { color: colors.text.secondary }]}>
           {online
             ? lastSyncedAt
-              ? `Datos al ${new Date(lastSyncedAt).toLocaleString('es-CO')}`
+              ? `Datos al ${new Date(lastSyncedAt).toLocaleString('es-CO', { hour12: true })}`
               : ''
-            : `Sin conexión${lastSyncedAt ? ` · último corte ${new Date(lastSyncedAt).toLocaleString('es-CO')}` : ''}`}
+            : `Sin conexión${lastSyncedAt ? ` · último corte ${new Date(lastSyncedAt).toLocaleString('es-CO', { hour12: true })}` : ''}`}
         </Text>
       ) : null}
       <View style={styles.periods}><SegmentedControl value={selectedPeriod} onChange={(value) => handlePeriodChange(value as '7' | '30' | '90')} items={[{ value: '7', label: '7 días' }, { value: '30', label: '30 días' }, { value: '90', label: '90 días' }]} /></View>

@@ -15,7 +15,7 @@ import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { DownloadDataButton } from '@/components/offline';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import { formatCOP } from '@/lib/creditCalculator';
-import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { formatNegocioCodigo, labelNegocioStatus } from '@/lib/negocioLabels';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -109,7 +109,7 @@ export default function NegociosScreen() {
                   {formatNegocioCodigo(item.numero)}
                 </Text>
                 <Text style={{ color: colors.primary.main, fontWeight: '600' }}>
-                  {item.status}
+                  {labelNegocioStatus(item.status)}
                 </Text>
               </View>
               <Text style={{ color: colors.text.secondary }}>

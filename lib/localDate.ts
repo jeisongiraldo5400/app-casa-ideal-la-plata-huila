@@ -24,6 +24,13 @@ function bogotaParts(date: Date) {
   return Object.fromEntries(parts.map((part) => [part.type, part.value]));
 }
 
+function formatTwelveHourTime(hour: string, minute: string): string {
+  const hour24 = Number(hour);
+  const hour12 = hour24 % 12 || 12;
+  const period = hour24 >= 12 ? 'p. m.' : 'a. m.';
+  return `${hour12}:${minute} ${period}`;
+}
+
 export function formatPaymentDateTime(value: string | null | undefined): string {
   if (!value) return '—';
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -33,5 +40,5 @@ export function formatPaymentDateTime(value: string | null | undefined): string 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   const parts = bogotaParts(parsed);
-  return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+  return `${parts.day}/${parts.month}/${parts.year} ${formatTwelveHourTime(parts.hour, parts.minute)}`;
 }

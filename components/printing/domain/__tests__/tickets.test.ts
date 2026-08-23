@@ -84,7 +84,7 @@ describe('buildPaymentTicket', () => {
     expect(texts).toContain('2026001');
     expect(texts).toContain('José Peña Restrepo');
     expect(texts).toContain('F-88');
-    expect(texts).toContain('12/08/2026 10:45');
+    expect(texts.replace(/\s+/g, ' ')).toContain('12/08/2026 10:45 a. m.');
     expect(texts).toContain('Valor recibido');
     expect(texts).toContain('Saldo pendiente');
     expect(texts).not.toContain('RECIBO ANULADO');

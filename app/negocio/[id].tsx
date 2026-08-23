@@ -25,7 +25,11 @@ import { BackButton } from '@/components/ui/BackButton';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
-import { labelNegocioCodigo } from '@/lib/negocioLabels';
+import {
+  labelCuotaStatus,
+  labelNegocioCodigo,
+  labelNegocioStatus,
+} from '@/lib/negocioLabels';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
@@ -882,7 +886,7 @@ export default function NegocioDetailScreen() {
                     .filter(Boolean).join(', ') || 'Dirección no registrada'}
                 </Text>
               </View>
-              <View style={styles.businessStatus}><Text style={styles.businessStatusText}>{negocio.status}</Text></View>
+              <View style={styles.businessStatus}><Text style={styles.businessStatusText}>{labelNegocioStatus(negocio.status)}</Text></View>
             </View>
             <View style={styles.creditMetrics}>
               <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>CRÉDITO</Text><Text style={styles.heroMetricValue}>{formatCOP(Number(negocio.total_credit))}</Text></View>
@@ -924,7 +928,7 @@ export default function NegocioDetailScreen() {
                     <View style={styles.installmentTop}>
                       <View style={[styles.installmentNumber, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontWeight: '900' }}>#{c.installment_number}</Text></View>
                       <View style={{ flex: 1 }}><Text style={[styles.installmentTitle, { color: colors.text.primary }]}>Cuota {c.installment_number}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }}>Vence {c.due_date}</Text></View>
-                      <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontSize: 11, fontWeight: '900', textTransform: 'capitalize' }}>{c.status}</Text></View>
+                      <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontSize: 11, fontWeight: '900' }}>{labelCuotaStatus(c.status)}</Text></View>
                     </View>
                     <View style={[styles.installmentAmounts, { borderTopColor: colors.divider }]}>
                       <View><Text style={styles.amountLabel}>VALOR</Text><Text style={[styles.amountValue, { color: colors.text.primary }]}>{formatCOP(Number(c.amount) + late)}</Text>{late > 0 && <Text style={{ color: colors.error.main, fontSize: 10 }}>Incluye mora {formatCOP(late)}</Text>}</View>

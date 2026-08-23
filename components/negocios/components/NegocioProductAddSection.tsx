@@ -6,8 +6,11 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Modal,
   StyleSheet,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { BarcodeScanner } from '@/components/scanning';
 import { formatCOP } from '@/lib/creditCalculator';
 import type { NegocioItem } from '@/components/negocios/infrastructure/store/negociosStore';
 import {
@@ -18,12 +21,12 @@ import {
   parseNegocioQuantity,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import {
+  findActiveProductByBarcode,
+  type NegocioProduct,
+} from '@/components/negocios/infrastructure/services/negociosProductsService';
 
-export type NegocioProduct = {
-  id: string;
-  name: string;
-  sale_price: number;
-};
+export type { NegocioProduct } from '@/components/negocios/infrastructure/services/negociosProductsService';
 
 type ThemeColors = {
   text: { primary: string; secondary: string };
@@ -57,11 +60,16 @@ export function NegocioProductAddSection({
   const [warehouseId, setWarehouseId] = useState('');
   const [qty, setQty] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const filteredProducts = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
     if (!q) return [];
-    return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
+    return products
+      .filter((p) =>
+        [p.name, p.sku, p.barcode].some((value) => value.toLowerCase().includes(q))
+      )
+      .slice(0, 8);
   }, [products, productQuery]);
 
   useEffect(() => {
@@ -136,6 +144,30 @@ export function NegocioProductAddSection({
     onProductQueryChange('');
   };
 
+  const handleBarcodeScan = async (barcode: string) => {
+    try {
+      const product = await findActiveProductByBarcode(barcode);
+      if (!product) {
+        Alert.alert(
+          'Producto no encontrado',
+          `No existe un producto activo con el código ${barcode}.`,
+          [
+            { text: 'Escanear de nuevo' },
+            { text: 'Buscar manualmente', onPress: () => setScannerOpen(false) },
+          ]
+        );
+        return;
+      }
+      setScannerOpen(false);
+      pickProduct(product);
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'No fue posible buscar el producto'
+      );
+    }
+  };
+
   const handleWarehouseChange = (nextWarehouseId: string) => {
     setWarehouseId(nextWarehouseId);
     if (!selectedProduct) return;
@@ -176,14 +208,39 @@ export function NegocioProductAddSection({
 
   return (
     <View style={styles.block}>
-      <Text style={{ color: colors.text.secondary }}>Buscar producto</Text>
+      <View style={styles.searchHeader}>
+        <Text style={{ color: colors.text.secondary, flex: 1 }}>Buscar producto</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Escanear código de barras"
+          onPress={() => setScannerOpen(true)}
+          style={[styles.scanButton, { backgroundColor: colors.primary.main }]}
+        >
+          <MaterialIcons name="qr-code-scanner" size={19} color={colors.primary.contrastText} />
+          <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Escanear código</Text>
+        </Pressable>
+      </View>
       <TextInput
         style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-        placeholder="Nombre del producto"
+        placeholder="Nombre, SKU o código"
         placeholderTextColor={colors.text.secondary}
         value={productQuery}
         onChangeText={onProductQueryChange}
       />
+
+      <Modal
+        visible={scannerOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setScannerOpen(false)}
+      >
+        <BarcodeScanner
+          onScan={handleBarcodeScan}
+          onClose={() => setScannerOpen(false)}
+          title="Escanear producto del negocio"
+          instruction="Ubica el código de barras dentro del recuadro"
+        />
+      </Modal>
 
       {!selectedProduct &&
         filteredProducts.map((p) => (
@@ -334,6 +391,8 @@ export function NegocioProductAddSection({
 
 const styles = StyleSheet.create({
   block: { gap: 8 },
+  searchHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  scanButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9 },
   input: {
     borderWidth: 1,
     borderRadius: 8,
