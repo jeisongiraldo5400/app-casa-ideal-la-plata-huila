@@ -8,7 +8,7 @@ import { Alert, View } from 'react-native';
 
 export default function QuickSearchScreen() {
   const router = useRouter();
-  const { setSearchQuery, loadInventory } = useInventoryStore();
+  const { setSearchQuery } = useInventoryStore();
   const [scannerActive, setScannerActive] = useState(true);
 
   useFocusEffect(
@@ -49,7 +49,6 @@ export default function QuickSearchScreen() {
         return;
       }
 
-      await loadInventory();
       setSearchQuery(barcode);
       router.push('/(tabs)/inventory');
       setScannerActive(false);

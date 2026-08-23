@@ -2626,6 +2626,7 @@ export type Database = {
           include_deleted?: boolean
           page?: number
           page_size?: number
+          p_warehouse_id?: string
           search_term?: string
         }
         Returns: {

@@ -1,7 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { ActionCard, ScreenHeader, StatCard } from '@/components/ui';
-import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
+import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -44,15 +44,6 @@ export default function HomeScreen() {
           title={`Hola, ${userName}`}
           subtitle={dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}
         />
-
-        <View style={[styles.hero, { backgroundColor: colors.primary.main }]}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroEyebrow}>CENTRO DE OPERACIONES</Text>
-            <Text style={styles.heroTitle}>Todo listo para trabajar</Text>
-            <Text style={styles.heroSubtitle}>Consulta órdenes, registra movimientos y controla la operación desde un solo lugar.</Text>
-          </View>
-          <View style={styles.heroIcon}><MaterialIcons name="space-dashboard" size={30} color={colors.primary.contrastText} /></View>
-        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Resumen de hoy</Text>
@@ -115,12 +106,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1 },
   content: { padding: Spacing.xl, paddingBottom: Spacing.xxxl, gap: Spacing.xxl },
-  hero: { minHeight: 170, borderRadius: Radius.panel, padding: Spacing.xxl, flexDirection: 'row', alignItems: 'flex-start', ...Shadows.card },
-  heroCopy: { flex: 1, paddingRight: Spacing.md },
-  heroEyebrow: { color: '#bfdbfe', fontSize: 11, lineHeight: 15, fontWeight: '900', letterSpacing: 1 },
-  heroTitle: { color: '#fff', fontSize: 25, lineHeight: 31, fontWeight: '900', marginTop: Spacing.sm },
-  heroSubtitle: { color: '#dbeafe', fontSize: 13, lineHeight: 19, marginTop: Spacing.sm },
-  heroIcon: { width: 48, height: 48, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   section: { gap: Spacing.md },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: -Spacing.md },
   sectionTitle: { ...Typography.section },

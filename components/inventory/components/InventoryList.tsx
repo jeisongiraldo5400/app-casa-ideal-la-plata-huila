@@ -1,157 +1,190 @@
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
+import type { InventoryItem } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-export function InventoryList() {
+interface InventoryListProps {
+  header: React.ReactElement;
+}
+
+export function InventoryList({ header }: InventoryListProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const styles = createStyles(colors);
   const {
     inventory,
     loading,
+    refreshing,
+    loadingMore,
+    error,
     searchQuery,
     selectedWarehouseId,
+    totalCount,
     hasMore,
     loadNextPage,
     loadInventory,
+    refreshInventory,
   } = useInventory();
+  const mountedRef = useRef(false);
 
-  // Las respuestas antiguas se descartan en el store si el usuario sigue escribiendo.
   useEffect(() => {
-    loadInventory();
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      void loadInventory({ page: 1 });
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void loadInventory({ page: 1 });
+    }, 300);
+
+    return () => clearTimeout(timeout);
   }, [loadInventory, searchQuery]);
 
-  if (loading && inventory.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.main} />
-        <Text style={styles.loadingText}>Cargando inventario...</Text>
-      </View>
-    );
-  }
-
-  if (inventory.length === 0) {
-    return (
-      <Card style={styles.emptyCard}>
-        <Text style={styles.emptyText}>
-          {searchQuery ? 'No se encontraron productos' : 'No hay productos en el inventario'}
-        </Text>
-        {hasMore && (
-          <TouchableOpacity
-            style={styles.loadMoreButton}
-            onPress={loadNextPage}
-            disabled={loading}
-          >
-            <Text style={styles.loadMoreText}>Buscar en más productos</Text>
-          </TouchableOpacity>
-        )}
-      </Card>
-    );
-  }
-
-  // Extraer nombres de bodegas desde stock_by_warehouse
-  const getWarehouseNames = (stockByWarehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>): string => {
-    // Filtrar solo bodegas con stock mayor a 0
-    const warehouses = Object.values(stockByWarehouse).filter(w => (w.quantity || 0) > 0);
-    
-    if (warehouses.length === 0) {
-      return 'Sin bodega';
-    }
-    
-    if (warehouses.length === 1) {
-      return warehouses[0].warehouse_name;
-    }
-    
-    // Múltiples bodegas: mostrar nombres separados por comas
-    return warehouses.map(w => w.warehouse_name).join(', ');
+  const getWarehouseNames = (stockByWarehouse: InventoryItem['stock_by_warehouse']): string => {
+    const warehouses = Object.values(stockByWarehouse).filter((warehouse) => warehouse.quantity > 0);
+    if (warehouses.length === 0) return 'Sin bodega';
+    return warehouses.map((warehouse) => warehouse.warehouse_name).join(', ');
   };
 
-  return (
-    <View style={styles.container}>
-      {inventory.map((item) => {
-        // Si hay bodega seleccionada, mostrar solo el stock de esa bodega
-        const warehouseStock = selectedWarehouseId
-          ? item.stock_by_warehouse[selectedWarehouseId]
-          : null;
+  const renderItem = ({ item }: { item: InventoryItem }) => {
+    const warehouseStock = selectedWarehouseId
+      ? item.stock_by_warehouse[selectedWarehouseId]
+      : null;
+    const displayQuantity = warehouseStock?.quantity ?? item.total_stock;
+    const displayWarehouse = selectedWarehouseId
+      ? warehouseStock?.warehouse_name || 'Sin bodega'
+      : getWarehouseNames(item.stock_by_warehouse);
+    const warehousesWithStock = Object.values(item.stock_by_warehouse)
+      .filter((warehouse) => warehouse.quantity > 0);
 
-        const displayQuantity = warehouseStock?.quantity || item.total_stock;
-        const displayWarehouse = selectedWarehouseId
-          ? warehouseStock?.warehouse_name || 'Sin bodega'
-          : getWarehouseNames(item.stock_by_warehouse);
-
-        return (
-          <Card key={item.id} style={styles.itemCard}>
-            <View style={styles.itemHeader}>
-              <View style={styles.itemInfo}>
-                <Text style={styles.productName}>{item.name || 'Sin nombre'}</Text>
-                <Text style={styles.productSku}>SKU: {item.sku || 'N/A'}</Text>
-                <Text style={styles.productBarcode}>Código: {item.barcode || 'N/A'}</Text>
-                <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
-                <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
-                {item.color_name && (
-                  <Text style={styles.productColor}>Color: {item.color_name}</Text>
-                )}
-                <View style={styles.warehousesList}>
-                  <Text style={styles.warehousesTitle}>Bodegas:</Text>
-                  {Object.values(item.stock_by_warehouse)
-                    .filter(w => (w.quantity || 0) > 0)
-                    .map((warehouse) => (
-                      <View key={warehouse.warehouse_id} style={styles.warehouseItem}>
-                        <Text style={styles.warehouseItemName}>{warehouse.warehouse_name}:</Text>
-                        <Text style={styles.warehouseItemQuantity}>
-                          {warehouse.quantity} unidad{warehouse.quantity !== 1 ? 'es' : ''}
-                        </Text>
-                      </View>
-                    ))}
-                  {Object.values(item.stock_by_warehouse).filter(w => (w.quantity || 0) > 0).length === 0 && (
-                    <Text style={styles.warehouseItemName}>Sin stock en bodegas</Text>
-                  )}
+    return (
+      <Card style={styles.itemCard}>
+        <View style={styles.itemHeader}>
+          <View style={styles.itemInfo}>
+            <Text style={styles.productName}>{item.name || 'Sin nombre'}</Text>
+            <Text style={styles.productSku}>SKU: {item.sku || 'N/A'}</Text>
+            <Text style={styles.productBarcode}>Código: {item.barcode || 'N/A'}</Text>
+            <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
+            <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
+            {item.color_name ? <Text style={styles.productColor}>Color: {item.color_name}</Text> : null}
+            <View style={styles.warehousesList}>
+              <Text style={styles.warehousesTitle}>Bodegas:</Text>
+              {warehousesWithStock.map((warehouse) => (
+                <View key={warehouse.warehouse_id} style={styles.warehouseItem}>
+                  <Text style={styles.warehouseItemName}>{warehouse.warehouse_name}:</Text>
+                  <Text style={styles.warehouseItemQuantity}>
+                    {warehouse.quantity} unidad{warehouse.quantity !== 1 ? 'es' : ''}
+                  </Text>
                 </View>
-              </View>
-              <View style={styles.quantityContainer}>
-                <Text style={styles.quantityLabel}>Stock</Text>
-                <Text style={styles.quantityValue}>{displayQuantity}</Text>
-              </View>
+              ))}
+              {warehousesWithStock.length === 0 ? (
+                <Text style={styles.warehouseItemName}>Sin stock en bodegas</Text>
+              ) : null}
             </View>
-            {selectedWarehouseId && (
-              <View style={styles.warehouseInfo}>
-                <Text style={styles.warehouseLabel}>Bodega:</Text>
-                <Text style={styles.warehouseName}>{displayWarehouse}</Text>
-              </View>
-            )}
-          </Card>
-        );
-      })}
+          </View>
+          <View style={styles.quantityContainer}>
+            <Text style={styles.quantityLabel}>Stock</Text>
+            <Text style={styles.quantityValue}>{displayQuantity}</Text>
+          </View>
+        </View>
+        {selectedWarehouseId ? (
+          <View style={styles.warehouseInfo}>
+            <Text style={styles.warehouseLabel}>Bodega:</Text>
+            <Text style={styles.warehouseName}>{displayWarehouse}</Text>
+          </View>
+        ) : null}
+      </Card>
+    );
+  };
 
-      {/* Botón para cargar más */}
-      {hasMore && (
-        <TouchableOpacity
-          style={styles.loadMoreButton}
-          onPress={loadNextPage}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.primary.main} />
-          ) : (
-            <Text style={styles.loadMoreText}>Cargar más productos</Text>
-          )}
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.bottomPadding} />
+  const emptyState = loading ? (
+    <View style={styles.loadingContainer}>
+      <ActivityIndicator size="large" color={colors.primary.main} />
+      <Text style={styles.loadingText}>Cargando inventario...</Text>
     </View>
+  ) : (
+    <Card style={styles.emptyCard}>
+      <Text style={styles.emptyText}>
+        {error
+          ? `No se pudo cargar el inventario: ${error}`
+          : searchQuery
+            ? 'No se encontraron productos'
+            : 'No hay productos en el inventario'}
+      </Text>
+      {error ? (
+        <TouchableOpacity style={styles.retryButton} onPress={() => void loadInventory({ page: 1 })}>
+          <Text style={styles.retryText}>Reintentar</Text>
+        </TouchableOpacity>
+      ) : null}
+    </Card>
+  );
+
+  const footer = loadingMore ? (
+    <View style={styles.footer}>
+      <ActivityIndicator size="small" color={colors.primary.main} />
+      <Text style={styles.footerText}>Cargando más productos...</Text>
+    </View>
+  ) : error && inventory.length > 0 ? (
+    <View style={styles.footer}>
+      <Text style={styles.footerText}>No se pudo cargar la siguiente página.</Text>
+      <TouchableOpacity style={styles.retryButton} onPress={() => void loadNextPage()}>
+        <Text style={styles.retryText}>Reintentar</Text>
+      </TouchableOpacity>
+    </View>
+  ) : inventory.length > 0 && !hasMore ? (
+    <Text style={styles.endText}>Mostrando {inventory.length} de {totalCount} productos</Text>
+  ) : (
+    <View style={styles.bottomPadding} />
+  );
+
+  return (
+    <FlatList
+      testID="inventory-list"
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      data={inventory}
+      keyExtractor={(item) => item.id}
+      renderItem={renderItem}
+      ListHeaderComponent={<View style={styles.header}>{header}</View>}
+      ListEmptyComponent={emptyState}
+      ListFooterComponent={footer}
+      onEndReached={() => {
+        if (!error) void loadNextPage();
+      }}
+      onEndReachedThreshold={0.35}
+      refreshing={refreshing}
+      onRefresh={() => void refreshInventory()}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+      initialNumToRender={10}
+      maxToRenderPerBatch={10}
+      windowSize={7}
+    />
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1 },
+  content: {
+    padding: Spacing.xl,
+    paddingBottom: Spacing.xxxl,
+  },
+  header: {
+    gap: Spacing.xl,
+    marginBottom: Spacing.xl,
   },
   loadingContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
@@ -242,9 +275,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: '600',
     color: colors.info.main,
   },
-  quantityContainer: {
-    alignItems: 'flex-end',
-  },
+  quantityContainer: { alignItems: 'flex-end' },
   quantityLabel: {
     fontSize: 12,
     color: colors.text.secondary,
@@ -272,22 +303,33 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 14,
     color: colors.primary.main,
   },
-  loadMoreButton: {
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 16,
-    backgroundColor: colors.background.paper,
+  retryButton: {
+    marginTop: Spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     borderRadius: Radius.control,
-    borderWidth: 1,
-    borderColor: colors.primary.main,
+    backgroundColor: colors.primary.main,
   },
-  loadMoreText: {
-    fontSize: 16,
+  retryText: {
+    color: colors.primary.contrastText,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.primary.main,
   },
-  bottomPadding: {
-    height: 20,
+  footer: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xl,
   },
+  footerText: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  endText: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: Spacing.xl,
+  },
+  bottomPadding: { height: 20 },
 });
