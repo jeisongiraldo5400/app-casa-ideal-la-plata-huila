@@ -21,6 +21,7 @@ import {
   SIGNATURE_CANVAS_WIDTH,
 } from '@/lib/signatureGeometry';
 import { validateTransparentPngUri } from '@/lib/signaturePng';
+import { useSignatureLandscape } from './useSignatureLandscape';
 
 interface Props {
   label: string;
@@ -60,6 +61,28 @@ function SignaturePreview({ value }: { value: string }) {
  */
 export function SignaturePad({ label, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const { preparing, openLandscape, restorePortrait } = useSignatureLandscape();
+
+  const openSigning = async () => {
+    try {
+      if (await openLandscape()) setOpen(true);
+    } catch (error) {
+      Alert.alert(
+        'No se pudo abrir la firma',
+        'Gire el dispositivo y vuelva a intentarlo. ' +
+          (error instanceof Error ? error.message : '')
+      );
+    }
+  };
+
+  const closeSigning = async () => {
+    setOpen(false);
+    try {
+      await restorePortrait();
+    } catch (error) {
+      console.warn('No se pudo restaurar la orientación vertical', error);
+    }
+  };
 
   const selectPng = async () => {
     try {
@@ -93,8 +116,8 @@ export function SignaturePad({ label, value, onChange }: Props) {
         </View>
       )}
       <View style={styles.actions}>
-        <Pressable style={styles.openBtn} onPress={() => setOpen(true)} accessibilityRole="button">
-          <Text style={styles.openBtnText}>{value ? 'Volver a firmar' : 'Firmar'}</Text>
+        <Pressable style={[styles.openBtn, preparing && styles.btnDisabled]} onPress={() => void openSigning()} disabled={preparing} accessibilityRole="button">
+          <Text style={styles.openBtnText}>{preparing ? 'Girando…' : value ? 'Volver a firmar' : 'Firmar'}</Text>
         </Pressable>
         <Pressable style={styles.uploadBtn} onPress={() => void selectPng()} accessibilityRole="button">
           <Text style={styles.uploadBtnText}>Subir PNG</Text>
@@ -108,11 +131,10 @@ export function SignaturePad({ label, value, onChange }: Props) {
 
       <SignatureFullscreenModal
         visible={open}
-        title={label}
-        onCancel={() => setOpen(false)}
-        onConfirm={(dataUrl) => {
+        onCancel={() => void closeSigning()}
+        onConfirm={async (dataUrl) => {
           onChange(dataUrl);
-          setOpen(false);
+          await closeSigning();
         }}
       />
     </View>
@@ -121,23 +143,18 @@ export function SignaturePad({ label, value, onChange }: Props) {
 
 function SignatureFullscreenModal({
   visible,
-  title,
   onCancel,
   onConfirm,
 }: {
   visible: boolean;
-  title: string;
   onCancel: () => void;
   onConfirm: (dataUrl: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const landscape = width > height;
+  const readyForInput = width > height;
 
-  const { width: padW, height: padH } = fitSignaturePad(
-    width - (landscape ? 48 : 24),
-    height - insets.top - insets.bottom - (landscape ? 150 : 210)
-  );
+  const { width: padW, height: padH } = fitSignaturePad(width - 32, height - insets.top - insets.bottom - 96);
 
   const pathsRef = useRef<string[]>([]);
   const currentRef = useRef<string>('');
@@ -213,30 +230,24 @@ function SignatureFullscreenModal({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
-      supportedOrientations={['portrait']}
+      supportedOrientations={['landscape']}
       onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" hidden />
       <View
         style={[
           styles.modalRoot,
           {
             paddingTop: insets.top + 8,
             paddingBottom: insets.bottom + 8,
-            paddingHorizontal: landscape ? 16 : 12,
+            paddingHorizontal: 16,
           },
         ]}
       >
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          <Text style={styles.modalHint}>
-            Firme en el área blanca y confirme al terminar
-          </Text>
-        </View>
-
         <View
           style={[styles.fullPad, { width: padW, height: padH }]}
+          pointerEvents={readyForInput ? 'auto' : 'none'}
           {...pan.panHandlers}
         >
           <Svg
@@ -268,7 +279,7 @@ function SignatureFullscreenModal({
           </Svg>
           {!hasStroke && (
             <View style={styles.padPlaceholder} pointerEvents="none">
-              <Text style={styles.padPlaceholderText}>Firme aquí</Text>
+              <Text style={styles.padPlaceholderText}>{readyForInput ? 'Firme aquí' : 'Preparando área de firma…'}</Text>
             </View>
           )}
         </View>
@@ -282,7 +293,7 @@ function SignatureFullscreenModal({
           </Pressable>
           <Pressable
             style={[styles.primaryBtn, !hasStroke && styles.btnDisabled]}
-            disabled={!hasStroke}
+            disabled={!hasStroke || !readyForInput}
             onPress={confirmPng}
           >
             <Text style={styles.primaryBtnText}>Confirmar firma</Text>
@@ -334,11 +345,8 @@ const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    gap: 10,
+    justifyContent: 'space-between',
   },
-  modalHeader: { gap: 4 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
-  modalHint: { fontSize: 13, color: '#666' },
   fullPad: {
     alignSelf: 'center',
     borderWidth: 1,

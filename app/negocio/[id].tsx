@@ -101,6 +101,7 @@ export default function NegocioDetailScreen() {
   const paymentIdempotencyKey = useRef<string | null>(null);
   const paymentPaidAt = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
+  const activatingRef = useRef(false);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -762,12 +763,15 @@ export default function NegocioDetailScreen() {
   };
 
   const activateDraft = async () => {
+    if (activatingRef.current || !negocio) return;
     try {
+      activatingRef.current = true;
       setActionSaving(true);
       activateIdempotencyKey.current ||= createIdempotencyKey();
       let error: any = null;
 
       if (signaturesDirty) {
+        console.info('[negocio.activate] subiendo firmas', { negocioId: negocio.id });
         const [customerUrl, guarantorUrl, sellerUrl] = await Promise.all([
           uploadNegocioSignature(customerSignature, { negocioId: negocio.id, role: 'cliente' }),
           uploadNegocioSignature(guarantorSignature, { negocioId: negocio.id, role: 'fiador' }),
@@ -807,12 +811,15 @@ export default function NegocioDetailScreen() {
             subtotal: Number(item.subtotal),
           })),
         });
+        console.info('[negocio.activate] actualización terminada', { negocioId: negocio.id, hasError: Boolean(result.error) });
         error = result.error;
       } else {
+        console.info('[negocio.activate] activando sin cambios de firma', { negocioId: negocio.id });
         const result = await supabase.rpc('activate_negocio', {
           p_negocio_id: negocio.id,
           p_idempotency_key: activateIdempotencyKey.current,
         });
+        console.info('[negocio.activate] activación terminada', { negocioId: negocio.id, hasError: Boolean(result.error) });
         error = result.error;
       }
       if (error) throw error;
@@ -821,8 +828,10 @@ export default function NegocioDetailScreen() {
       await load();
       Alert.alert('Listo', 'Negocio activado y orden de entrega creada.');
     } catch (error: any) {
+      console.error('[negocio.activate] falló la activación', { negocioId: negocio?.id, message: error?.message, error });
       Alert.alert('Error', error.message || 'No se pudo activar el negocio');
     } finally {
+      activatingRef.current = false;
       setActionSaving(false);
     }
   };

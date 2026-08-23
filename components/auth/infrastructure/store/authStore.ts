@@ -87,8 +87,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
             }
           } else {
-            await supabase.auth.signOut();
-            set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+            // La recreación temporal de la actividad (por ejemplo, al rotar
+            // para firmar) no debe descartar una sesión persistida ante un
+            // error recuperable de verificación remota.
+            const message = verifyError instanceof Error ? verifyError.message : String(verifyError || '');
+            if (/refresh token|invalid refresh token/i.test(message)) {
+              await supabase.auth.signOut();
+              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+            } else {
+              console.warn('No se pudo verificar la sesión; se conserva la sesión local', verifyError);
+              set({ session, user: session.user, loading: false, initialized: true, offlineSession: true });
+            }
           }
         }
       }
