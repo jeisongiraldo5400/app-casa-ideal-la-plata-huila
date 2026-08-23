@@ -762,9 +762,6 @@ export default function NegocioDetailScreen() {
   };
 
   const activateDraft = async () => {
-    if (!customerSignature) {
-      return Alert.alert('Firma requerida', 'El cliente debe firmar antes de activar el negocio.');
-    }
     try {
       setActionSaving(true);
       activateIdempotencyKey.current ||= createIdempotencyKey();
@@ -972,10 +969,10 @@ export default function NegocioDetailScreen() {
                 Firmas para activar
               </Text>
               <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
-                La firma del cliente es obligatoria. Cada firma se abre en pantalla completa.
+                Las firmas son opcionales. Puede dibujarlas o subir un PNG transparente.
               </Text>
               <SignaturePad
-                label="Firma del cliente *"
+                label="Firma del cliente"
                 value={customerSignature}
                 onChange={(value) => {
                   setCustomerSignature(value);

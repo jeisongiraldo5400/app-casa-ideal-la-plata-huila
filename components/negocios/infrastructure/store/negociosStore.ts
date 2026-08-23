@@ -122,9 +122,9 @@ function createRequestFingerprint(input: {
     first_due_date: input.first_due_date,
     notes: input.notes || null,
     activate: input.activate,
-    has_customer_signature: Boolean(input.customer_signature_data_url),
-    has_guarantor_signature: Boolean(input.guarantor_signature_data_url),
-    has_seller_signature: Boolean(input.seller_signature_data_url),
+    customer_signature_source: input.customer_signature_data_url || null,
+    guarantor_signature_source: input.guarantor_signature_data_url || null,
+    seller_signature_source: input.seller_signature_data_url || null,
   });
 }
 
@@ -251,10 +251,6 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       settings,
     });
 
-    if (input.activate && !input.customer_signature_data_url?.trim()) {
-      throw new Error('Se requiere firma del cliente para activar');
-    }
-
     const requestFingerprint = createRequestFingerprint(input);
     let request = pendingCreateRequests.get(requestFingerprint);
     if (!request) {
@@ -323,9 +319,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         .maybeSingle();
       if (!persisted) {
         const uploaded = [
-          input.customer_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.customer : null,
-          input.guarantor_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.guarantor : null,
-          input.seller_signature_data_url?.startsWith('data:image/') ? request.signatureUrls.seller : null,
+          isNewLocalSignature(input.customer_signature_data_url) ? request.signatureUrls.customer : null,
+          isNewLocalSignature(input.guarantor_signature_data_url) ? request.signatureUrls.guarantor : null,
+          isNewLocalSignature(input.seller_signature_data_url) ? request.signatureUrls.seller : null,
         ];
         await removeNegocioSignatures(uploaded).catch((cleanupError) => {
           console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
@@ -352,3 +348,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     return { numero: negocio.numero, id: negocio.id };
   },
 }));
+
+function isNewLocalSignature(value: string | null | undefined) {
+  return Boolean(
+    value?.startsWith('data:image/') || value?.startsWith('file:') || value?.startsWith('content:')
+  );
+}

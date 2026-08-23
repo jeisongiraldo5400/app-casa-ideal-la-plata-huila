@@ -7,9 +7,11 @@ import {
   Pressable,
   Modal,
   Image,
+  Alert,
   useWindowDimensions,
   StatusBar,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect, SvgUri, SvgXml } from 'react-native-svg';
 import {
@@ -18,6 +20,7 @@ import {
   SIGNATURE_CANVAS_HEIGHT,
   SIGNATURE_CANVAS_WIDTH,
 } from '@/lib/signatureGeometry';
+import { validateTransparentPngUri } from '@/lib/signaturePng';
 
 interface Props {
   label: string;
@@ -58,6 +61,25 @@ function SignaturePreview({ value }: { value: string }) {
 export function SignaturePad({ label, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
 
+  const selectPng = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/png',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      if ((asset.mimeType || '').toLowerCase() !== 'image/png') {
+        throw new Error('Solo se permiten archivos PNG');
+      }
+      await validateTransparentPngUri(asset.uri);
+      onChange(asset.uri);
+    } catch (error) {
+      Alert.alert('PNG inválido', error instanceof Error ? error.message : 'No se pudo cargar el PNG');
+    }
+  };
+
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -70,15 +92,19 @@ export function SignaturePad({ label, value, onChange }: Props) {
           <Text style={styles.emptyText}>Sin firma</Text>
         </View>
       )}
-      <Pressable
-        style={styles.openBtn}
-        onPress={() => setOpen(true)}
-        accessibilityRole="button"
-      >
-        <Text style={styles.openBtnText}>
-          {value ? 'Volver a firmar' : 'Firmar'}
-        </Text>
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable style={styles.openBtn} onPress={() => setOpen(true)} accessibilityRole="button">
+          <Text style={styles.openBtnText}>{value ? 'Volver a firmar' : 'Firmar'}</Text>
+        </Pressable>
+        <Pressable style={styles.uploadBtn} onPress={() => void selectPng()} accessibilityRole="button">
+          <Text style={styles.uploadBtnText}>Subir PNG</Text>
+        </Pressable>
+        {value ? (
+          <Pressable style={styles.removeBtn} onPress={() => onChange('')} accessibilityRole="button">
+            <Text style={styles.removeBtnText}>Quitar</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <SignatureFullscreenModal
         visible={open}
@@ -292,13 +318,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
   emptyText: { color: '#888', fontSize: 13 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   openBtn: {
     backgroundColor: '#1565c0',
     borderRadius: 8,
     paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
   },
   openBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  uploadBtn: { borderWidth: 1, borderColor: '#1565c0', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 14 },
+  uploadBtnText: { color: '#1565c0', fontWeight: '700', fontSize: 15 },
+  removeBtn: { borderWidth: 1, borderColor: '#777', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 14 },
+  removeBtnText: { color: '#444', fontWeight: '700', fontSize: 15 },
   modalRoot: {
     flex: 1,
     backgroundColor: '#f5f5f5',

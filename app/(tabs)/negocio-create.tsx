@@ -392,7 +392,6 @@ export default function NegocioCreateScreen() {
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
     }
-    if (activate && !signature) return Alert.alert('Firma del cliente requerida');
 
     try {
       savingRef.current = true;
@@ -1028,10 +1027,10 @@ export default function NegocioCreateScreen() {
               Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} · {installments} cuotas
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>
-              Pase el dispositivo al cliente para firmar en pantalla completa:
+              La firma es opcional. Puede dibujarla en pantalla o subir un PNG transparente:
             </Text>
             <SignaturePad
-              label="Firma del cliente *"
+              label="Firma del cliente"
               value={signature}
               onChange={setSignature}
             />
@@ -1142,7 +1141,7 @@ export default function NegocioCreateScreen() {
               onPress={() => submit(true)}
             >
               <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 14 }}>
-                Activar con firma
+                Activar negocio
               </Text>
             </TouchableOpacity>
           </View>

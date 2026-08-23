@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { validateTransparentPng } from '@/lib/signaturePng';
 
 const BUCKET = 'negocios-firmas';
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
@@ -74,21 +75,30 @@ export async function uploadNegocioSignature(
   const raw = dataUrlOrRemote?.trim();
   if (!raw) return null;
 
-  if (!raw.startsWith('data:image/')) {
+  const isLocalPng = raw.startsWith('file:') || raw.startsWith('content:');
+  if (!raw.startsWith('data:image/') && !isLocalPng) {
     const existingPath = extractNegocioSignaturePath(raw);
     if (existingPath) return existingPath;
     throw new Error('La firma remota no pertenece al almacenamiento autorizado');
   }
 
-  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) {
-    throw new Error('No se pudo leer la firma');
-  }
-
-  const mime = match[1];
-  const base64 = match[2];
-  if (!ALLOWED_MIME_TYPES.has(mime)) {
-    throw new Error('Tipo de imagen de firma no permitido');
+  let mime: string;
+  let bytes: Uint8Array;
+  if (isLocalPng) {
+    const response = await fetch(raw);
+    if (!response.ok) throw new Error('No se pudo leer la firma seleccionada');
+    mime = 'image/png';
+    bytes = new Uint8Array(await response.arrayBuffer());
+    const validationError = validateTransparentPng(bytes);
+    if (validationError) throw new Error(validationError);
+  } else {
+    const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) throw new Error('No se pudo leer la firma');
+    mime = match[1];
+    if (!ALLOWED_MIME_TYPES.has(mime)) throw new Error('Tipo de imagen de firma no permitido');
+    const binary = atob(match[2]);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   }
   const ext =
     mime.includes('jpeg') || mime.includes('jpg')
@@ -96,12 +106,6 @@ export async function uploadNegocioSignature(
       : mime.includes('webp')
         ? 'webp'
         : 'png';
-
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
 
   const {
     data: { user },
