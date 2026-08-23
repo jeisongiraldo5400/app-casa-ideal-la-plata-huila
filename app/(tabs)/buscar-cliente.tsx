@@ -10,7 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
-import { ScreenHeader, SearchField } from '@/components/ui';
+import { SearchField } from '@/components/ui';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import {
@@ -146,7 +146,7 @@ export default function BuscarClienteScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <ScreenHeader style={styles.header} icon="person-search" title="Buscar cliente" subtitle="Consulta negocios como titular o codeudor" />
+      <Text style={[styles.header, { color: colors.text.secondary }]}>Consulta negocios como titular o codeudor</Text>
       <SearchField value={query} onChangeText={setQuery} placeholder="Nombre o documento del cliente" autoCapitalize="none" autoCorrect={false} />
 
       <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 8 }}>

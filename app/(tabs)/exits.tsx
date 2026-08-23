@@ -70,21 +70,7 @@ export default function ExitsScreen() {
           style={[styles.container, { backgroundColor: colors.background.default }]}
           contentContainerStyle={styles.content}
         >
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={[styles.iconContainer, { backgroundColor: colors.error.main + '15' }]}>
-            <MaterialIcons name="local-shipping" size={28} color={colors.error.main} />
-          </View>
-          <View style={styles.headerText}>
-            <Text style={[styles.title, { color: colors.text.primary }]}>Salidas de Productos</Text>
-            <Text style={[styles.subtitle, { 
-              color: isDark ? colors.text.primary : colors.text.secondary 
-            }]}>
-              Registre la salida de mercancía de bodega
-            </Text>
-          </View>
-        </View>
-      </View>
+      <Text style={[styles.header, { color: isDark ? colors.text.primary : colors.text.secondary }]}>Registre la salida de mercancía de bodega</Text>
 
       <SetupForm />
 
@@ -112,35 +98,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
   },
   header: {
-    marginBottom: Spacing.xxl,
-    marginTop: Spacing.lg,
-    paddingHorizontal: Spacing.xl,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.lg,
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginBottom: 4,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '500',
+    marginBottom: Spacing.xxl,
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
   },
   scanCard: {
     marginHorizontal: Spacing.xl,

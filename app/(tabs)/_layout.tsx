@@ -45,7 +45,7 @@ export default function TabLayout() {
         },
         headerTintColor: colors.text.primary,
         headerTitleStyle: { fontSize: 18, fontWeight: '800' },
-        headerTitle: '',
+        headerTitleAlign: 'left',
         headerShadowVisible: false,
         tabBarHideOnKeyboard: true,
       }}>

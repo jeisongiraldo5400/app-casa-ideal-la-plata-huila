@@ -1,9 +1,9 @@
 import { AllDeliveryOrdersList, AllOrdersList, usePurchaseOrders } from '@/components/purchase-orders';
 import { useTheme } from '@/components/theme';
-import { ScreenHeader, SearchField, SegmentedControl } from '@/components/ui';
+import { SearchField, SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type TabType = 'purchase' | 'delivery';
 
@@ -27,7 +27,7 @@ export default function AllOrdersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <ScreenHeader style={styles.header} icon="list-alt" title="Todas las órdenes" subtitle="Consulta las órdenes registradas en el sistema" />
+      <Text style={[styles.header, { color: colors.text.secondary }]}>Consulta las órdenes registradas en el sistema</Text>
       <SearchField
         containerStyle={styles.search}
         placeholder={activeTab === 'delivery' ? 'Buscar orden, cliente o dirección' : 'Buscar orden o proveedor'}
@@ -63,7 +63,7 @@ export default function AllOrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
+  header: { fontSize: 14, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
   search: { marginHorizontal: Spacing.xl },
   tabs: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.md },
   content: { flex: 1 },

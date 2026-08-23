@@ -3,10 +3,10 @@ import { usePurchaseOrders } from '@/components/purchase-orders';
 import { ReceivedDeliveryOrdersList } from '@/components/purchase-orders/components/ReceivedDeliveryOrdersList';
 import { ReceivedOrdersList } from '@/components/purchase-orders/components/ReceivedOrdersList';
 import { useTheme } from '@/components/theme';
-import { ScreenHeader, SegmentedControl } from '@/components/ui';
+import { SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type TabType = 'purchase' | 'delivery';
 
@@ -27,7 +27,7 @@ export default function ReceivedOrdersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <ScreenHeader style={styles.header} icon="inventory" title="Órdenes recibidas" subtitle="Historial de órdenes marcadas como recibidas" />
+      <Text style={[styles.header, { color: colors.text.secondary }]}>Historial de órdenes marcadas como recibidas</Text>
       <View style={styles.tabs}>
         <SegmentedControl
           items={[
@@ -50,7 +50,7 @@ export default function ReceivedOrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
+  header: { fontSize: 14, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
   tabs: { paddingHorizontal: Spacing.xl },
   content: { flex: 1 },
   contentContainer: { padding: Spacing.xl },

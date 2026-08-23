@@ -1,7 +1,7 @@
 import { EntriesVsExitsChart, useReports } from '@/components/reports';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
-import { ScreenHeader, SegmentedControl } from '@/components/ui';
+import { SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -56,7 +56,7 @@ export default function ReportsScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[colors.primary.main]} />}>
-      <ScreenHeader icon="insights" title="Reportes" subtitle={canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'} />
+      <Text style={[styles.description, { color: colors.text.secondary }]}>{canSeeExecutive ? 'Resumen ejecutivo y operación' : 'Control operativo de inventario'}</Text>
       {!online || lastSyncedAt ? (
         <Text style={[styles.range, { color: colors.text.secondary }]}>
           {online
@@ -112,7 +112,7 @@ function Metric({ label, value, detail, color }: { label: string; value: string;
 
 const styles = StyleSheet.create({
   container: { flex: 1 }, content: { padding: Spacing.xl, paddingBottom: 40 }, centered: { alignItems: 'center', flex: 1, gap: 14, justifyContent: 'center', padding: 28 },
-  periods: { marginTop: Spacing.xl }, range: { fontSize: 12, marginTop: 10 },
+  description: { fontSize: 14 }, periods: { marginTop: Spacing.xl }, range: { fontSize: 12, marginTop: 10 },
   section: { fontSize: 18, fontWeight: '800', marginBottom: 16, marginTop: 30 }, grid: { columnGap: 20, flexDirection: 'row', flexWrap: 'wrap', rowGap: 20 }, metric: { elevation: 1, flexGrow: 1, flexBasis: '44%', marginBottom: 2, minWidth: '44%', padding: 14, shadowOpacity: 0.04, shadowRadius: 4 }, dot: { borderRadius: 4, height: 7, marginBottom: 9, width: 7 }, metricLabel: { fontSize: 12 }, metricValue: { fontSize: 19, fontWeight: '800', marginTop: 4 }, metricDetail: { fontSize: 11, marginTop: 3 },
   error: { borderWidth: 1, gap: 10, marginTop: 18, padding: 14 }, accessTitle: { fontSize: 20, fontWeight: '800' }, accessText: { fontSize: 14, textAlign: 'center' },
 });

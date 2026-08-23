@@ -288,15 +288,7 @@ export function MyOrdersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <View style={styles.header}>
-        <View style={[styles.headerIcon, { backgroundColor: colors.warning.main + '18' }]}>
-          <MaterialIcons name="assignment" size={24} color={colors.warning.main} />
-        </View>
-        <View style={styles.headerText}>
-          <Text style={[styles.title, { color: colors.text.primary }]}>Mis órdenes</Text>
-          <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Pendientes e historial de salidas registradas</Text>
-        </View>
-      </View>
+      <Text style={[styles.header, { color: colors.text.secondary }]}>Pendientes e historial de salidas registradas</Text>
 
       <View style={[styles.tabs, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
         <TabButton label="Pendientes" count={orders.pendingOrders.length} selected={isPending} onPress={() => setActiveTab('pending')} />
@@ -440,11 +432,7 @@ export function MyOrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.md },
-  headerIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  headerText: { flex: 1 },
-  title: { fontSize: 28, lineHeight: 34, fontWeight: '800' },
-  subtitle: { fontSize: 13, marginTop: 3 },
+  header: { fontSize: 13, marginBottom: Spacing.md, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg },
   tabs: { flexDirection: 'row', marginHorizontal: Spacing.xl, borderWidth: 1, borderRadius: Radius.control, padding: 4, gap: 4 },
   tabButton: { flex: 1, minHeight: 40, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 7 },
   tabLabel: { fontSize: 12, fontWeight: '800', flexShrink: 1 },

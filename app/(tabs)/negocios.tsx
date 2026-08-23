@@ -11,7 +11,6 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
-import { ScreenHeader } from '@/components/ui';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { DownloadDataButton } from '@/components/offline';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
@@ -46,7 +45,7 @@ export default function NegociosScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <View style={styles.header}>
-        <ScreenHeader icon="handshake" title="Negocios" subtitle="Créditos, clientes y recaudos" />
+        <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Créditos, clientes y recaudos</Text>
         <View style={styles.headerActions}>
           <Pressable
             style={[styles.cta, { backgroundColor: colors.background.paper, borderWidth: 1, borderColor: colors.divider }]}
@@ -138,9 +137,10 @@ export default function NegociosScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: Spacing.xl },
   header: {
-    gap: Spacing.lg,
+    gap: Spacing.md,
     marginBottom: Spacing.lg,
   },
+  subtitle: { fontSize: 14 },
   headerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.sm },
   cta: {
     flexDirection: 'row',
