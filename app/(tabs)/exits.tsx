@@ -6,7 +6,7 @@ import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -28,13 +28,20 @@ export default function ExitsScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
-  // Reset state when screen loses focus (tab navigation)
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useFocusEffect(
     useCallback(() => {
-      // Called when screen gains focus - no action needed
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+
       return () => {
-        // Called when screen loses focus - reset all state including cache
-        resetAll();
+        resetTimerRef.current = setTimeout(() => {
+          resetAll();
+          resetTimerRef.current = null;
+        }, 400);
       };
     }, [resetAll])
   );

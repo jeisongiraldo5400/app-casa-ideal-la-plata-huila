@@ -21,7 +21,7 @@ export default function QuickSearchScreen() {
   );
 
   const goHome = () => {
-    router.push('/(tabs)');
+    router.navigate('/(tabs)');
   };
 
   const handleScan = async (barcode: string) => {
@@ -50,7 +50,7 @@ export default function QuickSearchScreen() {
       }
 
       setSearchQuery(barcode);
-      router.push('/(tabs)/inventory');
+      router.navigate('/(tabs)/inventory');
       setScannerActive(false);
     } catch (error: any) {
       console.error('Error searching product:', error);

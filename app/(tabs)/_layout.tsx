@@ -6,14 +6,16 @@ import { getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+
+const isWeb = Platform.OS === 'web';
 
 function ProfileHeaderButton() {
   const router = useRouter();
   return (
     <IconButton
       icon="person"
-      onPress={() => router.push('/(tabs)/profile')}
+      onPress={() => router.navigate('/(tabs)/profile')}
       accessibilityLabel="Abrir perfil"
       size={21}
       style={{ width: 42, height: 42, marginRight: 12 }}
@@ -37,7 +39,10 @@ export default function TabLayout() {
   return (
     <Tabs
       tabBar={(props) => <FloatingTabBar {...props} />}
+      backBehavior={isWeb ? 'none' : 'firstRoute'}
+      detachInactiveScreens={!isWeb}
       screenOptions={{
+        animation: isWeb ? 'none' : undefined,
         sceneStyle: { backgroundColor: colors.background.default },
         headerShown: true,
         headerStyle: {

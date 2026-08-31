@@ -68,7 +68,7 @@ export default function HomeScreen() {
             {canCreateNegocio ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push('/(tabs)/negocio-create')}
+                onPress={() => router.navigate('/(tabs)/negocio-create')}
                 style={({ pressed }) => [styles.primaryAction, { backgroundColor: colors.navigation.background }, pressed && styles.pressed]}>
                 <View style={[styles.primaryActionIcon, { backgroundColor: colors.primary.main }]}><MaterialIcons name="handshake" size={25} color="#fff" /></View>
                 <View style={styles.primaryActionCopy}>
@@ -79,23 +79,23 @@ export default function HomeScreen() {
               </Pressable>
             ) : null}
             <View style={styles.actionGrid}>
-              <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => router.push('/(tabs)/negocios')} style={styles.halfCard} />
-              <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => router.push('/(tabs)/cartera')} style={styles.halfCard} />
-              <ActionCard compact title="Buscar cliente" subtitle="Historial y créditos" icon="person-search" onPress={() => router.push('/(tabs)/buscar-cliente' as never)} style={styles.fullCard} />
+              <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => router.navigate('/(tabs)/negocios')} style={styles.halfCard} />
+              <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => router.navigate('/(tabs)/cartera')} style={styles.halfCard} />
+              <ActionCard compact title="Buscar cliente" subtitle="Historial y créditos" icon="person-search" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} style={styles.fullCard} />
             </View>
-            {isGestorCobro() ? <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.push('/(tabs)/ruta-cobros' as never)} /> : null}
+            {isGestorCobro() ? <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} /> : null}
           </View>
         ) : null}
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Operaciones de almacén</Text>
           <View style={styles.actionGrid}>
-            <ActionCard compact title="Salidas" subtitle="Registrar despacho" icon="local-shipping" tone="error" onPress={() => router.push('/(tabs)/exits')} style={styles.halfCard} />
-            <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => router.push('/(tabs)/entries')} style={styles.halfCard} />
-            <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => router.push('/(tabs)/my-orders')} style={styles.halfCard} />
-            <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => router.push('/(tabs)/all-orders')} style={styles.halfCard} />
+            <ActionCard compact title="Salidas" subtitle="Registrar despacho" icon="local-shipping" tone="error" onPress={() => router.navigate('/(tabs)/exits')} style={styles.halfCard} />
+            <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => router.navigate('/(tabs)/entries')} style={styles.halfCard} />
+            <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => router.navigate('/(tabs)/my-orders')} style={styles.halfCard} />
+            <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => router.navigate('/(tabs)/all-orders')} style={styles.halfCard} />
           </View>
-          <ActionCard title="Reportes y analítica" subtitle="Estadísticas e indicadores de la operación" icon="insights" onPress={() => router.push('/(tabs)/reports')} />
+          <ActionCard title="Reportes y analítica" subtitle="Estadísticas e indicadores de la operación" icon="insights" onPress={() => router.navigate('/(tabs)/reports')} />
         </View>
       </ScrollView>
     </SafeAreaView>

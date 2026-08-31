@@ -102,7 +102,7 @@ export function MyOrdersScreen() {
         Alert.alert('No se pudo confirmar la salida', selectedState.error || 'Revisa los datos de la orden e intenta nuevamente.');
         return;
       }
-      router.push('/(tabs)/exits');
+      router.navigate('/(tabs)/exits');
     } catch (error) {
       Alert.alert(
         'No se pudo abrir la salida',
