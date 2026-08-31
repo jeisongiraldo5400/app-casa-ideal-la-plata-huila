@@ -6,6 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -59,6 +60,8 @@ export function LoginForm() {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    Keyboard.dismiss();
     setFormError(null);
     if (!validate()) return;
 
@@ -67,9 +70,9 @@ export function LoginForm() {
       const { error } = await signIn(email.trim(), password);
       if (error) {
         setFormError(error.message || 'Error al iniciar sesión');
-      } else {
-        router.replace('/(tabs)');
+        return;
       }
+      router.replace('/(tabs)');
     } catch (error: any) {
       setFormError(error.message || 'Ocurrió un error inesperado');
     } finally {

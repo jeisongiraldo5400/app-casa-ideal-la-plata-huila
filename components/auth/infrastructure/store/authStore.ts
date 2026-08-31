@@ -166,6 +166,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error: new Error('La cuenta está inactiva o fue eliminada') };
     }
     await setLastOnlineVerifiedAt();
+    if (data.session) {
+      set({
+        session: data.session,
+        user: data.user,
+        loading: false,
+        offlineSession: false,
+      });
+    }
     return { error };
   },
 

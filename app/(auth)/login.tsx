@@ -20,19 +20,29 @@ export default function LoginScreen() {
   const Colors = getColors(isDark);
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
+
+  const keyboardPadding =
+    Platform.OS === 'ios' ? Spacing.xxl : keyboardHeight + Spacing.lg;
 
   const content = (
     <ScrollView
@@ -42,13 +52,12 @@ export default function LoginScreen() {
           justifyContent: keyboardVisible ? 'flex-start' : 'center',
           paddingTop: keyboardVisible ? Math.max(insets.top, 8) : Math.max(insets.top, 16),
           paddingBottom: keyboardVisible
-            ? Spacing.xxl
+            ? keyboardPadding
             : Math.max(insets.bottom, 24),
         },
       ]}
-      keyboardShouldPersistTaps="handled"
+      keyboardShouldPersistTaps="always"
       keyboardDismissMode="none"
-      automaticallyAdjustKeyboardInsets
       showsVerticalScrollIndicator={false}>
       <View style={[styles.brand, keyboardVisible && styles.brandCompact]}>
         <Text style={[styles.portalLabel, { color: Colors.primary.main }]}>
