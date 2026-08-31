@@ -126,6 +126,26 @@ describe('entriesStore', () => {
       expect(useEntriesStore.getState().currentScannedBarcode).toBe('UNKNOWN');
     });
 
+    it('does not toggle global loading while looking up a barcode', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        loading: false,
+        searchProductByBarcode: jest.fn(async () => {
+          expect(useEntriesStore.getState().loading).toBe(false);
+          return product;
+        }),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('770123');
+
+      expect(result.status).toBe('found');
+      expect(useEntriesStore.getState().loading).toBe(false);
+      expect(useEntriesStore.getState().uiStage).toBe('product_review');
+    });
+
     it('does not create an unknown product inside a purchase order', async () => {
       useEntriesStore.setState({
         entryType: 'PO_ENTRY',
@@ -150,6 +170,23 @@ describe('entriesStore', () => {
 
       expect(result).toEqual({ ok: false, error: 'La cantidad debe ser un número mayor que cero' });
       expect(useEntriesStore.getState().currentProduct).toBe(product);
+    });
+
+    it('does not mutate an existing entry item when adding more quantity', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      const existing = { product, quantity: 2, barcode: '123' };
+      useEntriesStore.setState({
+        currentProduct: product,
+        currentScannedBarcode: '123',
+        entryItems: [existing],
+      });
+
+      const result = await useEntriesStore.getState().addProductToEntry(product, 3, '123');
+
+      expect(result.ok).toBe(true);
+      expect(existing.quantity).toBe(2);
+      expect(useEntriesStore.getState().entryItems[0]).not.toBe(existing);
+      expect(useEntriesStore.getState().entryItems[0].quantity).toBe(5);
     });
   });
 
@@ -239,7 +276,7 @@ describe('entriesStore', () => {
         select: () => ({
           eq: () => ({
             is: () => ({
-              single: () =>
+              maybeSingle: () =>
                 Promise.resolve({
                   data: null,
                   error: { code: '42501', message: 'permission denied' },
@@ -252,6 +289,22 @@ describe('entriesStore', () => {
       await expect(
         useEntriesStore.getState().searchProductByBarcode('123456')
       ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('returns null when the barcode is not registered', async () => {
+      (supabase.from as jest.Mock).mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }));
+
+      await expect(
+        useEntriesStore.getState().searchProductByBarcode('UNKNOWN')
+      ).resolves.toBeNull();
     });
   });
 

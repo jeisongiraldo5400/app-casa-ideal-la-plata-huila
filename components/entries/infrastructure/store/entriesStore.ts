@@ -878,8 +878,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   // Scanning actions
   scanBarcode: async (barcode: string): Promise<EntryScanResult> => {
     set({
-      loading: true,
-      loadingMessage: 'Buscando producto...',
       error: null,
       currentScannedBarcode: barcode,
       currentQuantity: 1,
@@ -896,8 +894,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
           if (!validation.valid) {
             set({
-              loading: false,
-              loadingMessage: null,
               error: validation.error || "Producto no válido para esta orden",
               currentProduct: null,
               currentScannedBarcode: null,
@@ -914,7 +910,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           // Esto permite escanear cualquier producto de la OC sin preselección (similar a Exits)
         }
 
-        set({ currentProduct: product, loading: false, loadingMessage: null, step: "scanning", uiStage: "product_review" });
+        set({ currentProduct: product, step: "scanning", uiStage: "product_review" });
         return { status: "found", product, error: null };
       } else {
         const { entryType, purchaseOrderId } = get();
@@ -923,8 +919,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           set({
             currentProduct: null,
             currentScannedBarcode: null,
-            loading: false,
-            loadingMessage: null,
             step: "scanning",
             uiStage: "idle",
             error: message,
@@ -933,8 +927,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
         set({
           currentProduct: null,
-          loading: false,
-          loadingMessage: null,
           step: "product-form",
           error: null, // No es error, es flujo normal
         });
@@ -942,8 +934,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       }
     } catch (error: any) {
       set({
-        loading: false,
-        loadingMessage: null,
         error: error.message || "Error al buscar el producto",
         step: "scanning",
         currentProduct: null,
@@ -963,16 +953,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       .select("*")
       .eq("barcode", barcode)
       .is("deleted_at", null)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        return null;
-      }
       throw error;
     }
 
-    return data as Product;
+    return (data as Product) ?? null;
   },
 
   addProductToEntry: async (product, quantity, barcode) => {
@@ -1028,9 +1015,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     );
 
     if (existingIndex >= 0) {
-      // Si existe, actualizar la cantidad
-      const updatedItems = [...entryItems];
-      updatedItems[existingIndex].quantity += quantity;
+      const updatedItems = entryItems.map((item, index) =>
+        index === existingIndex
+          ? { ...item, quantity: item.quantity + quantity }
+          : item
+      );
       set({ entryItems: updatedItems, error: null });
     } else {
       // Si no existe, agregarlo

@@ -10,7 +10,7 @@ import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/the
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,6 +20,7 @@ type Row =
   | { kind: 'pending'; key: string; progress: SelectedPurchaseOrderProgressItem };
 const PAGE_SIZE = 20;
 const MAX_MANUAL_QUANTITY = 1_000_000;
+const SCANNER_REOPEN_DELAY_MS = 350;
 
 const TYPE_LABELS = {
   PO_ENTRY: 'Entrada con OC',
@@ -42,6 +43,11 @@ export function EntryScanningWorkspace() {
   const [successSummary, setSuccessSummary] = useState<FinalizeEntrySummary | null>(null);
   const scanGuard = useRef(false);
   const finalizeGuard = useRef(false);
+  const reopenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (reopenTimer.current) clearTimeout(reopenTimer.current);
+  }, []);
 
   const progress = store.getSelectedPurchaseOrderProgress();
   const pendingAtStart = progress ? Math.max(progress.totalRequired - progress.totalRegistered, 0) : 0;
@@ -63,26 +69,25 @@ export function EntryScanningWorkspace() {
     setShowScanner(true);
   };
 
-  const handleScan = async (barcode: string) => {
+  const handleScan = useCallback(async (barcode: string) => {
     if (scanGuard.current) return;
     scanGuard.current = true;
+    setShowScanner(false);
     try {
-      const result = await store.scanBarcode(barcode.trim());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const result = await useEntriesStore.getState().scanBarcode(barcode.trim());
       if (result.status === 'found') {
-        setShowScanner(false);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         return;
       }
       if (result.status === 'not_found') {
-        setShowScanner(false);
         return;
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
-      throw new Error(result.error);
     } finally {
       scanGuard.current = false;
     }
-  };
+  }, []);
 
   const addProduct = async (scanNext: boolean) => {
     const current = useEntriesStore.getState();
@@ -96,7 +101,12 @@ export function EntryScanningWorkspace() {
     setReviewError(null);
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    if (scanNext) setShowScanner(true);
+    if (!scanNext) return;
+    if (reopenTimer.current) clearTimeout(reopenTimer.current);
+    reopenTimer.current = setTimeout(() => {
+      setShowScanner(true);
+      reopenTimer.current = null;
+    }, SCANNER_REOPEN_DELAY_MS);
   };
 
   const returnToConfiguration = () => {

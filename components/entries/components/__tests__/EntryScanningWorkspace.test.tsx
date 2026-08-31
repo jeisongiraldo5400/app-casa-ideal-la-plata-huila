@@ -70,6 +70,31 @@ describe('EntryScanningWorkspace', () => {
     expect(finalizeEntry).not.toHaveBeenCalled();
   });
 
+  it('closes the scanner before looking up a barcode and reopens it after adding the next product', async () => {
+    const scanBarcode = jest.fn(async () => {
+      expect(screen.queryByText('Emitir lectura')).toBeNull();
+      useEntriesStore.setState({ currentProduct: product, currentScannedBarcode: '770123', currentQuantity: 1, uiStage: 'product_review' });
+      return { status: 'found' as const, product, error: null };
+    });
+    const addProductToEntry = jest.fn(async () => {
+      useEntriesStore.setState({ entryItems: [{ ...item, quantity: 1 }], currentProduct: null, currentScannedBarcode: null, uiStage: 'idle' });
+      return { ok: true as const, error: null };
+    });
+    useEntriesStore.setState({ scanBarcode, addProductToEntry });
+
+    const screen = render(<EntryScanningWorkspace />);
+    fireEvent.press(screen.getByText('Escanear producto'));
+    expect(screen.getByText('Emitir lectura')).toBeTruthy();
+    fireEvent.press(screen.getByText('Emitir lectura'));
+    await waitFor(() => expect(screen.getByText('Verificar producto')).toBeTruthy());
+    expect(scanBarcode).toHaveBeenCalledWith('770123');
+
+    fireEvent.press(screen.getByText('Agregar y escanear siguiente'));
+    expect(screen.queryByText('Emitir lectura')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Emitir lectura')).toBeTruthy(), { timeout: 1000 });
+    expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
+  });
+
   it('keeps products until final success and offers the agreed destinations', async () => {
     const finalizeEntry = jest.fn(async () => ({ ok: true as const, error: null, summary: { entryType: 'ENTRY' as const, orderNumber: null, productCount: 1, totalUnits: 2, orderCompleted: false } }));
     useEntriesStore.setState({ entryItems: [item], finalizeEntry });

@@ -23,13 +23,15 @@ export function BarcodeScanner({
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** iOS: never attach onBarcodeScanned until native session is ready (avoids crashes). */
+  /** Never attach onBarcodeScanned until native session is ready (avoids crashes). */
   const [cameraReady, setCameraReady] = useState(false);
-  /** iOS: defer mounting CameraView slightly so it does not race with screen transition (expo/expo#35386). */
-  const [deferMountCamera, setDeferMountCamera] = useState(Platform.OS !== 'ios');
+  /** Defer mounting CameraView so it does not race with screen transition (expo/expo#35386). */
+  const [deferMountCamera, setDeferMountCamera] = useState(false);
   const isProcessingRef = useRef(false);
   const scannedRef = useRef(false);
   const mountedRef = useRef(true);
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
 
   useEffect(() => {
     scannedRef.current = scanned;
@@ -43,7 +45,6 @@ export function BarcodeScanner({
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
     const t = setTimeout(() => setDeferMountCamera(true), 250);
     return () => clearTimeout(t);
   }, []);
@@ -72,9 +73,9 @@ export function BarcodeScanner({
         throw new Error('Código de barras vacío');
       }
 
-      // Llamar a onScan de forma segura
-      if (typeof onScan === 'function') {
-        await Promise.resolve(onScan(trimmedBarcode));
+      const scan = onScanRef.current;
+      if (typeof scan === 'function') {
+        await Promise.resolve(scan(trimmedBarcode));
       }
 
       // Cerrar el scanner después de un breve delay para asegurar que el estado se actualizó
@@ -101,7 +102,7 @@ export function BarcodeScanner({
         }
       }, 2000);
     }
-  }, [onScan]);
+  }, []);
 
   const onCameraReady = useCallback(() => {
     setError(null);

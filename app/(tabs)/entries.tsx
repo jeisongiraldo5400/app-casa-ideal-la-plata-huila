@@ -19,7 +19,7 @@ export default function EntriesScreen() {
 
   return (
     <>
-      <Modal visible={loading && step !== 'setup' && step !== 'flow-selection'} transparent animationType="fade" onRequestClose={() => undefined}>
+      <Modal visible={loading && step !== 'setup' && step !== 'flow-selection' && step !== 'scanning'} transparent animationType="fade" onRequestClose={() => undefined}>
         <View style={styles.loadingOverlay}><View style={[styles.loadingCard, { backgroundColor: colors.background.paper }]}><ActivityIndicator size="large" color={colors.primary.main} /><Text style={[styles.loadingTitle, { color: colors.text.primary }]}>{loadingMessage || 'Procesando...'}</Text><Text style={[styles.loadingText, { color: colors.text.secondary }]}>Por favor espere</Text></View></View>
       </Modal>
 
