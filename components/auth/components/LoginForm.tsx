@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -27,6 +27,7 @@ export function LoginForm() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
 
@@ -137,6 +138,9 @@ export function LoginForm() {
           autoCorrect={false}
           autoComplete="email"
           textContentType="username"
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => passwordRef.current?.focus()}
           editable={!submitting}
         />
         {emailError ? (
@@ -159,6 +163,7 @@ export function LoginForm() {
             },
           ]}>
           <TextInput
+            ref={passwordRef}
             style={[styles.passwordInput, { color: Colors.text.primary }]}
             placeholder="••••••••"
             placeholderTextColor={Colors.text.secondary}
@@ -173,6 +178,8 @@ export function LoginForm() {
             autoCorrect={false}
             autoComplete="password"
             textContentType="password"
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
             editable={!submitting}
           />
           <TouchableOpacity

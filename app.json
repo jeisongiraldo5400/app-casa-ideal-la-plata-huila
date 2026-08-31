@@ -40,6 +40,7 @@
         "imageWidth": 200
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",

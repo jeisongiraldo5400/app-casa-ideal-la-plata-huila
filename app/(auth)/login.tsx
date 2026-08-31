@@ -1,10 +1,11 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
 import { useTheme } from '@/components/theme';
-import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
+import { Spacing, getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,47 +19,52 @@ export default function LoginScreen() {
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
-  return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: Colors.background.default }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: Math.max(insets.top, 16),
-            paddingBottom: Math.max(insets.bottom, 24),
-          },
-        ]}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        showsVerticalScrollIndicator={false}>
-        <View style={[styles.brandPanel, { backgroundColor: Colors.navigation.background }]}>
-          <Text style={styles.portalLabel}>PORTAL OPERATIVO</Text>
-          <View
-            style={[
-              styles.logoContainer,
-              {
-                backgroundColor: Colors.background.paper,
-                borderColor: Colors.divider,
-              },
-            ]}>
-            <Image
-              source={require('@/assets/images/logo_completo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-              accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
-            />
-          </View>
-          <Text style={styles.brandTagline}>
-            Inventario, órdenes y gestión comercial en un solo lugar
-          </Text>
-        </View>
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-        <LoginForm />
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
 
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const content = (
+    <ScrollView
+      contentContainerStyle={[
+        styles.scrollContent,
+        {
+          justifyContent: keyboardVisible ? 'flex-start' : 'center',
+          paddingTop: keyboardVisible ? Math.max(insets.top, 8) : Math.max(insets.top, 16),
+          paddingBottom: keyboardVisible
+            ? Spacing.xxl
+            : Math.max(insets.bottom, 24),
+        },
+      ]}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="none"
+      automaticallyAdjustKeyboardInsets
+      showsVerticalScrollIndicator={false}>
+      <View style={[styles.brand, keyboardVisible && styles.brandCompact]}>
+        <Text style={[styles.portalLabel, { color: Colors.primary.main }]}>
+          PORTAL OPERATIVO
+        </Text>
+        <Image
+          source={require('@/assets/images/logo_completo.png')}
+          style={[styles.logoImage, keyboardVisible && styles.logoImageCompact]}
+          resizeMode="contain"
+          accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
+        />
+      </View>
+
+      <LoginForm />
+
+      {!keyboardVisible ? (
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: Colors.text.secondary }]}>
             Versión {Constants.expoConfig?.version || '1.0.0'}
@@ -67,9 +73,21 @@ export default function LoginScreen() {
             © {new Date().getFullYear()} Casa Ideal
           </Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      ) : null}
+    </ScrollView>
   );
+
+  const screenStyle = [styles.container, { backgroundColor: Colors.background.default }];
+
+  if (Platform.OS === 'ios') {
+    return (
+      <KeyboardAvoidingView style={screenStyle} behavior="padding">
+        {content}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return <View style={screenStyle}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -78,55 +96,33 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.xxl,
   },
-  brandPanel: {
+  brand: {
     alignItems: 'center',
-    justifyContent: 'center',
     alignSelf: 'center',
     width: '100%',
     maxWidth: 400,
     marginBottom: Spacing.lg,
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.xxxl,
-    borderRadius: Radius.panel,
-    ...Shadows.floating,
+  },
+  brandCompact: {
+    marginBottom: Spacing.sm,
   },
   portalLabel: {
-    color: '#bfdbfe',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.1,
-    marginBottom: Spacing.lg,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    borderRadius: Radius.card,
-    borderWidth: 1,
-    elevation: 2,
-    justifyContent: 'center',
-    width: '100%',
-    maxWidth: 280,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    marginBottom: Spacing.md,
   },
   logoImage: {
     width: '100%',
-    height: 76,
+    maxWidth: 240,
+    height: 72,
   },
-  brandTagline: {
-    color: '#dbeafe',
-    marginTop: Spacing.md,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-    fontWeight: '600',
+  logoImageCompact: {
+    height: 48,
+    maxWidth: 180,
   },
   footer: {
     marginTop: Spacing.xxl,
