@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -48,14 +48,21 @@ export default function EntriesScreen() {
   const colors = getColors(isDark);
 
   const [showScanner, setShowScanner] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset state when screen loses focus (tab navigation)
+  // Reset after leaving so the form does not collapse during the tab transition
   useFocusEffect(
     useCallback(() => {
-      // Called when screen gains focus - no action needed
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+
       return () => {
-        // Called when screen loses focus - reset all state including cache
-        resetAll();
+        resetTimerRef.current = setTimeout(() => {
+          resetAll();
+          resetTimerRef.current = null;
+        }, 400);
       };
     }, [resetAll])
   );

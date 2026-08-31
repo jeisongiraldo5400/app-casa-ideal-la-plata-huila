@@ -8,53 +8,60 @@ import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
+function formatDateTime(date: Date) {
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const seconds = date.getSeconds().toString().padStart(2, '0');
+
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+}
+
+function DashboardClock({ color }: { color: string }) {
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <Text style={[styles.dateTime, { color }]}>{formatDateTime(currentDateTime)}</Text>
+  );
+}
+
 export default function HomeScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
-  const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const showCommercialSection = isAdmin() || isVendedor() || isGestorCobro();
   const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentDateTime(new Date());
-    }, 1000); // Actualizar cada segundo
-
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatDateTime = (date: Date) => {
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const seconds = date.getSeconds().toString().padStart(2, '0');
-
-    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-  };
-
   const handleRegisterEntries = () => {
-    router.push('/(tabs)/entries');
+    router.navigate('/(tabs)/entries');
   };
 
   const handleRegisterExits = () => {
-    router.push('/(tabs)/exits');
+    router.navigate('/(tabs)/exits');
   };
 
   const handleViewMyOrders = () => {
-    router.push('/(tabs)/my-orders');
+    router.navigate('/(tabs)/my-orders');
   };
 
   const handleViewAllOrders = () => {
-    router.push('/(tabs)/all-orders');
+    router.navigate('/(tabs)/all-orders');
   };
 
   const handleViewReports = () => {
-    router.push('/(tabs)/reports');
+    router.navigate('/(tabs)/reports');
   };
 
   return (
@@ -62,7 +69,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Casa Ideal</Text>
-          <Text style={[styles.dateTime, { color: colors.text.secondary }]}>{formatDateTime(currentDateTime)}</Text>
+          <DashboardClock color={colors.text.secondary} />
         </View>
         <Text style={[styles.subtitle, { color: colors.text.secondary }]}>Bienvenido de vuelta</Text>
       </View>
@@ -75,7 +82,7 @@ export default function HomeScreen() {
           {canCreateNegocio && (
             <TouchableOpacity
               style={[styles.sellerCta, { backgroundColor: colors.primary.main, marginBottom: 0 }]}
-              onPress={() => router.push('/(tabs)/negocio-create')}
+              onPress={() => router.navigate('/(tabs)/negocio-create')}
               activeOpacity={0.85}
             >
               <MaterialIcons name="handshake" size={28} color={colors.primary.contrastText} />
@@ -93,14 +100,14 @@ export default function HomeScreen() {
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
               style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-              onPress={() => router.push('/(tabs)/negocios')}
+              onPress={() => router.navigate('/(tabs)/negocios')}
             >
               <MaterialIcons name="payments" size={22} color={colors.primary.main} />
               <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Negocios / Cobrar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.sellerSecondary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-              onPress={() => router.push('/(tabs)/cartera')}
+              onPress={() => router.navigate('/(tabs)/cartera')}
             >
               <MaterialIcons name="account-balance-wallet" size={22} color={colors.info.main} />
               <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Cartera</Text>
@@ -112,7 +119,7 @@ export default function HomeScreen() {
       {isGestorCobro() && (
         <TouchableOpacity
           style={[styles.sellerCta, { backgroundColor: '#0f766e', marginBottom: 20 }]}
-          onPress={() => router.push('/(tabs)/ruta-cobros' as any)}
+          onPress={() => router.navigate('/(tabs)/ruta-cobros' as any)}
           activeOpacity={0.85}
         >
           <MaterialIcons name="route" size={30} color="#fff" />
