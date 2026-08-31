@@ -44,7 +44,7 @@ export default function NegociosScreen() {
         {canCreate && (
           <Pressable
             style={[styles.cta, { backgroundColor: colors.primary.main }]}
-            onPress={() => router.push('/(tabs)/negocio-create')}
+            onPress={() => router.navigate('/(tabs)/negocio-create')}
           >
             <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
             <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>

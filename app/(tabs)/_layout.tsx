@@ -2,10 +2,11 @@ import { useTheme } from '@/components/theme';
 import { BackButton } from '@/components/ui/BackButton';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getColors } from '@/constants/theme';
-import { useUserRoles } from '@/hooks/useUserRoles';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
+import { Platform, TouchableOpacity } from 'react-native';
+
+const isWeb = Platform.OS === 'web';
 
 function ProfileHeaderButton() {
   const router = useRouter();
@@ -13,7 +14,7 @@ function ProfileHeaderButton() {
   const colors = getColors(isDark);
   return (
     <TouchableOpacity
-      onPress={() => router.push('/(tabs)/profile')}
+      onPress={() => router.navigate('/(tabs)/profile')}
       style={{ marginRight: 16 }}>
       <MaterialIcons name="account-circle" size={28} color={colors.primary.contrastText} />
     </TouchableOpacity>
@@ -23,19 +24,13 @@ function ProfileHeaderButton() {
 export default function TabLayout() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { loading } = useUserRoles();
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.primary.main} />
-      </View>
-    );
-  }
 
   return (
     <Tabs
+      backBehavior={isWeb ? 'none' : 'firstRoute'}
+      detachInactiveScreens={!isWeb}
       screenOptions={{
+        animation: 'none',
         tabBarActiveTintColor: colors.primary.main,
         tabBarInactiveTintColor: colors.text.secondary,
         headerShown: true,

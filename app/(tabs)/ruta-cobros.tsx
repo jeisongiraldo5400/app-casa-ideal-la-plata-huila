@@ -77,7 +77,7 @@ export default function CollectionRoutesScreen() {
           </View>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => router.push('/(tabs)/ruta-cobros-crear' as any)}>
+        <TouchableOpacity style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => router.navigate('/(tabs)/ruta-cobros-crear' as any)}>
           <MaterialIcons name="add-road" size={38} color={colors.primary.main} />
           <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Crear ruta del día</Text>
           <Text style={{ color: colors.text.secondary, textAlign: 'center' }}>Selecciona y ordena los negocios que visitarás.</Text>

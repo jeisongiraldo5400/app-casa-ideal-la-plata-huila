@@ -137,7 +137,7 @@ export default function MyOrdersScreen() {
         return;
       }
 
-      router.push('/(tabs)/exits');
+      router.navigate('/(tabs)/exits');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No fue posible preparar la salida.';
       Alert.alert('No se pudo abrir la salida', message);

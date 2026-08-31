@@ -6,7 +6,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
@@ -97,12 +97,15 @@ function RootLayoutNav() {
   // No mostrar loading container mientras se carga, dejar que el splash screen se muestre
   // El splash screen se ocultará automáticamente cuando termine la inicialización
 
+  const stackAnimation = Platform.OS === 'web' ? 'none' : undefined;
+  const detailAnimation = Platform.OS === 'web' ? 'none' : 'slide_from_right';
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, animation: stackAnimation }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+      <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
     </Stack>
   );
 }
