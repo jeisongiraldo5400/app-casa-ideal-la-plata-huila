@@ -1,6 +1,13 @@
 import { classifyPushError, nextRetryAt, canRetry } from '../retryPolicy';
 import { resolveCustomerIdNumberConflict } from '../conflictPolicy';
-import { isOfflineSessionValid, isNetworkError, shouldLockApp } from '../../security/sessionPolicy';
+import {
+  isAuthSessionMissingError,
+  isInvalidRefreshTokenError,
+  isNetworkError,
+  isOfflineSessionValid,
+  shouldKeepLocalSession,
+  shouldLockApp,
+} from '../../security/sessionPolicy';
 import { assertPullIsComplete, type PullPayload } from '../types';
 
 describe('retryPolicy', () => {
@@ -65,5 +72,48 @@ describe('sessionPolicy', () => {
   it('detecta errores de red', () => {
     expect(isNetworkError(new Error('Network request failed'))).toBe(true);
     expect(isNetworkError(new Error('Sin permiso'))).toBe(false);
+  });
+
+  it('detecta AuthSessionMissing y refresh token inválido', () => {
+    const missing = new Error('Auth session missing!');
+    missing.name = 'AuthSessionMissingError';
+    expect(isAuthSessionMissingError(missing)).toBe(true);
+    expect(isAuthSessionMissingError(new Error('Auth session missing!'))).toBe(true);
+    expect(isInvalidRefreshTokenError(new Error('Invalid Refresh Token'))).toBe(true);
+    expect(isInvalidRefreshTokenError(new Error('Network request failed'))).toBe(false);
+  });
+
+  it('conserva sesión local solo con error de red y TTL vigente', () => {
+    const now = 1_000_000;
+    const lastVerified = now - 1000;
+    expect(shouldKeepLocalSession({
+      error: new Error('Network request failed'),
+      hasStoredSession: true,
+      lastOnlineVerifiedAt: lastVerified,
+      now,
+    })).toBe(true);
+
+    const missing = new Error('Auth session missing!');
+    missing.name = 'AuthSessionMissingError';
+    expect(shouldKeepLocalSession({
+      error: missing,
+      hasStoredSession: true,
+      lastOnlineVerifiedAt: lastVerified,
+      now,
+    })).toBe(false);
+
+    expect(shouldKeepLocalSession({
+      error: new Error('Invalid Refresh Token'),
+      hasStoredSession: true,
+      lastOnlineVerifiedAt: lastVerified,
+      now,
+    })).toBe(false);
+
+    expect(shouldKeepLocalSession({
+      error: new Error('Network request failed'),
+      hasStoredSession: false,
+      lastOnlineVerifiedAt: lastVerified,
+      now,
+    })).toBe(false);
   });
 });

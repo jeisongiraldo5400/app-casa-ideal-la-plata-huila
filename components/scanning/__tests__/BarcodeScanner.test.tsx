@@ -77,4 +77,30 @@ describe('BarcodeScanner', () => {
     expect(secondOnScan).toHaveBeenCalledWith('770999');
     expect(firstOnScan).not.toHaveBeenCalled();
   });
+
+  it('ignores reads when inactive without detaching the native handler', async () => {
+    const onScan = jest.fn(async () => undefined);
+    const screen = render(<BarcodeScanner onScan={onScan} onClose={jest.fn()} active={false} />);
+
+    await act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+    act(() => mockCameraProps.onCameraReady());
+    await waitFor(() => expect(mockCameraProps.onBarcodeScanned).toEqual(expect.any(Function)));
+    const handler = mockCameraProps.onBarcodeScanned;
+
+    await act(async () => {
+      await handler({ data: '770123' });
+    });
+    expect(onScan).not.toHaveBeenCalled();
+
+    screen.rerender(<BarcodeScanner onScan={onScan} onClose={jest.fn()} active />);
+    expect(mockCameraProps.onBarcodeScanned).toBe(handler);
+
+    await act(async () => {
+      await handler({ data: '770456' });
+    });
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith('770456');
+  });
 });

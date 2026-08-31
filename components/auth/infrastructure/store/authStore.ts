@@ -5,7 +5,7 @@ import {
   getLastOnlineVerifiedAt,
   setLastOnlineVerifiedAt,
 } from '@/lib/offline/security/secureKeys';
-import { isNetworkError, isOfflineSessionValid } from '@/lib/offline/security/sessionPolicy';
+import { shouldKeepLocalSession } from '@/lib/offline/security/sessionPolicy';
 import { wipeLocalOfflineData } from '@/lib/offline/security/wipe';
 
 interface AuthState {
@@ -18,6 +18,7 @@ interface AuthState {
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
   cleanup: () => void;
+  clearLocalAuth: () => void;
   changePassword: (newPassword: string) => Promise<{ error: any }>;
 }
 
@@ -34,74 +35,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (get().initialized) return;
 
     try {
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
-
-      if (error || !session) {
-        set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
-      } else {
-        try {
-          const { data: userData, error: userError } = await supabase.auth.getUser();
-          if (userError) throw userError;
-          if (!userData.user) {
-            await supabase.auth.signOut();
-            set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
-          } else {
-            const { data: activeProfile, error: profileError } = await supabase
-              .from('profiles')
-              .select('id')
-              .eq('id', userData.user.id)
-              .is('deleted_at', null)
-              .maybeSingle();
-            if (profileError) throw profileError;
-            if (!activeProfile) {
-              await supabase.auth.signOut();
-              await wipeLocalOfflineData();
-              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
-            } else {
-              await setLastOnlineVerifiedAt();
-              set({
-                session: { ...session, user: userData.user },
-                user: userData.user,
-                loading: false,
-                initialized: true,
-                offlineSession: false,
-              });
-            }
-          }
-        } catch (verifyError) {
-          if (isNetworkError(verifyError)) {
-            const lastVerified = await getLastOnlineVerifiedAt();
-            if (isOfflineSessionValid(lastVerified)) {
-              set({
-                session,
-                user: session.user,
-                loading: false,
-                initialized: true,
-                offlineSession: true,
-              });
-            } else {
-              await supabase.auth.signOut();
-              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
-            }
-          } else {
-            // La recreación temporal de la actividad (por ejemplo, al rotar
-            // para firmar) no debe descartar una sesión persistida ante un
-            // error recuperable de verificación remota.
-            const message = verifyError instanceof Error ? verifyError.message : String(verifyError || '');
-            if (/refresh token|invalid refresh token/i.test(message)) {
-              await supabase.auth.signOut();
-              set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
-            } else {
-              console.warn('No se pudo verificar la sesión; se conserva la sesión local', verifyError);
-              set({ session, user: session.user, loading: false, initialized: true, offlineSession: true });
-            }
-          }
-        }
-      }
-
       if (authSubscription) {
         authSubscription.unsubscribe();
         authSubscription = null;
@@ -130,6 +63,75 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       });
       authSubscription = subscription;
+
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error || !session) {
+        set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+        return;
+      }
+
+      try {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!userData.user) {
+          await supabase.auth.signOut();
+          set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+          return;
+        }
+
+        const { data: activeProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', userData.user.id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        if (profileError) throw profileError;
+        if (!activeProfile) {
+          await supabase.auth.signOut();
+          await wipeLocalOfflineData();
+          set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+          return;
+        }
+
+        await setLastOnlineVerifiedAt();
+        set({
+          session: { ...session, user: userData.user },
+          user: userData.user,
+          loading: false,
+          initialized: true,
+          offlineSession: false,
+        });
+      } catch (verifyError) {
+        const {
+          data: { session: currentSession },
+        } = await supabase.auth.getSession();
+        const lastVerified = await getLastOnlineVerifiedAt();
+        if (
+          shouldKeepLocalSession({
+            error: verifyError,
+            hasStoredSession: Boolean(currentSession),
+            lastOnlineVerifiedAt: lastVerified,
+          })
+        ) {
+          const kept = currentSession ?? session;
+          console.warn('No se pudo verificar la sesión; se conserva la sesión local', verifyError);
+          set({
+            session: kept,
+            user: kept.user,
+            loading: false,
+            initialized: true,
+            offlineSession: true,
+          });
+          return;
+        }
+
+        await supabase.auth.signOut();
+        set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+      }
     } catch (error: any) {
       console.log('Error initializing auth:', error?.message || error);
       if (
@@ -147,6 +149,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       authSubscription.unsubscribe();
       authSubscription = null;
     }
+  },
+
+  clearLocalAuth: () => {
+    set({ session: null, user: null, loading: false, offlineSession: false });
   },
 
   signIn: async (email: string, password: string) => {

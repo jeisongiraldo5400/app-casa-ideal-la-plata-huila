@@ -47,6 +47,7 @@ export function ExitScanningWorkspace() {
   const router = useRouter();
   const [stage, setStage] = useState<ScanningUiStage>('idle');
   const [showScanner, setShowScanner] = useState(false);
+  const [scannerMounted, setScannerMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('session');
   const [visiblePendingCount, setVisiblePendingCount] = useState(PENDING_PAGE_SIZE);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -93,18 +94,24 @@ export function ExitScanningWorkspace() {
   const openScanner = () => {
     store.clearError();
     setReviewError(null);
+    setScannerMounted(true);
     setShowScanner(true);
+  };
+
+  const unmountScanner = () => {
+    setShowScanner(false);
+    setScannerMounted(false);
   };
 
   const handleScan = async (barcode: string) => {
     if (scanGuardRef.current) return;
     scanGuardRef.current = true;
+    setShowScanner(false);
     try {
       await store.scanBarcode(barcode.trim());
       const current = useExitsStore.getState();
       if (current.currentProduct) {
         setStage('product_review');
-        setShowScanner(false);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       } else {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
@@ -134,10 +141,16 @@ export function ExitScanningWorkspace() {
     setStage('idle');
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    if (scanNext) setShowScanner(true);
+    if (scanNext) {
+      setScannerMounted(true);
+      setShowScanner(true);
+      return;
+    }
+    unmountScanner();
   };
 
   const cancelProductReview = () => {
+    unmountScanner();
     store.resetCurrentScan();
     store.clearError();
     setReviewError(null);
@@ -182,6 +195,7 @@ export function ExitScanningWorkspace() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
         return;
       }
+      unmountScanner();
       setSuccessSummary(result.summary);
       setStage('success');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -190,20 +204,13 @@ export function ExitScanningWorkspace() {
     }
   };
 
-  if (showScanner) {
-    return (
-      <BarcodeScanner
-        onScan={handleScan}
-        onClose={() => setShowScanner(false)}
-        title="Escanear producto de la salida"
-        contextLabel={order ? `Orden #${order.order_number || order.id.slice(0, 8)} · ${remainingUnits} unidades pendientes` : undefined}
-        instruction="Ubica el código dentro del recuadro"
-      />
-    );
-  }
+  const scannerContext = order
+    ? `Orden #${order.order_number || order.id.slice(0, 8)} · ${remainingUnits} unidades pendientes`
+    : undefined;
 
+  let workspace: React.ReactNode;
   if (stage === 'success' && successSummary) {
-    return (
+    workspace = (
       <View style={[styles.successScreen, { backgroundColor: colors.background.default }]}>
         <ScreenState
           title="Salida registrada correctamente"
@@ -223,10 +230,8 @@ export function ExitScanningWorkspace() {
         </View>
       </View>
     );
-  }
-
-  if (stage === 'product_review' && store.currentProduct) {
-    return (
+  } else if (stage === 'product_review' && store.currentProduct) {
+    workspace = (
       <ProductReviewScreen
         colors={colors}
         bottomInset={insets.bottom}
@@ -244,10 +249,8 @@ export function ExitScanningWorkspace() {
         onAddAndScan={() => void addCurrentProduct(true)}
       />
     );
-  }
-
-  if (stage === 'exit_review') {
-    return (
+  } else if (stage === 'exit_review') {
+    workspace = (
       <ExitReview
         colors={colors}
         insetsBottom={insets.bottom}
@@ -267,9 +270,8 @@ export function ExitScanningWorkspace() {
         onFinalize={() => void finalize()}
       />
     );
-  }
-
-  return (
+  } else {
+    workspace = (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <FlatList
         data={rows}
@@ -359,12 +361,34 @@ export function ExitScanningWorkspace() {
         <View style={styles.footerButtons}>
           <Button title={store.exitItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.exitItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.footerButton} />
           {store.exitItems.length ? (
-            <Button title="Revisar salida" onPress={() => setStage('exit_review')} style={styles.footerButton} />
+            <Button title="Revisar salida" onPress={() => { unmountScanner(); setStage('exit_review'); }} style={styles.footerButton} />
           ) : pendingProductCount > 0 ? (
             <Button title={`Ver pendientes (${pendingProductCount})`} variant="outline" onPress={() => setActiveTab('pending')} style={styles.footerButton} />
           ) : null}
         </View>
       </View>
+    </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {workspace}
+      {scannerMounted && stage !== 'success' ? (
+        <View
+          style={[styles.scannerOverlay, !showScanner && styles.scannerHidden]}
+          pointerEvents={showScanner ? 'auto' : 'none'}
+        >
+          <BarcodeScanner
+            active={showScanner}
+            onScan={handleScan}
+            onClose={unmountScanner}
+            title="Escanear producto de la salida"
+            contextLabel={scannerContext}
+            instruction="Ubica el código dentro del recuadro"
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -525,6 +549,8 @@ function ExitReview({ colors, insetsBottom, orderNumber, recipient, items, wareh
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scannerOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 20 },
+  scannerHidden: { opacity: 0 },
   listContent: { padding: Spacing.lg, gap: Spacing.md },
   sessionHeader: { borderRadius: Radius.card, borderWidth: 1, marginBottom: Spacing.lg, padding: Spacing.lg, ...Shadows.card },
   sessionTopRow: { alignItems: 'center', flexDirection: 'row' },

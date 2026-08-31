@@ -45,13 +45,20 @@ jest.mock('react-native-safe-area-context', () => ({
 
 jest.mock('@/components/scanning', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
-  const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  const { Pressable, Text, View } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    BarcodeScanner: ({ onScan }: { onScan: (barcode: string) => void }) => ReactModule.createElement(
-      Pressable,
-      { accessibilityRole: 'button', onPress: () => void onScan('770123') },
-      ReactModule.createElement(Text, null, 'Emitir lectura'),
-    ),
+    BarcodeScanner: ({ onScan, active = true }: { onScan: (barcode: string) => void; active?: boolean }) =>
+      ReactModule.createElement(
+        View,
+        { testID: 'barcode-scanner' },
+        active
+          ? ReactModule.createElement(
+            Pressable,
+            { accessibilityRole: 'button', onPress: () => void onScan('770123') },
+            ReactModule.createElement(Text, null, 'Emitir lectura'),
+          )
+          : ReactModule.createElement(Text, null, 'Scanner oculto'),
+      ),
   };
 });
 

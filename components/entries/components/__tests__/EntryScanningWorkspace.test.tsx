@@ -19,8 +19,17 @@ jest.mock('@expo/vector-icons', () => {
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }));
 jest.mock('@/components/scanning', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
-  const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
-  return { BarcodeScanner: ({ onScan }: { onScan: (value: string) => void }) => ReactModule.createElement(Pressable, { onPress: () => void onScan('770123') }, ReactModule.createElement(Text, null, 'Emitir lectura')) };
+  const { Pressable, Text, View } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    BarcodeScanner: ({ onScan, active = true }: { onScan: (value: string) => void; active?: boolean }) =>
+      ReactModule.createElement(
+        View,
+        { testID: 'barcode-scanner' },
+        active
+          ? ReactModule.createElement(Pressable, { onPress: () => void onScan('770123') }, ReactModule.createElement(Text, null, 'Emitir lectura'))
+          : ReactModule.createElement(Text, null, 'Scanner oculto'),
+      ),
+  };
 });
 
 const product = { id: 'product-1', name: 'Mesa auxiliar', sku: 'MES-1', barcode: '770123' } as EntryItem['product'];
@@ -70,9 +79,10 @@ describe('EntryScanningWorkspace', () => {
     expect(finalizeEntry).not.toHaveBeenCalled();
   });
 
-  it('closes the scanner before looking up a barcode and reopens it after adding the next product', async () => {
+  it('keeps the scanner mounted after a scan and shows it again immediately after adding the next product', async () => {
     const scanBarcode = jest.fn(async () => {
       expect(screen.queryByText('Emitir lectura')).toBeNull();
+      expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
       useEntriesStore.setState({ currentProduct: product, currentScannedBarcode: '770123', currentQuantity: 1, uiStage: 'product_review' });
       return { status: 'found' as const, product, error: null };
     });
@@ -88,10 +98,11 @@ describe('EntryScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Emitir lectura'));
     await waitFor(() => expect(screen.getByText('Verificar producto')).toBeTruthy());
     expect(scanBarcode).toHaveBeenCalledWith('770123');
+    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
+    expect(screen.getByText('Scanner oculto')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Agregar y escanear siguiente'));
-    expect(screen.queryByText('Emitir lectura')).toBeNull();
-    await waitFor(() => expect(screen.getByText('Emitir lectura')).toBeTruthy(), { timeout: 1000 });
+    await waitFor(() => expect(screen.getByText('Emitir lectura')).toBeTruthy());
     expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
   });
 

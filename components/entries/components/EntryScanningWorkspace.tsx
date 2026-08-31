@@ -10,7 +10,7 @@ import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/the
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,7 +20,6 @@ type Row =
   | { kind: 'pending'; key: string; progress: SelectedPurchaseOrderProgressItem };
 const PAGE_SIZE = 20;
 const MAX_MANUAL_QUANTITY = 1_000_000;
-const SCANNER_REOPEN_DELAY_MS = 350;
 
 const TYPE_LABELS = {
   PO_ENTRY: 'Entrada con OC',
@@ -36,6 +35,7 @@ export function EntryScanningWorkspace() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [showScanner, setShowScanner] = useState(false);
+  const [scannerMounted, setScannerMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('session');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -43,11 +43,6 @@ export function EntryScanningWorkspace() {
   const [successSummary, setSuccessSummary] = useState<FinalizeEntrySummary | null>(null);
   const scanGuard = useRef(false);
   const finalizeGuard = useRef(false);
-  const reopenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (reopenTimer.current) clearTimeout(reopenTimer.current);
-  }, []);
 
   const progress = store.getSelectedPurchaseOrderProgress();
   const pendingAtStart = progress ? Math.max(progress.totalRequired - progress.totalRegistered, 0) : 0;
@@ -66,7 +61,13 @@ export function EntryScanningWorkspace() {
   const openScanner = () => {
     store.clearError();
     setReviewError(null);
+    setScannerMounted(true);
     setShowScanner(true);
+  };
+
+  const unmountScanner = () => {
+    setShowScanner(false);
+    setScannerMounted(false);
   };
 
   const handleScan = useCallback(async (barcode: string) => {
@@ -101,12 +102,12 @@ export function EntryScanningWorkspace() {
     setReviewError(null);
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    if (!scanNext) return;
-    if (reopenTimer.current) clearTimeout(reopenTimer.current);
-    reopenTimer.current = setTimeout(() => {
+    if (scanNext) {
+      setScannerMounted(true);
       setShowScanner(true);
-      reopenTimer.current = null;
-    }, SCANNER_REOPEN_DELAY_MS);
+      return;
+    }
+    unmountScanner();
   };
 
   const returnToConfiguration = () => {
@@ -134,6 +135,7 @@ export function EntryScanningWorkspace() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
         return;
       }
+      unmountScanner();
       setSuccessSummary(result.summary);
       useEntriesStore.getState().setUiStage('success');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -142,15 +144,13 @@ export function EntryScanningWorkspace() {
     }
   };
 
-  if (showScanner) {
-    const context = store.selectedPurchaseOrder
-      ? `OC #${store.selectedPurchaseOrder.order_number || store.selectedPurchaseOrder.id.slice(0, 8)} · ${remaining} pendientes`
-      : `${TYPE_LABELS[store.entryType || 'ENTRY']} · ${warehouseName}`;
-    return <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} title="Escanear producto de entrada" contextLabel={context} instruction="Ubica el código dentro del recuadro" />;
-  }
+  const scannerContext = store.selectedPurchaseOrder
+    ? `OC #${store.selectedPurchaseOrder.order_number || store.selectedPurchaseOrder.id.slice(0, 8)} · ${remaining} pendientes`
+    : `${TYPE_LABELS[store.entryType || 'ENTRY']} · ${warehouseName}`;
 
+  let workspace: React.ReactNode;
   if (store.uiStage === 'product_review' && store.currentProduct) {
-    return (
+    workspace = (
       <ProductReview
         colors={colors}
         bottomInset={insets.bottom}
@@ -162,15 +162,16 @@ export function EntryScanningWorkspace() {
         quantity={store.currentQuantity}
         error={reviewError || store.error}
         onQuantityChange={store.setQuantity}
-        onCancel={store.resetCurrentScan}
+        onCancel={() => {
+          unmountScanner();
+          store.resetCurrentScan();
+        }}
         onAdd={() => void addProduct(false)}
         onAddAndScan={() => void addProduct(true)}
       />
     );
-  }
-
-  if (store.uiStage === 'entry_review') {
-    return (
+  } else if (store.uiStage === 'entry_review') {
+    workspace = (
       <EntryReview
         colors={colors}
         bottomInset={insets.bottom}
@@ -186,10 +187,8 @@ export function EntryScanningWorkspace() {
         onFinalize={() => void finalize()}
       />
     );
-  }
-
-  if (store.uiStage === 'success' && successSummary) {
-    return (
+  } else if (store.uiStage === 'success' && successSummary) {
+    workspace = (
       <View style={[styles.success, { backgroundColor: colors.background.default }]}>
         <ScreenState title="Entrada registrada correctamente" description={`${successSummary.productCount} productos · ${successSummary.totalUnits} unidades`} icon="check-circle" />
         {successSummary.orderNumber ? <Text style={[styles.successNote, { color: colors.text.secondary }]}>OC #{successSummary.orderNumber} {successSummary.orderCompleted ? 'completada' : 'con cantidades pendientes'}</Text> : null}
@@ -199,9 +198,8 @@ export function EntryScanningWorkspace() {
         </View>
       </View>
     );
-  }
-
-  return (
+  } else {
+    workspace = (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <FlatList
         data={rows}
@@ -229,8 +227,30 @@ export function EntryScanningWorkspace() {
       />
       <View style={[styles.footer, { backgroundColor: colors.background.paper, borderTopColor: colors.divider, paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
         <View style={styles.footerSummary}><Text style={[styles.footerTotal, { color: colors.text.primary }]}>{store.entryItems.length} productos · {sessionUnits} unidades</Text>{remaining !== null ? <Text style={[styles.footerMeta, { color: colors.text.secondary }]}>{remaining} unidades pendientes en la OC</Text> : null}</View>
-        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => store.setUiStage('entry_review')} style={styles.flexButton} /> : null}</View>
+        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => { unmountScanner(); store.setUiStage('entry_review'); }} style={styles.flexButton} /> : null}</View>
       </View>
+    </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {workspace}
+      {scannerMounted && store.uiStage !== 'success' ? (
+        <View
+          style={[styles.scannerOverlay, !showScanner && styles.scannerHidden]}
+          pointerEvents={showScanner ? 'auto' : 'none'}
+        >
+          <BarcodeScanner
+            active={showScanner}
+            onScan={handleScan}
+            onClose={unmountScanner}
+            title="Escanear producto de entrada"
+            contextLabel={scannerContext}
+            instruction="Ubica el código dentro del recuadro"
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -266,5 +286,5 @@ function EntryReview({ colors, bottomInset, type, orderNumber, supplier, warehou
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 }, listContent: { padding: Spacing.lg }, header: { borderRadius: Radius.card, borderWidth: 1, marginBottom: Spacing.lg, padding: Spacing.lg, ...Shadows.card }, headerRow: { alignItems: 'center', flexDirection: 'row' }, iconButton: { alignItems: 'center', borderRadius: Radius.control, height: 44, justifyContent: 'center', width: 44 }, copy: { flex: 1, marginLeft: Spacing.md }, headerTitle: { fontSize: 17, fontWeight: '800' }, meta: { fontSize: 12, lineHeight: 17, marginTop: 2 }, pill: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm }, pillText: { fontSize: 13, fontWeight: '800' }, track: { borderRadius: 4, height: 8, marginTop: Spacing.lg, overflow: 'hidden' }, fill: { height: '100%' }, labels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.sm }, strongMeta: { fontSize: 12, fontWeight: '700' }, manualHint: { fontSize: 12, marginTop: Spacing.md }, errorBanner: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md, padding: Spacing.md }, errorText: { flex: 1, fontSize: 13, fontWeight: '600' }, hint: { fontSize: 12, marginBottom: Spacing.sm, marginTop: Spacing.sm, textAlign: 'center' }, empty: { alignItems: 'center', borderRadius: Radius.card, borderWidth: 1, gap: Spacing.sm, padding: Spacing.xxl }, emptyTitle: { fontSize: 16, fontWeight: '800' }, emptyText: { fontSize: 13, textAlign: 'center' }, itemCard: { borderRadius: Radius.card, borderWidth: 1, marginBottom: Spacing.md, padding: Spacing.md }, itemRow: { alignItems: 'center', flexDirection: 'row' }, itemIcon: { alignItems: 'center', borderRadius: Radius.control, height: 42, justifyContent: 'center', width: 42 }, itemName: { fontSize: 14, fontWeight: '800' }, editor: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.md }, controls: { alignItems: 'center', flexDirection: 'row', gap: Spacing.md }, quantityButton: { alignItems: 'center', borderRadius: 10, height: 36, justifyContent: 'center', width: 36 }, quantity: { fontSize: 18, fontWeight: '800', minWidth: 28, textAlign: 'center' }, disabled: { opacity: 0.4 }, metrics: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }, metric: { alignItems: 'center', borderRadius: 10, flex: 1, padding: Spacing.sm }, metricLabel: { fontSize: 10, fontWeight: '600' }, metricValue: { fontSize: 18, fontWeight: '800', marginTop: 2 }, footer: { borderTopWidth: StyleSheet.hairlineWidth, bottom: 0, gap: Spacing.sm, left: 0, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, position: 'absolute', right: 0, ...Shadows.floating }, footerSummary: { alignItems: 'center' }, footerTotal: { fontSize: 14, fontWeight: '800' }, footerMeta: { fontSize: 11, marginTop: 2 }, footerButtons: { flexDirection: 'row', gap: Spacing.sm }, flexButton: { flex: 1, paddingHorizontal: Spacing.sm }, reviewContent: { padding: Spacing.lg }, reviewHeader: { alignItems: 'center', flexDirection: 'row', marginBottom: Spacing.lg }, reviewTitle: { ...Typography.title, fontSize: 25, lineHeight: 30 }, reviewCard: { borderRadius: Radius.card, borderWidth: 1, gap: Spacing.md, padding: Spacing.lg, ...Shadows.card }, found: { fontSize: 11, fontWeight: '800' }, productName: { fontSize: 20, fontWeight: '800' }, warehouse: { alignItems: 'center', borderRadius: Radius.control, flexDirection: 'row', padding: Spacing.md }, warehouseText: { flex: 1, fontSize: 14, fontWeight: '700', marginLeft: Spacing.sm }, quantityLabel: { fontSize: 14, fontWeight: '800', textAlign: 'center' }, largeControls: { alignItems: 'center', flexDirection: 'row', gap: Spacing.md }, largeButton: { alignItems: 'center', borderRadius: Radius.control, height: 52, justifyContent: 'center', width: 52 }, quantityInputContainer: { flex: 1, marginBottom: 0 }, quantityInput: { fontSize: 21, fontWeight: '800', textAlign: 'center' }, quickRow: { flexDirection: 'row', gap: Spacing.sm }, quick: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44 }, reviewError: { fontSize: 12, fontWeight: '600', textAlign: 'center' }, partial: { fontSize: 12, fontWeight: '700', marginTop: Spacing.sm }, sectionTitle: { fontSize: 17, fontWeight: '800', marginBottom: Spacing.md, marginTop: Spacing.lg }, reviewItem: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', marginBottom: Spacing.sm, padding: Spacing.md }, reviewQuantity: { fontSize: 20, fontWeight: '800', marginLeft: Spacing.md }, success: { flex: 1, justifyContent: 'center', padding: Spacing.xl }, successNote: { fontSize: 13, textAlign: 'center' }, successActions: { gap: Spacing.sm, marginTop: Spacing.xl },
+  container: { flex: 1 }, scannerOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 20 }, scannerHidden: { opacity: 0 }, listContent: { padding: Spacing.lg }, header: { borderRadius: Radius.card, borderWidth: 1, marginBottom: Spacing.lg, padding: Spacing.lg, ...Shadows.card }, headerRow: { alignItems: 'center', flexDirection: 'row' }, iconButton: { alignItems: 'center', borderRadius: Radius.control, height: 44, justifyContent: 'center', width: 44 }, copy: { flex: 1, marginLeft: Spacing.md }, headerTitle: { fontSize: 17, fontWeight: '800' }, meta: { fontSize: 12, lineHeight: 17, marginTop: 2 }, pill: { borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm }, pillText: { fontSize: 13, fontWeight: '800' }, track: { borderRadius: 4, height: 8, marginTop: Spacing.lg, overflow: 'hidden' }, fill: { height: '100%' }, labels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.sm }, strongMeta: { fontSize: 12, fontWeight: '700' }, manualHint: { fontSize: 12, marginTop: Spacing.md }, errorBanner: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md, padding: Spacing.md }, errorText: { flex: 1, fontSize: 13, fontWeight: '600' }, hint: { fontSize: 12, marginBottom: Spacing.sm, marginTop: Spacing.sm, textAlign: 'center' }, empty: { alignItems: 'center', borderRadius: Radius.card, borderWidth: 1, gap: Spacing.sm, padding: Spacing.xxl }, emptyTitle: { fontSize: 16, fontWeight: '800' }, emptyText: { fontSize: 13, textAlign: 'center' }, itemCard: { borderRadius: Radius.card, borderWidth: 1, marginBottom: Spacing.md, padding: Spacing.md }, itemRow: { alignItems: 'center', flexDirection: 'row' }, itemIcon: { alignItems: 'center', borderRadius: Radius.control, height: 42, justifyContent: 'center', width: 42 }, itemName: { fontSize: 14, fontWeight: '800' }, editor: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.md }, controls: { alignItems: 'center', flexDirection: 'row', gap: Spacing.md }, quantityButton: { alignItems: 'center', borderRadius: 10, height: 36, justifyContent: 'center', width: 36 }, quantity: { fontSize: 18, fontWeight: '800', minWidth: 28, textAlign: 'center' }, disabled: { opacity: 0.4 }, metrics: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }, metric: { alignItems: 'center', borderRadius: 10, flex: 1, padding: Spacing.sm }, metricLabel: { fontSize: 10, fontWeight: '600' }, metricValue: { fontSize: 18, fontWeight: '800', marginTop: 2 }, footer: { borderTopWidth: StyleSheet.hairlineWidth, bottom: 0, gap: Spacing.sm, left: 0, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, position: 'absolute', right: 0, ...Shadows.floating }, footerSummary: { alignItems: 'center' }, footerTotal: { fontSize: 14, fontWeight: '800' }, footerMeta: { fontSize: 11, marginTop: 2 }, footerButtons: { flexDirection: 'row', gap: Spacing.sm }, flexButton: { flex: 1, paddingHorizontal: Spacing.sm }, reviewContent: { padding: Spacing.lg }, reviewHeader: { alignItems: 'center', flexDirection: 'row', marginBottom: Spacing.lg }, reviewTitle: { ...Typography.title, fontSize: 25, lineHeight: 30 }, reviewCard: { borderRadius: Radius.card, borderWidth: 1, gap: Spacing.md, padding: Spacing.lg, ...Shadows.card }, found: { fontSize: 11, fontWeight: '800' }, productName: { fontSize: 20, fontWeight: '800' }, warehouse: { alignItems: 'center', borderRadius: Radius.control, flexDirection: 'row', padding: Spacing.md }, warehouseText: { flex: 1, fontSize: 14, fontWeight: '700', marginLeft: Spacing.sm }, quantityLabel: { fontSize: 14, fontWeight: '800', textAlign: 'center' }, largeControls: { alignItems: 'center', flexDirection: 'row', gap: Spacing.md }, largeButton: { alignItems: 'center', borderRadius: Radius.control, height: 52, justifyContent: 'center', width: 52 }, quantityInputContainer: { flex: 1, marginBottom: 0 }, quantityInput: { fontSize: 21, fontWeight: '800', textAlign: 'center' }, quickRow: { flexDirection: 'row', gap: Spacing.sm }, quick: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44 }, reviewError: { fontSize: 12, fontWeight: '600', textAlign: 'center' }, partial: { fontSize: 12, fontWeight: '700', marginTop: Spacing.sm }, sectionTitle: { fontSize: 17, fontWeight: '800', marginBottom: Spacing.md, marginTop: Spacing.lg }, reviewItem: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', marginBottom: Spacing.sm, padding: Spacing.md }, reviewQuantity: { fontSize: 20, fontWeight: '800', marginLeft: Spacing.md }, success: { flex: 1, justifyContent: 'center', padding: Spacing.xl }, successNote: { fontSize: 13, textAlign: 'center' }, successActions: { gap: Spacing.sm, marginTop: Spacing.xl },
 });

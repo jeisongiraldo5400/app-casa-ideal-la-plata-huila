@@ -10,6 +10,8 @@ interface BarcodeScannerProps {
   title?: string;
   instruction?: string;
   contextLabel?: string;
+  /** When false, ignore reads without detaching onBarcodeScanned (iOS crash). */
+  active?: boolean;
 }
 
 export function BarcodeScanner({
@@ -18,6 +20,7 @@ export function BarcodeScanner({
   title = 'Escanear producto',
   instruction = 'Escanea el código de barras del producto',
   contextLabel,
+  active = true,
 }: BarcodeScannerProps) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -30,8 +33,10 @@ export function BarcodeScanner({
   const isProcessingRef = useRef(false);
   const scannedRef = useRef(false);
   const mountedRef = useRef(true);
+  const activeRef = useRef(active);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  activeRef.current = active;
 
   useEffect(() => {
     scannedRef.current = scanned;
@@ -55,9 +60,24 @@ export function BarcodeScanner({
     }
   }, [permission, requestPermission]);
 
+  useEffect(() => {
+    if (active) {
+      isProcessingRef.current = false;
+      scannedRef.current = false;
+      setScanned(false);
+      setError(null);
+    }
+  }, [active]);
+
   const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
     // Prevenir múltiples escaneos simultáneos (use ref so callback stays stable for iOS)
-    if (isProcessingRef.current || scannedRef.current || !data || !mountedRef.current) {
+    if (
+      !activeRef.current ||
+      isProcessingRef.current ||
+      scannedRef.current ||
+      !data ||
+      !mountedRef.current
+    ) {
       return;
     }
 
