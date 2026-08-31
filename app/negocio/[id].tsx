@@ -57,18 +57,9 @@ import {
 } from '@/lib/offline/repositories/offlineRepository';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
 
 const TABLE_PAGE_SIZE = 5;
-
-const formatPaymentInput = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 12);
-  if (!digits) return '';
-
-  return new Intl.NumberFormat('es-CO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(digits));
-};
 
 export default function NegocioDetailScreen() {
   const { id, routeStopId } = useLocalSearchParams<{ id: string; routeStopId?: string }>();
@@ -106,6 +97,7 @@ export default function NegocioDetailScreen() {
   const paymentPaidAt = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
   const activatingRef = useRef(false);
+  const formattedPayAmount = formatNegocioMoneyInput(payAmount);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -1181,17 +1173,17 @@ export default function NegocioDetailScreen() {
                 {labelNegocioCodigo(negocio.numero)} · {customerName}
               </Text>
               <TextInput
-                placeholder="0,00"
-                keyboardType="numeric"
-                value={formatPaymentInput(payAmount)}
+                placeholder="0"
+                keyboardType="number-pad"
+                value={formattedPayAmount}
                 selection={{
-                  start: formatPaymentInput(payAmount).split(',')[0].length,
-                  end: formatPaymentInput(payAmount).split(',')[0].length,
+                  start: formattedPayAmount.length,
+                  end: formattedPayAmount.length,
                 }}
                 onChangeText={(value) => {
                   paymentIdempotencyKey.current = null;
                   paymentPaidAt.current = null;
-                  setPayAmount(value.split(',')[0].replace(/\D/g, '').slice(0, 12));
+                  setPayAmount(value.replace(/\D/g, '').slice(0, 12));
                 }}
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
                 placeholderTextColor={colors.text.secondary}
