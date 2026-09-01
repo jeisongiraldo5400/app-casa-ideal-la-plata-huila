@@ -98,6 +98,11 @@ export interface SelectedPurchaseOrderProgress {
 
 const pendingProductRequests = new Map<string, string>();
 
+/** Incrementado en reset()/resetAll(); las acciones async lo capturan al iniciar
+ * y verifican antes de escribir su resultado, para no pisar un store ya reseteado
+ * (p. ej. el usuario cambia de pestaña mientras hay un scan/finalize en curso). */
+let resetGeneration = 0;
+
 interface EntriesState {
   // Sesión de entrada (null hasta elegir tipo en flow-selection)
   entryType: EntryType | null;
@@ -168,10 +173,13 @@ interface EntriesState {
   validatePurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
   validateAllPurchaseOrders: () => Promise<void>;
   getSelectedPurchaseOrderProgress: () => SelectedPurchaseOrderProgress | null;
+  getResetGeneration: () => number;
   loadWarehouses: () => Promise<void>;
   loadCategories: () => Promise<void>;
   loadBrands: () => Promise<void>;
   openEntryConfirmation: () => boolean;
+  /** @internal implementación real de openEntryConfirmation, envuelta arriba en un try/catch defensivo. */
+  _openEntryConfirmationImpl: () => boolean;
   startEntry: () => void;
 
   // Actions - Scanning
@@ -281,6 +289,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   selectPurchaseOrder: async (purchaseOrderId: string) => {
+    const capturedGeneration = resetGeneration;
     set({ loading: true, loadingMessage: 'Cargando detalles de la orden de compra...', error: null });
 
     try {
@@ -317,6 +326,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           .is("items.deleted_at", null)
           .is("items.product.deleted_at", null)
           .single();
+
+        if (resetGeneration !== capturedGeneration) return;
 
         if (orderError) {
           console.error("Error loading purchase order details:", orderError);
@@ -369,6 +380,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         .select("product_id, quantity")
         .eq("purchase_order_id", purchaseOrderId)
         .is("deleted_at", null);
+
+      if (resetGeneration !== capturedGeneration) return;
 
       if (entriesError) {
         console.error("Error loading inventory entries:", entriesError);
@@ -469,6 +482,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   setWarehouse: (warehouseId) => {
+    console.log('[entriesStore] setWarehouse', { warehouseId, entryType: get().entryType });
     set({ warehouseId });
   },
 
@@ -495,11 +509,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   loadPurchaseOrders: async (supplierId: string) => {
+    const capturedGeneration = resetGeneration;
     set({ loading: true, loadingMessage: 'Cargando órdenes de compra pendientes...' });
     try {
       // Cargar órdenes de compra pendientes para el proveedor
       // Solo órdenes no eliminadas y no canceladas
       const orders = await fetchPendingPurchaseOrders(supplierId);
+
+      if (resetGeneration !== capturedGeneration) return;
 
       const orderIds = (orders || []).map((order) => order.id);
 
@@ -532,6 +549,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           })) as (PurchaseOrderItem & { product: Product })[],
         })
       );
+
+      if (resetGeneration !== capturedGeneration) return;
 
       set({ purchaseOrders: ordersWithItems, loading: false, loadingMessage: null });
 
@@ -823,6 +842,29 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   openEntryConfirmation: () => {
+    try {
+      return get()._openEntryConfirmationImpl();
+    } catch (error: any) {
+      console.error('[openEntryConfirmation] Excepción no controlada:', error);
+      void logOperationError({
+        error_code: 'ENTRIES_OPEN_CONFIRMATION_CRASH',
+        error_message: error?.message || String(error),
+        module: 'entries',
+        operation: 'open_entry_confirmation',
+        severity: 'error',
+        context: {
+          entryType: get().entryType,
+          warehouseId: get().warehouseId,
+          supplierId: get().supplierId,
+          purchaseOrderId: get().purchaseOrderId,
+        },
+      });
+      set({ error: 'Ocurrió un error inesperado al continuar. Intenta de nuevo.' });
+      return false;
+    }
+  },
+
+  _openEntryConfirmationImpl: () => {
     const {
       supplierId,
       warehouseId,
@@ -872,11 +914,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   startEntry: () => {
     const opened = get().openEntryConfirmation();
     if (!opened) return;
+    console.log('[entriesStore] startEntry -> step: scanning', {
+      entryType: get().entryType,
+      warehouseId: get().warehouseId,
+      purchaseOrderId: get().purchaseOrderId,
+    });
     set({ step: "scanning", uiStage: "idle", error: null });
   },
 
   // Scanning actions
   scanBarcode: async (barcode: string): Promise<EntryScanResult> => {
+    const capturedGeneration = resetGeneration;
     set({
       error: null,
       currentScannedBarcode: barcode,
@@ -884,6 +932,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     });
     try {
       const product = await get().searchProductByBarcode(barcode);
+      if (resetGeneration !== capturedGeneration) {
+        // La pantalla se reseteó (p. ej. el usuario cambió de pestaña) mientras
+        // buscábamos el producto; no escribir sobre un store ya limpiado.
+        return { status: "not_found", product: null, error: null };
+      }
       if (product) {
         const { purchaseOrderId } = get();
 
@@ -928,6 +981,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         set({
           currentProduct: null,
           step: "product-form",
+          uiStage: "idle",
           error: null, // No es error, es flujo normal
         });
         return { status: "not_found", product: null, error: null };
@@ -1189,6 +1243,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
       return failure({ message: "Ya se está procesando esta entrada" });
     }
+
+    const capturedGeneration = resetGeneration;
 
     const {
       entryItems,
@@ -1552,8 +1608,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         requestFingerprint
       );
 
-      // Limpiar loading después de finalizar exitosamente
-      set({ loading: false, loadingMessage: null, uiStage: "success" });
+      // Limpiar loading después de finalizar exitosamente.
+      // Si el store fue reseteado mientras se registraba (el usuario cambió de
+      // pantalla), la escritura en BD ya fue exitosa, pero no resucitamos la
+      // pantalla de éxito sobre un store ya limpiado.
+      if (resetGeneration === capturedGeneration) {
+        set({ loading: false, loadingMessage: null, uiStage: "success" });
+      }
       return {
         ok: true,
         error: null,
@@ -1574,6 +1635,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Reset actions
   reset: () => {
+    resetGeneration += 1;
     set({
       entryItems: [],
       currentProduct: null,
@@ -1600,6 +1662,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   // Reset all state including cache - for navigation cleanup
   resetAll: () => {
+    resetGeneration += 1;
     set({
       entryItems: [],
       currentProduct: null,
@@ -1640,6 +1703,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   setUiStage: (uiStage) => set({ uiStage }),
+  getResetGeneration: () => resetGeneration,
 
   goBackToSetup: () => {
     set({

@@ -77,8 +77,7 @@ describe('EntryScanningWorkspace', () => {
 
     fireEvent.press(screen.getByText('Agregar y volver al resumen'));
     await waitFor(() => expect(screen.getByText('Revisar entrada')).toBeTruthy());
-    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
-    expect(screen.getByText('Scanner oculto')).toBeTruthy();
+    expect(screen.queryByTestId('barcode-scanner')).toBeNull();
     expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
     expect(finalizeEntry).not.toHaveBeenCalled();
   });
@@ -110,7 +109,7 @@ describe('EntryScanningWorkspace', () => {
     expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
   });
 
-  it('keeps the scanner mounted when reviewing the entry and returning to edit', async () => {
+  it('unmounts the scanner when reviewing the entry and keeps it unmounted after returning to edit', async () => {
     const scanBarcode = jest.fn(async () => {
       const found = scanBarcode.mock.calls.length > 1 ? productTwo : product;
       useEntriesStore.setState({
@@ -151,15 +150,18 @@ describe('EntryScanningWorkspace', () => {
     await waitFor(() => expect(screen.getByText('Seguir editando')).toBeTruthy());
     expect(screen.getByText('Mesa auxiliar')).toBeTruthy();
     expect(screen.getByText('Silla plegable')).toBeTruthy();
-    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
-    expect(screen.getByText('Scanner oculto')).toBeTruthy();
+    // La cámara no debe quedar viva (ni siquiera oculta) detrás de la revisión.
+    expect(screen.queryByTestId('barcode-scanner')).toBeNull();
 
     fireEvent.press(screen.getByText('Seguir editando'));
     await waitFor(() => expect(screen.getByText('Escanear otro')).toBeTruthy());
     expect(screen.getByText('Mesa auxiliar')).toBeTruthy();
     expect(screen.getByText('Silla plegable')).toBeTruthy();
+    // Sigue sin montarse hasta que el usuario la reabra explícitamente.
+    expect(screen.queryByTestId('barcode-scanner')).toBeNull();
+
+    fireEvent.press(screen.getByText('Escanear otro'));
     expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
-    expect(screen.getByText('Scanner oculto')).toBeTruthy();
   });
 
   it('keeps products until final success and offers the agreed destinations', async () => {
@@ -174,6 +176,34 @@ describe('EntryScanningWorkspace', () => {
     expect(useEntriesStore.getState().entryItems).toHaveLength(1);
     expect(screen.getByText('Ver inventario')).toBeTruthy();
     expect(screen.getByText('Registrar otra entrada')).toBeTruthy();
+  });
+
+  it('shows the scanner again after creating a product mid-session (product-form round trip)', async () => {
+    const addProductToEntry = jest.fn(async () => {
+      useEntriesStore.setState({ entryItems: [{ ...item, quantity: 1 }], currentProduct: null, currentScannedBarcode: null, uiStage: 'idle' });
+      return { ok: true as const, error: null };
+    });
+    useEntriesStore.setState({ addProductToEntry });
+
+    // app/(tabs)/entries.tsx desmonta EntryScanningWorkspace al pasar por step:'product-form'
+    // (código de barras no registrado) y lo vuelve a montar cuando ProductForm.handleSubmit
+    // hace setState({ step:'scanning', uiStage:'product_review' }) directamente, sin pasar por
+    // openScanner(). El store queda así *antes* de que exista ninguna instancia de
+    // EntryScanningWorkspace; el render de abajo es, por tanto, una instancia nueva con
+    // estado local reiniciado (scannerMounted en false), igual que en la app real.
+    useEntriesStore.setState({
+      currentProduct: product,
+      currentScannedBarcode: '770123',
+      currentQuantity: 1,
+      step: 'scanning',
+      uiStage: 'product_review',
+    });
+    const screen = render(<EntryScanningWorkspace />);
+
+    await waitFor(() => expect(screen.getByText('Verificar producto')).toBeTruthy());
+    fireEvent.press(screen.getByText('Agregar y escanear siguiente'));
+    await waitFor(() => expect(screen.getByTestId('barcode-scanner')).toBeTruthy());
+    expect(screen.getByText('Emitir lectura')).toBeTruthy();
   });
 
   it('renders the operational workspace in dark mode', () => {

@@ -126,6 +126,43 @@ describe('entriesStore', () => {
       expect(useEntriesStore.getState().currentScannedBarcode).toBe('UNKNOWN');
     });
 
+    it('resets uiStage when routing an unknown barcode to product creation', async () => {
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        uiStage: 'product_review',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(useEntriesStore.getState().step).toBe('product-form');
+      expect(useEntriesStore.getState().uiStage).toBe('idle');
+    });
+
+    it('ignores a scanBarcode result that resolves after the store was reset', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      let resolveSearch: (value: any) => void = () => undefined;
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(
+          () => new Promise((resolve) => { resolveSearch = resolve; })
+        ),
+      });
+
+      const pending = useEntriesStore.getState().scanBarcode('770123');
+      useEntriesStore.getState().resetAll();
+      resolveSearch(product);
+      await pending;
+
+      const state = useEntriesStore.getState();
+      expect(state.step).toBe('flow-selection');
+      expect(state.currentProduct).toBeNull();
+    });
+
     it('does not toggle global loading while looking up a barcode', async () => {
       const product = { id: 'product-1', name: 'Producto' } as any;
       useEntriesStore.setState({

@@ -10,7 +10,7 @@ import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/the
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -44,6 +44,17 @@ export function EntryScanningWorkspace() {
   const scanGuard = useRef(false);
   const finalizeGuard = useRef(false);
 
+  useEffect(() => {
+    console.log('[EntryScanningWorkspace] mounted', {
+      entryType: store.entryType,
+      warehouseId: store.warehouseId,
+      purchaseOrderId: store.purchaseOrderId,
+      uiStage: store.uiStage,
+      entryItemsCount: store.entryItems.length,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const progress = store.getSelectedPurchaseOrderProgress();
   const pendingAtStart = progress ? Math.max(progress.totalRequired - progress.totalRegistered, 0) : 0;
   const remaining = progress ? Math.max(pendingAtStart - progress.totalScanned, 0) : null;
@@ -65,8 +76,9 @@ export function EntryScanningWorkspace() {
     setShowScanner(true);
   };
 
-  const hideScanner = () => {
+  const unmountScanner = () => {
     setShowScanner(false);
+    setScannerMounted(false);
   };
 
   const handleScan = useCallback(async (barcode: string) => {
@@ -102,10 +114,11 @@ export function EntryScanningWorkspace() {
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     if (scanNext) {
+      setScannerMounted(true);
       setShowScanner(true);
       return;
     }
-    hideScanner();
+    unmountScanner();
   };
 
   const returnToConfiguration = () => {
@@ -133,7 +146,7 @@ export function EntryScanningWorkspace() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
         return;
       }
-      hideScanner();
+      unmountScanner();
       setSuccessSummary(result.summary);
       useEntriesStore.getState().setUiStage('success');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -161,7 +174,7 @@ export function EntryScanningWorkspace() {
         error={reviewError || store.error}
         onQuantityChange={store.setQuantity}
         onCancel={() => {
-          hideScanner();
+          unmountScanner();
           store.resetCurrentScan();
         }}
         onAdd={() => void addProduct(false)}
@@ -225,7 +238,7 @@ export function EntryScanningWorkspace() {
       />
       <View style={[styles.footer, { backgroundColor: colors.background.paper, borderTopColor: colors.divider, paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
         <View style={styles.footerSummary}><Text style={[styles.footerTotal, { color: colors.text.primary }]}>{store.entryItems.length} productos · {sessionUnits} unidades</Text>{remaining !== null ? <Text style={[styles.footerMeta, { color: colors.text.secondary }]}>{remaining} unidades pendientes en la OC</Text> : null}</View>
-        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => { hideScanner(); store.setUiStage('entry_review'); }} style={styles.flexButton} /> : null}</View>
+        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => { unmountScanner(); store.setUiStage('entry_review'); }} style={styles.flexButton} /> : null}</View>
       </View>
     </View>
     );
@@ -242,7 +255,7 @@ export function EntryScanningWorkspace() {
           <BarcodeScanner
             active={showScanner}
             onScan={handleScan}
-            onClose={hideScanner}
+            onClose={unmountScanner}
             title="Escanear producto de entrada"
             contextLabel={scannerContext}
             instruction="Ubica el código dentro del recuadro"

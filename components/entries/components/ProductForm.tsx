@@ -77,6 +77,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     values: ProductFormValues,
     { setSubmitting }: FormikHelpers<ProductFormValues>
   ) => {
+    const capturedGeneration = useEntriesStore.getState().getResetGeneration();
     setLoading(true);
     try {
       const { product, error } = await createProduct({
@@ -91,8 +92,10 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 
       if (error) {
         Alert.alert('Error', error.message || 'Error al crear el producto');
-      } else if (product) {
+      } else if (product && useEntriesStore.getState().getResetGeneration() === capturedGeneration) {
         // El producto debe pasar por la misma verificación de cantidad que uno escaneado.
+        // Si el store fue reseteado mientras se creaba (usuario cambió de pantalla),
+        // el producto ya quedó guardado en BD, pero no reanudamos el flujo de entrada.
         useEntriesStore.setState({
           currentProduct: product,
           currentScannedBarcode: barcode,

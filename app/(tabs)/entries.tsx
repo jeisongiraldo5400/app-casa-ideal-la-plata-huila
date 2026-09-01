@@ -1,8 +1,10 @@
 import { EntryConfirmation } from '@/components/entries/components/EntryConfirmation';
+import { EntryErrorBoundary } from '@/components/entries/components/EntryErrorBoundary';
 import { EntryScanningWorkspace } from '@/components/entries/components/EntryScanningWorkspace';
 import { ProductForm } from '@/components/entries/components/ProductForm';
 import { SetupForm } from '@/components/entries/components/SetupForm';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
+import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -34,7 +36,22 @@ export default function EntriesScreen() {
   );
 
   return (
-    <>
+    <EntryErrorBoundary
+      onReset={resetAll}
+      getDebugContext={() => {
+        const state = useEntriesStore.getState();
+        return {
+          step: state.step,
+          uiStage: state.uiStage,
+          entryType: state.entryType,
+          warehouseId: state.warehouseId,
+          supplierId: state.supplierId,
+          purchaseOrderId: state.purchaseOrderId,
+          entryItemsCount: state.entryItems.length,
+          loading: state.loading,
+        };
+      }}
+    >
       <Modal visible={loading && step !== 'setup' && step !== 'flow-selection' && step !== 'scanning'} transparent animationType="fade" onRequestClose={() => undefined}>
         <View style={styles.loadingOverlay}><View style={[styles.loadingCard, { backgroundColor: colors.background.paper }]}><ActivityIndicator size="large" color={colors.primary.main} /><Text style={[styles.loadingTitle, { color: colors.text.primary }]}>{loadingMessage || 'Procesando...'}</Text><Text style={[styles.loadingText, { color: colors.text.secondary }]}>Por favor espere</Text></View></View>
       </Modal>
@@ -49,7 +66,7 @@ export default function EntriesScreen() {
           {error ? <View style={[styles.error, { backgroundColor: `${colors.error.main}14`, borderColor: colors.error.main }]}><MaterialIcons name="error-outline" size={20} color={colors.error.main} /><Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text></View> : null}
         </ScrollView>
       ) : null}
-    </>
+    </EntryErrorBoundary>
   );
 }
 
