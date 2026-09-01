@@ -98,9 +98,8 @@ export function ExitScanningWorkspace() {
     setShowScanner(true);
   };
 
-  const unmountScanner = () => {
+  const hideScanner = () => {
     setShowScanner(false);
-    setScannerMounted(false);
   };
 
   const handleScan = async (barcode: string) => {
@@ -142,15 +141,14 @@ export function ExitScanningWorkspace() {
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     if (scanNext) {
-      setScannerMounted(true);
       setShowScanner(true);
       return;
     }
-    unmountScanner();
+    hideScanner();
   };
 
   const cancelProductReview = () => {
-    unmountScanner();
+    hideScanner();
     store.resetCurrentScan();
     store.clearError();
     setReviewError(null);
@@ -195,7 +193,7 @@ export function ExitScanningWorkspace() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
         return;
       }
-      unmountScanner();
+      hideScanner();
       setSuccessSummary(result.summary);
       setStage('success');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -361,7 +359,7 @@ export function ExitScanningWorkspace() {
         <View style={styles.footerButtons}>
           <Button title={store.exitItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.exitItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.footerButton} />
           {store.exitItems.length ? (
-            <Button title="Revisar salida" onPress={() => { unmountScanner(); setStage('exit_review'); }} style={styles.footerButton} />
+            <Button title="Revisar salida" onPress={() => { hideScanner(); setStage('exit_review'); }} style={styles.footerButton} />
           ) : pendingProductCount > 0 ? (
             <Button title={`Ver pendientes (${pendingProductCount})`} variant="outline" onPress={() => setActiveTab('pending')} style={styles.footerButton} />
           ) : null}
@@ -382,7 +380,7 @@ export function ExitScanningWorkspace() {
           <BarcodeScanner
             active={showScanner}
             onScan={handleScan}
-            onClose={unmountScanner}
+            onClose={hideScanner}
             title="Escanear producto de la salida"
             contextLabel={scannerContext}
             instruction="Ubica el código dentro del recuadro"

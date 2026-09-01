@@ -2,7 +2,7 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
 import Constants from 'expo-constants';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
@@ -32,12 +32,9 @@ if (!Constants.executionEnvironment || Constants.executionEnvironment === 'stand
 }
 
 function RootLayoutNav() {
-  const { session, loading, initialize } = useAuth();
+  const { session, initialized, initialize } = useAuth();
   const { initializeTheme } = useTheme();
-  const segments = useSegments();
-  const router = useRouter();
   const [appIsReady, setAppIsReady] = useState(false);
-  const [navigationReady, setNavigationReady] = useState(false);
 
   useEffect(() => startSupabaseAuthLifecycle(), []);
 
@@ -65,62 +62,48 @@ function RootLayoutNav() {
         console.error('Error durante la inicialización:', e);
         if (e?.message) console.error('Mensaje de error:', e.message);
         if (e?.stack) console.error('Stack trace:', e.stack);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
         if (!cancelled) setAppIsReady(true);
       }
     }
 
     prepare();
 
+    const failsafe = setTimeout(() => {
+      if (cancelled) return;
+      setAppIsReady(true);
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }, 10_000);
+
     return () => {
       cancelled = true;
+      clearTimeout(failsafe);
       useAuthStore.getState().cleanup();
       useThemeStore.getState().cleanup();
     };
   }, [initialize, initializeTheme]);
 
   useEffect(() => {
-    if (loading || !appIsReady) return;
-
-    const inAuthGroup = segments[0] === '(auth)';
-
-    // Solo redirigir cuando el grupo de rutas no coincide con la sesión.
-    // Evita remounts del login que impiden escribir en los inputs.
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
-    }
-
-    const timer = setTimeout(() => {
-      setNavigationReady(true);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [session, loading, segments, appIsReady]);
-
-  useEffect(() => {
-    // Solo ocultar el splash screen cuando todo esté listo: inicialización, navegación y carga completa
-    if (appIsReady && navigationReady && !loading) {
-      // Pequeño delay adicional para asegurar que la pantalla esté renderizada
-      setTimeout(async () => {
-        await SplashScreen.hideAsync();
-      }, 200);
-    }
-  }, [appIsReady, navigationReady, loading]);
-
-  // No mostrar loading container mientras se carga, dejar que el splash screen se muestre
-  // El splash screen se ocultará automáticamente cuando termine la inicialización
+    if (!initialized || !appIsReady) return;
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, [initialized, appIsReady]);
 
   const stackAnimation = Platform.OS === 'web' ? 'none' : undefined;
   const detailAnimation = Platform.OS === 'web' ? 'none' : 'slide_from_right';
 
+  if (!initialized && !appIsReady) {
+    return null;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false, animation: stackAnimation }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: detailAnimation }} />
-      <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+      <Stack.Protected guard={!!session}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+        <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
     </Stack>
   );
 }
@@ -141,10 +124,5 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

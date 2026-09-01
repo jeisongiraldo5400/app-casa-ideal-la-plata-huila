@@ -33,7 +33,9 @@ jest.mock('@/components/scanning', () => {
 });
 
 const product = { id: 'product-1', name: 'Mesa auxiliar', sku: 'MES-1', barcode: '770123' } as EntryItem['product'];
+const productTwo = { id: 'product-2', name: 'Silla plegable', sku: 'SIL-2', barcode: '770456' } as EntryItem['product'];
 const item: EntryItem = { product, quantity: 2, barcode: '770123' };
+const itemTwo: EntryItem = { product: productTwo, quantity: 1, barcode: '770456' };
 const originalActions = {
   scanBarcode: useEntriesStore.getState().scanBarcode,
   addProductToEntry: useEntriesStore.getState().addProductToEntry,
@@ -75,6 +77,8 @@ describe('EntryScanningWorkspace', () => {
 
     fireEvent.press(screen.getByText('Agregar y volver al resumen'));
     await waitFor(() => expect(screen.getByText('Revisar entrada')).toBeTruthy());
+    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
+    expect(screen.getByText('Scanner oculto')).toBeTruthy();
     expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
     expect(finalizeEntry).not.toHaveBeenCalled();
   });
@@ -104,6 +108,58 @@ describe('EntryScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Agregar y escanear siguiente'));
     await waitFor(() => expect(screen.getByText('Emitir lectura')).toBeTruthy());
     expect(addProductToEntry).toHaveBeenCalledWith(product, 1, '770123');
+  });
+
+  it('keeps the scanner mounted when reviewing the entry and returning to edit', async () => {
+    const scanBarcode = jest.fn(async () => {
+      const found = scanBarcode.mock.calls.length > 1 ? productTwo : product;
+      useEntriesStore.setState({
+        currentProduct: found,
+        currentScannedBarcode: found.barcode,
+        currentQuantity: 1,
+        uiStage: 'product_review',
+      });
+      return { status: 'found' as const, product: found, error: null };
+    });
+    const addProductToEntry = jest.fn(async () => {
+      const next = addProductToEntry.mock.calls.length > 1 ? [{ ...item, quantity: 1 }, itemTwo] : [{ ...item, quantity: 1 }];
+      useEntriesStore.setState({
+        entryItems: next,
+        currentProduct: null,
+        currentScannedBarcode: null,
+        uiStage: 'idle',
+      });
+      return { ok: true as const, error: null };
+    });
+    useEntriesStore.setState({ scanBarcode, addProductToEntry });
+
+    const screen = render(<EntryScanningWorkspace />);
+    fireEvent.press(screen.getByText('Escanear producto'));
+    fireEvent.press(screen.getByText('Emitir lectura'));
+    await waitFor(() => expect(screen.getByText('Verificar producto')).toBeTruthy());
+    fireEvent.press(screen.getByText('Agregar y volver al resumen'));
+    await waitFor(() => expect(screen.getByText('Escanear otro')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('Escanear otro'));
+    await waitFor(() => expect(screen.getByText('Emitir lectura')).toBeTruthy());
+    fireEvent.press(screen.getByText('Emitir lectura'));
+    await waitFor(() => expect(screen.getByText('Silla plegable')).toBeTruthy());
+    fireEvent.press(screen.getByText('Agregar y volver al resumen'));
+    await waitFor(() => expect(screen.getByText('Revisar entrada')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('Revisar entrada'));
+    await waitFor(() => expect(screen.getByText('Seguir editando')).toBeTruthy());
+    expect(screen.getByText('Mesa auxiliar')).toBeTruthy();
+    expect(screen.getByText('Silla plegable')).toBeTruthy();
+    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
+    expect(screen.getByText('Scanner oculto')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Seguir editando'));
+    await waitFor(() => expect(screen.getByText('Escanear otro')).toBeTruthy());
+    expect(screen.getByText('Mesa auxiliar')).toBeTruthy();
+    expect(screen.getByText('Silla plegable')).toBeTruthy();
+    expect(screen.getByTestId('barcode-scanner')).toBeTruthy();
+    expect(screen.getByText('Scanner oculto')).toBeTruthy();
   });
 
   it('keeps products until final success and offers the agreed destinations', async () => {

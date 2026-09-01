@@ -17,7 +17,6 @@ import {
 import { pushOutboxItem } from './pushCommands';
 import { canRetry, OUTBOX_MAX_ATTEMPTS } from './retryPolicy';
 import { assertPullIsComplete, type PullPayload } from './types';
-import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useSyncStore } from '../store/syncStore';
 import { wipeLocalOfflineData } from '../security/wipe';
 import { setCachedRoles, setLastOnlineVerifiedAt } from '../security/secureKeys';
@@ -97,6 +96,7 @@ async function pullRemote(userId: string) {
     await wipeLocalOfflineData();
     useSyncStore.getState().setUserId(null);
     await supabase.auth.signOut({ scope: 'local' });
+    const { useAuthStore } = await import('@/components/auth/infrastructure/store/authStore');
     useAuthStore.getState().clearLocalAuth();
     throw new Error('Este dispositivo debe volver a iniciar sesión');
   }

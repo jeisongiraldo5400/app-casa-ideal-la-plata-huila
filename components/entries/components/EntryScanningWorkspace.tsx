@@ -65,9 +65,8 @@ export function EntryScanningWorkspace() {
     setShowScanner(true);
   };
 
-  const unmountScanner = () => {
+  const hideScanner = () => {
     setShowScanner(false);
-    setScannerMounted(false);
   };
 
   const handleScan = useCallback(async (barcode: string) => {
@@ -103,11 +102,10 @@ export function EntryScanningWorkspace() {
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     if (scanNext) {
-      setScannerMounted(true);
       setShowScanner(true);
       return;
     }
-    unmountScanner();
+    hideScanner();
   };
 
   const returnToConfiguration = () => {
@@ -135,7 +133,7 @@ export function EntryScanningWorkspace() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
         return;
       }
-      unmountScanner();
+      hideScanner();
       setSuccessSummary(result.summary);
       useEntriesStore.getState().setUiStage('success');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -163,7 +161,7 @@ export function EntryScanningWorkspace() {
         error={reviewError || store.error}
         onQuantityChange={store.setQuantity}
         onCancel={() => {
-          unmountScanner();
+          hideScanner();
           store.resetCurrentScan();
         }}
         onAdd={() => void addProduct(false)}
@@ -227,7 +225,7 @@ export function EntryScanningWorkspace() {
       />
       <View style={[styles.footer, { backgroundColor: colors.background.paper, borderTopColor: colors.divider, paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
         <View style={styles.footerSummary}><Text style={[styles.footerTotal, { color: colors.text.primary }]}>{store.entryItems.length} productos · {sessionUnits} unidades</Text>{remaining !== null ? <Text style={[styles.footerMeta, { color: colors.text.secondary }]}>{remaining} unidades pendientes en la OC</Text> : null}</View>
-        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => { unmountScanner(); store.setUiStage('entry_review'); }} style={styles.flexButton} /> : null}</View>
+        <View style={styles.footerButtons}><Button title={store.entryItems.length ? 'Escanear otro' : 'Escanear producto'} variant={store.entryItems.length ? 'outline' : 'primary'} onPress={openScanner} style={styles.flexButton} />{store.entryItems.length ? <Button title="Revisar entrada" onPress={() => { hideScanner(); store.setUiStage('entry_review'); }} style={styles.flexButton} /> : null}</View>
       </View>
     </View>
     );
@@ -244,7 +242,7 @@ export function EntryScanningWorkspace() {
           <BarcodeScanner
             active={showScanner}
             onScan={handleScan}
-            onClose={unmountScanner}
+            onClose={hideScanner}
             title="Escanear producto de entrada"
             contextLabel={scannerContext}
             instruction="Ubica el código dentro del recuadro"

@@ -164,6 +164,7 @@ export function BarcodeScanner({
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
+          active={active}
           onCameraReady={onCameraReady}
           onMountError={({ message }) => setError(message || 'No fue posible iniciar la cámara')}
           onBarcodeScanned={barcodeHandler}

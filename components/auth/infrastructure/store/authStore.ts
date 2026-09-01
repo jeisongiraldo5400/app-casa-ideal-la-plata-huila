@@ -23,6 +23,24 @@ interface AuthState {
 }
 
 let authSubscription: { unsubscribe: () => void } | null = null;
+let authBootstrapping = false;
+const AUTH_INIT_TIMEOUT_MS = 8_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timeout`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
@@ -34,6 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: async () => {
     if (get().initialized) return;
 
+    authBootstrapping = true;
     try {
       if (authSubscription) {
         authSubscription.unsubscribe();
@@ -43,6 +62,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        // initialize() already restores and verifies the session. Events
+        // during bootstrap (including INITIAL_SESSION) must not promote a
+        // cached JWT before getUser() + profile checks finish.
+        if (authBootstrapping || event === 'INITIAL_SESSION') return;
         if (event === 'TOKEN_REFRESHED' && !nextSession) {
           set({ session: null, user: null, loading: false, offlineSession: false });
         } else if (event === 'TOKEN_REFRESHED' && nextSession) {
@@ -67,7 +90,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const {
         data: { session },
         error,
-      } = await supabase.auth.getSession();
+      } = await withTimeout(supabase.auth.getSession(), AUTH_INIT_TIMEOUT_MS, 'getSession');
 
       if (error || !session) {
         set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
@@ -75,7 +98,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       try {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
+        const { data: userData, error: userError } = await withTimeout(
+          supabase.auth.getUser(),
+          AUTH_INIT_TIMEOUT_MS,
+          'getUser',
+        );
         if (userError) throw userError;
         if (!userData.user) {
           await supabase.auth.signOut();
@@ -141,10 +168,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await supabase.auth.signOut();
       }
       set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
+    } finally {
+      authBootstrapping = false;
+      if (!get().initialized) {
+        set({ loading: false, initialized: true });
+      }
     }
   },
 
   cleanup: () => {
+    authBootstrapping = false;
     if (authSubscription) {
       authSubscription.unsubscribe();
       authSubscription = null;
