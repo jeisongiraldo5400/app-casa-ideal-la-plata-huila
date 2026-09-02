@@ -1,26 +1,24 @@
 import { useTheme } from '@/components/theme';
-import { BackButton } from '@/components/ui/BackButton';
-import { FloatingTabBar, IconButton } from '@/components/ui';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { getColors } from '@/constants/theme';
+import { BackButton, FloatingTabBar, IconButton } from '@/components/ui';
+import { IconSize, Typography, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
 
+function HeaderIconButton({ icon, label, onPress }: { icon: 'person' | 'person-search'; label: string; onPress: () => void }) {
+  return <IconButton icon={icon} onPress={onPress} accessibilityLabel={label} size={IconSize.md} style={styles.headerButton} />;
+}
+
 function ProfileHeaderButton() {
   const router = useRouter();
-  return (
-    <IconButton
-      icon="person"
-      onPress={() => router.navigate('/(tabs)/profile')}
-      accessibilityLabel="Abrir perfil"
-      size={21}
-      style={{ width: 42, height: 42, marginRight: 12 }}
-    />
-  );
+  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => router.navigate('/(tabs)/profile')} />;
+}
+
+function SearchCustomerHeaderButton() {
+  const router = useRouter();
+  return <HeaderIconButton icon="person-search" label="Buscar cliente" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} />;
 }
 
 export default function TabLayout() {
@@ -49,7 +47,7 @@ export default function TabLayout() {
           backgroundColor: colors.background.default,
         },
         headerTintColor: colors.text.primary,
-        headerTitleStyle: { fontSize: 18, fontWeight: '800' },
+        headerTitleStyle: { ...Typography.section },
         headerTitleAlign: 'left',
         headerShadowVisible: false,
         tabBarHideOnKeyboard: true,
@@ -60,9 +58,6 @@ export default function TabLayout() {
           title: 'Inicio',
           tabBarLabel: 'Inicio',
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
-          ),
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -74,9 +69,7 @@ export default function TabLayout() {
           tabBarLabel: 'Negocios',
           href: null,
           headerLeft: () => <BackButton />,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="handshake" size={28} color={color} />
-          ),
+          headerRight: () => <SearchCustomerHeaderButton />,
         }}
       />
 
@@ -87,9 +80,6 @@ export default function TabLayout() {
           tabBarLabel: 'Cartera',
           href: null,
           headerLeft: () => <BackButton />,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="account-balance-wallet" size={28} color={color} />
-          ),
         }}
       />
 
@@ -118,9 +108,6 @@ export default function TabLayout() {
           title: 'Inventario',
           tabBarLabel: 'Inventario',
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="inventory" size={28} color={color} />
-          ),
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -130,9 +117,6 @@ export default function TabLayout() {
         options={{
           title: 'Búsqueda Rápida',
           tabBarLabel: 'Buscar',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="qr-code-scanner" size={28} color={color} />
-          ),
           headerShown: false,
         }}
       />
@@ -143,9 +127,6 @@ export default function TabLayout() {
           title: 'Salidas',
           tabBarLabel: 'Salidas',
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="local-shipping" size={28} color={color} />
-          ),
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -155,9 +136,6 @@ export default function TabLayout() {
         options={{
           title: 'Perfil',
           tabBarLabel: 'Perfil',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="account-circle" size={28} color={color} />
-          ),
           headerShown: false,
         }}
       />
@@ -232,3 +210,7 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  headerButton: { width: 42, height: 42, marginRight: 12 },
+});
