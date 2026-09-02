@@ -83,7 +83,11 @@ export async function fetchPendingPurchaseOrders(
   return data || [];
 }
 
-export async function fetchPurchaseOrderItems(orderIds: string[]) {
+type PurchaseOrderItemWithProductJoin = Database["public"]["Tables"]["purchase_order_items"]["Row"] & {
+  products: Pick<Product, "id" | "name" | "barcode" | "sku" | "deleted_at"> | null;
+};
+
+export async function fetchPurchaseOrderItems(orderIds: string[]): Promise<PurchaseOrderItemWithProductJoin[]> {
   if (orderIds.length === 0) {
     return [];
   }
@@ -105,9 +109,9 @@ export async function fetchPurchaseOrderItems(orderIds: string[]) {
     throw error;
   }
 
-  return (data || []).filter(
-    (item: any) =>
-      !item.deleted_at && item.products && !item.products.deleted_at
+  // El join !inner con alias no lo infiere el generador de tipos.
+  return ((data || []) as unknown as PurchaseOrderItemWithProductJoin[]).filter(
+    (item) => !item.deleted_at && item.products && !item.products.deleted_at
   );
 }
 

@@ -1,4 +1,4 @@
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing, Typography } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
@@ -129,17 +129,18 @@ const styles = StyleSheet.create({
   row: {
     minHeight: 52,
     borderWidth: 1.5,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderRadius: Radius.control,
+    paddingHorizontal: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   rowText: {
-    flex: 1,
+    ...Typography.body,
     fontSize: 16,
     fontWeight: '500',
-    paddingVertical: 14,
+    flex: 1,
+    paddingVertical: Spacing.md,
   },
   overlay: {
     flex: 1,
@@ -147,26 +148,27 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: Radius.card,
+    borderTopRightRadius: Radius.card,
     borderWidth: 1,
     maxHeight: '70%',
   },
   sheetTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    ...Typography.bodyStrong,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    minHeight: 52,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   optionText: {
+    ...Typography.body,
     fontSize: 16,
     flex: 1,
   },

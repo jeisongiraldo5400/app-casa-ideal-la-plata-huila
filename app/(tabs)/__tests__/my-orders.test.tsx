@@ -16,7 +16,7 @@ let mockExitState: {
   canRegisterExit: boolean;
   authorizationMessage: string | null;
   error: string | null;
-  step: 'setup' | 'confirmation' | 'scanning';
+  step: 'setup' | 'scanning';
   setExitMode: typeof mockSetExitMode;
   setSelectedCustomer: typeof mockSetSelectedCustomer;
   setSelectedUser: typeof mockSetSelectedUser;
@@ -25,7 +25,7 @@ let mockExitState: {
 };
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, navigate: mockPush }),
 }));
 
 jest.mock('@react-navigation/native', () => ({
@@ -156,7 +156,7 @@ describe('MyOrdersScreen', () => {
       mockExitState.selectedDeliveryOrderId = orderId;
     });
     mockOpenExitConfirmation.mockImplementation(() => {
-      mockExitState.step = 'confirmation';
+      mockExitState.step = 'setup';
       return true;
     });
   });

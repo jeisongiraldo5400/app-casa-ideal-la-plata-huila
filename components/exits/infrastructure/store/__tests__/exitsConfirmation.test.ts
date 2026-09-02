@@ -52,9 +52,9 @@ describe('flujo de confirmación de salidas', () => {
     });
   });
 
-  it('transiciona setup → confirmation → scanning con una orden válida', () => {
+  it('valida la configuración y pasa directo de setup a scanning con una orden válida', () => {
     expect(useExitsStore.getState().openExitConfirmation()).toBe(true);
-    expect(useExitsStore.getState().step).toBe('confirmation');
+    expect(useExitsStore.getState().step).toBe('setup');
 
     useExitsStore.getState().startExit();
     expect(useExitsStore.getState().step).toBe('scanning');
@@ -81,7 +81,7 @@ describe('flujo de confirmación de salidas', () => {
   });
 
   it('cambiar orden conserva el destino y limpia la observación anterior', () => {
-    useExitsStore.setState({ step: 'confirmation', deliveryObservations: 'Observación anterior' });
+    useExitsStore.setState({ step: 'setup', deliveryObservations: 'Observación anterior' });
 
     useExitsStore.getState().changeDeliveryOrder();
 
@@ -93,13 +93,13 @@ describe('flujo de confirmación de salidas', () => {
     expect(state.deliveryObservations).toBe('');
   });
 
-  it('regresa del escaneo a la confirmación conservando la orden', () => {
+  it('regresa del escaneo a la configuración conservando la orden y la observación', () => {
     useExitsStore.setState({ step: 'scanning', deliveryObservations: 'Recibe portería' });
 
     useExitsStore.getState().goBackToSetup();
 
     const state = useExitsStore.getState();
-    expect(state.step).toBe('confirmation');
+    expect(state.step).toBe('setup');
     expect(state.selectedDeliveryOrderId).toBe(order.id);
     expect(state.deliveryObservations).toBe('Recibe portería');
   });

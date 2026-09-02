@@ -1,8 +1,10 @@
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { getColors } from '@/constants/theme';
+import { Spacing, Typography, getColors } from '@/constants/theme';
+import { errorMessage } from '@/lib/errorMessage';
 import { useTheme } from '@/components/theme';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -43,7 +45,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     loadCategories,
     loadBrands,
     createProduct,
-  } = useEntriesStore();
+  } = useEntriesStore(useShallow((state) => ({ categories: state.categories, brands: state.brands, supplierId: state.supplierId, loadCategories: state.loadCategories, loadBrands: state.loadBrands, createProduct: state.createProduct })));
 
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
@@ -106,8 +108,8 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
         });
         onProductCreated(product.id);
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+    } catch (error: unknown) {
+      Alert.alert('Error', errorMessage(error, 'Ocurrió un error inesperado'));
     } finally {
       setLoading(false);
       setSubmitting(false);
@@ -237,44 +239,15 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  card: {
-    margin: 20,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  buttons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-  },
-  cancelButton: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  card: { margin: Spacing.xl },
+  header: { marginBottom: Spacing.xxl },
+  title: { ...Typography.section, marginBottom: Spacing.sm },
+  subtitle: { ...Typography.bodySmall },
+  field: { marginBottom: Spacing.lg },
+  label: { ...Typography.bodySmallStrong, fontWeight: '600', marginBottom: Spacing.sm },
+  errorText: { ...Typography.metadata, marginTop: Spacing.xs },
+  buttons: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.sm },
+  button: { flex: 1 },
+  cancelButton: { flex: 1 },
 });

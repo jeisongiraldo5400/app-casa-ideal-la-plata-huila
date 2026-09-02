@@ -73,7 +73,8 @@ describe('EntryScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Escanear producto'));
     fireEvent.press(screen.getByText('Emitir lectura'));
     await waitFor(() => expect(screen.getByText('Verificar producto')).toBeTruthy());
-    expect(screen.getByText('Bodega principal')).toBeTruthy();
+    // La bodega se ve en la cabecera y en la hoja de revisión (la lista sigue visible debajo).
+    expect(screen.getAllByText('Bodega principal').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.press(screen.getByText('Agregar y volver al resumen'));
     await waitFor(() => expect(screen.getByText('Revisar entrada')).toBeTruthy());
@@ -110,8 +111,8 @@ describe('EntryScanningWorkspace', () => {
   });
 
   it('unmounts the scanner when reviewing the entry and keeps it unmounted after returning to edit', async () => {
-    const scanBarcode = jest.fn(async () => {
-      const found = scanBarcode.mock.calls.length > 1 ? productTwo : product;
+    const scanBarcode: jest.Mock = jest.fn(async () => {
+      const found: typeof product = scanBarcode.mock.calls.length > 1 ? productTwo : product;
       useEntriesStore.setState({
         currentProduct: found,
         currentScannedBarcode: found.barcode,
@@ -120,8 +121,8 @@ describe('EntryScanningWorkspace', () => {
       });
       return { status: 'found' as const, product: found, error: null };
     });
-    const addProductToEntry = jest.fn(async () => {
-      const next = addProductToEntry.mock.calls.length > 1 ? [{ ...item, quantity: 1 }, itemTwo] : [{ ...item, quantity: 1 }];
+    const addProductToEntry: jest.Mock = jest.fn(async () => {
+      const next: typeof itemTwo[] = addProductToEntry.mock.calls.length > 1 ? [{ ...item, quantity: 1 }, itemTwo] : [{ ...item, quantity: 1 }];
       useEntriesStore.setState({
         entryItems: next,
         currentProduct: null,

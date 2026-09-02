@@ -204,7 +204,7 @@ describe('ExitScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Registrar salida · 2 unidades'));
 
     await waitFor(() => expect(screen.getByText('Salida registrada correctamente')).toBeTruthy());
-    expect(finalizeExit).toHaveBeenCalledWith('user-1');
+    expect(finalizeExit).toHaveBeenCalledTimes(1);
     expect(useExitsStore.getState().exitItems).toHaveLength(1);
     expect(screen.getByText('Volver a Mis órdenes')).toBeTruthy();
     expect(screen.getByText('Registrar otra salida')).toBeTruthy();

@@ -1,13 +1,33 @@
 import {
   buildRegisteredTotalsByKey,
-  computeFifoProgressByItemId
+  computeFifoProgressByItemId,
+  sortLinesFifo
 } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
 import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import { computeKeyAllowance } from '@/components/exits/infrastructure/utils/orderAllowance';
+import {
+  EPOCH_ISO,
+  aggregateExitsByKey,
+  fetchDeliveredTotalsByOrder,
+  fetchInventoryExitsForOrders,
+  fetchPendingCustomerOrders,
+  fetchSelectableDeliveryOrderItems,
+  fetchUserOrdersExpanded,
+  getActiveCancelledExitIds,
+  groupExitsByOrder,
+  loadOrderRegisteredTotals,
+} from '@/components/exits/infrastructure/services/deliveryOrderQueries';
+import {
+  UNAUTHORIZED_EXIT_MESSAGE,
+  checkExitAuthorization,
+  type ExitAuthorizationResult,
+} from '@/components/exits/infrastructure/services/exitAuthorization';
 import {
   fetchActiveProfiles,
-  fetchActiveWarehouses,
+  fetchWarehouseStock,
   searchCustomersByTerm,
 } from '@/components/exits/infrastructure/services/exitsService';
+import { errorMessage } from '@/lib/errorMessage';
 import { logOperationError } from '@/lib/operationLogger';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { supabase } from '@/lib/supabase';
@@ -17,13 +37,27 @@ import { create } from 'zustand';
 /** Invalidates in-flight customer searches when a newer query starts or clears. */
 let customerSearchGeneration = 0;
 
+/**
+ * Bumped whenever the exit session changes (reset, destino, orden, salir de la pantalla).
+ * Every async action captures it at start and discards its result if it no longer matches,
+ * so a late response never writes into a session the operator already abandoned.
+ */
+let sessionGeneration = 0;
+
+/** requestFingerprint -> idempotency key, reused while the same request is retried. */
+const pendingExitRequests = new Map<string, string>();
+
+function invalidateSession(): void {
+  sessionGeneration += 1;
+  pendingExitRequests.clear();
+}
+
 type Product = Database['public']['Tables']['products']['Row'];
-type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type Customer = Database['public']['Tables']['customers']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
 export type ExitMode = 'direct_user' | 'direct_customer';
-export type ExitStep = 'setup' | 'confirmation' | 'scanning';
+export type ExitStep = 'setup' | 'scanning';
 
 export type ExitActionResult =
   | { ok: true; error: null }
@@ -37,16 +71,28 @@ export type FinalizeExitSummary = {
   orderCompleted: boolean;
 };
 
+export type ExitFailure = { message: string; code?: string; details?: string; hint?: string };
+
 export type FinalizeExitResult =
   | { ok: true; error: null; summary: FinalizeExitSummary }
-  | { ok: false; error: any; summary: null };
+  | { ok: false; error: ExitFailure; summary: null };
 
 export interface ExitItem {
   product: Product;
   quantity: number;
   barcode: string;
+  /** Unidades que aún se pueden agregar para este producto+bodega. */
   availableStock?: number;
   warehouseId?: string; // Para órdenes de entrega con múltiples bodegas
+  /** Stock físico en la bodega al escanear; null si no se pudo consultar. */
+  physicalStock?: number | null;
+}
+
+/** Bodega candidata cuando el producto escaneado tiene pendientes en más de una bodega. */
+export interface ScanWarehouseCandidate {
+  warehouseId: string;
+  warehouseName: string;
+  pending: number;
 }
 
 export interface DeliveryOrderItem {
@@ -90,135 +136,6 @@ export type DeliveryOrderHeader = Partial<Omit<DeliveryOrder, 'id' | 'items'>> &
   id: string;
 };
 
-type DeliveryOrderItemQueryRow = Pick<
-  Database['public']['Tables']['delivery_order_items']['Row'],
-  | 'id'
-  | 'product_id'
-  | 'warehouse_id'
-  | 'quantity'
-  | 'delivered_quantity'
-  | 'created_at'
-  | 'deleted_at'
-  | 'source_delivery_order_id'
-> & {
-  product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
-  warehouse: Pick<Warehouse, 'id' | 'name'> | null;
-};
-
-const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
-  id,
-  product_id,
-  warehouse_id,
-  quantity,
-  delivered_quantity,
-  created_at,
-  deleted_at,
-  source_delivery_order_id
-`;
-
-async function fetchSelectableDeliveryOrderItems(
-  order: DeliveryOrderHeader
-): Promise<{ data: DeliveryOrderItemQueryRow[]; error: { message: string } | null }> {
-  const rpcResult = await supabase.rpc('get_authorized_delivery_order_items', {
-    p_order_id: order.id,
-  });
-
-  if (!rpcResult.error) {
-    return {
-      data: (rpcResult.data || []).map((item: Database['public']['Functions']['get_authorized_delivery_order_items']['Returns'][number]) => ({
-        id: item.id,
-        product_id: item.product_id,
-        warehouse_id: item.warehouse_id,
-        quantity: item.quantity,
-        delivered_quantity: item.delivered_quantity,
-        created_at: item.created_at,
-        deleted_at: null,
-        source_delivery_order_id: item.source_delivery_order_id,
-        product: {
-          id: item.product_id,
-          name: item.product_name,
-          barcode: item.product_barcode,
-          sku: item.product_sku,
-          deleted_at: null,
-        },
-        warehouse: { id: item.warehouse_id, name: item.warehouse_name },
-      })),
-      error: null,
-    };
-  }
-
-  // Compatibilidad temporal mientras la migración del RPC llega al ambiente.
-  // Solo PGRST202 (función aún ausente) permite continuar con las consultas RLS.
-  if (rpcResult.error.code !== 'PGRST202') {
-    return { data: [], error: rpcResult.error };
-  }
-
-  let itemResult = await supabase
-    .from('delivery_order_items')
-    .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
-    .eq('delivery_order_id', order.id)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-
-  if (itemResult.error) {
-    return { data: [], error: itemResult.error };
-  }
-
-  if (!itemResult.data?.length) {
-    // La clave confiable es source_delivery_order_id. Algunas órdenes de cliente
-    // llegan desde la rama de asignaciones del RPC (is_from_remission = false),
-    // aunque sus líneas estén copiadas dentro de una remisión.
-    itemResult = await supabase
-      .from('delivery_order_items')
-      .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
-      .eq('source_delivery_order_id', order.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
-
-    if (itemResult.error) {
-      return { data: [], error: itemResult.error };
-    }
-  }
-
-  const rawItems = itemResult.data || [];
-  if (rawItems.length === 0) {
-    return { data: [], error: null };
-  }
-
-  // Las relaciones embebidas con !inner podían eliminar toda la respuesta aunque
-  // las líneas sí existieran. Cargar los catálogos por separado conserva las líneas
-  // y permite distinguir un producto realmente eliminado de un join vacío.
-  const productIds = [...new Set(rawItems.map((item) => item.product_id))];
-  const warehouseIds = [...new Set(rawItems.map((item) => item.warehouse_id))];
-  const [productsResult, warehousesResult] = await Promise.all([
-    supabase
-      .from('products')
-      .select('id, name, barcode, sku, deleted_at')
-      .in('id', productIds)
-      .is('deleted_at', null),
-    supabase.from('warehouses').select('id, name').in('id', warehouseIds),
-  ]);
-
-  if (productsResult.error) {
-    return { data: [], error: productsResult.error };
-  }
-  if (warehousesResult.error) {
-    return { data: [], error: warehousesResult.error };
-  }
-
-  const productsById = new Map((productsResult.data || []).map((product) => [product.id, product]));
-  const warehousesById = new Map((warehousesResult.data || []).map((warehouse) => [warehouse.id, warehouse]));
-
-  return {
-    data: rawItems.map((item) => ({
-      ...item,
-      product: productsById.get(item.product_id) || null,
-      warehouse: warehousesById.get(item.warehouse_id) || null,
-    })) as DeliveryOrderItemQueryRow[],
-    error: null,
-  };
-}
-
 export interface SelectedDeliveryOrderProgressItem {
   item: DeliveryOrderItem;
   orderQuantity: number;
@@ -236,36 +153,10 @@ export interface SelectedDeliveryOrderProgress {
   totalCompleted: number;
 }
 
-const UNAUTHORIZED_EXIT_MESSAGE =
-  'No estás autorizado para registrar la salida de inventario de esta orden.';
+const NETWORK_SCAN_ERROR =
+  'No fue posible consultar el producto. Revisa tu conexión e intenta de nuevo.';
 
-const pendingExitRequests = new Map<string, string>();
-
-async function getActiveCancelledExitIds(exitIds: string[]): Promise<Set<string>> {
-  if (exitIds.length === 0) {
-    return new Set();
-  }
-
-  const { data, error } = await supabase
-    .from('inventory_exit_cancellations')
-    .select('inventory_exit_id')
-    .in('inventory_exit_id', exitIds)
-    .is('deleted_at', null);
-
-  if (error) {
-    console.error('Error loading inventory exit cancellations:', error);
-    return new Set();
-  }
-
-  return new Set((data || []).map((cancellation) => cancellation.inventory_exit_id));
-}
-
-type ExitAuthorizationResult = {
-  canRegister: boolean;
-  message: string | null;
-};
-
-interface ExitsState {
+export interface ExitsState {
   // Sesión de salida
   warehouseId: string | null;
   exitItems: ExitItem[];
@@ -281,18 +172,29 @@ interface ExitsState {
   currentScannedBarcode: string | null;
   currentQuantity: number;
   currentAvailableStock: number;
+  /** Stock físico en la bodega resuelta; null cuando no se pudo consultar. */
+  currentPhysicalStock: number | null;
   /** Línea de orden objetivo al escanear (p. ej. segunda fila mismo SKU). */
   targetOrderItemId: string | null;
+  /** Bodegas con pendientes para el producto escaneado; >1 exige elección del operario. */
+  warehouseCandidates: ScanWarehouseCandidate[];
 
   // Estado de UI
   loading: boolean;
+  /** true solo mientras register_inventory_exits_batch está en vuelo (único caso de modal bloqueante). */
+  finalizing: boolean;
   customersLoading: boolean;
   loadingMessage: string | null;
   error: string | null;
+  usersError: string | null;
+  /**
+   * Resultado de un finalize que terminó después de que la pantalla se reseteó
+   * (el operario cambió de pestaña). Se muestra al volver; dismissLastFinalizeResult() lo descarta.
+   */
+  lastFinalizeResult: FinalizeExitResult | null;
   step: ExitStep;
 
   // Datos para formularios
-  warehouses: Warehouse[];
   users: Profile[];
   customers: Customer[];
   customerSearchTerm: string;
@@ -306,17 +208,17 @@ interface ExitsState {
   scannedItemsProgress: Map<string, number>; // compositeKey(product_id, warehouse_id) -> cantidad escaneada
   canRegisterExit: boolean;
   authorizationMessage: string | null;
+  /** Orden cuya autorización ya se verificó en esta sesión (evita repetir 4 consultas al finalizar). */
+  authorizationCheckedOrderId: string | null;
 
   // Cache de salidas registradas por orden y producto+bodega (para evitar consultas redundantes)
   registeredExitsCache: Record<string, Record<string, number>>; // orderId -> compositeKey(product_id, warehouse_id) -> quantity
 
   // Actions - Setup
-  setWarehouse: (warehouseId: string | null) => void;
   setExitMode: (mode: ExitMode | null) => void;
   setSelectedUser: (userId: string | null) => void;
   setSelectedCustomer: (customerId: string | null) => void;
   setDeliveryObservations: (observations: string) => void;
-  loadWarehouses: () => Promise<void>;
   loadUsers: () => Promise<void>;
   searchCustomers: (searchTerm: string) => Promise<void>;
   openExitConfirmation: () => boolean;
@@ -346,6 +248,9 @@ interface ExitsState {
 
   // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
+  /** Fija la bodega del producto escaneado (cuando hay varias candidatas) y consulta su stock físico. */
+  selectScanWarehouse: (warehouseId: string) => Promise<void>;
+  /** Lanza si la consulta falla (red/servidor); devuelve null solo si el código no existe. */
   searchProductByBarcode: (barcode: string) => Promise<Product | null>;
   addProductToExit: (
     product: Product,
@@ -353,15 +258,20 @@ interface ExitsState {
     barcode: string
   ) => Promise<ExitActionResult>;
   removeProductFromExit: (index: number) => void;
+  /** Deshacer un "quitar": reinserta el producto en su posición si la orden aún lo permite. */
+  restoreExitItem: (item: ExitItem, index: number) => ExitActionResult;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
 
   // Actions - Finalize
-  finalizeExit: (userId: string) => Promise<FinalizeExitResult>;
+  finalizeExit: () => Promise<FinalizeExitResult>;
+  dismissLastFinalizeResult: () => void;
 
   // Actions - Reset
   reset: () => void;
   resetAll: () => void;
+  /** "Registrar otra salida": limpia la sesión de escaneo conservando destino y orden. */
+  startNewSession: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
   changeDeliveryOrder: () => void;
@@ -417,17 +327,21 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   currentScannedBarcode: null,
   currentQuantity: 1,
   currentAvailableStock: 0,
+  currentPhysicalStock: null,
   targetOrderItemId: null,
+  warehouseCandidates: [],
 
   // UI
   loading: false,
+  finalizing: false,
   customersLoading: false,
   loadingMessage: null,
   error: null,
+  usersError: null,
+  lastFinalizeResult: null,
   step: 'setup',
 
   // Datos
-  warehouses: [],
   users: [],
   customers: [],
   customerSearchTerm: '',
@@ -436,16 +350,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   scannedItemsProgress: new Map(),
   canRegisterExit: true,
   authorizationMessage: null,
+  authorizationCheckedOrderId: null,
   registeredExitsCache: {},
   deliveryObservations: '',
 
   // Setup actions
-  setWarehouse: (warehouseId) => {
-    set({ warehouseId });
-  },
-
   setExitMode: (mode) => {
+    invalidateSession();
     set({
+      loading: false,
+      loadingMessage: null,
       exitMode: mode,
       // Reset related fields when mode changes
       selectedUserId: null,
@@ -457,12 +371,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       registeredExitsCache: {},
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       deliveryObservations: ''
     });
   },
 
   setSelectedUser: (userId) => {
+    invalidateSession();
     set({
+      loading: false,
+      loadingMessage: null,
       selectedUserId: userId,
       // Reset delivery order when user changes
       selectedDeliveryOrderId: null,
@@ -470,12 +388,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrders: [],
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       deliveryObservations: ''
     });
   },
 
   setSelectedCustomer: (customerId) => {
+    invalidateSession();
     set({
+      loading: false,
+      loadingMessage: null,
       selectedCustomerId: customerId,
       // Reset delivery order when customer changes
       selectedDeliveryOrderId: null,
@@ -483,131 +405,29 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryOrders: [],
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       deliveryObservations: ''
     });
   },
 
-  validateCurrentUserAuthorizationForOrder: async (
-    orderId: string
-  ): Promise<ExitAuthorizationResult> => {
-    try {
-      const {
-        data: { user },
-        error: authError
-      } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE
-        };
-      }
-
-      const { data: assignments, error: assignmentsError } = await supabase
-        .from('delivery_order_pickup_assignments')
-        .select('user_id')
-        .eq('delivery_order_id', orderId)
-        .is('deleted_at', null);
-
-      if (assignmentsError) {
-        console.error('Error loading pickup assignments:', assignmentsError);
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE
-        };
-      }
-
-      // Fetch current user's roles regardless of assignment status.
-      // Bodegueros and admins are always authorized by default.
-      const { data: userRolesData, error: userRolesError } = await supabase
-        .from('user_roles')
-        .select('role_id')
-        .eq('user_id', user.id);
-
-      if (userRolesError) {
-        console.error('Error loading user roles:', userRolesError);
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE
-        };
-      }
-
-      const roleIds = (userRolesData || []).map((role) => role.role_id);
-      let isDefaultAuthorized = false;
-
-      if (roleIds.length > 0) {
-        const { data: rolesData, error: rolesError } = await supabase
-          .from('roles')
-          .select('nombre')
-          .in('id', roleIds)
-          .is('deleted_at', null);
-
-        if (rolesError) {
-          console.error('Error loading role names:', rolesError);
-          return {
-            canRegister: false,
-            message: UNAUTHORIZED_EXIT_MESSAGE
-          };
-        }
-
-        isDefaultAuthorized = (rolesData || []).some((role) =>
-          ['bodeguero', 'admin'].includes(role.nombre?.toLowerCase())
-        );
-      }
-
-      // Default-authorized users (bodeguero / admin) can always register exits.
-      if (isDefaultAuthorized) {
-        return { canRegister: true, message: null };
-      }
-
-      // For other roles, access is granted only when the order has no explicit
-      // assignments (open order) OR the user is explicitly assigned to the order.
-      const hasAssignments = (assignments || []).length > 0;
-      if (!hasAssignments) {
-        return {
-          canRegister: false,
-          message: UNAUTHORIZED_EXIT_MESSAGE
-        };
-      }
-
-      const isAssignedUser = (assignments || []).some(
-        (assignment) => assignment.user_id === user.id
-      );
-
-      return {
-        canRegister: isAssignedUser,
-        message: isAssignedUser ? null : UNAUTHORIZED_EXIT_MESSAGE
-      };
-    } catch (error) {
-      console.error('Error validating exit authorization:', error);
-      return {
-        canRegister: false,
-        message: UNAUTHORIZED_EXIT_MESSAGE
-      };
-    }
-  },
+  validateCurrentUserAuthorizationForOrder: (orderId: string): Promise<ExitAuthorizationResult> =>
+    checkExitAuthorization(orderId),
 
   setDeliveryObservations: (observations) => {
     set({ deliveryObservations: observations });
   },
 
-  loadWarehouses: async () => {
-    try {
-      const data = await fetchActiveWarehouses();
-      set({ warehouses: data });
-    } catch (error: any) {
-      console.error('Error loading warehouses:', error);
-      set({ warehouses: [] });
-    }
-  },
-
   loadUsers: async () => {
+    set({ usersError: null });
     try {
       const data = await fetchActiveProfiles();
-      set({ users: data });
-    } catch (error: any) {
+      set({ users: data, usersError: null });
+    } catch (error: unknown) {
       console.error('Error loading users:', error);
-      set({ users: [] });
+      set({
+        users: [],
+        usersError: 'No fue posible cargar los usuarios. Revisa tu conexión e intenta de nuevo.'
+      });
     }
   },
 
@@ -628,7 +448,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
       set({ customers: data, customersLoading: false });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (generation !== customerSearchGeneration) {
         return;
       }
@@ -638,407 +458,209 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   searchDeliveryOrdersByCustomer: async (customerId: string) => {
+    const generation = sessionGeneration;
+    const isStale = () => generation !== sessionGeneration;
     set({ loading: true, loadingMessage: 'Cargando órdenes de entrega...' });
 
     try {
-      // Consulta directa a la tabla delivery_orders con agregación de items
-      const { data, error } = await supabase
-        .from('delivery_orders')
-        .select(
-          `
-          *,
-          items:delivery_order_items!fk_delivery_order_item_order!inner(
-            id,
-            product_id,
-            warehouse_id,
-            quantity,
-            delivered_quantity,
-            deleted_at,
-            product:products!inner(id, name, barcode, sku, deleted_at)
-          )
-        `
-        )
-        .eq('customer_id', customerId)
-        .eq('status', 'pending')
-        .is('deleted_at', null)
-        .is('items.deleted_at', null)
-        .is('items.product.deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) {
-        console.error('Error loading delivery orders:', error);
-        set({
-          deliveryOrders: [],
-          loading: false,
-          loadingMessage: null,
-          error: error.message
-        });
-        return;
-      }
-
-      if (!data || data.length === 0) {
+      const orders = await fetchPendingCustomerOrders(customerId);
+      if (isStale()) return;
+      if (orders.length === 0) {
         set({ deliveryOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
-      // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
-      const orderIds = data.map((order: any) => order.id);
+      const exits = await fetchInventoryExitsForOrders(orders.map((order) => order.id));
+      const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
+      if (isStale()) return;
+      const exitsByOrder = groupExitsByOrder(exits, cancelledExitIds);
+      const customerName = get().customers.find((customer) => customer.id === customerId)?.name || '';
 
-      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
-      const { data: exitsData, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .select('id, delivery_order_id, product_id, warehouse_id, quantity')
-        .in('delivery_order_id', orderIds);
-
-      if (exitsError) {
-        console.error(
-          'Error loading inventory exits for delivery orders:',
-          exitsError
-        );
-      }
-
-      const cancelledExitIds = await getActiveCancelledExitIds(
-        (exitsData || []).map((exit: any) => exit.id)
-      );
-
-      // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
-      const exitsByOrder = new Map<string, Map<string, number>>();
-      (exitsData || []).forEach((exit: any) => {
-        // Excluir salidas canceladas
-        if (cancelledExitIds.has(exit.id)) return;
-        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id)
-          return;
-        if (!exitsByOrder.has(exit.delivery_order_id)) {
-          exitsByOrder.set(exit.delivery_order_id, new Map());
-        }
-        const key = compositeKey(exit.product_id, exit.warehouse_id);
-        const productMap = exitsByOrder.get(exit.delivery_order_id)!;
-        productMap.set(key, (productMap.get(key) || 0) + (exit.quantity || 0));
-      });
-
-      // Transformar los datos para incluir contadores (reconciliando BD con inventory_exits)
-      const ordersWithCounts = data.map((order: any) => {
-        // Filtrar items eliminados (seguridad adicional)
-        const activeItems = (order.items || []).filter(
-          (item: any) =>
-            !item.deleted_at && item.product && !item.product.deleted_at
-        );
-
-        const orderExits = exitsByOrder.get(order.id) || new Map();
+      // Reconciliar BD con inventory_exits y quedarse solo con las órdenes incompletas.
+      const ordersWithCounts: DeliveryOrder[] = orders.map((order) => {
+        const activeItems = order.items.filter((item) => !item.deleted_at && item.product && !item.product.deleted_at);
+        const orderExits = exitsByOrder.get(order.id) || new Map<string, number>();
         let totalDelivered = 0;
-        const totalQuantity =
-          activeItems.reduce((sum: number, item: any) => {
-            const key = compositeKey(item.product_id, item.warehouse_id);
-            const fromExits = orderExits.get(key) || 0;
-            const fromDB = item.delivered_quantity || 0;
-            const bestEstimate = Math.max(fromExits, fromDB);
-            const clampedDelivered = Math.min(bestEstimate, item.quantity);
-            totalDelivered += clampedDelivered;
-            return sum + item.quantity;
-          }, 0) || 0;
-
+        const totalQuantity = activeItems.reduce((sum, item) => {
+          const key = compositeKey(item.product_id, item.warehouse_id);
+          const bestEstimate = Math.max(orderExits.get(key) || 0, item.delivered_quantity || 0);
+          totalDelivered += Math.min(bestEstimate, item.quantity);
+          return sum + item.quantity;
+        }, 0);
         return {
-          ...order,
-          items: activeItems, // Guardar solo items activos
+          id: order.id,
+          order_number: order.order_number,
+          customer_id: order.customer_id || customerId,
+          customer_name: customerName,
+          customer_id_number: '',
+          status: order.status,
+          delivery_address: order.delivery_address,
+          notes: order.notes,
+          created_at: order.created_at,
+          order_type: order.order_type,
+          items: [],
           total_items: activeItems.length,
           total_quantity: totalQuantity,
           delivered_quantity: totalDelivered
         };
       });
 
-      // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
-      // Esto evita sobrecargar el sistema mostrando órdenes que ya no necesitan procesamiento
-      const incompleteOrders = ordersWithCounts.filter(
-        (order: any) =>
-          order.total_quantity > 0 &&
-          order.delivered_quantity < order.total_quantity
-      );
-
       set({
-        deliveryOrders: incompleteOrders,
+        deliveryOrders: ordersWithCounts.filter(
+          (order) => (order.total_quantity || 0) > 0 && (order.delivered_quantity || 0) < (order.total_quantity || 0)
+        ),
         loading: false,
         loadingMessage: null
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading delivery orders:', error);
+      if (isStale()) return;
       set({
         deliveryOrders: [],
         loading: false,
         loadingMessage: null,
-        error: error.message
+        error: errorMessage(error, 'No fue posible cargar las órdenes de entrega')
       });
     }
   },
 
   searchDeliveryOrdersByUser: async (userId: string) => {
+    const generation = sessionGeneration;
+    const isStale = () => generation !== sessionGeneration;
     set({ loading: true, loadingMessage: 'Cargando órdenes...' });
 
     try {
-      // Usar RPC que expande remisiones en órdenes independientes
-      const { data, error } = await supabase.rpc(
-        'get_user_delivery_orders_expanded',
-        {
-          p_user_id: userId
-        }
-      );
-
-      if (error) {
-        console.error('Error loading orders:', error);
-        set({
-          deliveryOrders: [],
-          loading: false,
-          loadingMessage: null,
-          error: error.message
-        });
-        return;
-      }
-
-      const orders = data || [];
-
+      const orders = await fetchUserOrdersExpanded(userId);
+      if (isStale()) return;
       if (orders.length === 0) {
         set({ deliveryOrders: [], loading: false, loadingMessage: null });
         return;
       }
 
-      // Obtener todas las salidas de inventario para estas órdenes desde inventory_exits
-      const orderIds = orders.map((order: any) => order.id);
+      const orderIds = orders.map((order) => order.id);
+      const exits = await fetchInventoryExitsForOrders(orderIds);
+      const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
+      const dbDeliveredByOrder = await fetchDeliveredTotalsByOrder(orderIds);
+      if (isStale()) return;
+      const exitsByOrder = groupExitsByOrder(exits, cancelledExitIds);
 
-      // Obtener las salidas de las órdenes cargadas y sus cancelaciones activas.
-      const { data: exitsData, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .select('id, delivery_order_id, product_id, warehouse_id, quantity')
-        .in('delivery_order_id', orderIds);
-
-      if (exitsError) {
-        console.error('Error loading inventory exits for orders:', exitsError);
-      }
-
-      const cancelledExitIds = await getActiveCancelledExitIds(
-        (exitsData || []).map((exit: any) => exit.id)
-      );
-
-      // Agrupar salidas por order_id y compositeKey(product_id, warehouse_id) (excluyendo canceladas)
-      const exitsByOrder = new Map<string, Map<string, number>>();
-      (exitsData || []).forEach((exit: any) => {
-        // Excluir salidas canceladas
-        if (cancelledExitIds.has(exit.id)) return;
-        if (!exit.delivery_order_id || !exit.product_id || !exit.warehouse_id)
-          return;
-        if (!exitsByOrder.has(exit.delivery_order_id)) {
-          exitsByOrder.set(exit.delivery_order_id, new Map());
-        }
-        const key = compositeKey(exit.product_id, exit.warehouse_id);
-        const productMap = exitsByOrder.get(exit.delivery_order_id)!;
-        productMap.set(key, (productMap.get(key) || 0) + (exit.quantity || 0));
-      });
-
-      // Obtener delivered_quantity desde delivery_order_items (fuente de verdad en BD)
-      const { data: dbItems, error: dbItemsError } = await supabase
-        .from('delivery_order_items')
-        .select('delivery_order_id, delivered_quantity')
-        .in('delivery_order_id', orderIds)
-        .is('deleted_at', null);
-
-      // Agrupar delivered_quantity de BD por order_id
-      const dbDeliveredByOrder = new Map<string, number>();
-      if (!dbItemsError && dbItems) {
-        dbItems.forEach((item: any) => {
-          const current = dbDeliveredByOrder.get(item.delivery_order_id) || 0;
-          dbDeliveredByOrder.set(
-            item.delivery_order_id,
-            current + (item.delivered_quantity || 0)
-          );
-        });
-      }
-
-      // Calcular delivered_quantity para cada orden (reconciliando BD con inventory_exits)
-      const ordersWithProgress = orders.map((order: any) => {
-        const orderExits = exitsByOrder.get(order.id) || new Map();
-
-        // Sumar todas las salidas registradas para esta orden
+      const ordersWithProgress: DeliveryOrder[] = orders.map((order) => {
         let totalFromExits = 0;
-        orderExits.forEach((quantity) => {
+        (exitsByOrder.get(order.id) || new Map<string, number>()).forEach((quantity) => {
           totalFromExits += quantity;
         });
-
-        // Usar el mayor entre el valor de BD y el calculado desde inventory_exits
-        const totalFromDB = dbDeliveredByOrder.get(order.id) || 0;
-        const bestEstimate = Math.max(totalFromExits, totalFromDB);
-        const clampedDelivered = Math.min(
-          bestEstimate,
-          order.total_quantity || 0
-        );
-
+        const bestEstimate = Math.max(totalFromExits, dbDeliveredByOrder.get(order.id) || 0);
         return {
-          ...order,
-          delivered_quantity: clampedDelivered
+          id: order.id,
+          order_number: order.order_number || null,
+          customer_id: order.customer_id || '',
+          customer_name: order.customer_name || '',
+          customer_id_number: order.customer_id_number || '',
+          status: order.status || 'pending',
+          delivery_address: order.delivery_address || null,
+          notes: order.notes || null,
+          created_at: order.created_at,
+          items: [],
+          order_type: order.order_type,
+          assigned_to_user_name: order.assigned_to_user_name,
+          total_items: order.total_items,
+          total_quantity: order.total_quantity,
+          delivered_quantity: Math.min(bestEstimate, order.total_quantity || 0),
+          is_from_remission: order.is_from_remission,
+          remission_id: order.remission_id
         };
       });
 
-      // Filtrar solo las órdenes que NO están completadas (delivered_quantity < total_quantity)
-      const incompleteOrders = ordersWithProgress.filter(
-        (order: any) =>
-          order.total_quantity > 0 &&
-          order.delivered_quantity < order.total_quantity
-      );
-
       set({
-        deliveryOrders: incompleteOrders,
+        deliveryOrders: ordersWithProgress.filter(
+          (order) => (order.total_quantity || 0) > 0 && (order.delivered_quantity || 0) < (order.total_quantity || 0)
+        ),
         loading: false,
         loadingMessage: null
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading orders:', error);
+      if (isStale()) return;
       set({
         deliveryOrders: [],
         loading: false,
         loadingMessage: null,
-        error: error.message
+        error: errorMessage(error, 'No fue posible cargar las órdenes')
       });
     }
   },
 
   selectDeliveryOrder: async (orderId: string, authorizedHeader) => {
+    const generation = sessionGeneration;
+    const isStale = () => generation !== sessionGeneration;
     const previousOrderId = get().selectedDeliveryOrderId;
 
-    set({
-      loading: true,
-      loadingMessage: 'Cargando detalles de la orden...',
-      error: null
-    });
+    set({ loading: true, loadingMessage: 'Cargando detalles de la orden...', error: null });
 
-    try {
-      // La orden proviene de la lista que el usuario acaba de cargar y seleccionar.
-      // Reconsultar la cabecera podía devolver cero filas por diferencias de RLS o
-      // relaciones embebidas, aunque la orden ya estuviera visible y autorizada.
-      const orderHeader: DeliveryOrderHeader | undefined =
-        authorizedHeader ||
-        get().deliveryOrders.find((order) => order.id === orderId);
-
-      if (!orderHeader) {
-        set({
-          selectedDeliveryOrder: null,
-          selectedDeliveryOrderId: null,
-          loading: false,
-          loadingMessage: null,
-          error: 'Orden de entrega no encontrada'
-        });
-        return;
-      }
-
-      const { data: orderItems, error: itemsError } =
-        await fetchSelectableDeliveryOrderItems(orderHeader);
-
-      if (itemsError) {
-        console.error('Error loading delivery order items:', itemsError);
-        set({
-          selectedDeliveryOrder: null,
-          selectedDeliveryOrderId: null,
-          loading: false,
-          loadingMessage: null,
-          error: itemsError.message || 'No fue posible cargar los productos de la orden'
-        });
-        return;
-      }
-
-      if (!orderItems?.length) {
-        set({
-          selectedDeliveryOrder: null,
-          selectedDeliveryOrderId: null,
-          loading: false,
-          loadingMessage: null,
-          error: 'La orden no tiene productos disponibles para registrar la salida'
-        });
-        return;
-      }
-
-      const orderData: any = { ...orderHeader, items: orderItems };
-
-      // Obtener las salidas de inventario de esta orden y sus cancelaciones activas.
-      const { data: exitsData, error: exitsError } = await supabase
-        .from('inventory_exits')
-        .select('id, product_id, warehouse_id, quantity')
-        .eq('delivery_order_id', orderId);
-
-      if (exitsError) {
-        console.error(
-          'Error loading inventory exits for delivery order:',
-          exitsError
-        );
-        // Continuar aunque haya error, pero con cache vacío
-      }
-
-      const cancelledExitIds = await getActiveCancelledExitIds(
-        (exitsData || []).map((exit: any) => exit.id)
-      );
-
-      // Calcular cantidades registradas por compositeKey(product_id, warehouse_id) desde inventory_exits (excluyendo canceladas)
-      const registeredByProduct: Record<string, number> = {};
-      (exitsData || []).forEach((exit: any) => {
-        // Excluir salidas canceladas
-        if (cancelledExitIds.has(exit.id)) return;
-        if (!exit.product_id || !exit.warehouse_id) return;
-        const key = compositeKey(exit.product_id, exit.warehouse_id);
-        registeredByProduct[key] =
-          (registeredByProduct[key] || 0) + (exit.quantity || 0);
+    const failSelect = (error: string) =>
+      set({
+        selectedDeliveryOrder: null,
+        selectedDeliveryOrderId: null,
+        loading: false,
+        loadingMessage: null,
+        error
       });
 
-      // Transformar los datos al formato esperado
-      // Para remisiones (assigned_to_user_id), usar el nombre del usuario asignado
-      // Para clientes (customer_id), usar el nombre del cliente
-      const customerName =
-        orderData.customer_name ||
-        orderData.assigned_to_user_name ||
-        orderData.customer?.name ||
-        orderData.assigned_to_user?.full_name ||
-        '';
-      const customerIdNumber =
-        orderData.customer_id_number || orderData.customer?.id_number || '';
+    try {
+      // La cabecera viene de la lista que el usuario acaba de cargar: reconsultarla podía
+      // devolver cero filas por RLS aunque la orden ya estuviera visible y autorizada.
+      const orderHeader: DeliveryOrderHeader | undefined =
+        authorizedHeader || get().deliveryOrders.find((order) => order.id === orderId);
+      if (!orderHeader) {
+        failSelect('Orden de entrega no encontrada');
+        return;
+      }
 
-      // Incluir TODOS los items (directos + de órdenes asignadas)
-      // Filtrar items con deleted_at o productos eliminados (seguridad adicional)
-      const activeItems = (orderData.items || []).filter(
-        (item: any) =>
-          !item.deleted_at && item.product && !item.product.deleted_at
-      );
+      const { data: orderItems, error: itemsError } = await fetchSelectableDeliveryOrderItems(orderHeader.id);
+      if (isStale()) return;
+      if (itemsError) {
+        console.error('Error loading delivery order items:', itemsError);
+        failSelect(itemsError.message || 'No fue posible cargar los productos de la orden');
+        return;
+      }
+      if (!orderItems.length) {
+        failSelect('La orden no tiene productos disponibles para registrar la salida');
+        return;
+      }
 
-      const fifoInputs = activeItems.map((item: any) => ({
+      const exits = await fetchInventoryExitsForOrders([orderId]);
+      const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
+      if (isStale()) return;
+      const registeredByProduct = aggregateExitsByKey(exits, cancelledExitIds);
+
+      const activeItems = orderItems.filter((item) => !item.deleted_at && item.product && !item.product.deleted_at);
+      const fifoInputs = activeItems.map((item) => ({
         id: item.id,
         product_id: item.product_id,
         warehouse_id: item.warehouse_id,
         quantity: Number(item.quantity) || 0,
         db_delivered_quantity: Number(item.delivered_quantity) || 0,
-        created_at: item.created_at || '1970-01-01T00:00:00.000Z'
+        created_at: item.created_at || EPOCH_ISO
       }));
-
-      const registeredTotalsForOrder = buildRegisteredTotalsByKey(
-        fifoInputs,
-        registeredByProduct
-      );
-      const fifoAllocated = computeFifoProgressByItemId(
-        fifoInputs,
-        registeredTotalsForOrder,
-        new Map()
-      );
+      const registeredTotalsForOrder = buildRegisteredTotalsByKey(fifoInputs, registeredByProduct);
+      const fifoAllocated = computeFifoProgressByItemId(fifoInputs, registeredTotalsForOrder, new Map());
 
       const deliveryOrder: DeliveryOrder = {
-        id: orderData.id,
-        order_number: orderData.order_number || null,
-        customer_id: orderData.customer_id || '',
-        customer_name: customerName,
-        customer_id_number: customerIdNumber,
-        status: orderData.status || 'pending',
-        delivery_address: orderData.delivery_address || '',
-        notes: orderData.notes || '',
-        created_at: orderData.created_at || new Date().toISOString(),
-        items: activeItems.map((item: any) => {
-          const fp = fifoAllocated.get(item.id) ?? {
-            registered: 0,
-            sessionScanned: 0,
-            pending: Number(item.quantity) || 0
-          };
-          const dbDel = Number(item.delivered_quantity) || 0;
+        id: orderHeader.id,
+        order_number: orderHeader.order_number || null,
+        customer_id: orderHeader.customer_id || '',
+        customer_name: orderHeader.customer_name || orderHeader.assigned_to_user_name || '',
+        customer_id_number: orderHeader.customer_id_number || '',
+        status: orderHeader.status || 'pending',
+        delivery_address: orderHeader.delivery_address || '',
+        notes: orderHeader.notes || '',
+        created_at: orderHeader.created_at || new Date().toISOString(),
+        order_type: orderHeader.order_type,
+        assigned_to_user_name: orderHeader.assigned_to_user_name,
+        is_from_remission: orderHeader.is_from_remission,
+        remission_id: orderHeader.remission_id,
+        items: activeItems.map((item) => {
+          const fp = fifoAllocated.get(item.id) ?? { registered: 0, sessionScanned: 0, pending: Number(item.quantity) || 0 };
           return {
             id: item.id,
             product_id: item.product_id,
@@ -1050,27 +672,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             quantity: Number(item.quantity) || 0,
             delivered_quantity: fp.registered,
             pending_quantity: fp.pending,
-            db_delivered_quantity: dbDel,
-            created_at: item.created_at || '1970-01-01T00:00:00.000Z'
+            db_delivered_quantity: Number(item.delivered_quantity) || 0,
+            created_at: item.created_at || EPOCH_ISO
           };
         })
       };
 
-      const authorizationResult =
-        await get().validateCurrentUserAuthorizationForOrder(orderId);
+      const authorizationResult = await get().validateCurrentUserAuthorizationForOrder(orderId);
+      if (isStale()) return;
 
-      const { registeredExitsCache } = get();
-      const updatedCache = { ...registeredExitsCache };
-
-      updatedCache[orderId] = { ...registeredTotalsForOrder };
+      const updatedCache = { ...get().registeredExitsCache, [orderId]: { ...registeredTotalsForOrder } };
       Object.keys(updatedCache[orderId]).forEach((k) => {
         if (updatedCache[orderId][k] <= 0) delete updatedCache[orderId][k];
-      });
-
-      Object.entries(updatedCache[orderId]).forEach(([key, total]) => {
-        console.log(
-          `[selectDeliveryOrder] ${key}: aggregate registered=${total}`
-        );
       });
 
       set({
@@ -1080,21 +693,23 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         registeredExitsCache: updatedCache,
         canRegisterExit: authorizationResult.canRegister,
         authorizationMessage: authorizationResult.message,
-        deliveryObservations:
-          previousOrderId !== orderId ? '' : get().deliveryObservations,
+        authorizationCheckedOrderId: authorizationResult.canRegister ? orderId : null,
+        deliveryObservations: previousOrderId !== orderId ? '' : get().deliveryObservations,
         loading: false,
         loadingMessage: null
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading delivery order details:', error);
+      if (isStale()) return;
       set({
         selectedDeliveryOrder: null,
         selectedDeliveryOrderId: null,
         canRegisterExit: true,
         authorizationMessage: null,
+        authorizationCheckedOrderId: null,
         loading: false,
         loadingMessage: null,
-        error: error.message
+        error: errorMessage(error, 'No fue posible cargar la orden')
       });
     }
   },
@@ -1117,50 +732,27 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { valid: false, error: 'No hay orden de entrega seleccionada' };
     }
 
-    const matchingItems = selectedDeliveryOrder.items.filter(
-      (item) =>
-        item.product_id === productId && item.warehouse_id === warehouseId
+    const cacheSlice = registeredExitsCache[selectedDeliveryOrderId] || {};
+    const { lines, totalRequired, totalDelivered } = computeKeyAllowance(
+      selectedDeliveryOrder,
+      cacheSlice,
+      productId,
+      warehouseId
     );
 
-    if (matchingItems.length === 0) {
+    if (lines.length === 0) {
       return {
         valid: false,
-        error:
-          'Este producto no está incluido en la orden de entrega para esta bodega'
+        error: 'Este producto no está incluido en la orden de entrega para esta bodega'
       };
     }
 
-    const totalRequired = matchingItems.reduce(
-      (sum, item) => sum + item.quantity,
-      0
-    );
-    const sumDbDelivered = matchingItems.reduce(
-      (sum, item) => sum + item.db_delivered_quantity,
-      0
-    );
-
-    const key = compositeKey(productId, warehouseId);
-    const cacheSlice = registeredExitsCache[selectedDeliveryOrderId] || {};
-    const cacheTotal = cacheSlice[key] ?? 0;
-
-    const totalDelivered = Math.min(
-      Math.max(sumDbDelivered, cacheTotal),
-      totalRequired
-    );
-
     const sessionTotal = exitItems
-      .filter(
-        (item) =>
-          item.product.id === productId && item.warehouseId === warehouseId
-      )
+      .filter((item) => item.product.id === productId && item.warehouseId === warehouseId)
       .reduce((sum, item) => sum + item.quantity, 0);
 
-    const newTotal = totalDelivered + sessionTotal + quantity;
-    if (newTotal > totalRequired) {
-      const maxAllowable = Math.max(
-        totalRequired - totalDelivered - sessionTotal,
-        0
-      );
+    if (totalDelivered + sessionTotal + quantity > totalRequired) {
+      const maxAllowable = Math.max(totalRequired - totalDelivered - sessionTotal, 0);
       return {
         valid: false,
         error: `La cantidad excede lo requerido. Requerido: ${totalRequired}, Ya entregado: ${totalDelivered}, En esta sesión: ${sessionTotal}, Máximo permitido: ${maxAllowable}`
@@ -1173,23 +765,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       scannedItemsProgress
     );
 
-    let orderItem: DeliveryOrderItem | undefined;
-    if (targetOrderItemId) {
-      orderItem = matchingItems.find((i) => i.id === targetOrderItemId);
-    }
-    if (!orderItem) {
-      const sortedMatches = [...matchingItems].sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime() ||
-          a.id.localeCompare(b.id)
-      );
-      orderItem = sortedMatches.find(
-        (i) => (fifoProgress.get(i.id)?.pending ?? 0) > 0
-      );
-    }
-    if (!orderItem) {
-      orderItem = matchingItems[0];
-    }
+    const orderItem =
+      (targetOrderItemId ? lines.find((i) => i.id === targetOrderItemId) : undefined) ||
+      sortLinesFifo(lines).find((i) => (fifoProgress.get(i.id)?.pending ?? 0) > 0) ||
+      lines[0];
 
     return { valid: true, orderItem };
   },
@@ -1267,7 +846,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return false;
     }
 
-    set({ step: 'confirmation', error: null });
+    // El resumen de la orden vive en el último paso de la configuración; no hay pantalla intermedia.
+    set({ error: null });
     return true;
   },
 
@@ -1283,26 +863,44 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   // Scanning actions
   scanBarcode: async (barcode: string) => {
+    const generation = sessionGeneration;
+    const isStale = () => generation !== sessionGeneration;
+
     set({
       loading: true,
       loadingMessage: 'Buscando producto...',
       error: null,
-      currentScannedBarcode: barcode
+      currentScannedBarcode: barcode,
+      warehouseCandidates: [],
+      currentPhysicalStock: null
     });
 
+    const failScan = (error: string) =>
+      set({
+        loading: false,
+        loadingMessage: null,
+        error,
+        currentProduct: null,
+        currentScannedBarcode: null,
+        targetOrderItemId: null,
+        warehouseCandidates: [],
+        currentPhysicalStock: null
+      });
+
     try {
-      const product = await get().searchProductByBarcode(barcode);
+      let product: Product | null;
+      try {
+        product = await get().searchProductByBarcode(barcode);
+      } catch (lookupError) {
+        console.error('Error searching product:', lookupError);
+        if (isStale()) return;
+        failScan(NETWORK_SCAN_ERROR);
+        return;
+      }
+      if (isStale()) return;
 
       if (!product) {
-        set({
-          loading: false,
-          loadingMessage: null,
-          error:
-            'Producto no encontrado. Este código de barras no está registrado en el sistema.',
-          currentProduct: null,
-          currentScannedBarcode: null,
-          targetOrderItemId: null
-        });
+        failScan('Producto no encontrado. Este código de barras no está registrado en el sistema.');
         return;
       }
 
@@ -1310,158 +908,185 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         selectedDeliveryOrderId,
         selectedDeliveryOrder,
         registeredExitsCache,
-        scannedItemsProgress
+        scannedItemsProgress,
+        exitItems
       } = get();
 
-      // Validar que haya una orden de entrega seleccionada (siempre requerida)
       if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
-        set({
-          loading: false,
-          loadingMessage: null,
-          error: 'Debe seleccionar una orden de entrega primero',
-          currentProduct: null,
-          currentScannedBarcode: null,
-          targetOrderItemId: null
-        });
+        failScan('Debe seleccionar una orden de entrega primero');
         return;
       }
 
-      // Resolver la bodega automáticamente desde los items de la orden
-      // Buscar líneas con pendientes (FIFO por created_at cuando hay varias filas mismo SKU)
-      set({ loadingMessage: 'Verificando disponibilidad en la orden...' });
-
+      // Líneas de la orden con pendiente para este producto, agrupadas por bodega.
+      // El operario debe elegir la bodega cuando hay más de una: escoger por FIFO
+      // descontaría stock de una bodega distinta a la que realmente despacha.
       const cacheSlice = registeredExitsCache[selectedDeliveryOrderId] || {};
       const fifoMap = computeFifoProgressByItemId(
         selectedDeliveryOrder.items,
         cacheSlice,
         scannedItemsProgress
       );
+      const pendingByWarehouse = new Map<string, ScanWarehouseCandidate>();
+      selectedDeliveryOrder.items.forEach((item) => {
+        if (item.product_id !== product.id) return;
+        const pending = fifoMap.get(item.id)?.pending ?? 0;
+        if (pending <= 0) return;
+        const current = pendingByWarehouse.get(item.warehouse_id);
+        if (current) {
+          current.pending += pending;
+        } else {
+          pendingByWarehouse.set(item.warehouse_id, {
+            warehouseId: item.warehouse_id,
+            warehouseName: item.warehouse_name,
+            pending
+          });
+        }
+      });
+      const candidates = [...pendingByWarehouse.values()];
 
-      const matchingItems = selectedDeliveryOrder.items
-        .filter((item) => {
-          if (item.product_id !== product.id) return false;
-          return (fifoMap.get(item.id)?.pending ?? 0) > 0;
-        })
-        .sort((a, b) => {
-          const t =
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime();
-          if (t !== 0) return t;
-          return a.id.localeCompare(b.id);
-        });
-
-      if (matchingItems.length === 0) {
-        // Verificar si el producto existe en la orden pero ya está completado
+      if (candidates.length === 0) {
         const existsInOrder = selectedDeliveryOrder.items.some(
           (item) => item.product_id === product.id
         );
-        if (existsInOrder) {
-          set({
-            loading: false,
-            loadingMessage: null,
-            error:
-              'Este producto ya fue entregado completamente en esta orden.',
-            currentProduct: null,
-            currentScannedBarcode: null,
-            targetOrderItemId: null
-          });
-        } else {
-          set({
-            loading: false,
-            loadingMessage: null,
-            error: 'Este producto no está incluido en la orden de entrega.',
-            currentProduct: null,
-            currentScannedBarcode: null,
-            targetOrderItemId: null
-          });
+        if (!existsInOrder) {
+          failScan('Este producto no está incluido en la orden de entrega.');
+          return;
         }
+        const inSession = exitItems.some((item) => item.product.id === product.id);
+        failScan(
+          inSession
+            ? 'Ya agregaste todas las unidades pendientes de este producto en esta salida.'
+            : 'Este producto ya fue entregado completamente en esta orden.'
+        );
         return;
       }
-
-      const selectedItem = matchingItems[0];
-      const resolvedWarehouseId = selectedItem.warehouse_id;
-
-      const validation = get().validateProductAgainstOrder(
-        product.id,
-        resolvedWarehouseId,
-        1,
-        selectedItem.id
-      );
-
-      if (!validation.valid) {
-        set({
-          loading: false,
-          loadingMessage: null,
-          error: validation.error || 'Producto no válido para esta orden',
-          currentProduct: null,
-          currentScannedBarcode: null,
-          targetOrderItemId: null
-        });
-        return;
-      }
-
-      const fp = fifoMap.get(selectedItem.id) ?? {
-        pending: selectedItem.pending_quantity,
-        registered: selectedItem.delivered_quantity,
-        sessionScanned: 0
-      };
-      const availableStock = fp.pending;
 
       set({
-        loading: false,
-        loadingMessage: null,
         currentProduct: product,
         currentQuantity: 1,
-        currentAvailableStock: availableStock,
-        warehouseId: resolvedWarehouseId,
-        targetOrderItemId: selectedItem.id,
+        warehouseCandidates: candidates,
+        warehouseId: null,
+        targetOrderItemId: null,
+        currentAvailableStock: 0,
+        currentPhysicalStock: null,
         error: null
       });
-    } catch (error: any) {
+
+      if (candidates.length === 1) {
+        await get().selectScanWarehouse(candidates[0].warehouseId);
+        return;
+      }
+
+      set({ loading: false, loadingMessage: null });
+    } catch (error: unknown) {
       console.error('Error scanning barcode:', error);
-      set({
-        loading: false,
-        loadingMessage: null,
-        error:
-          error?.message ||
-          error?.toString() ||
-          'Error al escanear el código de barras. Por favor intente de nuevo.',
-        currentProduct: null,
-        currentScannedBarcode: null,
-        targetOrderItemId: null
-      });
+      if (isStale()) return;
+      failScan(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Error al escanear el código de barras. Por favor intente de nuevo.'
+      );
     }
   },
 
-  searchProductByBarcode: async (barcode: string): Promise<Product | null> => {
+  selectScanWarehouse: async (warehouseId: string) => {
+    const generation = sessionGeneration;
+    const {
+      currentProduct,
+      selectedDeliveryOrder,
+      selectedDeliveryOrderId,
+      registeredExitsCache,
+      scannedItemsProgress,
+      warehouseCandidates
+    } = get();
+
+    if (!currentProduct || !selectedDeliveryOrder || !selectedDeliveryOrderId) {
+      set({ loading: false, loadingMessage: null, error: 'No hay un producto escaneado' });
+      return;
+    }
+
+    const candidate = warehouseCandidates.find((c) => c.warehouseId === warehouseId);
+    if (!candidate) {
+      set({
+        loading: false,
+        loadingMessage: null,
+        error: 'La bodega elegida no tiene pendientes para este producto'
+      });
+      return;
+    }
+
+    const fifoMap = computeFifoProgressByItemId(
+      selectedDeliveryOrder.items,
+      registeredExitsCache[selectedDeliveryOrderId] || {},
+      scannedItemsProgress
+    );
+    const targetLine = sortLinesFifo(
+      selectedDeliveryOrder.items.filter(
+        (item) =>
+          item.product_id === currentProduct.id &&
+          item.warehouse_id === warehouseId &&
+          (fifoMap.get(item.id)?.pending ?? 0) > 0
+      )
+    )[0];
+
+    set({
+      loading: true,
+      loadingMessage: 'Consultando stock en bodega...',
+      warehouseId,
+      targetOrderItemId: targetLine?.id ?? null,
+      currentAvailableStock: candidate.pending,
+      currentPhysicalStock: null,
+      error: null
+    });
+
+    let physicalStock: number | null = null;
     try {
-      if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
-        console.warn('Barcode inválido en searchProductByBarcode:', barcode);
-        return null;
-      }
+      physicalStock = await fetchWarehouseStock(currentProduct.id, warehouseId);
+    } catch (stockError: unknown) {
+      // Sin stock físico seguimos con el pendiente de la orden; el RPC valida al registrar.
+      console.error('Error loading warehouse stock:', stockError);
+      logOperationError({
+        error_code: 'EXIT_STOCK_LOOKUP_FAILED',
+        error_message: stockError instanceof Error ? stockError.message : String(stockError),
+        module: 'exits',
+        operation: 'scan_barcode',
+        step: 'warehouse_stock',
+        severity: 'warning',
+        entity_type: 'delivery_order',
+        entity_id: selectedDeliveryOrderId,
+        context: { productId: currentProduct.id, warehouseId }
+      });
+    }
+    if (generation !== sessionGeneration) return;
 
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('barcode', barcode.trim())
-        .is('deleted_at', null)
-        .maybeSingle();
+    set({
+      loading: false,
+      loadingMessage: null,
+      currentPhysicalStock: physicalStock,
+      currentQuantity: physicalStock === 0 ? 0 : 1
+    });
+  },
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // Producto no encontrado - esto es normal
-          return null;
-        }
-        console.error('Error searching product:', error);
-        throw error;
-      }
-
-      return data as Product | null;
-    } catch (error: any) {
-      console.error('Error searching product:', error);
-      // Retornar null en lugar de lanzar error para evitar crashes
+  searchProductByBarcode: async (barcode: string): Promise<Product | null> => {
+    if (!barcode || typeof barcode !== 'string' || barcode.trim() === '') {
       return null;
     }
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('barcode', barcode.trim())
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw error;
+    }
+
+    return (data as Product | null) ?? null;
   },
 
   addProductToExit: async (
@@ -1473,12 +1098,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       exitItems,
       warehouseId,
       scannedItemsProgress,
-      selectedDeliveryOrderId
+      selectedDeliveryOrderId,
+      selectedDeliveryOrder,
+      registeredExitsCache,
+      targetOrderItemId,
+      currentPhysicalStock,
+      warehouseCandidates
     } = get();
 
-    // warehouseId se resuelve automáticamente desde scanBarcode (de la orden de entrega)
     if (!warehouseId) {
-      const error = 'No se pudo determinar la bodega del producto';
+      const error =
+        warehouseCandidates.length > 1
+          ? 'Elige la bodega de la que sale el producto'
+          : 'No se pudo determinar la bodega del producto';
       set({ error });
       return { ok: false, error };
     }
@@ -1489,9 +1121,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { ok: false, error };
     }
 
-    // Validar que haya una orden de entrega seleccionada (siempre requerida)
-    const { selectedDeliveryOrder, registeredExitsCache, targetOrderItemId } =
-      get();
     if (!selectedDeliveryOrderId || !selectedDeliveryOrder) {
       const error = 'Debe seleccionar una orden de entrega primero';
       set({ error });
@@ -1510,68 +1139,44 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { ok: false, error };
     }
 
-    const key = compositeKey(product.id, warehouseId);
-    const matchingItems = selectedDeliveryOrder.items.filter(
-      (item) => item.product_id === product.id && item.warehouse_id === warehouseId
-    );
-    const totalRequired = matchingItems.reduce(
-      (sum, item) => sum + item.quantity,
-      0
-    );
-    const sumDbDelivered = matchingItems.reduce(
-      (sum, item) => sum + item.db_delivered_quantity,
-      0
-    );
-    const cacheTotal =
-      registeredExitsCache[selectedDeliveryOrderId]?.[key] ?? 0;
-    const totalDelivered = Math.min(
-      Math.max(sumDbDelivered, cacheTotal),
-      totalRequired
-    );
-    const maxCartForKey = Math.max(totalRequired - totalDelivered, 0);
-
     const existingItem = exitItems.find(
-      (item) =>
-        item.product.id === product.id && item.warehouseId === warehouseId
+      (item) => item.product.id === product.id && item.warehouseId === warehouseId
     );
     const totalQuantityInExit = (existingItem?.quantity || 0) + quantity;
 
-    if (totalQuantityInExit > maxCartForKey) {
-      const error = `No hay suficiente stock. Disponible: ${maxCartForKey}, Intentando sacar: ${totalQuantityInExit}`;
+    // Stock físico: conocido desde el escaneo; si no se pudo consultar, el RPC valida al registrar.
+    const physicalStock = existingItem?.physicalStock ?? currentPhysicalStock ?? null;
+    if (physicalStock !== null && totalQuantityInExit > physicalStock) {
+      const warehouseName =
+        selectedDeliveryOrder.items.find((item) => item.warehouse_id === warehouseId)?.warehouse_name ||
+        'la bodega';
+      const error = `Stock físico insuficiente en ${warehouseName}. Disponible: ${physicalStock}, en esta salida: ${totalQuantityInExit}`;
       set({ error });
       return { ok: false, error };
     }
 
-    const availableStock = Math.max(maxCartForKey - totalQuantityInExit, 0);
+    const { maxCart } = computeKeyAllowance(
+      selectedDeliveryOrder,
+      registeredExitsCache[selectedDeliveryOrderId] || {},
+      product.id,
+      warehouseId
+    );
+    const cap = physicalStock !== null ? Math.min(maxCart, physicalStock) : maxCart;
+    const availableStock = Math.max(cap - totalQuantityInExit, 0);
 
-    // Actualizar progreso con clave compuesta
-    if (selectedDeliveryOrderId) {
-      const currentProgress = scannedItemsProgress.get(key) || 0;
-      const newProgress = new Map(scannedItemsProgress);
-      newProgress.set(key, currentProgress + quantity);
-      set({ scannedItemsProgress: newProgress });
-    }
+    const key = compositeKey(product.id, warehouseId);
+    const newProgress = new Map(scannedItemsProgress);
+    newProgress.set(key, (scannedItemsProgress.get(key) || 0) + quantity);
 
-    // Si el producto+bodega ya está en la lista, actualizar cantidad
-    if (existingItem) {
-      const updatedItems = exitItems.map((item) =>
-        item.product.id === product.id && item.warehouseId === warehouseId
-          ? { ...item, quantity: item.quantity + quantity, availableStock }
-          : item
-      );
-      set({ exitItems: updatedItems, error: null });
-    } else {
-      // Agregar nuevo producto con su bodega
-      set({
-        exitItems: [
-          ...exitItems,
-          { product, quantity, barcode, availableStock, warehouseId }
-        ],
-        error: null
-      });
-    }
+    const updatedItems = existingItem
+      ? exitItems.map((item) =>
+          item.product.id === product.id && item.warehouseId === warehouseId
+            ? { ...item, quantity: item.quantity + quantity, availableStock, physicalStock }
+            : item
+        )
+      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock }];
 
-    // Resetear escaneo actual
+    set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
     get().resetCurrentScan();
     return { ok: true, error: null };
   },
@@ -1610,6 +1215,35 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
+  restoreExitItem: (item, index) => {
+    const { exitItems, selectedDeliveryOrder, selectedDeliveryOrderId, registeredExitsCache, scannedItemsProgress } = get();
+    if (!selectedDeliveryOrder || !selectedDeliveryOrderId || !item.warehouseId) {
+      return { ok: false, error: 'No fue posible restaurar el producto' };
+    }
+    if (exitItems.some((existing) => existing.product.id === item.product.id && existing.warehouseId === item.warehouseId)) {
+      return { ok: false, error: 'El producto ya está de nuevo en la salida' };
+    }
+    const validation = get().validateProductAgainstOrder(item.product.id, item.warehouseId, item.quantity);
+    if (!validation.valid) {
+      return { ok: false, error: validation.error || 'La orden ya no permite esta cantidad' };
+    }
+    const { maxCart } = computeKeyAllowance(
+      selectedDeliveryOrder,
+      registeredExitsCache[selectedDeliveryOrderId] || {},
+      item.product.id,
+      item.warehouseId
+    );
+    const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
+    const key = compositeKey(item.product.id, item.warehouseId);
+    const newProgress = new Map(scannedItemsProgress);
+    newProgress.set(key, (scannedItemsProgress.get(key) || 0) + item.quantity);
+    const restored = { ...item, availableStock: Math.max(cap - item.quantity, 0) };
+    const next = [...exitItems];
+    next.splice(Math.min(Math.max(index, 0), next.length), 0, restored);
+    set({ exitItems: next, scannedItemsProgress: newProgress, error: null });
+    return { ok: true, error: null };
+  },
+
   updateProductQuantity: (index: number, quantity: number) => {
     const {
       exitItems,
@@ -1632,63 +1266,40 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    const matchingOrderItems = selectedDeliveryOrder.items.filter(
-      (orderItem) =>
-        orderItem.product_id === item.product.id &&
-        orderItem.warehouse_id === item.warehouseId
+    const { maxCart } = computeKeyAllowance(
+      selectedDeliveryOrder,
+      registeredExitsCache[selectedDeliveryOrderId] || {},
+      item.product.id,
+      item.warehouseId
     );
-    const totalRequired = matchingOrderItems.reduce(
-      (total, orderItem) => total + orderItem.quantity,
-      0
-    );
-    const deliveredFromDatabase = matchingOrderItems.reduce(
-      (total, orderItem) => total + orderItem.db_delivered_quantity,
-      0
-    );
-    const cacheKey = compositeKey(item.product.id, item.warehouseId);
-    const deliveredFromExits =
-      registeredExitsCache[selectedDeliveryOrderId]?.[cacheKey] ?? 0;
-    const delivered = Math.min(
-      Math.max(deliveredFromDatabase, deliveredFromExits),
-      totalRequired
-    );
-    const maximumAllowed = Math.max(totalRequired - delivered, 0);
 
-    if (quantity > maximumAllowed) {
-      set({
-        error: `La cantidad no puede exceder lo pendiente en la orden: ${maximumAllowed}`
-      });
+    if (quantity > maxCart) {
+      set({ error: `La cantidad no puede exceder lo pendiente en la orden: ${maxCart}` });
       return;
     }
 
-    const updatedItems = exitItems.map((item, i) =>
-      i === index
-        ? { ...item, quantity, availableStock: maximumAllowed - quantity }
-        : item
-    );
-
-    // Si hay una orden de entrega seleccionada, actualizar progreso con clave compuesta
-    if (selectedDeliveryOrderId && item.product.id && item.warehouseId) {
-      const key = compositeKey(item.product.id, item.warehouseId);
-      const currentProgress = scannedItemsProgress.get(key) || 0;
-      const quantityDelta = quantity - item.quantity;
-      const newProgress = new Map(scannedItemsProgress);
-      const newValue = Math.max(0, currentProgress + quantityDelta);
-
-      if (newValue > 0) {
-        newProgress.set(key, newValue);
-      } else {
-        newProgress.delete(key);
-      }
-
-      set({
-        exitItems: updatedItems,
-        scannedItemsProgress: newProgress,
-        error: null
-      });
-    } else {
-      set({ exitItems: updatedItems, error: null });
+    if (item.physicalStock != null && quantity > item.physicalStock) {
+      set({ error: `Stock físico insuficiente. Disponible en bodega: ${item.physicalStock}` });
+      return;
     }
+
+    const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
+    const key = compositeKey(item.product.id, item.warehouseId);
+    const newProgress = new Map(scannedItemsProgress);
+    const newValue = Math.max(0, (scannedItemsProgress.get(key) || 0) + (quantity - item.quantity));
+    if (newValue > 0) {
+      newProgress.set(key, newValue);
+    } else {
+      newProgress.delete(key);
+    }
+
+    set({
+      exitItems: exitItems.map((current, i) =>
+        i === index ? { ...current, quantity, availableStock: Math.max(cap - quantity, 0) } : current
+      ),
+      scannedItemsProgress: newProgress,
+      error: null
+    });
   },
 
   setQuantity: (quantity: number) => {
@@ -1696,8 +1307,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   // Finalize exit
-  finalizeExit: async (userId: string): Promise<FinalizeExitResult> => {
-    const failure = (error: any): FinalizeExitResult => ({ ok: false, error, summary: null });
+  finalizeExit: async (): Promise<FinalizeExitResult> => {
+    const failure = (error: ExitFailure): FinalizeExitResult => ({ ok: false, error, summary: null });
+    const generation = sessionGeneration;
+    const isStale = () => generation !== sessionGeneration;
 
     if (get().loading) {
       console.warn('[finalizeExit] Ya se está procesando una salida, ignorando llamada duplicada');
@@ -1713,7 +1326,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder,
       deliveryObservations,
       canRegisterExit,
-      authorizationMessage
+      authorizationMessage,
+      authorizationCheckedOrderId
     } = get();
 
     if (exitItems.length === 0) {
@@ -1736,21 +1350,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return failure({ message: 'Debe seleccionar una orden de entrega' });
     }
 
-    if (
-      exitItems.some(
-        (item) => !Number.isFinite(item.quantity) || item.quantity <= 0
-      )
-    ) {
+    if (exitItems.some((item) => !Number.isFinite(item.quantity) || item.quantity <= 0)) {
       return failure({ message: 'Todas las cantidades deben ser números mayores que cero' });
     }
 
-    if (selectedDeliveryOrderId && !canRegisterExit) {
+    if (!canRegisterExit) {
       return failure({ message: authorizationMessage || UNAUTHORIZED_EXIT_MESSAGE });
     }
 
-    // Verificar que todos los items tengan warehouseId (resuelto desde la orden)
-    const itemsWithoutWarehouse = exitItems.filter((item) => !item.warehouseId);
-    if (itemsWithoutWarehouse.length > 0) {
+    if (exitItems.some((item) => !item.warehouseId)) {
       return failure({
         message: 'Algunos productos no tienen bodega asignada. Por favor, vuelva a escanearlos.'
       });
@@ -1767,33 +1375,36 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       orderCompleted: false
     };
 
-    // Establecer loading al inicio del proceso
-    set({ loading: true, loadingMessage: 'Registrando salida...' });
+    set({ loading: true, finalizing: true, loadingMessage: 'Registrando salida...' });
 
     try {
-      if (selectedDeliveryOrderId) {
+      // La autorización se verificó al seleccionar la orden; el RPC la vuelve a exigir en BD.
+      if (authorizationCheckedOrderId !== selectedDeliveryOrderId) {
+        set({ loadingMessage: 'Verificando autorización...' });
         const authorizationResult =
-          await get().validateCurrentUserAuthorizationForOrder(
-            selectedDeliveryOrderId
-          );
+          await get().validateCurrentUserAuthorizationForOrder(selectedDeliveryOrderId);
+        if (isStale()) {
+          return failure({ message: 'La sesión de salida se reinició antes de registrar' });
+        }
 
         if (!authorizationResult.canRegister) {
           set({
             loading: false,
+            finalizing: false,
             loadingMessage: null,
             canRegisterExit: false,
-            authorizationMessage:
-              authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
+            authorizationMessage: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
           });
-          return failure({
-            message: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE
-          });
+          return failure({ message: authorizationResult.message || UNAUTHORIZED_EXIT_MESSAGE });
         }
 
-        set({ canRegisterExit: true, authorizationMessage: null });
+        set({
+          canRegisterExit: true,
+          authorizationMessage: null,
+          authorizationCheckedOrderId: selectedDeliveryOrderId
+        });
       }
 
-      // Preparar datos según el modo de salida (cada item usa su propia bodega)
       const requestFingerprint = JSON.stringify({
         exitMode,
         selectedUserId,
@@ -1804,8 +1415,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           productId: item.product.id,
           warehouseId: item.warehouseId,
           quantity: item.quantity,
-          barcode: item.barcode,
-        })),
+          barcode: item.barcode
+        }))
       });
       let idempotencyKey = pendingExitRequests.get(requestFingerprint);
       if (!idempotencyKey) {
@@ -1818,19 +1429,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         'register_inventory_exits_batch',
         {
           p_exit_mode: exitMode,
-          p_delivered_to_user_id:
-            exitMode === 'direct_user' ? selectedUserId : null,
-          p_delivered_to_customer_id:
-            exitMode === 'direct_customer' ? selectedCustomerId : null,
+          p_delivered_to_user_id: exitMode === 'direct_user' ? selectedUserId : null,
+          p_delivered_to_customer_id: exitMode === 'direct_customer' ? selectedCustomerId : null,
           p_delivery_order_id: selectedDeliveryOrderId,
           p_delivery_observations: deliveryObservations.trim() || null,
           p_items: exitItems.map((item) => ({
             product_id: item.product.id,
             warehouse_id: item.warehouseId,
             quantity: item.quantity,
-            barcode_scanned: item.barcode,
+            barcode_scanned: item.barcode
           })) as unknown as Json,
-          p_idempotency_key: idempotencyKey,
+          p_idempotency_key: idempotencyKey
         }
       );
 
@@ -1841,13 +1450,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             ? UNAUTHORIZED_EXIT_MESSAGE
             : null;
 
-        if (backendDeniedMessage) {
-          set({
-            canRegisterExit: false,
-            authorizationMessage: backendDeniedMessage
-          });
-        }
-
         console.error('Error inserting exits:', exitsError);
         logOperationError({
           error_code: 'EXIT_INSERT_FAILED',
@@ -1855,8 +1457,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           module: 'exits',
           operation: 'finalize_exit',
           step: 'insert_records',
-          entity_type: selectedDeliveryOrderId ? 'delivery_order' : undefined,
-          entity_id: selectedDeliveryOrderId || undefined,
+          entity_type: 'delivery_order',
+          entity_id: selectedDeliveryOrderId,
           context: {
             productIds: exitItems.map((i) => i.product.id),
             quantities: exitItems.map((i) => i.quantity),
@@ -1865,172 +1467,105 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             deliveryOrderId: selectedDeliveryOrderId
           }
         });
-        set({ loading: false, loadingMessage: null });
+        if (!isStale()) {
+          set({
+            loading: false,
+            finalizing: false,
+            loadingMessage: null,
+            ...(backendDeniedMessage
+              ? { canRegisterExit: false, authorizationMessage: backendDeniedMessage }
+              : {})
+          });
+        }
         return failure({
-          ...exitsError,
-          message: backendDeniedMessage || exitsError.message
+          message: backendDeniedMessage || exitsError.message,
+          code: exitsError.code,
+          details: exitsError.details,
+          hint: exitsError.hint
         });
       }
 
       const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
       if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
-        set({ loading: false, loadingMessage: null });
-        return failure({
-          message: 'Error al registrar las salidas. No se insertaron registros.'
-        });
+        if (!isStale()) set({ loading: false, finalizing: false, loadingMessage: null });
+        return failure({ message: 'Error al registrar las salidas. No se insertaron registros.' });
       }
 
       if (insertedExitIds.length !== exitItems.length) {
         console.error(
           `Respuesta inválida: se insertaron ${insertedExitIds.length} de ${exitItems.length} salidas`
         );
-        set({ loading: false, loadingMessage: null });
+        if (!isStale()) set({ loading: false, finalizing: false, loadingMessage: null });
         return failure({
           message: 'La respuesta del registro de salidas está incompleta. Intente nuevamente.'
         });
       }
 
-      // delivered_quantity y estado de la orden se actualizan en BD (trigger tras INSERT).
-      // Refrescar caché local desde inventory_exits + delivery_order_items.
-      let orderCompleted = false;
-      if (selectedDeliveryOrderId) {
-        set({ loadingMessage: 'Sincronizando orden...' });
-
-        const orderIdToRefresh = selectedDeliveryOrderId;
-        const { registeredExitsCache } = get();
-        const finalCache = { ...registeredExitsCache };
-        if (!finalCache[orderIdToRefresh]) {
-          finalCache[orderIdToRefresh] = {};
-        }
-
-        try {
-          const { data: exitsData, error: exitsRefreshError } = await supabase
-            .from('inventory_exits')
-            .select('id, product_id, warehouse_id, quantity')
-            .eq('delivery_order_id', orderIdToRefresh);
-
-          const cancelledExitIds = await getActiveCancelledExitIds(
-            (exitsData || []).map((exit: any) => exit.id)
-          );
-
-          if (!exitsRefreshError && exitsData) {
-            const registeredByProduct: Record<string, number> = {};
-            exitsData.forEach((exit: any) => {
-              if (cancelledExitIds.has(exit.id)) return;
-              if (!exit.product_id || !exit.warehouse_id) return;
-              const key = compositeKey(exit.product_id, exit.warehouse_id);
-              registeredByProduct[key] =
-                (registeredByProduct[key] || 0) + (exit.quantity || 0);
-            });
-
-            const { data: orderData } = await supabase
-              .from('delivery_orders')
-              .select(
-                `
-                items:delivery_order_items!inner(
-                  id,
-                  product_id,
-                  warehouse_id,
-                  quantity,
-                  delivered_quantity,
-                  created_at,
-                  deleted_at
-                )
-              `
-              )
-              .eq('id', orderIdToRefresh)
-              .is('items.deleted_at', null)
-              .single();
-
-            if (orderData?.items) {
-              const fifoInputs = orderData.items.map((item: any) => ({
-                id: item.id,
-                product_id: item.product_id,
-                warehouse_id: item.warehouse_id,
-                quantity: Number(item.quantity) || 0,
-                db_delivered_quantity: Number(item.delivered_quantity) || 0,
-                created_at:
-                  item.created_at || '1970-01-01T00:00:00.000Z'
-              }));
-              const registeredTotalsForOrder = buildRegisteredTotalsByKey(
-                fifoInputs,
-                registeredByProduct
-              );
-
-              finalCache[orderIdToRefresh] = { ...registeredTotalsForOrder };
-              Object.keys(finalCache[orderIdToRefresh]).forEach((k) => {
-                if (finalCache[orderIdToRefresh][k] <= 0) {
-                  delete finalCache[orderIdToRefresh][k];
-                }
-              });
-
-              Object.entries(finalCache[orderIdToRefresh]).forEach(
-                ([cacheKey, total]) => {
-                  console.log(
-                    `[finalizeExit] ${cacheKey}: Refreshed cache aggregate=${total}`
-                  );
-                }
-              );
-
-              orderCompleted =
-                orderData.items.length > 0 &&
-                orderData.items.every(
-                  (item: any) =>
-                    (item.delivered_quantity || 0) >= (item.quantity || 0)
-                );
-            }
-
-            set({ registeredExitsCache: finalCache });
-          }
-        } catch (refreshError: any) {
-          console.error(
-            'Error refreshing delivery order cache from inventory_exits:',
-            refreshError
-          );
-          logOperationError({
-            error_code: 'EXIT_CACHE_REFRESH_FAILED',
-            error_message: refreshError?.message || String(refreshError),
-            module: 'exits',
-            operation: 'finalize_exit',
-            step: 'cache_refresh',
-            severity: 'warning',
-            entity_type: 'delivery_order',
-            entity_id: orderIdToRefresh,
-            context: {
-              exitMode,
-              deliveryOrderId: orderIdToRefresh
-            }
-          });
-        }
-
-        if (orderCompleted) {
-          set({ loadingMessage: 'Actualizando estado de la orden...' });
-          await get().selectDeliveryOrder(orderIdToRefresh);
-        }
-      }
-
-      // La UI conserva el resumen para mostrar la confirmación de éxito.
-      // El estado se reinicia cuando el operador elige su siguiente destino.
+      // La salida quedó registrada en BD: desde aquí el resultado es éxito aunque el refresco falle.
       pendingExitRequests.delete(requestFingerprint);
 
-      // Limpiar loading después de finalizar exitosamente
-      set({ loading: false, loadingMessage: null });
-      return {
+      // delivered_quantity y estado de la orden los actualiza un trigger en BD;
+      // refrescar la caché local para que la siguiente salida sobre la misma orden valide bien.
+      let orderCompleted = false;
+      if (!isStale()) set({ loadingMessage: 'Sincronizando orden...' });
+      try {
+        const refreshed = await loadOrderRegisteredTotals(selectedDeliveryOrderId);
+        if (refreshed) {
+          orderCompleted = refreshed.completed;
+          if (!isStale()) {
+            set({
+              registeredExitsCache: {
+                ...get().registeredExitsCache,
+                [selectedDeliveryOrderId]: refreshed.totals
+              }
+            });
+          }
+        }
+      } catch (refreshError: unknown) {
+        console.error('Error refreshing delivery order cache from inventory_exits:', refreshError);
+        logOperationError({
+          error_code: 'EXIT_CACHE_REFRESH_FAILED',
+          error_message: refreshError instanceof Error ? refreshError.message : String(refreshError),
+          module: 'exits',
+          operation: 'finalize_exit',
+          step: 'cache_refresh',
+          severity: 'warning',
+          entity_type: 'delivery_order',
+          entity_id: selectedDeliveryOrderId,
+          context: { exitMode, deliveryOrderId: selectedDeliveryOrderId }
+        });
+      }
+
+      const result: FinalizeExitResult = {
         ok: true,
         error: null,
         summary: { ...successSummary, orderCompleted }
       };
-    } catch (error: any) {
+      if (isStale()) {
+        // La salida quedó registrada pero la pantalla ya se reinició: avisar al volver.
+        set({ lastFinalizeResult: result });
+      } else {
+        set({ loading: false, finalizing: false, loadingMessage: null });
+      }
+      return result;
+    } catch (error: unknown) {
       console.error('Error finalizing exit:', error);
-      // Limpiar loading en caso de error
-      set({ loading: false, loadingMessage: null });
-      return failure(error);
+      const result = failure({ message: error instanceof Error ? error.message : String(error) });
+      if (isStale()) {
+        set({ lastFinalizeResult: result });
+      } else {
+        set({ loading: false, finalizing: false, loadingMessage: null });
+      }
+      return result;
     }
   },
 
+  dismissLastFinalizeResult: () => set({ lastFinalizeResult: null }),
+
   // Reset actions
   reset: () => {
+    invalidateSession();
     // NO resetear registeredExitsCache para mantener los valores actualizados
     // El cache se mantiene para que las validaciones futuras sean correctas
     set({
@@ -2040,10 +1575,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
+      currentPhysicalStock: null,
       targetOrderItemId: null,
+      warehouseCandidates: [],
       step: 'setup',
       error: null,
       loading: false,
+      finalizing: false,
       customersLoading: false,
       loadingMessage: null,
       exitMode: null,
@@ -2055,14 +1593,15 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       scannedItemsProgress: new Map(),
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       // registeredExitsCache se mantiene - NO resetear
       customerSearchTerm: '',
       deliveryObservations: ''
     });
   },
 
-  // Reset all state including cache - for navigation cleanup
-  resetAll: () => {
+  startNewSession: () => {
+    invalidateSession();
     set({
       warehouseId: null,
       exitItems: [],
@@ -2070,10 +1609,36 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
+      currentPhysicalStock: null,
       targetOrderItemId: null,
+      warehouseCandidates: [],
+      scannedItemsProgress: new Map(),
+      deliveryObservations: '',
       step: 'setup',
       error: null,
       loading: false,
+      finalizing: false,
+      loadingMessage: null
+    });
+  },
+
+  // Reset all state including cache - for navigation cleanup
+  resetAll: () => {
+    invalidateSession();
+    set({
+      warehouseId: null,
+      exitItems: [],
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      currentAvailableStock: 0,
+      currentPhysicalStock: null,
+      targetOrderItemId: null,
+      warehouseCandidates: [],
+      step: 'setup',
+      error: null,
+      loading: false,
+      finalizing: false,
       customersLoading: false,
       loadingMessage: null,
       exitMode: null,
@@ -2086,6 +1651,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       registeredExitsCache: {},
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       customerSearchTerm: '',
       deliveryObservations: ''
     });
@@ -2097,6 +1663,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   resetCurrentScan: () => {
     set({
+      warehouseId: null,
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
@@ -2106,6 +1673,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   changeDeliveryOrder: () => {
+    invalidateSession();
     set({
       step: 'setup',
       selectedDeliveryOrderId: null,
@@ -2115,23 +1683,29 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
+      currentPhysicalStock: null,
       targetOrderItemId: null,
+      warehouseCandidates: [],
       exitItems: [],
       scannedItemsProgress: new Map(),
       canRegisterExit: true,
       authorizationMessage: null,
+      authorizationCheckedOrderId: null,
       error: null
     });
   },
 
   goBackToSetup: () => {
+    invalidateSession();
     set({
-      step: get().selectedDeliveryOrder ? 'confirmation' : 'setup',
+      step: 'setup',
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
       currentAvailableStock: 0,
+      currentPhysicalStock: null,
       targetOrderItemId: null,
+      warehouseCandidates: [],
       error: null,
       exitItems: [], // Limpiar items de salida
       scannedItemsProgress: new Map(), // Limpiar progreso de escaneo

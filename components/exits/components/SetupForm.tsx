@@ -1,15 +1,17 @@
 import { useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { getColors } from '@/constants/theme';
+import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useTheme } from '@/components/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlowStepper } from '@/components/inventory-flow';
 import { DeliveryOrderSelector } from './DeliveryOrderSelector';
 import { ExitModePickerField } from './ExitModePickerField';
+import { ExitOrderSummary } from './ExitOrderSummary';
 import { UserSelectField } from './UserSelectField';
 
 const CUSTOMER_SEARCH_DEBOUNCE_MS = 800;
@@ -21,13 +23,14 @@ export function SetupForm() {
     selectedUserId,
     selectedCustomerId,
     selectedDeliveryOrderId,
+    selectedDeliveryOrder,
     users,
+    usersError,
     customers,
     loading,
     customersLoading,
     loadUsers,
     searchCustomers,
-    searchDeliveryOrdersByUser,
     setExitMode,
     setSelectedUser,
     setSelectedCustomer,
@@ -35,9 +38,8 @@ export function SetupForm() {
     getSelectedDeliveryOrderProgress,
     canRegisterExit,
     authorizationMessage,
-  } = useExitsStore();
+  } = useExitsStore(useShallow((state) => ({ exitMode: state.exitMode, selectedUserId: state.selectedUserId, selectedCustomerId: state.selectedCustomerId, selectedDeliveryOrderId: state.selectedDeliveryOrderId, selectedDeliveryOrder: state.selectedDeliveryOrder, users: state.users, usersError: state.usersError, customers: state.customers, loading: state.loading, customersLoading: state.customersLoading, loadUsers: state.loadUsers, searchCustomers: state.searchCustomers, setExitMode: state.setExitMode, setSelectedUser: state.setSelectedUser, setSelectedCustomer: state.setSelectedCustomer, reset: state.reset, getSelectedDeliveryOrderProgress: state.getSelectedDeliveryOrderProgress, canRegisterExit: state.canRegisterExit, authorizationMessage: state.authorizationMessage })));
 
-  const router = useRouter();
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
   const uiColorScheme = isDark ? 'dark' : 'light';
@@ -80,10 +82,6 @@ export function SetupForm() {
     Keyboard.dismiss();
   }, [searchCustomers, setSelectedCustomer]);
 
-  useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
-
   // Limpiar solo el input local cuando el componente se desmonta
   // NO llamar reset() aquí porque se ejecuta al cambiar de step a 'scanning'
   // y eso limpia todo el estado, volviendo a 'setup'
@@ -93,14 +91,11 @@ export function SetupForm() {
     };
   }, []);
 
-  // Refrescar datos cuando la pantalla recibe foco (sin refrescar constantemente)
+  // Una sola carga de usuarios por foco (también cubre el montaje inicial).
   useFocusEffect(
     useCallback(() => {
-      // Solo refrescar cuando la pantalla recibe foco, no en cada cambio de estado
-      loadUsers();
-      // No refrescar remisiones aquí - ya hay un useEffect separado que lo maneja
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []) // Sin dependencias para evitar refrescos constantes
+      void loadUsers();
+    }, [loadUsers])
   );
 
   // Commit search term only after the user pauses typing.
@@ -148,42 +143,12 @@ export function SetupForm() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
       <View style={styles.content}>
         <Card style={styles.card}>
-          <Text style={[styles.title, { 
-            color: Colors.text.primary,
-            fontWeight: '700'
-          }]}>Configuración de Salida</Text>
-          <Text style={[styles.subtitle, { 
-            color: Colors.text.primary,
-            opacity: 0.9
-          }]}>
-            Configure el tipo de salida y seleccione los datos requeridos
+          <Text style={[styles.title, { color: Colors.text.primary }]} accessibilityRole="header">Configurar salida</Text>
+          <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
+            Elige el destino, la orden y confirma antes de escanear.
           </Text>
 
-          <View style={styles.stepper} accessibilityLabel={`Paso ${currentStep} de 3`}>
-            {['Destino', 'Orden', 'Confirmar'].map((label, index) => {
-              const stepNumber = index + 1;
-              const isActive = stepNumber === currentStep;
-              const isComplete = stepNumber < currentStep;
-              return (
-                <View key={label} style={styles.stepperItem}>
-                  <View style={[
-                    styles.stepperDot,
-                    { backgroundColor: Colors.divider },
-                    (isActive || isComplete) && { backgroundColor: Colors.primary.main },
-                  ]}>
-                    <Text style={[
-                      styles.stepperNumber,
-                      { color: Colors.text.secondary },
-                      (isActive || isComplete) && { color: Colors.primary.contrastText },
-                    ]}>{isComplete ? '✓' : stepNumber}</Text>
-                  </View>
-                  <Text style={[styles.stepperLabel, { color: isActive ? Colors.primary.main : Colors.text.secondary }]}>
-                    {label}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
+          <FlowStepper labels={['Destino', 'Orden', 'Confirmar']} current={currentStep} />
 
           {/* Modo de Salida */}
           <View style={styles.formGroup}>
@@ -196,24 +161,6 @@ export function SetupForm() {
             />
           </View>
 
-          {/* Bodega - Solo se muestra info cuando hay orden seleccionada */}
-          {selectedDeliveryOrderId && (
-            <View style={[styles.formGroup, {
-              backgroundColor: Colors.primary.light + '15',
-              padding: 12,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: Colors.primary.main + '30',
-            }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <MaterialIcons name="warehouse" size={20} color={Colors.primary.main} />
-                <Text style={[styles.label, { color: Colors.primary.main, flex: 1, marginBottom: 0 }]}>
-                  La bodega se asigna automáticamente desde la orden de entrega
-                </Text>
-              </View>
-            </View>
-          )}
-
           {/* Campo condicional: Usuario Interno */}
           {exitMode === 'direct_user' && (
             <View style={styles.formGroup}>
@@ -222,7 +169,9 @@ export function SetupForm() {
                 <TouchableOpacity
                   onPress={() => loadUsers()}
                   style={styles.refreshButton}
-                  disabled={loading}>
+                  disabled={loading}
+                  accessibilityRole="button"
+                  accessibilityLabel="Actualizar usuarios">
                   <MaterialIcons
                     name="refresh"
                     size={20}
@@ -230,6 +179,15 @@ export function SetupForm() {
                   />
                 </TouchableOpacity>
               </View>
+              {usersError ? (
+                <View style={[styles.errorContainer, { backgroundColor: Colors.error.light + '20', borderColor: Colors.error.main }]} accessibilityLiveRegion="polite">
+                  <Text style={[styles.errorText, { color: Colors.error.main }]}>{usersError}</Text>
+                  <TouchableOpacity onPress={() => void loadUsers()} accessibilityRole="button" style={styles.retryInline}>
+                    <MaterialIcons name="refresh" size={18} color={Colors.primary.main} />
+                    <Text style={[styles.refreshText, { color: Colors.primary.main }]}>Reintentar</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
               <UserSelectField
                 users={users}
                 selectedUserId={selectedUserId}
@@ -240,26 +198,9 @@ export function SetupForm() {
             </View>
           )}
 
-          {/* Selector de Remisión (cuando se selecciona un usuario) */}
-          {exitMode === 'direct_user' && selectedUserId && (
-            <>
-              <View style={styles.refreshContainer}>
-                <TouchableOpacity
-                  onPress={() => searchDeliveryOrdersByUser(selectedUserId)}
-                  style={styles.refreshButtonInline}
-                  disabled={loading}>
-                  <MaterialIcons
-                    name="refresh"
-                    size={18}
-                    color={loading ? Colors.text.secondary : Colors.primary.main}
-                  />
-                  <Text style={[styles.refreshText, { color: loading ? Colors.text.secondary : Colors.primary.main }]}>
-                    Actualizar remisiones
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <DeliveryOrderSelector />
-            </>
+          {/* Selector de remisión: solo mientras no haya una elegida (el selector trae su propio "Actualizar") */}
+          {exitMode === 'direct_user' && selectedUserId && !selectedDeliveryOrderId && (
+            <DeliveryOrderSelector />
           )}
 
           {/* Campo condicional: Cliente */}
@@ -277,6 +218,8 @@ export function SetupForm() {
                   placeholderTextColor={Colors.text.secondary}
                   value={searchInput}
                   onChangeText={handleCustomerInputChange}
+                  editable={!loading}
+                  accessibilityLabel="Buscar cliente"
                 />
                 {(searchInput.trim().length > 0 || selectedCustomerId) && (
                   <TouchableOpacity
@@ -346,10 +289,13 @@ export function SetupForm() {
             </View>
           )}
 
-          {/* Selector compacto de Orden de Entrega para Salida a Cliente */}
-          {exitMode === 'direct_customer' && selectedCustomerId && (
+          {/* Selector de orden de entrega para salida a cliente: solo mientras no haya una elegida */}
+          {exitMode === 'direct_customer' && selectedCustomerId && !selectedDeliveryOrderId && (
             <DeliveryOrderSelector />
           )}
+
+          {/* Paso 3: resumen de la orden elegida y arranque del escaneo (reemplaza la pantalla de confirmación) */}
+          {selectedDeliveryOrderId && selectedDeliveryOrder ? <ExitOrderSummary /> : null}
 
           {selectedDeliveryOrderId && !canRegisterExit && (
             <View style={[styles.errorContainer, {
@@ -378,28 +324,18 @@ export function SetupForm() {
             <Button
               title="Cancelar"
               onPress={() => {
-                if (exitMode || selectedUserId || selectedCustomerId) {
+                // Solo pedir confirmación cuando hay algo que perder (destino u orden elegidos).
+                if (selectedUserId || selectedCustomerId || selectedDeliveryOrderId) {
                   Alert.alert(
                     'Cancelar Configuración',
                     '¿Está seguro que desea cancelar? Se perderán todos los datos configurados.',
                     [
-                      {
-                        text: 'No',
-                        style: 'cancel',
-                      },
-                      {
-                        text: 'Sí, cancelar',
-                        style: 'destructive',
-                        onPress: () => {
-                          reset();
-                          router.back();
-                        },
-                      },
+                      { text: 'No', style: 'cancel' },
+                      { text: 'Sí, cancelar', style: 'destructive', onPress: () => reset() },
                     ]
                   );
                 } else {
                   reset();
-                  router.back();
                 }
               }}
               variant="outline"
@@ -413,174 +349,35 @@ export function SetupForm() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-  },
-  card: {
-    marginBottom: 20,
-    padding: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginBottom: 24,
-    fontWeight: '500',
-  },
-  stepper: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  stepperItem: { alignItems: 'center', flex: 1 },
-  stepperDot: {
-    alignItems: 'center',
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  stepperNumber: { fontSize: 13, fontWeight: '700' },
-  stepperLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
-  formGroup: {
-    marginBottom: 20,
-  },
-  helperText: { fontSize: 12, marginTop: 6 },
-  selectionSummary: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    padding: 10,
-  },
-  selectionSummaryText: { flex: 1, fontSize: 13, fontWeight: '600' },
-  fieldHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '700',
-    flex: 1,
-  },
-  refreshButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  refreshContainer: {
-    marginBottom: 16,
-    alignItems: 'flex-end',
-  },
-  refreshButtonInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 6,
-  },
-  refreshText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-  },
-  inputContainer: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  inputWithClearButton: {
-    paddingRight: 48,
-  },
-  clearButton: {
-    position: 'absolute',
-    right: 12,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-  },
-  loadingText: {
-    marginLeft: 12,
-    fontSize: 14,
-  },
-  customersList: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    maxHeight: 250,
-  },
-  customerItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  customerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  customerIdNumber: {
-    fontSize: 14,
-  },
-  noResults: {
-    marginTop: 12,
-    padding: 16,
-    textAlign: 'center',
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  errorContainer: {
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  errorText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  buttonsContainer: {
-    marginTop: 8,
-    gap: 12,
-  },
-  cancelButton: {
-    marginTop: 0,
-  },
-  warningContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  container: { flex: 1 },
+  content: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xl },
+  card: { marginBottom: Spacing.xl, padding: Spacing.lg },
+  title: { ...Typography.section },
+  subtitle: { ...Typography.bodySmall, marginBottom: Spacing.xxl, marginTop: Spacing.sm },
+  formGroup: { marginBottom: Spacing.xl },
+  helperText: { ...Typography.metadata, marginTop: Spacing.sm },
+  selectionSummary: { alignItems: 'center', borderRadius: Radius.chip, flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm, padding: Spacing.md },
+  selectionSummaryText: { ...Typography.bodySmallStrong, flex: 1 },
+  fieldHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  label: { ...Typography.bodySmallStrong, flex: 1 },
+  refreshButton: { alignItems: 'center', height: 44, justifyContent: 'center', marginLeft: Spacing.sm, width: 44 },
+  refreshText: { ...Typography.bodySmallStrong },
+  retryInline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.sm, minHeight: 44 },
+  input: { ...Typography.body, borderRadius: Radius.control, borderWidth: 1.5, minHeight: 52, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  inputContainer: { justifyContent: 'center', position: 'relative' },
+  inputWithClearButton: { paddingRight: 48 },
+  clearButton: { alignItems: 'center', borderRadius: Radius.pill, height: 44, justifyContent: 'center', position: 'absolute', right: Spacing.xs, width: 44 },
+  loadingContainer: { alignItems: 'center', borderRadius: Radius.chip, flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md, padding: Spacing.md },
+  loadingText: { ...Typography.bodySmall },
+  customersList: { borderRadius: Radius.control, borderWidth: 1, marginTop: Spacing.sm, maxHeight: 250 },
+  customerItem: { borderBottomWidth: 1, minHeight: 56, padding: Spacing.lg },
+  customerName: { ...Typography.bodyStrong, marginBottom: Spacing.xs },
+  customerIdNumber: { ...Typography.bodySmall },
+  noResults: { ...Typography.bodySmall, fontStyle: 'italic', marginTop: Spacing.md, padding: Spacing.lg, textAlign: 'center' },
+  errorContainer: { borderRadius: Radius.chip, borderWidth: 1, marginBottom: Spacing.lg, marginTop: Spacing.lg, padding: Spacing.md },
+  errorText: { ...Typography.bodySmall },
+  buttonsContainer: { gap: Spacing.md, marginTop: Spacing.sm },
+  cancelButton: { marginTop: 0 },
+  warningContainer: { alignItems: 'center', borderRadius: Radius.chip, borderWidth: 1, flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md, padding: Spacing.md },
+  warningText: { ...Typography.bodySmall, flex: 1 },
 });

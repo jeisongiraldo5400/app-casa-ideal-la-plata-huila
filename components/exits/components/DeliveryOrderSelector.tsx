@@ -1,5 +1,6 @@
 import { useExitsStore, type DeliveryOrder } from '@/components/exits/infrastructure/store/exitsStore';
-import { getColors } from '@/constants/theme';
+import { useShallow } from 'zustand/react/shallow';
+import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useTheme } from '@/components/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,7 +29,7 @@ export function DeliveryOrderSelector() {
     searchDeliveryOrdersByCustomer,
     searchDeliveryOrdersByUser,
     selectDeliveryOrder,
-  } = useExitsStore();
+  } = useExitsStore(useShallow((state) => ({ exitMode: state.exitMode, selectedCustomerId: state.selectedCustomerId, selectedUserId: state.selectedUserId, deliveryOrders: state.deliveryOrders, selectedDeliveryOrderId: state.selectedDeliveryOrderId, loading: state.loading, error: state.error, searchDeliveryOrdersByCustomer: state.searchDeliveryOrdersByCustomer, searchDeliveryOrdersByUser: state.searchDeliveryOrdersByUser, selectDeliveryOrder: state.selectDeliveryOrder })));
 
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
@@ -86,6 +87,21 @@ export function DeliveryOrderSelector() {
     );
   }
 
+  if (deliveryOrders.length === 0 && error) {
+    // Un fallo de red no es "no hay nada pendiente": mostrar el error y ofrecer reintentar.
+    return (
+      <View style={styles.stateContainer} accessibilityLiveRegion="assertive">
+        <MaterialIcons name="error-outline" size={38} color={Colors.error.main} />
+        <Text style={[styles.emptyTitle, { color: Colors.error.main }]}>No se pudieron cargar las {pluralLabel}</Text>
+        <Text style={[styles.stateText, { color: Colors.text.secondary }]}>{error}</Text>
+        <TouchableOpacity onPress={() => void refresh()} style={styles.retryButton} accessibilityRole="button">
+          <MaterialIcons name="refresh" size={18} color={Colors.primary.main} />
+          <Text style={[styles.linkText, { color: Colors.primary.main }]}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (deliveryOrders.length === 0) {
     return (
       <View style={styles.stateContainer}>
@@ -94,7 +110,7 @@ export function DeliveryOrderSelector() {
         <Text style={[styles.stateText, { color: Colors.text.secondary }]}>El destinatario seleccionado no tiene entregas disponibles.</Text>
         <TouchableOpacity onPress={() => void refresh()} style={styles.retryButton} accessibilityRole="button">
           <MaterialIcons name="refresh" size={18} color={Colors.primary.main} />
-          <Text style={{ color: Colors.primary.main, fontWeight: '700' }}>Actualizar</Text>
+          <Text style={[styles.linkText, { color: Colors.primary.main }]}>Actualizar</Text>
         </TouchableOpacity>
       </View>
     );
@@ -107,7 +123,7 @@ export function DeliveryOrderSelector() {
           <Text style={[styles.title, { color: Colors.text.primary }]}>Seleccione {isRemissionMode ? 'la remisión' : 'la orden'}</Text>
           <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>Mostrando {visibleOrders.length} de {deliveryOrders.length}</Text>
         </View>
-        <TouchableOpacity onPress={() => void refresh()} disabled={loading} style={styles.iconButton} accessibilityLabel={`Actualizar ${pluralLabel}`}>
+        <TouchableOpacity onPress={() => void refresh()} disabled={loading} style={styles.iconButton} accessibilityRole="button" accessibilityLabel={`Actualizar ${pluralLabel}`}>
           {loading ? <ActivityIndicator size="small" color={Colors.primary.main} /> : <MaterialIcons name="refresh" size={21} color={Colors.primary.main} />}
         </TouchableOpacity>
       </View>
@@ -145,7 +161,7 @@ export function DeliveryOrderSelector() {
           style={[styles.loadMore, { borderColor: Colors.divider }]}
           accessibilityRole="button"
           accessibilityLabel={`Cargar ${Math.min(ORDER_PAGE_SIZE, deliveryOrders.length - visibleOrders.length)} ${pluralLabel} más`}>
-          <Text style={{ color: Colors.primary.main, fontWeight: '700' }}>Cargar 5 más</Text>
+          <Text style={[styles.linkText, { color: Colors.primary.main }]}>Cargar {Math.min(ORDER_PAGE_SIZE, deliveryOrders.length - visibleOrders.length)} más</Text>
           <MaterialIcons name="expand-more" size={20} color={Colors.primary.main} />
         </TouchableOpacity>
       ) : (
@@ -218,36 +234,37 @@ function OrderRow({ order, selected, selecting, isLast, disabled, colors, onPres
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: 20, marginTop: 4 },
-  headingRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  container: { marginBottom: Spacing.xl, marginTop: Spacing.xs },
+  headingRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.sm },
   headingCopy: { flex: 1 },
-  title: { fontSize: 16, fontWeight: '800' },
-  subtitle: { fontSize: 12, marginTop: 2 },
-  iconButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 },
-  table: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  tableHeader: { borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8 },
-  headerMain: { flex: 1, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  headerPending: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, width: 68 },
-  row: { alignItems: 'center', flexDirection: 'row', minHeight: 74, paddingHorizontal: 12, paddingVertical: 10 },
+  title: { ...Typography.bodyStrong, fontSize: 16 },
+  subtitle: { ...Typography.metadata, marginTop: 2 },
+  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  linkText: { ...Typography.bodySmallStrong },
+  table: { borderRadius: Radius.control, borderWidth: 1, overflow: 'hidden' },
+  tableHeader: { borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  headerMain: { ...Typography.label, flex: 1, fontSize: 10 },
+  headerPending: { ...Typography.label, fontSize: 10, width: 68 },
+  row: { alignItems: 'center', flexDirection: 'row', minHeight: 74, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   rowMain: { flex: 1, minWidth: 0 },
-  rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  destination: { flex: 1, fontSize: 14, fontWeight: '800' },
-  status: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
-  statusText: { fontSize: 10, fontWeight: '800' },
-  meta: { fontSize: 11, marginTop: 5 },
-  pendingColumn: { alignItems: 'center', marginLeft: 8, width: 48 },
-  pendingQuantity: { fontSize: 17, fontWeight: '800' },
-  unitsLabel: { fontSize: 10 },
-  progressRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 7 },
+  rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs },
+  destination: { ...Typography.bodySmallStrong, flex: 1 },
+  status: { borderRadius: Radius.chip, paddingHorizontal: Spacing.xs, paddingVertical: 3 },
+  statusText: { ...Typography.label, fontSize: 10, letterSpacing: 0.2 },
+  meta: { ...Typography.metadata, fontSize: 11, marginTop: Spacing.xs },
+  pendingColumn: { alignItems: 'center', marginLeft: Spacing.sm, width: 48 },
+  pendingQuantity: { ...Typography.bodyStrong, fontSize: 17, lineHeight: 22 },
+  unitsLabel: { ...Typography.metadata, fontSize: 10 },
+  progressRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.sm },
   progressTrack: { borderRadius: 3, flex: 1, height: 5, overflow: 'hidden' },
   progressFill: { height: '100%' },
-  progressText: { fontSize: 10, width: 28 },
-  loadMore: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', marginTop: 10, padding: 11 },
-  endText: { fontSize: 11, marginTop: 9, textAlign: 'center' },
-  stateContainer: { alignItems: 'center', marginBottom: 20, paddingHorizontal: 20, paddingVertical: 24 },
-  stateText: { fontSize: 13, marginTop: 7, textAlign: 'center' },
-  emptyTitle: { fontSize: 15, fontWeight: '800', marginTop: 8 },
-  retryButton: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 12, padding: 8 },
-  inlineError: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 8, marginBottom: 10, padding: 10 },
-  inlineErrorText: { flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+  progressText: { ...Typography.metadata, fontSize: 10, width: 28 },
+  loadMore: { alignItems: 'center', borderRadius: Radius.chip, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.sm, minHeight: 44, padding: Spacing.sm },
+  endText: { ...Typography.metadata, fontSize: 11, marginTop: Spacing.sm, textAlign: 'center' },
+  stateContainer: { alignItems: 'center', marginBottom: Spacing.xl, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xxl },
+  stateText: { ...Typography.caption, marginTop: Spacing.sm, textAlign: 'center' },
+  emptyTitle: { ...Typography.bodyStrong, marginTop: Spacing.sm },
+  retryButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.md, minHeight: 44, padding: Spacing.sm },
+  inlineError: { alignItems: 'center', borderRadius: Radius.chip, borderWidth: 1, flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm, padding: Spacing.sm },
+  inlineErrorText: { ...Typography.metadata, flex: 1, fontWeight: '700' },
 });

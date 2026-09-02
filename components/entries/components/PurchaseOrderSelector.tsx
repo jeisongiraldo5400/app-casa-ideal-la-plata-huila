@@ -1,4 +1,5 @@
 import React from "react";
+import { useShallow } from 'zustand/react/shallow';
 
 import {
     Alert,
@@ -13,8 +14,10 @@ import { MaterialIcons } from "@expo/vector-icons";
 
 // UI
 import { Card } from "@/components/ui/Card";
-import { getColors } from "@/constants/theme";
+import { StatusChip } from "@/components/ui/StatusChip";
+import { Radius, Spacing, Typography, getColors } from "@/constants/theme";
 import { useTheme } from '@/components/theme';
+import { purchaseOrderStatusLabel, purchaseOrderStatusTone } from '@/lib/inventoryOrderLabels';
 
 // Hooks
 import { useUserRoles } from "@/hooks/useUserRoles";
@@ -39,7 +42,7 @@ export function PurchaseOrderSelector({
 }: PurchaseOrderSelectorProps) {
 
   // Stores
-  const { purchaseOrderValidations, loadPurchaseOrders: loadEntriesPurchaseOrders } = useEntriesStore();
+  const { purchaseOrderValidations, loadPurchaseOrders: loadEntriesPurchaseOrders } = useEntriesStore(useShallow((state) => ({ purchaseOrderValidations: state.purchaseOrderValidations, loadPurchaseOrders: state.loadPurchaseOrders })));
   const { markOrderAsReceived, validateOrderIsComplete } = usePurchaseOrders();
 
   // Hooks
@@ -68,32 +71,6 @@ export function PurchaseOrderSelector({
       });
     } catch {
       return "Fecha inválida";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return Colors.warning.main;
-      case "approved":
-        return Colors.info.main;
-      case "received":
-        return Colors.success.main;
-      default:
-        return Colors.text.secondary;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "Pendiente";
-      case "approved":
-        return "Aprobada";
-      case "received":
-        return "Recibida";
-      default:
-        return status;
     }
   };
 
@@ -178,35 +155,23 @@ export function PurchaseOrderSelector({
             }}
             activeOpacity={isOrderComplete ? 1 : 0.7}
             disabled={isOrderComplete}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: isSelected, disabled: isOrderComplete }}
+            accessibilityLabel={`Orden ${order.order_number || order.id.slice(0, 8)}, ${purchaseOrderStatusLabel(order.status)}`}
           >
             <Card
               style={[
                 styles.orderCard,
                 { borderColor: Colors.divider },
-                ...(isSelected ? [{ borderColor: Colors.primary.main, backgroundColor: Colors.primary.light }] : []),
-                ...(isOrderComplete ? [{ opacity: 0.7, backgroundColor: Colors.success.light + "20" }] : []),
+                ...(isSelected ? [{ borderColor: Colors.primary.main, backgroundColor: `${Colors.primary.main}12` }] : []),
+                ...(isOrderComplete ? [{ opacity: 0.7, backgroundColor: `${Colors.success.main}14` }] : []),
               ]}
             >
               <View style={styles.orderHeader}>
                 <View style={styles.orderHeaderLeft}>
                   <Text style={[styles.orderId, { color: Colors.text.primary }]}>OC #{order.order_number || order.id.slice(0, 8)}</Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(order.status) },
-                    ]}
-                  >
-                    <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
-                  </View>
-                  {isComplete ? (
-                    <View style={[styles.completePurchaseOrderCard, { backgroundColor: Colors.success.main }]}>
-                      <Text style={styles.completePurchaseOrderText}>✓</Text>
-                    </View>
-                  ) : (
-                    <View style={[styles.incompletePurchaseOrderCard, { backgroundColor: Colors.error.main }]}>
-                      <Text style={styles.incompletePurchaseOrderText}>✗</Text>
-                    </View>
-                  )}
+                  <StatusChip label={purchaseOrderStatusLabel(order.status)} tone={purchaseOrderStatusTone(order.status)} />
+                  <StatusChip label={isComplete ? 'Completa' : 'Incompleta'} tone={isComplete ? 'success' : 'error'} icon={isComplete ? 'check-circle' : 'radio-button-unchecked'} />
                 </View>
                 <Text style={[styles.orderDate, { color: Colors.text.secondary }]}>
                   {formatDate(order.created_at)}
@@ -239,7 +204,7 @@ export function PurchaseOrderSelector({
 
               {isOrderComplete && order.status !== 'received' && (
                 <View style={[styles.completeMessageContainer, {
-                  backgroundColor: Colors.success.light + "30",
+                  backgroundColor: `${Colors.success.main}14`,
                   borderColor: Colors.success.main
                 }]}>
                   <Text style={[styles.completeMessageText, { color: Colors.success.main }]}>
@@ -247,9 +212,10 @@ export function PurchaseOrderSelector({
                   </Text>
                   {canMarkOrderAsReceived() && (
                     <TouchableOpacity
-                      style={[styles.markReceivedButton, { backgroundColor: Colors.success.main + "15" }]}
+                      style={[styles.markReceivedButton, { backgroundColor: `${Colors.success.main}15` }]}
                       onPress={() => handleMarkAsReceived(order.id)}
                       activeOpacity={0.7}
+                      accessibilityRole="button"
                     >
                       <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
                       <Text style={[styles.markReceivedButtonText, { color: Colors.success.main }]}>Marcar como recibida</Text>
@@ -259,7 +225,7 @@ export function PurchaseOrderSelector({
               )}
 
               {order.status === 'received' && (
-                <View style={[styles.receivedBadge, { backgroundColor: Colors.success.main + "15" }]}>
+                <View style={[styles.receivedBadge, { backgroundColor: `${Colors.success.main}15` }]}>
                   <MaterialIcons name="check-circle" size={20} color={Colors.success.main} />
                   <Text style={[styles.receivedText, { color: Colors.success.main }]}>Orden recibida</Text>
                 </View>
@@ -301,165 +267,29 @@ export function PurchaseOrderSelector({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  emptyCard: {
-    padding: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: "center",
-  },
-  orderCard: {
-    marginBottom: 12,
-    padding: 16,
-    borderWidth: 2,
-  },
-  orderHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  orderHeaderLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  orderId: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  orderDate: {
-    fontSize: 12,
-  },
-  orderNotes: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontStyle: "italic",
-  },
-  orderSummary: {
-    marginBottom: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-  },
-  summaryText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  productsList: {
-    marginTop: 8,
-  },
-  productsListTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  productItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  productName: {
-    flex: 1,
-    fontSize: 13,
-    marginRight: 8,
-  },
-  productQuantity: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  moreProducts: {
-    fontSize: 12,
-    fontStyle: "italic",
-    marginTop: 4,
-  },
-  selectedIndicator: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    alignItems: "center",
-  },
-  selectedText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  completePurchaseOrderCard: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  completePurchaseOrderText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  incompletePurchaseOrderCard: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  incompletePurchaseOrderText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  completeMessageContainer: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  completeMessageText: {
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  markReceivedButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 8,
-    gap: 8,
-  },
-  markReceivedButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  receivedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  receivedText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  container: { flex: 1 },
+  emptyCard: { alignItems: "center", justifyContent: "center", padding: Spacing.xxl },
+  emptyText: { ...Typography.bodySmall, textAlign: "center" },
+  orderCard: { borderWidth: 2, marginBottom: Spacing.md, padding: Spacing.lg },
+  orderHeader: { alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between", marginBottom: Spacing.sm },
+  orderHeaderLeft: { alignItems: "center", flex: 1, flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
+  orderId: { ...Typography.bodyStrong, fontSize: 16 },
+  orderDate: { ...Typography.metadata },
+  orderNotes: { ...Typography.bodySmall, fontStyle: "italic", marginBottom: Spacing.sm },
+  orderSummary: { borderTopWidth: 1, marginBottom: Spacing.md, paddingTop: Spacing.sm },
+  summaryText: { ...Typography.bodySmall, fontWeight: "500" },
+  productsList: { marginTop: Spacing.sm },
+  productsListTitle: { ...Typography.bodySmallStrong, marginBottom: Spacing.sm },
+  productItem: { alignItems: "center", borderRadius: Radius.chip, flexDirection: "row", justifyContent: "space-between", marginBottom: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+  productName: { ...Typography.caption, flex: 1, marginRight: Spacing.sm },
+  productQuantity: { ...Typography.caption, fontWeight: "500" },
+  moreProducts: { ...Typography.metadata, fontStyle: "italic", marginTop: Spacing.xs },
+  selectedIndicator: { alignItems: "center", borderTopWidth: 1, marginTop: Spacing.md, paddingTop: Spacing.md },
+  selectedText: { ...Typography.bodySmallStrong },
+  completeMessageContainer: { borderRadius: Radius.chip, borderWidth: 1, marginTop: Spacing.md, padding: Spacing.md },
+  completeMessageText: { ...Typography.bodySmallStrong, marginBottom: Spacing.md, textAlign: "center" },
+  markReceivedButton: { alignItems: "center", borderRadius: Radius.chip, flexDirection: "row", gap: Spacing.sm, justifyContent: "center", marginTop: Spacing.sm, minHeight: 44, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  markReceivedButtonText: { ...Typography.bodySmallStrong },
+  receivedBadge: { alignItems: "center", borderRadius: Radius.chip, flexDirection: "row", gap: Spacing.sm, justifyContent: "center", marginTop: Spacing.md, minHeight: 44, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  receivedText: { ...Typography.bodySmallStrong },
 });

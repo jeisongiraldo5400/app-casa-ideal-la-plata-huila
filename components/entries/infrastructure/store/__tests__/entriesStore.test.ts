@@ -92,11 +92,11 @@ describe('entriesStore', () => {
       expect(state.error).toMatch(/orden de compra/i);
     });
 
-    it('uses a real confirmation step before scanning', () => {
+    it('validates the setup and goes straight to scanning (no intermediate confirmation screen)', () => {
       useEntriesStore.setState({ entryType: 'INITIAL_LOAD', warehouseId: 'warehouse-1', step: 'setup' });
 
       expect(useEntriesStore.getState().openEntryConfirmation()).toBe(true);
-      expect(useEntriesStore.getState().step).toBe('confirmation');
+      expect(useEntriesStore.getState().step).toBe('setup');
 
       useEntriesStore.getState().startEntry();
       expect(useEntriesStore.getState().step).toBe('scanning');
@@ -271,18 +271,19 @@ describe('entriesStore', () => {
 
       useEntriesStore.setState({ purchaseOrders: [mockOrder as any] });
 
+      // Las entradas registradas se consultan con .in() (una sola función para 1 o N órdenes).
+      const entriesResult = () =>
+        Promise.resolve({
+          data: [
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 10 },
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 5 },
+          ],
+          error: null,
+        });
       (supabase.from as jest.Mock).mockImplementation(() => ({
         select: () => ({
-          eq: () => ({
-            is: () =>
-              Promise.resolve({
-                data: [
-                  { product_id: 'product-1', quantity: 10 },
-                  { product_id: 'product-1', quantity: 5 },
-                ],
-                error: null,
-              }),
-          }),
+          eq: () => ({ is: entriesResult }),
+          in: () => ({ is: entriesResult }),
         }),
       }));
 

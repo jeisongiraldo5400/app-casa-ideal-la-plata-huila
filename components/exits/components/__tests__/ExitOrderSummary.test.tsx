@@ -1,6 +1,6 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
-import { ExitOrderConfirmation } from '../ExitOrderConfirmation';
+import { ExitOrderSummary } from '../ExitOrderSummary';
 
 const mockStartExit = jest.fn();
 const mockChangeDeliveryOrder = jest.fn();
@@ -55,26 +55,26 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
-describe('ExitOrderConfirmation', () => {
+describe('ExitOrderSummary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsDark = false;
     mockObservation = '';
   });
 
-  it('permite continuar sin observaciones desde el pie fijo', () => {
-    const screen = render(<ExitOrderConfirmation />);
+  it('permite comenzar a escanear sin observaciones', () => {
+    const screen = render(<ExitOrderSummary />);
 
     expect(screen.getByText('#OE-101')).toBeTruthy();
     expect(screen.getByText('1 producto · 3 unidades')).toBeTruthy();
     expect(screen.queryByLabelText('Observación de la entrega')).toBeNull();
 
-    fireEvent.press(screen.getByText('Continuar sin observaciones'));
+    fireEvent.press(screen.getByText('Comenzar a escanear'));
     expect(mockStartExit).toHaveBeenCalledTimes(1);
   });
 
   it('despliega la observación únicamente cuando el usuario la solicita', () => {
-    const screen = render(<ExitOrderConfirmation />);
+    const screen = render(<ExitOrderSummary />);
 
     fireEvent.press(screen.getByText('Agregar observación'));
     const input = screen.getByLabelText('Observación de la entrega');
@@ -86,9 +86,9 @@ describe('ExitOrderConfirmation', () => {
   it('conserva contraste en modo oscuro y permite cambiar de orden', () => {
     mockIsDark = true;
     mockObservation = 'Entrega parcial';
-    const screen = render(<ExitOrderConfirmation />);
+    const screen = render(<ExitOrderSummary />);
 
-    expect(screen.getByText('Guardar observación y continuar')).toBeTruthy();
+    expect(screen.getByText('Guardar observación y escanear')).toBeTruthy();
     fireEvent.press(screen.getByText('Cambiar orden'));
     expect(mockChangeDeliveryOrder).toHaveBeenCalledTimes(1);
   });

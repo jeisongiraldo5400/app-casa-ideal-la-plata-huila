@@ -96,9 +96,10 @@ export function MyOrdersScreen() {
         return;
       }
 
-      selectedState.openExitConfirmation();
+      // Valida destino + orden; la pantalla de salidas abre directamente en el resumen (paso 3).
+      const ready = selectedState.openExitConfirmation();
       selectedState = useExitsStore.getState();
-      if (selectedState.step !== 'confirmation') {
+      if (!ready) {
         Alert.alert('No se pudo confirmar la salida', selectedState.error || 'Revisa los datos de la orden e intenta nuevamente.');
         return;
       }

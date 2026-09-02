@@ -16,6 +16,13 @@ import {
   fetchSuppliers,
   fetchWarehouses,
 } from "../services/entriesService";
+import {
+  EntryValidationQueryError,
+  fetchEntryValidationData,
+  fetchInventoryEntriesForOrders,
+  fetchPurchaseOrderDetail,
+} from "../services/entriesQueries";
+import { errorMessage } from "@/lib/errorMessage";
 
 // types
 import { Database, type Json } from "@/types/database.types";
@@ -30,7 +37,7 @@ type PurchaseOrderItem =
   Database["public"]["Tables"]["purchase_order_items"]["Row"];
 
 export type EntryType = "PO_ENTRY" | "ENTRY" | "INITIAL_LOAD";
-export type EntryStep = "flow-selection" | "setup" | "confirmation" | "scanning" | "product-form";
+export type EntryStep = "flow-selection" | "setup" | "scanning" | "product-form";
 export type EntryUiStage = "idle" | "product_review" | "entry_review" | "success";
 
 export type EntryScanResult =
@@ -50,9 +57,11 @@ export interface FinalizeEntrySummary {
   orderCompleted: boolean;
 }
 
+export type EntryFailure = { message: string; code?: string; details?: string };
+
 export type FinalizeEntryResult =
   | { ok: true; error: null; summary: FinalizeEntrySummary }
-  | { ok: false; error: any; summary: null };
+  | { ok: false; error: EntryFailure; summary: null };
 
 export interface EntryItem {
   product: Product;
@@ -103,7 +112,47 @@ const pendingProductRequests = new Map<string, string>();
  * (p. ej. el usuario cambia de pestaña mientras hay un scan/finalize en curso). */
 let resetGeneration = 0;
 
-interface EntriesState {
+/** true mientras register_inventory_entries_batch está en vuelo, aunque el store se resetee. */
+let finalizeInFlight = false;
+
+const CATALOG_LOAD_ERROR =
+  "No fue posible cargar los datos. Revisa tu conexión e intenta de nuevo.";
+
+/**
+ * Caché (producto -> recibido, truncado a lo pedido y sin ceros) y validación de una orden
+ * a partir de sus entradas registradas.
+ */
+function summarizeOrderProgress(
+  order: PurchaseOrderWithItems,
+  entries: { product_id: string | null; quantity: number }[]
+): {
+  cache: Record<string, number>;
+  validation: { isComplete: boolean; totalQuantityOfInventoryEntries: number; totalItemsQuantity: number };
+} {
+  const registeredByProduct: Record<string, number> = {};
+  entries.forEach((entry) => {
+    if (!entry.product_id) return;
+    registeredByProduct[entry.product_id] = (registeredByProduct[entry.product_id] || 0) + (entry.quantity || 0);
+  });
+  const cache: Record<string, number> = {};
+  let totalQuantityOfInventoryEntries = 0;
+  const totalItemsQuantity = order.items.reduce((sum, item) => {
+    const clampedRegistered = Math.min(registeredByProduct[item.product_id] || 0, item.quantity);
+    if (clampedRegistered > 0) cache[item.product_id] = clampedRegistered;
+    totalQuantityOfInventoryEntries += clampedRegistered;
+    return sum + item.quantity;
+  }, 0);
+  return {
+    cache,
+    validation: {
+      isComplete: totalQuantityOfInventoryEntries >= totalItemsQuantity && totalItemsQuantity > 0,
+      totalQuantityOfInventoryEntries,
+      totalItemsQuantity,
+    },
+  };
+}
+
+export interface EntriesState {
   // Sesión de entrada (null hasta elegir tipo en flow-selection)
   entryType: EntryType | null;
   supplierId: string | null;
@@ -123,8 +172,18 @@ interface EntriesState {
 
   // Estado de UI
   loading: boolean;
+  /** true solo mientras register_inventory_entries_batch está en vuelo (único caso de modal bloqueante). */
+  finalizing: boolean;
   loadingMessage: string | null;
   error: string | null;
+  /** Fallo al cargar proveedores/bodegas/órdenes/categorías; los pickers lo muestran con reintentar. */
+  catalogError: string | null;
+  /**
+   * Resultado de un finalize que terminó después de que la pantalla se reseteó
+   * (el operario cambió de pestaña). Se muestra al volver y se descarta con
+   * dismissLastFinalizeResult().
+   */
+  lastFinalizeResult: FinalizeEntryResult | null;
   step: EntryStep;
   uiStage: EntryUiStage;
   setupStep: "supplier" | "purchase-order" | "warehouse"; // Paso actual en el setup
@@ -191,21 +250,26 @@ interface EntriesState {
     barcode: string
   ) => Promise<EntryActionResult>;
   removeProductFromEntry: (index: number) => void;
+  /** Deshacer un "quitar": reinserta el producto en su posición si la orden aún lo permite. */
+  restoreEntryItem: (item: EntryItem, index: number) => EntryActionResult;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
 
   // Actions - Product Creation
   createProduct: (
     productData: NewProductData
-  ) => Promise<{ product: Product | null; error: any }>;
+  ) => Promise<{ product: Product | null; error: EntryFailure | null }>;
 
   // Actions - Finalize
   finalizeEntry: (userId: string) => Promise<FinalizeEntryResult>;
+  dismissLastFinalizeResult: () => void;
   setUiStage: (stage: EntryUiStage) => void;
 
   // Actions - Reset
   reset: () => void;
   resetAll: () => void;
+  /** "Registrar otra entrada": limpia la sesión de escaneo conservando tipo, proveedor, orden y bodega. */
+  startNewSession: () => void;
   clearError: () => void;
   resetCurrentScan: () => void;
   goBackToSetup: () => void;
@@ -225,8 +289,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   currentScannedBarcode: null,
   currentQuantity: 1,
   loading: false,
+  finalizing: false,
   loadingMessage: null,
   error: null,
+  catalogError: null,
+  lastFinalizeResult: null,
   step: "flow-selection",
   uiStage: "idle",
   setupStep: "supplier",
@@ -293,134 +360,57 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     set({ loading: true, loadingMessage: 'Cargando detalles de la orden de compra...', error: null });
 
     try {
-      // Buscar la orden en las órdenes ya cargadas
-      const { purchaseOrders } = get();
-      const existingOrder = purchaseOrders.find(
-        (order) => order.id === purchaseOrderId
-      );
+      // Usar la orden ya cargada en la lista; si no está, traerla con todos sus detalles.
+      const existingOrder = get().purchaseOrders.find((order) => order.id === purchaseOrderId);
+      let purchaseOrder: PurchaseOrderWithItems | null = existingOrder?.items ? existingOrder : null;
 
-      let purchaseOrder: PurchaseOrderWithItems;
-
-      if (existingOrder && existingOrder.items) {
-        // Si ya tenemos la orden con items, usarla
-        purchaseOrder = existingOrder;
-      } else {
-        // Si no está cargada, cargarla con todos los detalles
-        const { data: orderData, error: orderError } = await supabase
-          .from("purchase_orders")
-          .select(
-            `
-            *,
-            supplier:suppliers(id, name, nit),
-            items:purchase_order_items!inner(
-              id,
-              product_id,
-              purchase_order_id,
-              quantity,
-              deleted_at,
-              product:products!inner(id, name, barcode, sku, deleted_at)
-            )
-          `
-          )
-          .eq("id", purchaseOrderId)
-          .is("items.deleted_at", null)
-          .is("items.product.deleted_at", null)
-          .single();
-
-        if (resetGeneration !== capturedGeneration) return;
-
-        if (orderError) {
+      if (!purchaseOrder) {
+        try {
+          purchaseOrder = await fetchPurchaseOrderDetail(purchaseOrderId);
+        } catch (orderError: unknown) {
+          if (resetGeneration !== capturedGeneration) return;
           console.error("Error loading purchase order details:", orderError);
           logOperationError({
             error_code: "PURCHASE_ORDER_LOAD_FAILED",
-            error_message: orderError.message || String(orderError),
+            error_message: errorMessage(orderError),
             module: "entries",
             operation: "select_purchase_order",
             step: "query",
             entity_type: "purchase_order",
             entity_id: purchaseOrderId,
           });
-          set({
-            selectedPurchaseOrder: null,
-            purchaseOrderId: null,
-            loading: false,
-            loadingMessage: null,
-            error: orderError.message,
-          });
+          set({ selectedPurchaseOrder: null, purchaseOrderId: null, loading: false, loadingMessage: null, error: errorMessage(orderError) });
           return;
         }
-
-        if (!orderData) {
-          set({
-            selectedPurchaseOrder: null,
-            purchaseOrderId: null,
-            loading: false,
-            loadingMessage: null,
-            error: "Orden de compra no encontrada",
-          });
+        if (resetGeneration !== capturedGeneration) return;
+        if (!purchaseOrder) {
+          set({ selectedPurchaseOrder: null, purchaseOrderId: null, loading: false, loadingMessage: null, error: "Orden de compra no encontrada" });
           return;
         }
-
-        // Transformar los datos al formato esperado con filtrado adicional de seguridad
-        purchaseOrder = {
-          ...orderData,
-          supplier: orderData.supplier as Supplier,
-          items: (orderData.items || [])
-            .filter((item: any) => !item.deleted_at && item.product && !item.product.deleted_at)
-            .map((item: any) => ({
-              ...item,
-              product: item.product as Product,
-            })),
-        };
       }
 
-      // Cargar entradas registradas para esta orden y actualizar el cache
-      const { data: inventoryEntries, error: entriesError } = await supabase
-        .from("inventory_entries")
-        .select("product_id, quantity")
-        .eq("purchase_order_id", purchaseOrderId)
-        .is("deleted_at", null);
-
+      // Reemplazar (no sumar) la caché de entradas registradas de esta orden desde BD.
+      const inventoryEntries = await fetchInventoryEntriesForOrders([purchaseOrderId]);
       if (resetGeneration !== capturedGeneration) return;
 
-      if (entriesError) {
-        console.error("Error loading inventory entries:", entriesError);
-      } else {
-        // Actualizar el cache de entradas registradas
-        // REEMPLAZAR los valores para esta orden (no sumar) porque estamos cargando desde BD
-        const { registeredEntriesCache } = get();
-        const updatedCache = { ...registeredEntriesCache };
-
-        // Inicializar o REEMPLAZAR el objeto para esta orden
-        updatedCache[purchaseOrderId] = {};
-
-        // Agrupar por product_id y sumar las cantidades SOLO de las entradas de BD
-        (inventoryEntries || []).forEach(
-          (entry: { product_id: string; quantity: number }) => {
-            updatedCache[purchaseOrderId][entry.product_id] =
-              (updatedCache[purchaseOrderId][entry.product_id] || 0) + entry.quantity;
-          }
-        );
-
-        set({ registeredEntriesCache: updatedCache });
-      }
+      const orderCache: Record<string, number> = {};
+      inventoryEntries.forEach((entry) => {
+        if (!entry.product_id) return;
+        orderCache[entry.product_id] = (orderCache[entry.product_id] || 0) + entry.quantity;
+      });
 
       set({
+        registeredEntriesCache: { ...get().registeredEntriesCache, [purchaseOrderId]: orderCache },
         selectedPurchaseOrder: purchaseOrder,
         purchaseOrderId,
         scannedItemsProgress: new Map(),
         loading: false,
         loadingMessage: null,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      if (resetGeneration !== capturedGeneration) return;
       console.error("Error loading purchase order details:", error);
-      set({
-        selectedPurchaseOrder: null,
-        purchaseOrderId: null,
-        loading: false,
-        loadingMessage: null,
-        error: error.message,
-      });
+      set({ selectedPurchaseOrder: null, purchaseOrderId: null, loading: false, loadingMessage: null, error: errorMessage(error) });
     }
   },
 
@@ -482,7 +472,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   },
 
   setWarehouse: (warehouseId) => {
-    console.log('[entriesStore] setWarehouse', { warehouseId, entryType: get().entryType });
     set({ warehouseId });
   },
 
@@ -501,10 +490,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   loadSuppliers: async () => {
     try {
       const data = await fetchSuppliers();
-      set({ suppliers: data });
-    } catch (error: any) {
+      set({ suppliers: data, catalogError: null });
+    } catch (error: unknown) {
       console.error("Error loading suppliers:", error);
-      set({ suppliers: [] });
+      set({ suppliers: [], catalogError: CATALOG_LOAD_ERROR });
     }
   },
 
@@ -512,227 +501,105 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     const capturedGeneration = resetGeneration;
     set({ loading: true, loadingMessage: 'Cargando órdenes de compra pendientes...' });
     try {
-      // Cargar órdenes de compra pendientes para el proveedor
-      // Solo órdenes no eliminadas y no canceladas
       const orders = await fetchPendingPurchaseOrders(supplierId);
-
       if (resetGeneration !== capturedGeneration) return;
 
-      const orderIds = (orders || []).map((order) => order.id);
-
-      let allItems: any[] = [];
+      const orderIds = orders.map((order) => order.id);
+      let allItems: Awaited<ReturnType<typeof fetchPurchaseOrderItems>> = [];
       if (orderIds.length > 0) {
         try {
           allItems = await fetchPurchaseOrderItems(orderIds);
-        } catch (itemsError) {
+        } catch (itemsError: unknown) {
           console.error("Error loading purchase order items:", itemsError);
         }
       }
 
-      // Agrupar items por purchase_order_id en memoria
-      const itemsByOrderId = new Map<string, any[]>();
-      allItems.forEach((item: any) => {
-        const orderId = item.purchase_order_id;
-        if (!itemsByOrderId.has(orderId)) {
-          itemsByOrderId.set(orderId, []);
-        }
-        itemsByOrderId.get(orderId)!.push(item);
+      const itemsByOrderId = new Map<string, typeof allItems>();
+      allItems.forEach((item) => {
+        const list = itemsByOrderId.get(item.purchase_order_id) || [];
+        list.push(item);
+        itemsByOrderId.set(item.purchase_order_id, list);
       });
 
-      // Asignar items a cada orden
-      const ordersWithItems: PurchaseOrderWithItems[] = (orders || []).map(
-        (order) => ({
-          ...order,
-          items: (itemsByOrderId.get(order.id) || []).map((item: any) => ({
-            ...item,
-            product: item.products,
-          })) as (PurchaseOrderItem & { product: Product })[],
-        })
-      );
+      const ordersWithItems: PurchaseOrderWithItems[] = orders.map((order) => ({
+        ...order,
+        items: (itemsByOrderId.get(order.id) || []).map((item) => ({
+          ...item,
+          // El join solo trae id/name/barcode/sku/deleted_at; es lo que usan las pantallas.
+          product: item.products as unknown as Product,
+        })),
+      }));
 
       if (resetGeneration !== capturedGeneration) return;
-
       set({ purchaseOrders: ordersWithItems, loading: false, loadingMessage: null });
 
-      // Validar todas las órdenes después de cargarlas
       if (ordersWithItems.length > 0) {
-        get().validateAllPurchaseOrders();
+        void get().validateAllPurchaseOrders();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error loading purchase orders:", error);
-      set({ purchaseOrders: [], loading: false, loadingMessage: null });
+      if (resetGeneration !== capturedGeneration) return;
+      set({
+        purchaseOrders: [],
+        loading: false,
+        loadingMessage: null,
+        catalogError: "No fue posible cargar las órdenes de compra. Revisa tu conexión e intenta de nuevo.",
+      });
     }
   },
 
-  validatePurchaseOrderProgress: async (
-    purchaseOrderId: string
-  ): Promise<void> => {
+  validatePurchaseOrderProgress: async (purchaseOrderId: string): Promise<void> => {
     try {
-      // Primero verificar que la orden esté cargada
-      const purchaseOrder = get().purchaseOrders.find(
-        (order) => order.id === purchaseOrderId
-      );
-
+      const purchaseOrder = get().purchaseOrders.find((order) => order.id === purchaseOrderId);
       if (!purchaseOrder) {
         console.warn("Purchase order not found in store:", purchaseOrderId);
         return;
       }
-
-      // Calcular la cantidad total de items en la orden
-      const totalItemsQuantity = purchaseOrder.items.reduce(
-        (acc, curr) => acc + curr.quantity,
-        0
-      );
-
-      // Obtener las entradas de inventario para esta orden
-      const { data, error } = await supabase
-        .from("inventory_entries")
-        .select("product_id, quantity")
-        .eq("purchase_order_id", purchaseOrderId)
-        .is("deleted_at", null);
-
-      if (error) {
-        console.error("Error validating purchase order progress:", error);
-        return;
-      }
-
-      // Calcular cantidades registradas por producto
-      const registeredByProduct: Record<string, number> = {};
-      (data || []).forEach((entry) => {
-        if (!entry.product_id) return;
-        registeredByProduct[entry.product_id] =
-          (registeredByProduct[entry.product_id] || 0) + entry.quantity;
-      });
-
-      // Truncar por producto al máximo definido en la orden
-      // Solo agregar productos con cantidad > 0 al cache
-      const cacheForOrder: Record<string, number> = {};
-      let totalQuantityOfInventoryEntries = 0;
-      purchaseOrder.items.forEach((item) => {
-        const rawRegistered = registeredByProduct[item.product_id] || 0;
-        const clampedRegistered = Math.min(rawRegistered, item.quantity);
-        
-        // Solo agregar al cache si tiene cantidad registrada > 0
-        if (clampedRegistered > 0) {
-          cacheForOrder[item.product_id] = clampedRegistered;
-        }
-        
-        totalQuantityOfInventoryEntries += clampedRegistered;
-      });
-
-      // Actualizar el estado de validación y el cache para esta orden específica
+      const entries = await fetchInventoryEntriesForOrders([purchaseOrderId]);
+      const { cache, validation } = summarizeOrderProgress(purchaseOrder, entries);
       const { purchaseOrderValidations, registeredEntriesCache } = get();
       set({
-        purchaseOrderValidations: {
-          ...purchaseOrderValidations,
-          [purchaseOrderId]: {
-            isComplete:
-              totalQuantityOfInventoryEntries >= totalItemsQuantity &&
-              totalItemsQuantity > 0,
-            totalQuantityOfInventoryEntries,
-            totalItemsQuantity,
-          },
-        },
-        registeredEntriesCache: {
-          ...registeredEntriesCache,
-          [purchaseOrderId]: cacheForOrder,
-        },
+        purchaseOrderValidations: { ...purchaseOrderValidations, [purchaseOrderId]: validation },
+        registeredEntriesCache: { ...registeredEntriesCache, [purchaseOrderId]: cache },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error validating purchase order progress:", error);
+      set({ catalogError: "No fue posible verificar el progreso de la orden de compra. Actualiza antes de continuar." });
     }
   },
 
   validateAllPurchaseOrders: async (): Promise<void> => {
     const { purchaseOrders } = get();
+    if (purchaseOrders.length === 0) return;
 
-    if (purchaseOrders.length === 0) {
+    // Una sola consulta para todas las órdenes (N -> 1).
+    let allEntries: Awaited<ReturnType<typeof fetchInventoryEntriesForOrders>>;
+    try {
+      allEntries = await fetchInventoryEntriesForOrders(purchaseOrders.map((order) => order.id));
+    } catch (entriesError: unknown) {
+      console.error("Error loading inventory entries for validation:", entriesError);
+      // Sin esto el progreso de las órdenes se mostraría en cero como si nada se hubiera recibido.
+      set({ catalogError: "No fue posible verificar el progreso de las órdenes de compra. Actualiza antes de continuar." });
       return;
     }
 
-    // OPTIMIZADO: Cargar todas las entradas de inventario de todas las órdenes en una sola consulta
-    // Esto reduce de N consultas a 1 consulta
-    const orderIds = purchaseOrders.map((order) => order.id);
-
-    const { data: allEntries, error: entriesError } = await supabase
-      .from("inventory_entries")
-      .select("purchase_order_id, product_id, quantity")
-      .in("purchase_order_id", orderIds)
-      .is("deleted_at", null);
-
-    if (entriesError) {
-      console.error(
-        "Error loading inventory entries for validation:",
-        entriesError
-      );
-      return;
-    }
-
-    // Agrupar entradas por purchase_order_id en memoria
-    const entriesByOrderId = new Map<string, any[]>();
-    (allEntries || []).forEach((entry: any) => {
-      const orderId = entry.purchase_order_id;
-      if (!orderId) return;
-      if (!entriesByOrderId.has(orderId)) {
-        entriesByOrderId.set(orderId, []);
-      }
-      entriesByOrderId.get(orderId)!.push(entry);
+    const entriesByOrderId = new Map<string, typeof allEntries>();
+    allEntries.forEach((entry) => {
+      if (!entry.purchase_order_id) return;
+      const list = entriesByOrderId.get(entry.purchase_order_id) || [];
+      list.push(entry);
+      entriesByOrderId.set(entry.purchase_order_id, list);
     });
 
-    // Construir cache truncado por producto y validaciones
     const cache: Record<string, Record<string, number>> = {};
-    const validations: Record<
-      string,
-      {
-        isComplete: boolean;
-        totalQuantityOfInventoryEntries: number;
-        totalItemsQuantity: number;
-      }
-    > = {};
-
+    const validations: EntriesState["purchaseOrderValidations"] = {};
     purchaseOrders.forEach((order) => {
-      const entries = entriesByOrderId.get(order.id) || [];
-
-      // Agrupar por producto
-      const registeredByProduct: Record<string, number> = {};
-      entries.forEach((entry: any) => {
-        const productId = entry.product_id;
-        if (!productId) return;
-        registeredByProduct[productId] =
-          (registeredByProduct[productId] || 0) + (entry.quantity || 0);
-      });
-
-      // Truncar cada producto al máximo definido en la orden
-      // Solo agregar productos con cantidad > 0 al cache para evitar llenarlo con ceros
-      cache[order.id] = {};
-      let totalQuantityOfInventoryEntries = 0;
-      const totalItemsQuantity = order.items.reduce((sum, item) => {
-        const rawRegistered = registeredByProduct[item.product_id] || 0;
-        const clampedRegistered = Math.min(rawRegistered, item.quantity);
-        
-        // Solo agregar al cache si tiene cantidad registrada > 0
-        if (clampedRegistered > 0) {
-          cache[order.id][item.product_id] = clampedRegistered;
-        }
-        
-        totalQuantityOfInventoryEntries += clampedRegistered;
-        return sum + item.quantity;
-      }, 0);
-
-      validations[order.id] = {
-        isComplete:
-          totalQuantityOfInventoryEntries >= totalItemsQuantity &&
-          totalItemsQuantity > 0,
-        totalQuantityOfInventoryEntries,
-        totalItemsQuantity,
-      };
+      const summary = summarizeOrderProgress(order, entriesByOrderId.get(order.id) || []);
+      cache[order.id] = summary.cache;
+      validations[order.id] = summary.validation;
     });
 
-    // Actualizar todas las validaciones y el cache de una vez
-    set({
-      purchaseOrderValidations: validations,
-      registeredEntriesCache: cache,
-    });
+    set({ purchaseOrderValidations: validations, registeredEntriesCache: cache });
   },
 
   getSelectedPurchaseOrderProgress:
@@ -814,41 +681,41 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   loadWarehouses: async () => {
     try {
       const data = await fetchWarehouses();
-      set({ warehouses: data });
-    } catch (error: any) {
+      set({ warehouses: data, catalogError: null });
+    } catch (error: unknown) {
       console.error("Error loading warehouses:", error);
-      set({ warehouses: [] });
+      set({ warehouses: [], catalogError: CATALOG_LOAD_ERROR });
     }
   },
 
   loadCategories: async () => {
     try {
       const data = await fetchCategories();
-      set({ categories: data });
-    } catch (error: any) {
+      set({ categories: data, catalogError: null });
+    } catch (error: unknown) {
       console.error("Error loading categories:", error);
-      set({ categories: [] });
+      set({ categories: [], catalogError: CATALOG_LOAD_ERROR });
     }
   },
 
   loadBrands: async () => {
     try {
       const data = await fetchBrands();
-      set({ brands: data });
-    } catch (error: any) {
+      set({ brands: data, catalogError: null });
+    } catch (error: unknown) {
       console.error("Error loading brands:", error);
-      set({ brands: [] });
+      set({ brands: [], catalogError: CATALOG_LOAD_ERROR });
     }
   },
 
   openEntryConfirmation: () => {
     try {
       return get()._openEntryConfirmationImpl();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[openEntryConfirmation] Excepción no controlada:', error);
       void logOperationError({
         error_code: 'ENTRIES_OPEN_CONFIRMATION_CRASH',
-        error_message: error?.message || String(error),
+        error_message: errorMessage(error),
         module: 'entries',
         operation: 'open_entry_confirmation',
         severity: 'error',
@@ -907,18 +774,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       }
     }
 
-    set({ step: "confirmation", error: null });
+    // La configuración ya muestra el resumen en su último paso; no hay pantalla intermedia.
+    set({ error: null });
     return true;
   },
 
   startEntry: () => {
     const opened = get().openEntryConfirmation();
     if (!opened) return;
-    console.log('[entriesStore] startEntry -> step: scanning', {
-      entryType: get().entryType,
-      warehouseId: get().warehouseId,
-      purchaseOrderId: get().purchaseOrderId,
-    });
     set({ step: "scanning", uiStage: "idle", error: null });
   },
 
@@ -986,18 +849,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         });
         return { status: "not_found", product: null, error: null };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = errorMessage(error, "Error al buscar el producto");
       set({
-        error: error.message || "Error al buscar el producto",
+        error: message,
         step: "scanning",
         currentProduct: null,
         currentScannedBarcode: null, // Limpiar para que reaparezcan los botones del escáner
       });
-      return {
-        status: "error",
-        product: null,
-        error: error.message || "Error al buscar el producto",
-      };
+      return { status: "error", product: null, error: message };
     }
   },
 
@@ -1119,6 +979,29 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
   },
 
+  restoreEntryItem: (item, index) => {
+    const { entryItems, purchaseOrderId, entryType, scannedItemsProgress } = get();
+    if (entryItems.some((existing) => existing.product.id === item.product.id)) {
+      return { ok: false, error: "El producto ya está de nuevo en la entrada" };
+    }
+    if (purchaseOrderId) {
+      const validation = get().validateProductAgainstOrder(item.product.id, item.quantity);
+      if (!validation.valid) {
+        return { ok: false, error: validation.error || "La orden ya no permite esta cantidad" };
+      }
+    }
+    const next = [...entryItems];
+    next.splice(Math.min(Math.max(index, 0), next.length), 0, item);
+    const patch: Partial<EntriesState> = { entryItems: next, error: null };
+    if (purchaseOrderId && entryType === "PO_ENTRY") {
+      const newProgress = new Map(scannedItemsProgress);
+      newProgress.set(item.product.id, (scannedItemsProgress.get(item.product.id) || 0) + item.quantity);
+      patch.scannedItemsProgress = newProgress;
+    }
+    set(patch);
+    return { ok: true, error: null };
+  },
+
   updateProductQuantity: (index, quantity) => {
     const { entryItems, purchaseOrderId, entryType, scannedItemsProgress } =
       get();
@@ -1145,8 +1028,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
     let delta = quantity - item.quantity;
 
-    // Si hay orden de compra y la cantidad aumenta, validar contra la orden
-    if (purchaseOrderId && entryType === "PO_ENTRY" && delta > 0) {
+    // Si hay orden de compra y la cantidad aumenta, validar contra la orden.
+    // Igual que addProductToEntry: aplica siempre que haya orden, sin importar entryType.
+    if (purchaseOrderId && delta > 0) {
       const validation = get().validateProductAgainstOrder(
         item.product.id,
         delta
@@ -1185,7 +1069,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   // Product creation
   createProduct: async (
     productData
-  ): Promise<{ product: Product | null; error: any }> => {
+  ): Promise<{ product: Product | null; error: EntryFailure | null }> => {
     try {
       const normalizedProduct = {
         name: productData.name.trim(),
@@ -1215,7 +1099,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       });
 
       if (error) {
-        return { product: null, error };
+        return { product: null, error: { message: error.message, code: error.code, details: error.details } };
       }
 
       const product = (data as Product | null);
@@ -1228,23 +1112,23 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       pendingProductRequests.delete(requestFingerprint);
       return { product, error: null };
-    } catch (error: any) {
-      return { product: null, error };
+    } catch (error: unknown) {
+      return { product: null, error: { message: errorMessage(error, "No fue posible crear el producto") } };
     }
   },
 
   // Finalize entry
   finalizeEntry: async (userId): Promise<FinalizeEntryResult> => {
-    const failure = (error: any): FinalizeEntryResult => ({ ok: false, error, summary: null });
-    // GUARD: Prevenir doble ejecución por doble-tap o race condition
-    // Esto es crítico porque entre el tap del usuario y el re-render de React
-    // que deshabilita el botón, un segundo tap puede disparar otra ejecución
-    if (get().loading) {
+    const failure = (error: EntryFailure): FinalizeEntryResult => ({ ok: false, error, summary: null });
+    // GUARD: doble-tap y finalize en vuelo. `finalizeInFlight` sobrevive a resetAll()
+    // (que pone loading en false), así una segunda entrada no se registra encima de otra.
+    if (get().loading || finalizeInFlight) {
       console.warn('[finalizeEntry] Ya se está procesando una entrada, ignorando llamada duplicada');
       return failure({ message: "Ya se está procesando esta entrada" });
     }
 
     const capturedGeneration = resetGeneration;
+    const isStale = () => resetGeneration !== capturedGeneration;
 
     const {
       entryItems,
@@ -1285,7 +1169,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     }
 
     // Establecer loading al inicio del proceso
-    set({ loading: true, loadingMessage: 'Registrando entrada...' });
+    set({ loading: true, finalizing: true, loadingMessage: 'Registrando entrada...' });
 
     // Helper de validación exhaustiva antes de insertar
     const validateEntryDataBeforeInsert = async (): Promise<{
@@ -1338,25 +1222,29 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
       }
 
-      // 2. Validar bodega activa
+      // 2-4. Bodega, productos y orden se validan contra BD en paralelo.
       if (!warehouseId) {
         return { valid: false, message: "Debe seleccionar una bodega" };
       }
-
-      const { data: warehouseData, error: warehouseError } = await supabase
-        .from("warehouses")
-        .select("id, is_active, deleted_at")
-        .eq("id", warehouseId)
-        .maybeSingle();
-
-      if (warehouseError) {
-        console.error("Error validating warehouse:", warehouseError);
+      const productIds = entryItems.map((item) => item.product.id);
+      let validationData: Awaited<ReturnType<typeof fetchEntryValidationData>>;
+      try {
+        validationData = await fetchEntryValidationData({ warehouseId, productIds, purchaseOrderId });
+      } catch (queryError: unknown) {
+        console.error("Error validating entry data:", queryError);
+        const step = queryError instanceof EntryValidationQueryError ? queryError.step : "warehouse";
         return {
           valid: false,
-          message: "Error al validar la bodega seleccionada.",
+          message:
+            step === "products"
+              ? "Error al validar los productos de la entrada."
+              : step === "order"
+                ? "Error al validar el estado de la orden de compra."
+                : "Error al validar la bodega seleccionada.",
         };
       }
 
+      const { warehouse: warehouseData, products: productsData, orderStatus } = validationData;
       if (!warehouseData || !warehouseData.is_active || warehouseData.deleted_at) {
         return {
           valid: false,
@@ -1365,24 +1253,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         };
       }
 
-      // 3. Validar que los productos no estén eliminados
-      const productIds = entryItems.map((item) => item.product.id);
-      const { data: productsData, error: productsError } = await supabase
-        .from("products")
-        .select("id, deleted_at")
-        .in("id", productIds);
-
-      if (productsError) {
-        console.error("Error validating products:", productsError);
-        return {
-          valid: false,
-          message: "Error al validar los productos de la entrada.",
-        };
-      }
-
-      const deletedProducts =
-        productsData?.filter((p) => p.deleted_at !== null) || [];
-      if ((productsData?.length || 0) !== productIds.length || deletedProducts.length > 0) {
+      const deletedProducts = productsData.filter((p) => p.deleted_at !== null);
+      if (productsData.length !== productIds.length || deletedProducts.length > 0) {
         return {
           valid: false,
           message:
@@ -1390,26 +1262,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         };
       }
 
-      // 4. Validación específica de orden de compra - SIEMPRE validar si hay purchaseOrderId
-      // Esto previene que se puedan registrar entradas excediendo las cantidades de la orden
-      // independientemente del entryType seleccionado
-      if (purchaseOrderId) {
-        // Validar estado de la orden directamente en BD
-        const { data: orderData, error: orderError } = await supabase
-          .from("purchase_orders")
-          .select("status")
-          .eq("id", purchaseOrderId)
-          .maybeSingle();
-
-        if (orderError) {
-          console.error("Error validating purchase order:", orderError);
-          return {
-            valid: false,
-            message: "Error al validar el estado de la orden de compra.",
-          };
-        }
-
-        if (!orderData) {
+      // Validación de orden de compra: SIEMPRE que haya purchaseOrderId, independiente del entryType.
+      if (purchaseOrderId && orderStatus !== undefined) {
+        if (orderStatus === null) {
           return {
             valid: false,
             message:
@@ -1418,7 +1273,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         }
 
         // Solo validar estado para flujo PO_ENTRY, pero validar cantidades siempre
-        if (entryType === "PO_ENTRY" && orderData.status !== "pending") {
+        if (entryType === "PO_ENTRY" && orderStatus !== "pending") {
           return {
             valid: false,
             message:
@@ -1426,8 +1281,6 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           };
         }
 
-        // Validar que las cantidades totales de la sesión no excedan lo permitido en la orden
-        // Esta validación se aplica SIEMPRE si hay purchaseOrderId, independiente del entryType
         if (selectedPurchaseOrder) {
           const quantitiesByProduct: Record<string, number> = {};
           entryItems.forEach((item) => {
@@ -1441,17 +1294,11 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             const sessionQty = quantitiesByProduct[orderItem.product_id] || 0;
             if (sessionQty > 0) {
               const registeredInBD =
-                registeredEntriesCache[purchaseOrderId]?.[
-                  orderItem.product_id
-                ] || 0;
+                registeredEntriesCache[purchaseOrderId]?.[orderItem.product_id] || 0;
               const totalAfterSession = registeredInBD + sessionQty;
 
               if (totalAfterSession > orderItem.quantity) {
-                const pending =
-                  orderItem.quantity - registeredInBD > 0
-                    ? orderItem.quantity - registeredInBD
-                    : 0;
-
+                const pending = Math.max(orderItem.quantity - registeredInBD, 0);
                 return {
                   valid: false,
                   message: `La cantidad excede lo permitido para este producto.\n` +
@@ -1469,7 +1316,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return { valid: true };
     };
 
+    finalizeInFlight = true;
+    try {
     const validationResult = await validateEntryDataBeforeInsert();
+    if (isStale()) {
+      const result = failure({
+        message: "La sesión se reinició antes de registrar. Los productos no se guardaron.",
+      });
+      set({ lastFinalizeResult: result });
+      return result;
+    }
     if (!validationResult.valid) {
       logOperationError({
         error_code: "ENTRY_VALIDATION_FAILED",
@@ -1488,12 +1344,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           supplierId,
         },
       });
-      // Limpiar loading si la validación falla
-      set({ loading: false, loadingMessage: null });
-      return failure({ message: validationResult.message });
+      set({ loading: false, finalizing: false, loadingMessage: null });
+      return failure({ message: validationResult.message || "Validación fallida" });
     }
 
-    try {
       // Registrar cada producto en inventory_entries
       set({ loadingMessage: 'Guardando productos en el inventario...' });
       
@@ -1547,18 +1401,31 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             supplierId,
           },
         });
-        // Limpiar loading en caso de error al insertar
-        set({ loading: false, loadingMessage: null });
-        return failure(entriesError);
+        const result = failure({
+          message: entriesError.message || String(entriesError),
+          code: entriesError.code,
+          details: entriesError.details,
+        });
+        if (isStale()) {
+          set({ lastFinalizeResult: result });
+        } else {
+          set({ loading: false, finalizing: false, loadingMessage: null });
+        }
+        return result;
       }
 
       const insertedEntryIds =
         (entryResult as { entry_ids?: string[] } | null)?.entry_ids || [];
       if (insertedEntryIds.length !== entryItems.length) {
-        set({ loading: false, loadingMessage: null });
-        return failure({
+        const result = failure({
           message: "La respuesta del registro de entradas está incompleta. Intente nuevamente.",
         });
+        if (isStale()) {
+          set({ lastFinalizeResult: result });
+        } else {
+          set({ loading: false, finalizing: false, loadingMessage: null });
+        }
+        return result;
       }
 
       // NOTA: No actualizamos warehouse_stock manualmente aquí porque
@@ -1568,39 +1435,33 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       // Actualizar el cache de entradas registradas inmediatamente
       // y verificar si la orden está completa para actualizar el estado automáticamente
-      let orderCompleted = false;
-      if (purchaseOrderId) {
-        set({ loadingMessage: 'Actualizando progreso de la orden...' });
-        const { registeredEntriesCache } = get();
-        const updatedCache = { ...registeredEntriesCache };
+      // El RPC ya calculó el progreso de la orden (y la marcó recibida si aplica):
+      // reflejarlo en la caché local sin volver a consultar la orden.
+      const progressData = (entryResult as {
+        purchase_order_progress?: { success?: boolean; all_complete?: boolean; updated?: boolean } | null;
+      } | null)?.purchase_order_progress;
+      const orderCompleted = Boolean(purchaseOrderId && progressData?.success && progressData.all_complete);
 
-        if (!updatedCache[purchaseOrderId]) {
-          updatedCache[purchaseOrderId] = {};
-        }
-
-        // Agregar las cantidades recién registradas al cache
+      if (purchaseOrderId && !isStale()) {
+        const { registeredEntriesCache, purchaseOrderValidations } = get();
+        const orderCache = { ...(registeredEntriesCache[purchaseOrderId] || {}) };
         entryItems.forEach((item) => {
-          const currentQty =
-            updatedCache[purchaseOrderId][item.product.id] || 0;
-          updatedCache[purchaseOrderId][item.product.id] =
-            currentQty + item.quantity;
+          orderCache[item.product.id] = (orderCache[item.product.id] || 0) + item.quantity;
         });
-
-        set({ registeredEntriesCache: updatedCache });
-
-        // Verificar si la orden está completa y actualizar el estado automáticamente
-        const progressData = (entryResult as {
-          purchase_order_progress?: { success?: boolean; all_complete?: boolean; updated?: boolean } | null;
-        } | null)?.purchase_order_progress;
-        orderCompleted = Boolean(progressData?.success && progressData.all_complete);
-        if (progressData?.success && progressData.all_complete) {
-          console.log("Orden de compra completada y marcada automáticamente como 'received':", purchaseOrderId);
-          // Si la orden fue completada, recargar la información de la orden para reflejar el nuevo estado
-          if (progressData.updated) {
-            set({ loadingMessage: 'Actualizando estado de la orden...' });
-            await get().selectPurchaseOrder(purchaseOrderId);
-          }
-        }
+        const previousValidation = purchaseOrderValidations[purchaseOrderId];
+        set({
+          registeredEntriesCache: { ...registeredEntriesCache, [purchaseOrderId]: orderCache },
+          purchaseOrderValidations: {
+            ...purchaseOrderValidations,
+            [purchaseOrderId]: {
+              isComplete: orderCompleted || Boolean(previousValidation?.isComplete),
+              totalQuantityOfInventoryEntries:
+                (previousValidation?.totalQuantityOfInventoryEntries || 0) +
+                entryItems.reduce((sum, item) => sum + item.quantity, 0),
+              totalItemsQuantity: previousValidation?.totalItemsQuantity || 0,
+            },
+          },
+        });
       }
 
       await clearPersistentIdempotencyKey(
@@ -1608,14 +1469,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         requestFingerprint
       );
 
-      // Limpiar loading después de finalizar exitosamente.
-      // Si el store fue reseteado mientras se registraba (el usuario cambió de
-      // pantalla), la escritura en BD ya fue exitosa, pero no resucitamos la
-      // pantalla de éxito sobre un store ya limpiado.
-      if (resetGeneration === capturedGeneration) {
-        set({ loading: false, loadingMessage: null, uiStage: "success" });
-      }
-      return {
+      const result: FinalizeEntryResult = {
         ok: true,
         error: null,
         summary: {
@@ -1626,12 +1480,32 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           orderCompleted,
         },
       };
-    } catch (error: any) {
-      // Limpiar loading en caso de error
-      set({ loading: false, loadingMessage: null });
-      return failure(error);
+
+      // Si el store se reseteó mientras se registraba (cambio de pestaña), la escritura
+      // en BD fue exitosa: guardar el resultado para mostrarlo al volver en vez de
+      // resucitar la pantalla de éxito sobre un store limpio.
+      if (isStale()) {
+        set({ lastFinalizeResult: result });
+      } else {
+        set({ loading: false, finalizing: false, loadingMessage: null, uiStage: "success" });
+      }
+      return result;
+    } catch (error: unknown) {
+      const result = failure({
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (isStale()) {
+        set({ lastFinalizeResult: result });
+      } else {
+        set({ loading: false, finalizing: false, loadingMessage: null });
+      }
+      return result;
+    } finally {
+      finalizeInFlight = false;
     }
   },
+
+  dismissLastFinalizeResult: () => set({ lastFinalizeResult: null }),
 
   // Reset actions
   reset: () => {
@@ -1643,6 +1517,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentQuantity: 1,
       error: null,
       loading: false,
+      finalizing: false,
       loadingMessage: null,
       step: "flow-selection",
       uiStage: "idle",
@@ -1660,6 +1535,24 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     });
   },
 
+  startNewSession: () => {
+    resetGeneration += 1;
+    set({
+      entryItems: [],
+      currentProduct: null,
+      currentScannedBarcode: null,
+      currentQuantity: 1,
+      scannedItemsProgress: new Map(),
+      error: null,
+      loading: false,
+      finalizing: false,
+      loadingMessage: null,
+      step: "setup",
+      uiStage: "idle",
+      setupStep: "warehouse",
+    });
+  },
+
   // Reset all state including cache - for navigation cleanup
   resetAll: () => {
     resetGeneration += 1;
@@ -1670,6 +1563,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentQuantity: 1,
       error: null,
       loading: false,
+      finalizing: false,
       loadingMessage: null,
       step: "flow-selection",
       uiStage: "idle",
@@ -1685,6 +1579,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       purchaseOrderValidations: {},
       scannedItemsProgress: new Map(),
       registeredEntriesCache: {},
+      catalogError: null,
     });
   },
 
