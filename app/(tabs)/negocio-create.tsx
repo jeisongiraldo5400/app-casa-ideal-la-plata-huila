@@ -482,7 +482,7 @@ function NegocioCreateScreenInner() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }} edges={['bottom', 'left', 'right']}>
       {loadingInitialData && (
         <View style={{ padding: 12, flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
           <ActivityIndicator color={colors.primary.main} />

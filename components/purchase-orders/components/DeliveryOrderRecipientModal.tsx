@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Spacing, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
@@ -12,7 +12,9 @@ import {
     Text,
     TouchableOpacity,
     View,
+    useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DeliveryOrder } from '../types';
 
 interface DeliveryOrderRecipientModalProps {
@@ -42,6 +44,10 @@ export function DeliveryOrderRecipientModal({
     onClose,
     order,
 }: DeliveryOrderRecipientModalProps) {
+    const insets = useSafeAreaInsets();
+    const { height: windowHeight } = useWindowDimensions();
+    // Nunca tapar la barra de estado ni la de gestos en pantallas con notch.
+    const sheetInsets = { maxHeight: windowHeight - insets.top - Spacing.xxl, paddingBottom: Math.max(insets.bottom, Spacing.md) };
     const { isDark } = useTheme();
     const colors = getColors(isDark);
 
@@ -355,7 +361,7 @@ export function DeliveryOrderRecipientModal({
             onRequestClose={onClose}
         >
             <View style={styles.overlay}>
-                <View style={[styles.modalContainer, { backgroundColor: colors.background.paper }]}>
+                <View style={[styles.modalContainer, sheetInsets, { backgroundColor: colors.background.paper }]}>
                     {/* Header */}
                     <View style={[styles.header, { borderBottomColor: colors.divider }]}>
                         <View style={styles.headerContent}>
@@ -432,7 +438,6 @@ const styles = StyleSheet.create({
     },
     modalContainer: {
         flex: 1,
-        maxHeight: '85%',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',

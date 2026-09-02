@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
 import { PrinterPickerModal } from '@/components/printing';
@@ -140,11 +141,13 @@ function RootLayout() {
   const { isDark } = useTheme();
   return (
     <GestureHandlerRootView style={styles.root}>
-      <OfflineProvider>
-        <RootLayoutNav />
-        <PrinterPickerModal />
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-      </OfflineProvider>
+      <SafeAreaProvider>
+        <OfflineProvider>
+          <RootLayoutNav />
+          <PrinterPickerModal />
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+        </OfflineProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

@@ -1,3 +1,4 @@
+import { Spacing } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { EntryOptionPickerFieldProps } from './entriesPickerFieldTypes';
 
@@ -39,6 +41,7 @@ export function EntryOptionPickerField({
     [options]
   );
 
+  const insets = useSafeAreaInsets();
   return (
     <View>
       <TouchableOpacity
@@ -60,7 +63,7 @@ export function EntryOptionPickerField({
           onRequestClose={() => setOpen(false)}>
           <View style={styles.overlay}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setOpen(false)} />
-            <View style={[styles.sheet, { backgroundColor: paper, borderColor: divider }]}>
+            <View style={[styles.sheet, { backgroundColor: paper, borderColor: divider, paddingBottom: Math.max(insets.bottom, Spacing.xxl) }]}>
               <Text style={[styles.sheetTitle, { color: textPrimary }]}>{modalTitle}</Text>
               <FlatList
                 data={rows}
@@ -127,7 +130,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     borderWidth: 1,
     maxHeight: '70%',
-    paddingBottom: 24,
   },
   sheetTitle: {
     fontSize: 16,

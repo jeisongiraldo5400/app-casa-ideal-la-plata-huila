@@ -1,3 +1,4 @@
+import { Spacing } from '@/constants/theme';
 import type { ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
@@ -10,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ExitModePickerFieldProps } from './pickerFieldTypes';
 
@@ -32,6 +34,7 @@ export function ExitModePickerField({ exitMode, onExitModeChange, colors }: Exit
   const paper = colors.background.paper;
   const divider = colors.divider;
 
+  const insets = useSafeAreaInsets();
   return (
     <View>
       <TouchableOpacity
@@ -57,7 +60,7 @@ export function ExitModePickerField({ exitMode, onExitModeChange, colors }: Exit
               activeOpacity={1}
               onPress={() => setOpen(false)}
             />
-            <View style={[styles.sheet, { backgroundColor: paper, borderColor: divider }]}>
+            <View style={[styles.sheet, { backgroundColor: paper, borderColor: divider, paddingBottom: Math.max(insets.bottom, Spacing.xxl) }]}>
               <Text style={[styles.sheetTitle, { color: textPrimary }]}>Tipo de salida</Text>
               <FlatList
                 data={OPTIONS}
@@ -110,7 +113,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     borderWidth: 1,
     maxHeight: '55%',
-    paddingBottom: 24,
   },
   sheetTitle: {
     fontSize: 16,

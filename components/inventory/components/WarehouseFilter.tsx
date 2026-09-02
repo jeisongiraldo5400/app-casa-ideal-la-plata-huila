@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ALL_WAREHOUSES_VALUE = '__all__';
 
@@ -42,6 +43,7 @@ export function WarehouseFilter() {
     [warehouses]
   );
 
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
       <Text style={[styles.label, { color: Colors.text.primary }]}>Filtrar por bodega:</Text>
@@ -75,6 +77,7 @@ export function WarehouseFilter() {
             <View
               style={[
                 styles.sheet,
+                { paddingBottom: Math.max(insets.bottom, Spacing.xxl) },
                 {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider,
@@ -144,7 +147,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     borderWidth: 1,
     maxHeight: '60%',
-    paddingBottom: 24,
   },
   sheetTitle: {
     fontSize: 16,

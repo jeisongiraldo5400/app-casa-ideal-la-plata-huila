@@ -3,6 +3,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import { ActionBar } from '../ActionBar';
 import { Button } from '../Button';
+import { FullScreenModal } from '../FullScreenModal';
 import { HeroActionCard } from '../HeroActionCard';
 import { ListCard } from '../ListCard';
 import { Metric } from '../Metric';
@@ -18,7 +19,7 @@ import { cuotaStatusTone, negocioStatusTone } from '@/lib/negocioLabels';
 
 jest.mock('@expo/vector-icons', () => ({ MaterialIcons: 'MaterialIcons' }));
 jest.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
 }));
 
 const mockTheme = { isDark: false };
@@ -185,5 +186,31 @@ describe('Casa Ideal design system', () => {
     );
     fireEvent.press(screen.getByRole('button', { name: 'Cerrar' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('pads a full-screen modal below the status bar and gates closing on dismissable', () => {
+    const onClose = jest.fn();
+    const screen = render(
+      <FullScreenModal visible title="Filtros de cartera" onClose={onClose} dismissable={false}>
+        <Text>cuerpo</Text>
+      </FullScreenModal>,
+    );
+    expect(screen.getByRole('header', { name: 'Filtros de cartera' })).toBeTruthy();
+    const root = screen.getByTestId('fullscreen-modal-root');
+    const flat = Object.assign({}, ...[root.props.style].flat(Infinity).filter(Boolean));
+    expect(flat.paddingTop).toBeGreaterThanOrEqual(47);
+    expect(flat.paddingBottom).toBe(34);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(onClose).not.toHaveBeenCalled();
+
+    screen.rerender(
+      <FullScreenModal visible title="Filtros de cartera" onClose={onClose} footer={<Text>pie</Text>}>
+        <Text>cuerpo</Text>
+      </FullScreenModal>,
+    );
+    fireEvent.press(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('pie')).toBeTruthy();
   });
 });

@@ -41,7 +41,9 @@ para texto sobre `primary.main` / `navigation.background`; `overlay` para fondos
   (fila de lista, pulsable si recibe `onPress`), `Card`.
 - Entrada y filtros: `Input`, `SearchField`, `SegmentedControl`, `OptionPickerField`.
 - Estados: `ScreenState` (carga, vacío, error; `variant="inline"` dentro de listas; `tone="error"`),
-  `Pagination`, `ModalSheet` (diálogo con overlay, header y pie), `ScreenErrorBoundary`.
+  `Pagination`, `ScreenErrorBoundary`.
+- Modales: `ModalSheet` (diálogo centrado con overlay, header y pie) y `FullScreenModal` (pantalla
+  completa con área segura, header con cierre y pie opcional en `ActionBar`).
 
 Los tonos de estado de negocios y cuotas salen de `negocioStatusTone` / `cuotaStatusTone`
 (`lib/negocioLabels.ts`), no de condicionales en pantalla.
@@ -57,9 +59,15 @@ Los tonos de estado de negocios y cuotas salen de `negocioStatusTone` / `cuotaSt
 6. Listas extensas con `FlatList` y `RefreshControl`; listas cortas dentro de un `ScrollView` con `Pagination`.
 7. Componentes de feature (`components/<feature>/components`) toman colores de `useTheme()`, no por props.
 8. Comprobar cada pantalla en tema claro y oscuro antes de migrar la siguiente.
+9. Área segura: la app corre con `edgeToEdgeEnabled`, así que todo lo que se dibuje fuera del
+   navegador debe leer `useSafeAreaInsets()`. Modal a pantalla completa → `FullScreenModal`
+   (nunca `presentationStyle="pageSheet"`: Android lo ignora y pinta desde y = 0). Hoja inferior →
+   `paddingBottom: Math.max(insets.bottom, Spacing.xxl)` en el contenedor de la hoja. Pie fijo →
+   `ActionBar`.
 
 ## Pendiente de migrar (fase 2)
 
 `negocio-create.tsx`, `SignaturePad`, `NegocioItemsList`, `NegocioProductAddSection`, `NegocioDatePicker`,
-`cartera/`, `collection-routes/`, `ruta-cobros/`, y los consumidores del `Colors` estático en
-`components/entries`, `auth` y `scanning`.
+`cartera/` (pantalla principal y `CollectionManagerPaymentsModal`), `collection-routes/`, `ruta-cobros/`,
+`inventory/WarehouseFilter` y los demás consumidores del `Colors` estático en `components/entries`,
+`auth` y `scanning`.
