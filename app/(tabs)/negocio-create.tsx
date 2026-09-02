@@ -31,6 +31,7 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
@@ -435,6 +436,8 @@ function NegocioCreateScreenInner() {
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
     }
+    const signatureError = sellerSignatureRequiredError(signature, sellerSignature);
+    if (signatureError) return Alert.alert('Firma requerida', signatureError);
 
     try {
       savingRef.current = true;
@@ -1068,8 +1071,15 @@ function NegocioCreateScreenInner() {
               Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} · {installments} cuotas
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>
-              La firma es opcional. Puede dibujarla en pantalla o subir un PNG transparente:
+              Puede dibujar las firmas en pantalla o subir un PNG transparente. Si el cliente no firma
+              ahora, la firma del vendedor es obligatoria; la firma del cliente podrá registrarse
+              después desde el detalle, incluso con el negocio activo.
             </Text>
+            {sellerSignatureRequiredError(signature, sellerSignature) ? (
+              <Text style={{ color: colors.warning.dark, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
+                {sellerSignatureRequiredError(signature, sellerSignature)}
+              </Text>
+            ) : null}
             <SignaturePad
               label="Firma del cliente"
               value={signature}
@@ -1083,7 +1093,7 @@ function NegocioCreateScreenInner() {
               />
             )}
             <SignaturePad
-              label="Firma del vendedor"
+              label={signature ? 'Firma del vendedor' : 'Firma del vendedor (obligatoria)'}
               value={sellerSignature}
               onChange={setSellerSignature}
             />

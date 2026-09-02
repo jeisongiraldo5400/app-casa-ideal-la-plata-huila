@@ -45,6 +45,10 @@ import {
   resolveNegocioSignatureUrl,
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
+import {
+  canRegisterCustomerSignatureLater,
+  sellerSignatureRequiredError,
+} from '@/lib/negocioSignatureRules';
 import { computeRemainingBalance, remainingAfterPago } from '@/lib/negocios/negocioBalance';
 import {
   openPagoSupport,
@@ -104,6 +108,11 @@ function NegocioDetailScreenInner() {
   const [guarantorSignature, setGuarantorSignature] = useState('');
   const [sellerSignature, setSellerSignature] = useState('');
   const [signaturesDirty, setSignaturesDirty] = useState(false);
+  /** Firma del cliente dibujada para un negocio ya activo sin firma. */
+  const [lateCustomerSignature, setLateCustomerSignature] = useState('');
+  const [signatureSaving, setSignatureSaving] = useState(false);
+  /** Ruta ya subida para la firma tardía en curso; se reutiliza en reintentos. */
+  const lateSignatureUpload = useRef<{ source: string; path: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
   const { printPayment, printPaymentIfReady, printNegocio, printing: printingTicket } = useBluetoothPrinter();
@@ -142,6 +151,7 @@ function NegocioDetailScreenInner() {
       setFromLocal(true);
       setLoadError(null);
       setSignaturesDirty(false);
+      setLateCustomerSignature('');
       setItems([]);
       setCuotas(local.cuotas);
       setPagos(local.pagos);
@@ -189,6 +199,7 @@ function NegocioDetailScreenInner() {
       hasNegocioRef.current = true;
       setFromLocal(false);
       setSignaturesDirty(false);
+      setLateCustomerSignature('');
 
       const [
         itemsRes,
@@ -776,6 +787,11 @@ function NegocioDetailScreenInner() {
 
   const activateDraft = async () => {
     if (activatingRef.current || !negocio) return;
+    const signatureError = sellerSignatureRequiredError(customerSignature, sellerSignature);
+    if (signatureError) {
+      Alert.alert('Firma requerida', signatureError);
+      return;
+    }
     try {
       activatingRef.current = true;
       setActionSaving(true);
@@ -878,6 +894,60 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  /** Registra la firma del cliente en un negocio ya activo (RPC dedicado). */
+  const registerCustomerSignature = async () => {
+    if (!negocio || signatureSaving) return;
+    const source = lateCustomerSignature.trim();
+    if (!source) {
+      Alert.alert('Firma requerida', 'Dibuje o suba la firma del cliente.');
+      return;
+    }
+    let uploadedNow: string | null = null;
+    try {
+      setSignatureSaving(true);
+      let path =
+        lateSignatureUpload.current?.source === source ? lateSignatureUpload.current.path : null;
+      if (!path) {
+        path = await uploadNegocioSignature(source, { negocioId: negocio.id, role: 'cliente' });
+        if (!path) throw new Error('No se pudo subir la firma del cliente');
+        uploadedNow = isNewLocalSignature(source) ? path : null;
+        lateSignatureUpload.current = { source, path };
+      }
+      const { error } = await supabase.rpc('register_negocio_customer_signature', {
+        p_negocio_id: negocio.id,
+        p_customer_signature_url: path,
+      });
+      if (error) throw error;
+      lateSignatureUpload.current = null;
+      setLateCustomerSignature('');
+      await load();
+      Alert.alert('Listo', 'Firma del cliente registrada.');
+    } catch (error: any) {
+      // El servidor pudo registrar la firma aunque el cliente no recibiera respuesta.
+      if (uploadedNow) {
+        const { data: current } = await supabase
+          .from('negocios')
+          .select('customer_signature_url')
+          .eq('id', negocio.id)
+          .maybeSingle();
+        if (current?.customer_signature_url === uploadedNow) {
+          lateSignatureUpload.current = null;
+          setLateCustomerSignature('');
+          await load();
+          Alert.alert('Listo', 'Firma del cliente registrada.');
+          return;
+        }
+        await removeNegocioSignatures([uploadedNow]).catch((cleanupError) => {
+          console.error('No se pudo limpiar la firma huérfana', cleanupError);
+        });
+        lateSignatureUpload.current = null;
+      }
+      Alert.alert('Error', error?.message || 'No se pudo registrar la firma del cliente');
+    } finally {
+      setSignatureSaving(false);
+    }
+  };
+
   const headerTitle = negocio ? labelNegocioCodigo(negocio.numero) : 'Negocio';
   const screenOptions = {
     title: headerTitle,
@@ -914,6 +984,10 @@ function NegocioDetailScreenInner() {
 
   const canPay = ['activo', 'entregado'].includes(negocio.status);
   const canActivate = ['borrador', 'por_firmar'].includes(negocio.status);
+  const canRegisterLateSignature = !fromLocal && canRegisterCustomerSignatureLater(negocio);
+  const activationSignatureError = canActivate
+    ? sellerSignatureRequiredError(customerSignature, sellerSignature)
+    : null;
   const totalPaid = pagos
     .filter((pago) => pago.receipt_status !== 'anulado')
     .reduce((total, pago) => total + Number(pago.amount || 0), 0);
@@ -979,8 +1053,15 @@ function NegocioDetailScreenInner() {
           <Card variant="outlined" style={styles.signingCard}>
             <SectionHeader title="Firmas para activar" />
             <Text style={[styles.helper, { color: colors.text.secondary }]}>
-              Las firmas son opcionales. Puede dibujarlas o subir un PNG transparente.
+              Puede dibujar las firmas o subir un PNG transparente. Si el cliente no firma ahora, la
+              firma del vendedor es obligatoria; la firma del cliente podrá registrarse después, incluso
+              con el negocio activo.
             </Text>
+            {activationSignatureError ? (
+              <Text style={[styles.helper, { color: colors.warning.dark, fontWeight: '600' }]}>
+                {activationSignatureError}
+              </Text>
+            ) : null}
             <SignaturePad
               label="Firma del cliente"
               value={customerSignature}
@@ -1002,7 +1083,7 @@ function NegocioDetailScreenInner() {
               />
             ) : null}
             <SignaturePad
-              label="Firma del vendedor"
+              label={customerSignature ? 'Firma del vendedor' : 'Firma del vendedor (obligatoria)'}
               value={sellerSignature}
               onChange={(value) => {
                 setSellerSignature(value);
@@ -1041,6 +1122,31 @@ function NegocioDetailScreenInner() {
             <SectionHeader title="Firmas" />
             <SignatureGallery signatures={readOnlySignatures} />
           </View>
+        ) : null}
+
+        {canRegisterLateSignature ? (
+          <Card variant="outlined" style={styles.signingCard}>
+            <SectionHeader title="Firma del cliente pendiente" />
+            <Text style={[styles.helper, { color: colors.text.secondary }]}>
+              El negocio se activó sin la firma del cliente. Puede dibujarla o subir un PNG
+              transparente para dejarla registrada en el contrato.
+            </Text>
+            <SignaturePad
+              label="Firma del cliente"
+              value={lateCustomerSignature}
+              onChange={(value) => {
+                setLateCustomerSignature(value);
+                lateSignatureUpload.current = null;
+              }}
+            />
+            <Button
+              title="Guardar firma del cliente"
+              icon="draw"
+              onPress={() => void registerCustomerSignature()}
+              loading={signatureSaving}
+              disabled={!lateCustomerSignature}
+            />
+          </Card>
         ) : null}
       </ScrollView>
 

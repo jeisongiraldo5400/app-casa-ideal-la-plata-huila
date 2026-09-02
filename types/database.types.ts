@@ -2724,6 +2724,10 @@ export type Database = {
         }
         Returns: Database["public"]["Tables"]["products"]["Row"]
       }
+      register_negocio_customer_signature: {
+        Args: { p_customer_signature_url: string; p_negocio_id: string }
+        Returns: string
+      }
       update_negocio: {
         Args: { p_activate: boolean; p_idempotency_key: string; p_items: Json; p_negocio: Json; p_negocio_id: string }
         Returns: string

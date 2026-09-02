@@ -16,6 +16,7 @@ import {
   removeNegocioSignatures,
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
+import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
 import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
@@ -257,6 +258,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!isValidDateValue(input.deal_date)) throw new Error('Fecha del negocio inválida');
     if (!isValidDateValue(input.first_due_date)) throw new Error('Fecha de primera cuota inválida');
     validateNegocioItemsInput(input.items);
+    const signatureError = sellerSignatureRequiredError(
+      input.customer_signature_data_url,
+      input.seller_signature_data_url
+    );
+    if (signatureError) throw new Error(signatureError);
 
     const settings = get().creditSettings;
     if (!settings) throw new Error('La configuración de crédito aún no está disponible');
