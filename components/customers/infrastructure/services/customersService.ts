@@ -28,7 +28,7 @@ export async function searchCustomersForNegocio(query: string): Promise<Customer
     );
     return [...unique.values()].slice(0, 20);
   } catch (error) {
-    if (!canUseLocalDb()) throw error;
+    if (!isNetworkError(error) || !canUseLocalDb()) throw error;
     const local = await searchCustomersFromLocal(term, 20);
     return local.map((row) => ({
       id: row.id,

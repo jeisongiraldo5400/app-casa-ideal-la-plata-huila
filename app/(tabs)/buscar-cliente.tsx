@@ -24,6 +24,8 @@ import {
   type CustomerWithNegocios,
 } from '@/lib/negocios/searchCustomerNegocios';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 export default function BuscarClienteScreen() {
   return (
@@ -43,7 +45,9 @@ function BuscarClienteScreenInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<CustomerWithNegocios[]>([]);
+  const [fromCache, setFromCache] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 350);
@@ -55,6 +59,7 @@ function BuscarClienteScreenInner() {
 
     if (debounced.length < 2) {
       setCustomers([]);
+      setFromCache(false);
       setError(null);
       setLoading(false);
       setExpandedId(null);
@@ -64,9 +69,10 @@ function BuscarClienteScreenInner() {
     setLoading(true);
     setError(null);
     searchCustomerNegocios(debounced)
-      .then((rows) => {
+      .then(({ customers: rows, fromCache: cached }) => {
         if (cancelled) return;
         setCustomers(rows);
+        setFromCache(cached);
         if (rows.length === 1) {
           setExpandedId(rows[0].customer_id);
         } else {
@@ -76,6 +82,7 @@ function BuscarClienteScreenInner() {
       .catch((e: any) => {
         if (cancelled) return;
         setCustomers([]);
+        setFromCache(false);
         setError(e?.message || 'No fue posible buscar');
       })
       .finally(() => {
@@ -168,6 +175,12 @@ function BuscarClienteScreenInner() {
 
       {error && (
         <Text style={{ color: colors.error.main, marginTop: 16 }}>{error}</Text>
+      )}
+
+      {!loading && fromCache && (
+        <Text style={{ color: colors.warning.main, fontSize: 12, marginBottom: 8 }}>
+          {formatLocalDataLabel(lastSyncedAt)} · Sin conexión: se muestran todos los negocios locales del cliente.
+        </Text>
       )}
 
       {helperText && !loading && (

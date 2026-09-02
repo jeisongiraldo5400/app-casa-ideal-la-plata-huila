@@ -24,12 +24,18 @@ export type CustomerWithNegocios = {
   negocios: CustomerNegocioItem[];
 };
 
+export type CustomerNegociosSearchResult = {
+  customers: CustomerWithNegocios[];
+  /** true cuando el resultado proviene de la base local (sin conexión). */
+  fromCache: boolean;
+};
+
 export async function searchCustomerNegocios(
   search: string,
   limit = 20
-): Promise<CustomerWithNegocios[]> {
+): Promise<CustomerNegociosSearchResult> {
   const term = search.trim();
-  if (term.length < 2) return [];
+  if (term.length < 2) return { customers: [], fromCache: false };
 
   try {
     const { data, error } = await supabase.rpc('search_customer_negocios', {
@@ -42,18 +48,23 @@ export async function searchCustomerNegocios(
     const payload = data as { customers?: CustomerWithNegocios[] } | null;
     const customers = payload?.customers || [];
 
-    return customers.map((customer) => ({
-      ...customer,
-      negocios: (customer.negocios || []).map((negocio) => ({
-        ...negocio,
-        total_credit: Number(negocio.total_credit || 0),
-        remaining_balance: Number(negocio.remaining_balance || 0),
-        negocio_numero: Number(negocio.negocio_numero || 0),
+    return {
+      customers: customers.map((customer) => ({
+        ...customer,
+        negocios: (customer.negocios || []).map((negocio) => ({
+          ...negocio,
+          total_credit: Number(negocio.total_credit || 0),
+          remaining_balance: Number(negocio.remaining_balance || 0),
+          negocio_numero: Number(negocio.negocio_numero || 0),
+        })),
       })),
-    }));
+      fromCache: false,
+    };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    return searchCustomerNegociosFromLocal(term, limit);
+    // La búsqueda local no aplica el filtro de permisos del RPC
+    // (can_manage_collection_for_negocio): la pantalla lo señala como datos locales.
+    return { customers: await searchCustomerNegociosFromLocal(term, limit), fromCache: true };
   }
 }
 
