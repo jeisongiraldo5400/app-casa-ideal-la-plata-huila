@@ -5,13 +5,23 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
-type Tone = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'neutral';
+export type StatusTone = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'default';
 
-export function StatusChip({ label, tone = 'neutral', icon }: { label: string; tone?: Tone; icon?: IconName }) {
+export function StatusChip({ label, tone = 'neutral', icon }: { label: string; tone?: StatusTone; icon?: IconName }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const accent = tone === 'neutral' ? colors.text.secondary : tone === 'primary' ? colors.primary.main : colors[tone].main;
-  return <View style={[styles.chip, { backgroundColor: `${accent}18` }]}>{icon ? <MaterialIcons name={icon} size={14} color={accent} /> : null}<Text style={[styles.text, { color: accent }]}>{label}</Text></View>;
+  const accent =
+    tone === 'neutral' || tone === 'default'
+      ? colors.text.secondary
+      : tone === 'primary'
+        ? colors.primary.main
+        : colors[tone].main;
+  return (
+    <View accessibilityRole="text" accessibilityLabel={`Estado: ${label}`} style={[styles.chip, { backgroundColor: `${accent}18` }]}>
+      {icon ? <MaterialIcons name={icon} size={14} color={accent} /> : null}
+      <Text style={[styles.text, { color: accent }]}>{label}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

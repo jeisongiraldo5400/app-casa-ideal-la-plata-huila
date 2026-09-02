@@ -1,5 +1,6 @@
 import { useTheme } from '@/components/theme';
-import { Radius, Spacing, getColors } from '@/constants/theme';
+import { IconSize, Radius, Spacing, Typography, getColors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -11,10 +12,16 @@ import {
   ViewStyle,
 } from 'react-native';
 
+type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
+
 interface ButtonProps {
   title: string;
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
+  /** `sm` = 44 px de alto, para acciones secundarias y cabeceras. */
+  size?: 'md' | 'sm';
+  /** Icono a la izquierda del texto. */
+  icon?: IconName;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -26,6 +33,8 @@ export function Button({
   title,
   onPress,
   variant = 'primary',
+  size = 'md',
+  icon,
   disabled = false,
   loading = false,
   style,
@@ -57,6 +66,7 @@ export function Button({
       disabled={unavailable}
       style={({ pressed }) => [
         styles.button,
+        size === 'sm' && styles.small,
         { backgroundColor },
         variant === 'outline' && { borderColor: colors.primary.main, borderWidth: 1.5 },
         variant === 'ghost' && styles.ghost,
@@ -70,9 +80,18 @@ export function Button({
           color={variant === 'outline' || variant === 'ghost' ? colors.primary.main : colors.primary.contrastText}
         />
       ) : (
-        <Text style={[styles.text, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
-          {title}
-        </Text>
+        <>
+          {icon ? (
+            <MaterialIcons
+              name={icon}
+              size={size === 'sm' ? IconSize.sm : IconSize.md}
+              color={unavailable ? colors.text.secondary : foregroundColor}
+            />
+          ) : null}
+          <Text style={[styles.text, size === 'sm' && styles.textSmall, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
+            {title}
+          </Text>
+        </>
       )}
     </Pressable>
   );
@@ -84,8 +103,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xxl,
     borderRadius: Radius.control,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  small: {
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
   },
   ghost: {
     minHeight: 44,
@@ -95,9 +121,6 @@ const styles = StyleSheet.create({
     opacity: 0.84,
     transform: [{ scale: 0.99 }],
   },
-  text: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
+  text: { ...Typography.button },
+  textSmall: { ...Typography.bodySmallStrong },
 });

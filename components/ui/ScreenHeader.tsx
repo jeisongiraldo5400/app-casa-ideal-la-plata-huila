@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { Spacing, Typography, getColors } from '@/constants/theme';
+import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   icon: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: Radius.icon,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Radius, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -29,15 +29,17 @@ export function BackButton({ onPress, color, size = 24, variant = 'surface', sty
   };
 
   const isContrast = variant === 'contrast';
-  const iconColor = color || (isContrast ? '#fff' : colors.text.primary);
+  const iconColor = color || (isContrast ? colors.onPrimary.text : colors.text.primary);
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel="Volver"
       onPress={handlePress}
       style={[
         styles.button,
         isContrast
-          ? styles.contrastButton
+          ? { backgroundColor: colors.onPrimary.chipBg, borderColor: colors.onPrimary.border }
           : { backgroundColor: colors.background.paper, borderColor: colors.divider },
         style,
       ]}
@@ -57,14 +59,10 @@ const styles = StyleSheet.create({
   button: {
     width: 42,
     height: 42,
-    borderRadius: 12,
+    borderRadius: Radius.control,
     borderWidth: 1,
     marginLeft: 8,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  contrastButton: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderColor: 'rgba(255,255,255,0.32)',
   },
 });

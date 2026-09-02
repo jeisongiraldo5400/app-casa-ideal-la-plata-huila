@@ -40,6 +40,22 @@ export const CUOTA_STATUS_COLOR: Record<
   anulada: "default",
 };
 
+export type NegocioStatusTone = "neutral" | "warning" | "success" | "error" | "info";
+
+const toTone = (
+  value: "default" | "warning" | "success" | "error" | "info" | undefined
+): NegocioStatusTone => (value === "default" || value == null ? "neutral" : value);
+
+/** Tono de `StatusChip` para un estado de negocio. */
+export function negocioStatusTone(status: string): NegocioStatusTone {
+  return toTone(NEGOCIO_STATUS_COLOR[status]);
+}
+
+/** Tono de `StatusChip` para un estado de cuota. */
+export function cuotaStatusTone(status: string): NegocioStatusTone {
+  return toTone(CUOTA_STATUS_COLOR[status]);
+}
+
 export function labelNegocioStatus(status: string) {
   return NEGOCIO_STATUS_LABEL[status] || status;
 }

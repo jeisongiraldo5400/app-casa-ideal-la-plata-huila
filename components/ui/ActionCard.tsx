@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   compact: { minHeight: 76, padding: Spacing.md },
-  icon: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  icon: { width: 44, height: 44, borderRadius: Radius.icon, alignItems: 'center', justifyContent: 'center' },
   copy: { flex: 1 },
   title: { fontSize: 15, lineHeight: 20, fontWeight: '800' },
   subtitle: { fontSize: 12, lineHeight: 16, marginTop: 2 },

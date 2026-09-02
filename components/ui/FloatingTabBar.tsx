@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
   item: { flex: 1, minHeight: 60, alignItems: 'center', justifyContent: 'center', gap: 3 },
   centralItem: { justifyContent: 'flex-start' },
   iconSlot: { height: 28, alignItems: 'center', justifyContent: 'center' },
-  centralButton: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginTop: -18, borderWidth: 4 },
+  centralButton: { width: 54, height: 54, borderRadius: Radius.icon + 2, alignItems: 'center', justifyContent: 'center', marginTop: -18, borderWidth: 4 },
   label: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
   centralLabel: { marginTop: 1 },
   pressed: { opacity: 0.65 },

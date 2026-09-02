@@ -42,7 +42,7 @@ export function SegmentedControl({ items, value, onChange }: SegmentedControlPro
 
 const styles = StyleSheet.create({
   track: { minHeight: 52, flexDirection: 'row', borderRadius: Radius.control, padding: Spacing.xs, borderWidth: 1, gap: Spacing.xs },
-  item: { flex: 1, minHeight: 42, paddingHorizontal: Spacing.sm, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  item: { flex: 1, minHeight: 42, paddingHorizontal: Spacing.sm, borderRadius: Radius.chip, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   label: { fontSize: 13, fontWeight: '800', flexShrink: 1 },
   badge: { minWidth: 22, height: 22, paddingHorizontal: 5, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   badgeText: { fontSize: 10, fontWeight: '800' },
