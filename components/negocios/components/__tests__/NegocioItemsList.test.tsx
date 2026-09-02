@@ -62,4 +62,30 @@ describe('NegocioItemsList', () => {
     expect(input.props.value).toBe('2.400.000');
     expect(screen.getByText('$ 2.400.000')).toBeTruthy();
   });
+
+  it('permite borrar la cantidad y escribir otra sin concatenar dígitos', () => {
+    const screen = render(<ItemsHarness />);
+    const input = screen.getByLabelText('Cantidad de Nevera Samsung 300L');
+
+    fireEvent(input, 'focus');
+    fireEvent.changeText(input, '');
+    expect(input.props.value).toBe('');
+
+    fireEvent.changeText(input, '5');
+    expect(input.props.value).toBe('5');
+    expect(screen.getByText('$ 10')).toBeTruthy();
+
+    fireEvent(input, 'blur');
+    expect(input.props.value).toBe('5');
+  });
+
+  it('restaura la cantidad vigente al salir con un valor vacío', () => {
+    const screen = render(<ItemsHarness />);
+    const input = screen.getByLabelText('Cantidad de Nevera Samsung 300L');
+
+    fireEvent(input, 'focus');
+    fireEvent.changeText(input, '');
+    fireEvent(input, 'blur');
+    expect(input.props.value).toBe('1');
+  });
 });

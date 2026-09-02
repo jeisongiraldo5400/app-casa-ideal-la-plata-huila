@@ -142,6 +142,43 @@ function NegocioCreateScreenInner() {
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderOption[]>([]);
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
 
+  /**
+   * La pantalla vive en Tabs (href: null) y no se desmonta al navegar: sin
+   * este reset, al volver a "Nuevo" el wizard reaparece lleno en el último
+   * paso y un segundo "Activar" crearía un negocio duplicado.
+   */
+  const resetForm = useCallback(() => {
+    setStep(0);
+    setCustomers([]);
+    setProducts([]);
+    setCustomerQuery('');
+    setProductQuery('');
+    setCustomer(null);
+    setCodeudor(null);
+    setDepartamentoId('');
+    setMunicipioId('');
+    setDireccion('');
+    setItems([]);
+    setStockByProduct({});
+    setDownPayment('0');
+    setInstallments('3');
+    setFrequency(creditSettings?.default_frequency || 'mensual');
+    setFirstDueDate('');
+    setSignature('');
+    setSellerSignature('');
+    setGuarantorSignature('');
+    setShowNewCustomerModal(false);
+    setNewCustomerName('');
+    setNewCustomerId('');
+    setNewCustomerPhone('');
+    setPickingCodeudor(false);
+    setOriginType('bodega');
+    setSelectedDeliveryOrder(null);
+    // Las OE disponibles cambian tras vincular una: se recargan.
+    setLoadingInitialData(true);
+    setInitialDataReload((value) => value + 1);
+  }, [creditSettings?.default_frequency]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -308,30 +345,29 @@ function NegocioCreateScreenInner() {
     index: number,
     patch: Partial<Pick<NegocioItem, 'quantity' | 'unit_price' | 'warehouse_id'>>
   ) => {
-    setItems((prev) => {
-      const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row));
-      const updated = next[index];
-      if (!updated) return next;
+    const current = items[index];
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    const next = items.map((row, i) => (i === index ? updated : row));
 
-      if (patch.quantity !== undefined || patch.warehouse_id !== undefined) {
-        const available = availableQtyForItem(
-          stockByProduct,
-          next,
-          updated.product_id,
-          updated.warehouse_id,
-          index
+    if (patch.quantity !== undefined || patch.warehouse_id !== undefined) {
+      const available = availableQtyForItem(
+        stockByProduct,
+        next,
+        updated.product_id,
+        updated.warehouse_id,
+        index
+      );
+      if (updated.quantity > available) {
+        Alert.alert(
+          'Stock insuficiente',
+          `Disponible en ${warehouseLabel(updated.product_id, updated.warehouse_id)}: ${available}`
         );
-        if (updated.quantity > available) {
-          Alert.alert(
-            'Stock insuficiente',
-            `Disponible en ${warehouseLabel(updated.product_id, updated.warehouse_id)}: ${available}`
-          );
-          return prev;
-        }
+        return;
       }
+    }
 
-      return next;
-    });
+    setItems(next);
   };
 
   const customerLocked =
@@ -403,6 +439,7 @@ function NegocioCreateScreenInner() {
     try {
       savingRef.current = true;
       setSaving(true);
+      const numeroLabel = (numero: number | null | undefined) => formatNegocioCodigo(numero);
       const result = await createAndActivate({
         deal_date: localDateValue(),
         municipio_id: municipioId,
@@ -425,13 +462,15 @@ function NegocioCreateScreenInner() {
         seller_signature_data_url: sellerSignature || undefined,
         activate,
       });
+      const fromDeliveryOrder = originType === 'orden_entrega';
+      resetForm();
       Alert.alert(
         '¡Éxito!',
         activate
-          ? originType === 'orden_entrega'
-            ? `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se vinculó la orden de entrega existente.`
-            : `Negocio ${formatNegocioCodigo(result?.numero)} activado. Se creó la orden de entrega.`
-          : `Negocio ${formatNegocioCodigo(result?.numero)} guardado como borrador.`,
+          ? fromDeliveryOrder
+            ? `Negocio ${numeroLabel(result?.numero)} activado. Se vinculó la orden de entrega existente.`
+            : `Negocio ${numeroLabel(result?.numero)} activado. Se creó la orden de entrega.`
+          : `Negocio ${numeroLabel(result?.numero)} guardado como borrador.`,
         [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
       );
     } catch (e: unknown) {
@@ -847,7 +886,11 @@ function NegocioCreateScreenInner() {
                     : 'Regrese y seleccione una orden de entrega.'}
                 </Text>
                 {(selectedDeliveryOrder?.items || []).map((remItem) => {
-                  const alreadyAdded = items.find((i) => i.product_id === remItem.product_id);
+                  const alreadyAdded = items.find(
+                    (i) =>
+                      i.product_id === remItem.product_id &&
+                      i.warehouse_id === remItem.warehouse_id
+                  );
                   return (
                     <View
                       key={`${remItem.product_id}-${remItem.warehouse_id}`}

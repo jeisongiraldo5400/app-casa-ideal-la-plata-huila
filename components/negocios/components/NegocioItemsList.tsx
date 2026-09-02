@@ -83,6 +83,59 @@ function EditableMoneyInput({
   );
 }
 
+/**
+ * Cantidad con borrador local: un input controlado que ignora textos
+ * inválidos impide borrar el dígito para escribir otro ("1" → "" → "15").
+ */
+function EditableQuantityInput({
+  value,
+  label,
+  hasIssue,
+  colors,
+  onChange,
+}: {
+  value: number;
+  label: string;
+  hasIssue: boolean;
+  colors: ThemeColors;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [focused, value]);
+
+  const handleChange = (text: string) => {
+    const digits = text.replace(/\D/g, '');
+    setDraft(digits);
+    const quantity = parseNegocioQuantity(digits);
+    if (Number.isSafeInteger(quantity) && quantity > 0 && quantity !== value) {
+      onChange(quantity);
+    }
+  };
+
+  return (
+    <TextInput
+      accessibilityLabel={label}
+      keyboardType="numeric"
+      selectTextOnFocus
+      style={[
+        styles.input,
+        {
+          borderColor: hasIssue ? 'crimson' : colors.divider,
+          color: colors.text.primary,
+        },
+      ]}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChangeText={handleChange}
+    />
+  );
+}
+
 export function NegocioItemsList({
   items,
   stockByProduct,
@@ -182,22 +235,12 @@ export function NegocioItemsList({
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text.secondary, fontSize: 12 }}>Cant.</Text>
-                <TextInput
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    {
-                      borderColor: qtyIssue ? 'crimson' : colors.divider,
-                      color: colors.text.primary,
-                    },
-                  ]}
-                  value={String(item.quantity)}
-                  onChangeText={(text) => {
-                    const quantity = parseNegocioQuantity(text);
-                    if (Number.isSafeInteger(quantity) && quantity > 0) {
-                      onUpdateItem(idx, { quantity });
-                    }
-                  }}
+                <EditableQuantityInput
+                  value={item.quantity}
+                  label={`Cantidad de ${item.description}`}
+                  hasIssue={qtyIssue}
+                  colors={colors}
+                  onChange={(quantity) => onUpdateItem(idx, { quantity })}
                 />
                 {qtyIssue ? (
                   <Text style={{ color: 'crimson', fontSize: 11 }}>Máx: {maxQty}</Text>
