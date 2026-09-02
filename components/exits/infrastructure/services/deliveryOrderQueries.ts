@@ -244,7 +244,7 @@ export async function loadOrderRegisteredTotals(
     .from('delivery_orders')
     .select(
       `
-      items:delivery_order_items!inner(
+      items:delivery_order_items!fk_delivery_order_item_order!inner(
         id,
         product_id,
         warehouse_id,

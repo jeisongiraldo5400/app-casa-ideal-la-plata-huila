@@ -18,7 +18,7 @@ interface InputProps extends TextInputProps {
   rightElement?: React.ReactNode;
 }
 
-export function Input({
+export const Input = React.forwardRef<TextInput, InputProps>(function Input({
   label,
   error,
   containerStyle,
@@ -27,7 +27,7 @@ export function Input({
   onFocus,
   onBlur,
   ...props
-}: InputProps) {
+}, ref) {
   const [isFocused, setIsFocused] = useState(false);
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
@@ -62,6 +62,7 @@ export function Input({
           },
         ]}>
         <TextInput
+          ref={ref}
           style={[
             styles.input,
             { color: Colors.text.primary },
@@ -84,7 +85,7 @@ export function Input({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
