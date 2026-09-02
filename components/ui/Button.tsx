@@ -22,6 +22,8 @@ interface ButtonProps {
   size?: 'md' | 'sm';
   /** Icono a la izquierda del texto. */
   icon?: IconName;
+  /** Oculta el texto y deja solo el icono (requiere pasar `icon`). */
+  iconOnly?: boolean;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -35,6 +37,7 @@ export function Button({
   variant = 'primary',
   size = 'md',
   icon,
+  iconOnly = false,
   disabled = false,
   loading = false,
   style,
@@ -67,6 +70,7 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         size === 'sm' && styles.small,
+        iconOnly && (size === 'sm' ? styles.iconOnlySmall : styles.iconOnly),
         { backgroundColor },
         variant === 'outline' && { borderColor: colors.primary.main, borderWidth: 1.5 },
         variant === 'ghost' && styles.ghost,
@@ -88,9 +92,11 @@ export function Button({
               color={unavailable ? colors.text.secondary : foregroundColor}
             />
           ) : null}
-          <Text style={[styles.text, size === 'sm' && styles.textSmall, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
-            {title}
-          </Text>
+          {iconOnly ? null : (
+            <Text style={[styles.text, size === 'sm' && styles.textSmall, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
+              {title}
+            </Text>
+          )}
         </>
       )}
     </Pressable>
@@ -112,6 +118,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
+  },
+  iconOnly: {
+    paddingHorizontal: Spacing.md,
+    gap: 0,
+  },
+  iconOnlySmall: {
+    paddingHorizontal: Spacing.sm,
+    gap: 0,
   },
   ghost: {
     minHeight: 44,

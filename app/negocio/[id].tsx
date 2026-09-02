@@ -1163,11 +1163,20 @@ function NegocioDetailScreenInner() {
             style={styles.primaryAction}
           />
         ) : null}
-        <Button title="PDF" variant="outline" icon="picture-as-pdf" onPress={() => void sharePdf()} accessibilityLabel="Compartir contrato en PDF" style={styles.secondaryAction} />
+        <Button
+          title="PDF"
+          variant="outline"
+          icon="picture-as-pdf"
+          iconOnly
+          onPress={() => void sharePdf()}
+          accessibilityLabel="Compartir contrato en PDF"
+          style={styles.secondaryAction}
+        />
         <Button
           title="Imprimir"
           variant="outline"
           icon="print"
+          iconOnly
           onPress={() => void printNegocioTicket()}
           loading={printingTicket}
           accessibilityLabel="Imprimir negocio"
