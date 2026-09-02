@@ -7,13 +7,16 @@ import {
 } from '@/lib/offline/repositories/offlineRepository';
 import {
   calculateCredit,
+  type CreditCalcResult,
   type CreditFrequency,
   type CreditSettingsInput,
 } from '@/lib/creditCalculator';
 import {
+  isNewLocalSignature,
   removeNegocioSignatures,
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
+import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
   validateNegocioItemsStock,
@@ -34,6 +37,8 @@ interface NegociosState {
   list: any[];
   loading: boolean;
   fromCache: boolean;
+  /** Mensaje del último fallo de `fetchList`; null cuando la carga fue exitosa. */
+  error: string | null;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
   fetchList: () => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
@@ -71,6 +76,22 @@ interface PendingCreateRequest {
     guarantor: string | null;
     seller: string | null;
   }>;
+  /**
+   * Snapshot de fórmula fijado en el primer intento. `calculated_at` cambia en
+   * cada cálculo y el servidor hashea `p_negocio` completo contra la
+   * idempotency key: reutilizarlo evita "clave usada con datos diferentes".
+   */
+  formulaSnapshot?: CreditCalcResult['formulaSnapshot'];
+}
+
+function sameFormulaSnapshot(
+  a: CreditCalcResult['formulaSnapshot'] | undefined,
+  b: CreditCalcResult['formulaSnapshot']
+): boolean {
+  if (!a) return false;
+  const { calculated_at: _a, ...restA } = a;
+  const { calculated_at: _b, ...restB } = b;
+  return JSON.stringify(restA) === JSON.stringify(restB);
 }
 
 const pendingCreateRequests = new Map<string, PendingCreateRequest>();
@@ -139,27 +160,40 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
   loading: false,
   fromCache: false,
+  error: null,
   creditSettings: null,
 
   fetchList: async () => {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
+      // `negocios` no tiene columna remaining_balance: se deriva de las cuotas.
       const { data, error } = await supabase
         .from('negocios')
-        .select('*, customer:customers!negocios_customer_id_fkey(name)')
+        .select(
+          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
+        )
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      set({ list: data || [], fromCache: false });
+      const list = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
+        ...negocio,
+        remaining_balance: computeRemainingBalance(negocio_cuotas),
+        has_mora: (negocio_cuotas || []).some(
+          (cuota: { status: string; deleted_at: string | null }) =>
+            cuota.status === 'mora' && !cuota.deleted_at
+        ),
+      }));
+      set({ list, fromCache: false, error: null });
     } catch (e) {
       if (isNetworkError(e) && canUseLocalDb()) {
         const local = await fetchNegociosListFromLocal();
-        set({ list: local, fromCache: true });
+        set({ list: local, fromCache: true, error: null });
         return;
       }
       console.error(e);
-      set({ list: [], fromCache: false });
+      // Conservar la lista anterior: un fallo transitorio no debe vaciar la pantalla.
+      set({ error: toUserError(e, 'No se pudieron cargar los negocios').message });
     } finally {
       set({ loading: false });
     }
@@ -281,6 +315,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
+    if (!sameFormulaSnapshot(request.formulaSnapshot, calc.formulaSnapshot)) {
+      request.formulaSnapshot = calc.formulaSnapshot;
+    }
+
     const { data: negocioId, error } = await supabase.rpc('create_negocio', {
       p_negocio_id: request.draftId,
       p_idempotency_key: request.idempotencyKey,
@@ -302,7 +340,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         installment_amount: calc.installmentAmount,
         frequency: input.frequency,
         first_due_date: input.first_due_date,
-        formula_snapshot: calc.formulaSnapshot,
+        formula_snapshot: request.formulaSnapshot,
         customer_signature_url: request.signatureUrls.customer,
         guarantor_signature_url: request.signatureUrls.guarantor,
         seller_signature_url: request.signatureUrls.seller,
@@ -313,13 +351,18 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         subtotal: item.unit_price * item.quantity,
       })) as unknown as Json,
     });
-    if (error || !negocioId) {
+    let createdId: string | null = negocioId ?? null;
+    if (error || !createdId) {
+      // El RPC pudo completarse en servidor aunque el cliente no recibiera la
+      // respuesta (timeout): si el negocio existe, se trata como éxito.
       const { data: persisted } = await supabase
         .from('negocios')
         .select('id')
         .eq('id', request.draftId)
         .maybeSingle();
-      if (!persisted) {
+      if (persisted) {
+        createdId = persisted.id;
+      } else {
         const uploaded = [
           isNewLocalSignature(input.customer_signature_data_url) ? request.signatureUrls.customer : null,
           isNewLocalSignature(input.guarantor_signature_data_url) ? request.signatureUrls.guarantor : null,
@@ -331,14 +374,14 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         request.signatureUrls = undefined;
         request.signaturePromise = undefined;
         pendingCreateRequests.delete(requestFingerprint);
+        throw toUserError(error, 'No se pudo crear el negocio');
       }
-      throw toUserError(error, 'No se pudo crear el negocio');
     }
 
     const { data: negocio, error: loadError } = await supabase
       .from('negocios')
       .select('id, numero')
-      .eq('id', negocioId)
+      .eq('id', createdId)
       .single();
     if (loadError || !negocio) {
       throw toUserError(loadError, 'No se pudo cargar el negocio creado');
@@ -350,9 +393,3 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     return { numero: negocio.numero, id: negocio.id };
   },
 }));
-
-function isNewLocalSignature(value: string | null | undefined) {
-  return Boolean(
-    value?.startsWith('data:image/') || value?.startsWith('file:') || value?.startsWith('content:')
-  );
-}
