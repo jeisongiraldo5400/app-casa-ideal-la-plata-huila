@@ -62,6 +62,13 @@ export async function removeNegocioSignatures(
   if (error) throw new Error(`No se pudieron limpiar las firmas: ${error.message}`);
 }
 
+/** Firma recién capturada en el dispositivo (aún no subida a Storage). */
+export function isNewLocalSignature(value: string | null | undefined): boolean {
+  return Boolean(
+    value?.startsWith('data:image/') || value?.startsWith('file:') || value?.startsWith('content:')
+  );
+}
+
 /**
  * Sube firma a Storage privado y devuelve su ruta persistente.
  */
