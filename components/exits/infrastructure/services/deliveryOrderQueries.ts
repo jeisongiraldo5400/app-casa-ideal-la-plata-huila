@@ -257,7 +257,7 @@ export async function loadOrderRegisteredTotals(
     )
     .eq('id', orderId)
     .is('items.deleted_at', null)
-    .single();
+    .maybeSingle();
   if (orderError) throw orderError;
   if (!orderData?.items) return null;
 
