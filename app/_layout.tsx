@@ -1,6 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
+import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,6 +17,17 @@ import { startSupabaseAuthLifecycle } from '@/lib/supabase';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
+
+// Captura crashes nativos (no solo errores de JS) para dejar de adivinar cuando la app
+// se cierra sin dejar rastro en los logs propios. Sin DSN configurado, no hace nada.
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    enabled: true,
+    tracesSampleRate: 0.2,
+  });
+}
 
 // Configurar las opciones de animación del splash screen solo si no estamos en Expo Go
 // setOptions no funciona en Expo Go, solo en development builds y production
@@ -108,7 +120,7 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const { isDark } = useTheme();
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -120,6 +132,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default sentryDsn ? Sentry.wrap(RootLayout) : RootLayout;
 
 const styles = StyleSheet.create({
   root: {

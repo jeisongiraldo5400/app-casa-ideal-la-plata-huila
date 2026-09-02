@@ -1,8 +1,16 @@
+import { logOperationError } from '@/lib/operationLogger';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+/** Momento del último desmontaje de una CameraView, a nivel de módulo (no por instancia). */
+let lastCameraTeardownAt = 0;
+/** Tiempo mínimo entre desmontar una cámara y montar la siguiente, para darle a Android
+ * margen de liberar el dispositivo antes de que otra sesión intente adquirirlo (ver el
+ * comentario sobre expo/expo#35386 más abajo). */
+const CAMERA_REMOUNT_COOLDOWN_MS = 400;
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
@@ -12,6 +20,8 @@ interface BarcodeScannerProps {
   contextLabel?: string;
   /** When false, ignore reads without detaching onBarcodeScanned (iOS crash). */
   active?: boolean;
+  /** Módulo que llama al escáner, para etiquetar correctamente los logs de error remotos. */
+  logModule?: 'entries' | 'exits';
 }
 
 export function BarcodeScanner({
@@ -21,6 +31,7 @@ export function BarcodeScanner({
   instruction = 'Escanea el código de barras del producto',
   contextLabel,
   active = true,
+  logModule,
 }: BarcodeScannerProps) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -46,11 +57,18 @@ export function BarcodeScanner({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      lastCameraTeardownAt = Date.now();
     };
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setDeferMountCamera(true), 250);
+    // Si otra CameraView se acaba de desmontar hace muy poco (p. ej. al terminar una
+    // entrada y abrir el escáner de la siguiente), espera lo que falte del cooldown
+    // además del delay base, para no montar una nueva sesión de cámara mientras Android
+    // todavía está liberando el dispositivo de la anterior.
+    const sinceTeardown = Date.now() - lastCameraTeardownAt;
+    const delay = Math.max(250, CAMERA_REMOUNT_COOLDOWN_MS - sinceTeardown);
+    const t = setTimeout(() => setDeferMountCamera(true), delay);
     return () => clearTimeout(t);
   }, []);
 
@@ -166,7 +184,20 @@ export function BarcodeScanner({
           facing="back"
           active={active}
           onCameraReady={onCameraReady}
-          onMountError={({ message }) => setError(message || 'No fue posible iniciar la cámara')}
+          onMountError={({ message }) => {
+            const errorMessage = message || 'No fue posible iniciar la cámara';
+            console.error('[BarcodeScanner] onMountError:', errorMessage);
+            setError(errorMessage);
+            if (logModule) {
+              void logOperationError({
+                error_code: 'CAMERA_MOUNT_ERROR',
+                error_message: errorMessage,
+                module: logModule,
+                operation: 'barcode_scanner_mount',
+                severity: 'error',
+              });
+            }
+          }}
           onBarcodeScanned={barcodeHandler}
           barcodeScannerSettings={{
             barcodeTypes: [

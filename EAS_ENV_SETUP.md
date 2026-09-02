@@ -15,6 +15,9 @@ eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "tu_ur
 
 # Configurar la clave anónima de Supabase
 eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "tu_clave_anonima_de_supabase"
+
+# Configurar el DSN de Sentry (reporte de crashes nativos, opcional pero recomendado)
+eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value "tu_dsn_de_sentry"
 ```
 
 ### 2. Verificar que las variables estén configuradas

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -30,6 +31,7 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
@@ -85,6 +87,14 @@ const localDateValue = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 export default function NegocioCreateScreen() {
+  return (
+    <NegocioErrorBoundary screen="create">
+      <NegocioCreateScreenInner />
+    </NegocioErrorBoundary>
+  );
+}
+
+function NegocioCreateScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -262,7 +272,12 @@ export default function NegocioCreateScreen() {
     rounding_unit: 1000,
   };
   const installmentsNumber = Number(installments);
-  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
+  const minInstallments = creditSettings?.min_installments ?? 1;
+  const maxInstallments = creditSettings?.max_installments ?? Number.MAX_SAFE_INTEGER;
+  const installmentsValid =
+    Number.isSafeInteger(installmentsNumber) &&
+    installmentsNumber >= minInstallments &&
+    installmentsNumber <= maxInstallments;
 
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const calc = calculateCredit({
@@ -384,7 +399,7 @@ export default function NegocioCreateScreen() {
     }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
     if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
-    if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0');
+    if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
     const parsedDownPayment = parseNegocioMoney(downPayment);
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
@@ -456,6 +471,10 @@ export default function NegocioCreateScreen() {
         </View>
       ) : null}
       {/* Wizard Steps Header */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={[styles.wizardHeader, { backgroundColor: colors.background.paper, borderBottomColor: colors.divider }]}>
         {WIZARD_STEPS.map((s, idx) => {
           const isActive = step === s.id;
@@ -506,6 +525,7 @@ export default function NegocioCreateScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}
+        keyboardShouldPersistTaps="handled"
       >
         {step === 0 && (
           <View style={styles.block}>
@@ -964,7 +984,9 @@ export default function NegocioCreateScreen() {
             />
             {!installmentsValid && (
               <Text style={{ color: colors.error.main, fontSize: 12 }}>
-                Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
+                {creditSettings
+                  ? `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`
+                  : 'Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.'}
               </Text>
             )}
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
@@ -1105,7 +1127,7 @@ export default function NegocioCreateScreen() {
                 }
               }
               if (step === 2) {
-                if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
+                if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
                 if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
                 if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
                 const initial = parseNegocioMoney(downPayment);
@@ -1144,6 +1166,7 @@ export default function NegocioCreateScreen() {
           </View>
         )}
       </View>
+      </KeyboardAvoidingView>
 
       {/* MODAL CREAR CLIENTE NUEVO */}
       <Modal

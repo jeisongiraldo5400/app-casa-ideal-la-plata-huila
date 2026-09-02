@@ -228,19 +228,22 @@ export function NegocioProductAddSection({
         onChangeText={onProductQueryChange}
       />
 
-      <Modal
-        visible={scannerOpen}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setScannerOpen(false)}
-      >
-        <BarcodeScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setScannerOpen(false)}
-          title="Escanear producto del negocio"
-          instruction="Ubica el código de barras dentro del recuadro"
-        />
-      </Modal>
+      {scannerOpen && (
+        <Modal
+          visible
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setScannerOpen(false)}
+        >
+          <BarcodeScanner
+            active={scannerOpen}
+            onScan={handleBarcodeScan}
+            onClose={() => setScannerOpen(false)}
+            title="Escanear producto del negocio"
+            instruction="Ubica el código de barras dentro del recuadro"
+          />
+        </Modal>
+      )}
 
       {!selectedProduct &&
         filteredProducts.map((p) => (

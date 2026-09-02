@@ -386,6 +386,7 @@ export function ExitScanningWorkspace() {
             title="Escanear producto de la salida"
             contextLabel={scannerContext}
             instruction="Ubica el código dentro del recuadro"
+            logModule="exits"
           />
         </View>
       ) : null}

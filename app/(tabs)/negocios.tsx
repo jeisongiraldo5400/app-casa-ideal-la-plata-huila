@@ -19,8 +19,17 @@ import { formatNegocioCodigo, labelNegocioStatus } from '@/lib/negocioLabels';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
 
 export default function NegociosScreen() {
+  return (
+    <NegocioErrorBoundary screen="list">
+      <NegociosScreenInner />
+    </NegocioErrorBoundary>
+  );
+}
+
+function NegociosScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

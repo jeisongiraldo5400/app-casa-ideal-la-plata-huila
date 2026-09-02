@@ -37,7 +37,9 @@ describe('BarcodeScanner', () => {
     render(<BarcodeScanner onScan={onScan} onClose={jest.fn()} />);
 
     await act(async () => {
-      jest.advanceTimersByTime(250);
+      // 700ms cubre el delay base (250ms) más el cooldown de remontaje (hasta 400ms)
+      // que aplica si una CameraView anterior se desmontó justo antes en este archivo.
+      jest.advanceTimersByTime(700);
     });
     await waitFor(() => expect(mockCameraProps.barcodeScannerSettings).toBeTruthy());
     expect(mockCameraProps.barcodeScannerSettings.barcodeTypes).toEqual(
@@ -62,7 +64,9 @@ describe('BarcodeScanner', () => {
     const screen = render(<BarcodeScanner onScan={firstOnScan} onClose={jest.fn()} />);
 
     await act(async () => {
-      jest.advanceTimersByTime(250);
+      // 700ms cubre el delay base (250ms) más el cooldown de remontaje (hasta 400ms)
+      // que aplica si una CameraView anterior se desmontó justo antes en este archivo.
+      jest.advanceTimersByTime(700);
     });
     act(() => mockCameraProps.onCameraReady());
     await waitFor(() => expect(mockCameraProps.onBarcodeScanned).toEqual(expect.any(Function)));
@@ -83,7 +87,9 @@ describe('BarcodeScanner', () => {
     const screen = render(<BarcodeScanner onScan={onScan} onClose={jest.fn()} active={false} />);
 
     await act(async () => {
-      jest.advanceTimersByTime(250);
+      // 700ms cubre el delay base (250ms) más el cooldown de remontaje (hasta 400ms)
+      // que aplica si una CameraView anterior se desmontó justo antes en este archivo.
+      jest.advanceTimersByTime(700);
     });
     act(() => mockCameraProps.onCameraReady());
     await waitFor(() => expect(mockCameraProps.onBarcodeScanned).toEqual(expect.any(Function)));

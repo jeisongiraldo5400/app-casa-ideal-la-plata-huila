@@ -89,7 +89,9 @@
       "expo-local-authentication",
       [
         "@morrowdigital/watermelondb-expo-plugin",
-        { "disableJsi": false }
+        {
+          "disableJsi": false
+        }
       ],
       "./plugins/withWatermelonJsiCmakePath",
       "./plugins/withAndroidBluetoothPrinterPermissions",
@@ -99,7 +101,8 @@
           "bluetoothAlwaysUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio.",
           "bluetoothPeripheralUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio."
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,

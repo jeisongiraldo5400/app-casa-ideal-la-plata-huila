@@ -259,6 +259,7 @@ export function EntryScanningWorkspace() {
             title="Escanear producto de entrada"
             contextLabel={scannerContext}
             instruction="Ubica el código dentro del recuadro"
+            logModule="entries"
           />
         </View>
       ) : null}

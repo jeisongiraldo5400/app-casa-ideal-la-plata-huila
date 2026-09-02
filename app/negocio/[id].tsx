@@ -58,10 +58,19 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
+import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
 
 const TABLE_PAGE_SIZE = 5;
 
 export default function NegocioDetailScreen() {
+  return (
+    <NegocioErrorBoundary screen="detail">
+      <NegocioDetailScreenInner />
+    </NegocioErrorBoundary>
+  );
+}
+
+function NegocioDetailScreenInner() {
   const { id, routeStopId } = useLocalSearchParams<{ id: string; routeStopId?: string }>();
   const router = useRouter();
   const { isDark } = useTheme();

@@ -228,6 +228,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!settings) throw new Error('La configuración de crédito aún no está disponible');
     if (!Number.isSafeInteger(input.installments_count)) throw new Error('El número de cuotas debe ser entero');
     if (input.installments_count < 1) throw new Error('El número de cuotas debe ser mayor a 0');
+    const minInstallments = settings.min_installments ?? 1;
+    const maxInstallments = settings.max_installments ?? Number.MAX_SAFE_INTEGER;
+    if (input.installments_count < minInstallments) throw new Error(`El número de cuotas debe ser al menos ${minInstallments}`);
+    if (input.installments_count > maxInstallments) throw new Error(`El número de cuotas no puede superar ${maxInstallments}`);
     if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
     if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
 
