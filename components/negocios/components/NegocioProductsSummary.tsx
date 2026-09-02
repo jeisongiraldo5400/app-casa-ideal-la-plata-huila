@@ -1,5 +1,9 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { useTheme } from '@/components/theme';
+import { ListCard, Metric, SectionHeader } from '@/components/ui';
+import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 export type NegocioProductSummaryItem = {
   id: string;
@@ -12,123 +16,52 @@ export type NegocioProductSummaryItem = {
   product?: { name: string | null; sku?: string | null } | null;
 };
 
-type ThemeColors = {
-  text: { primary: string; secondary: string };
-  background: { paper: string };
-  divider: string;
-  primary: { main: string };
-};
-
 type Props = {
   items: NegocioProductSummaryItem[];
   productsSubtotal?: number | null;
-  colors: ThemeColors;
 };
 
 function itemLabel(item: NegocioProductSummaryItem) {
-  return (
-    item.description?.trim() ||
-    item.product?.name?.trim() ||
-    item.product?.sku?.trim() ||
-    item.product_id
-  );
+  return item.description?.trim() || item.product?.name?.trim() || item.product?.sku?.trim() || item.product_id;
 }
 
-export function NegocioProductsSummary({
-  items,
-  productsSubtotal,
-  colors,
-}: Props) {
-  const computedSubtotal = items.reduce(
-    (sum, item) => sum + Number(item.subtotal || 0),
-    0
-  );
+/** Productos del negocio en solo lectura, con subtotal. */
+export function NegocioProductsSummary({ items, productsSubtotal }: Props) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const computedSubtotal = items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
   const total =
-    productsSubtotal != null && Number.isFinite(Number(productsSubtotal))
-      ? Number(productsSubtotal)
-      : computedSubtotal;
+    productsSubtotal != null && Number.isFinite(Number(productsSubtotal)) ? Number(productsSubtotal) : computedSubtotal;
 
   return (
     <View style={styles.root}>
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.section, { color: colors.text.primary }]}>Productos</Text>
-        <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-          {items.length} ítem{items.length === 1 ? '' : 's'}
-        </Text>
-      </View>
+      <SectionHeader title="Productos" hint={`${items.length} ítem${items.length === 1 ? '' : 's'}`} />
 
       {!items.length ? (
-        <Text style={{ color: colors.text.secondary, fontStyle: 'italic' }}>
-          Sin productos asignados
-        </Text>
+        <Text style={[styles.empty, { color: colors.text.secondary }]}>Sin productos asignados</Text>
       ) : (
         <View style={styles.list}>
           {items.map((item) => (
-            <View
-              key={item.id}
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.background.paper,
-                  borderColor: colors.divider,
-                },
-              ]}
-            >
-              <View style={styles.cardTop}>
-                <View
-                  style={[
-                    styles.qtyBadge,
-                    { backgroundColor: `${colors.primary.main}18` },
-                  ]}
-                >
-                  <Text style={{ color: colors.primary.main, fontWeight: '900' }}>
-                    ×{Number(item.quantity)}
-                  </Text>
+            <ListCard key={item.id}>
+              <View style={styles.top}>
+                <View style={[styles.qty, { backgroundColor: `${colors.primary.main}18` }]}>
+                  <Text style={[styles.qtyText, { color: colors.primary.main }]}>×{Number(item.quantity)}</Text>
                 </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text
-                    style={{ color: colors.text.primary, fontWeight: '700', fontSize: 14 }}
-                    numberOfLines={2}
-                  >
-                    {itemLabel(item)}
-                  </Text>
-                  <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                    Bodega: {item.warehouse?.name || '—'}
-                  </Text>
+                <View style={styles.copy}>
+                  <Text style={[styles.name, { color: colors.text.primary }]} numberOfLines={2}>{itemLabel(item)}</Text>
+                  <Text style={[styles.warehouse, { color: colors.text.secondary }]}>Bodega: {item.warehouse?.name || '—'}</Text>
                 </View>
               </View>
               <View style={[styles.amounts, { borderTopColor: colors.divider }]}>
-                <View>
-                  <Text style={styles.amountLabel}>UNITARIO</Text>
-                  <Text style={[styles.amountValue, { color: colors.text.primary }]}>
-                    {formatCOP(Number(item.unit_price))}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.amountLabel}>SUBTOTAL</Text>
-                  <Text style={[styles.amountValue, { color: colors.text.primary }]}>
-                    {formatCOP(Number(item.subtotal))}
-                  </Text>
-                </View>
+                <Metric label="Unitario" value={formatCOP(Number(item.unit_price))} />
+                <Metric label="Subtotal" value={formatCOP(Number(item.subtotal))} align="right" />
               </View>
-            </View>
+            </ListCard>
           ))}
 
-          <View
-            style={[
-              styles.footer,
-              {
-                backgroundColor: colors.background.paper,
-                borderColor: colors.divider,
-              },
-            ]}
-          >
-            <Text style={{ color: colors.text.secondary, fontWeight: '700' }}>
-              Subtotal productos
-            </Text>
-            <Text style={{ color: colors.text.primary, fontWeight: '900', fontSize: 15 }}>
-              {formatCOP(total)}
-            </Text>
+          <View style={[styles.footer, { backgroundColor: colors.surface.muted }]}>
+            <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>Subtotal productos</Text>
+            <Text style={[styles.footerValue, { color: colors.text.primary }]}>{formatCOP(total)}</Text>
           </View>
         </View>
       )}
@@ -137,45 +70,24 @@ export function NegocioProductsSummary({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: 10 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  section: { fontWeight: '700', marginTop: 8 },
-  list: { gap: 10 },
-  card: { borderWidth: 1, borderRadius: 16, padding: 13, gap: 10 },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  qtyBadge: {
-    minWidth: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  amounts: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 10,
-  },
-  amountLabel: {
-    color: '#64748b',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  amountValue: { fontSize: 13, fontWeight: '900', marginTop: 3 },
+  root: { gap: Spacing.md },
+  empty: { ...Typography.bodySmall, fontStyle: 'italic' },
+  list: { gap: Spacing.md },
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  qty: { minWidth: 40, height: 40, borderRadius: Radius.icon, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm },
+  qtyText: { ...Typography.bodySmallStrong, fontWeight: '800' },
+  copy: { flex: 1, gap: 2 },
+  name: { ...Typography.bodySmallStrong },
+  warehouse: { ...Typography.metadata, fontWeight: '400' },
+  amounts: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.sm, marginTop: Spacing.xs },
   footer: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
+    borderRadius: Radius.control,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  footerLabel: { ...Typography.bodySmallStrong },
+  footerValue: { ...Typography.bodyStrong, fontWeight: '800' },
 });

@@ -4,44 +4,48 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Pressable,
-  TextInput,
   Alert,
-  ActivityIndicator,
   Share,
-  Image,
-  Modal,
-  KeyboardAvoidingView,
   Platform,
   ActionSheetIOS,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '@/components/theme';
-import { BackButton } from '@/components/ui/BackButton';
-import { getColors } from '@/constants/theme';
+import {
+  ActionBar,
+  BackButton,
+  Button,
+  Card,
+  Pagination,
+  ScreenErrorBoundary,
+  ScreenState,
+  SectionHeader,
+} from '@/components/ui';
+import { IconSize, Spacing, Typography, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
-import {
-  labelCuotaStatus,
-  labelNegocioCodigo,
-  labelNegocioStatus,
-} from '@/lib/negocioLabels';
+import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
-import { formatPaymentDateTime } from '@/lib/localDate';
-import { SvgUri } from 'react-native-svg';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
+import { NegocioHero } from '@/components/negocios/components/NegocioHero';
+import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
+import { PaymentCard } from '@/components/negocios/components/PaymentCard';
+import { SignatureGallery } from '@/components/negocios/components/SignatureGallery';
+import { RegisterPaymentSheet } from '@/components/negocios/components/RegisterPaymentSheet';
 import {
+  isNewLocalSignature,
+  removeNegocioSignatures,
   resolveNegocioSignatureUrl,
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
+import { computeRemainingBalance, remainingAfterPago } from '@/lib/negocios/negocioBalance';
 import {
   openPagoSupport,
   uploadAndAttachPagoSupport,
@@ -58,7 +62,6 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
-import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -88,6 +91,8 @@ function NegocioDetailScreenInner() {
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fromLocal, setFromLocal] = useState(false);
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
@@ -105,7 +110,19 @@ function NegocioDetailScreenInner() {
   const paymentIdempotencyKey = useRef<string | null>(null);
   const paymentPaidAt = useRef<string | null>(null);
   const activateIdempotencyKey = useRef<string | null>(null);
+  /**
+   * Rutas de firma ya subidas para el intento de activación en curso. Se
+   * reutilizan en reintentos: el servidor hashea `p_negocio` contra la
+   * idempotency key y cada subida genera un nombre distinto.
+   */
+  const activateSignatureUploads = useRef<{
+    customer: string | null;
+    guarantor: string | null;
+    seller: string | null;
+    uploadedNew: string[];
+  } | null>(null);
   const activatingRef = useRef(false);
+  const hasNegocioRef = useRef(false);
   const formattedPayAmount = formatNegocioMoneyInput(payAmount);
 
   const handleGoBack = () => {
@@ -121,6 +138,9 @@ function NegocioDetailScreenInner() {
   const applyLocalDetail = useCallback(
     (local: NonNullable<Awaited<ReturnType<typeof fetchNegocioDetailFromLocal>>>) => {
       setNegocio(local.negocio);
+      hasNegocioRef.current = true;
+      setFromLocal(true);
+      setLoadError(null);
       setSignaturesDirty(false);
       setItems([]);
       setCuotas(local.cuotas);
@@ -145,6 +165,7 @@ function NegocioDetailScreenInner() {
     if (!id) return;
     setLoading(true);
     setLoadWarning(null);
+    setLoadError(null);
     if (options?.preferLocal && canUseLocalDb()) {
       const local = await fetchNegocioDetailFromLocal(id);
       if (local) {
@@ -165,6 +186,8 @@ function NegocioDetailScreenInner() {
         .single();
       if (error) throw error;
       setNegocio(n);
+      hasNegocioRef.current = true;
+      setFromLocal(false);
       setSignaturesDirty(false);
 
       const [
@@ -269,23 +292,26 @@ function NegocioDetailScreenInner() {
         if (orderError) throw orderError;
         setOrderNumber(oe?.order_number || null);
       }
-      if (moraError) {
+      // mark_cuotas_en_mora exige can_manage_collection_for_negocio; un usuario
+      // que solo puede ver el negocio recibe "Sin permiso" y no es un fallo real.
+      if (moraError && !/sin permiso/i.test(moraError.message || '')) {
         setLoadWarning('No fue posible actualizar automáticamente las cuotas en mora.');
       }
     } catch (e: any) {
+      let message = e?.message || 'No se pudo cargar';
       if (isNetworkError(e) && canUseLocalDb()) {
         const local = await fetchNegocioDetailFromLocal(id);
         if (local) {
           applyLocalDetail(local);
           return;
         }
-        Alert.alert(
-          'Sin datos locales',
-          'No hay datos locales de este negocio. Conéctese y pulse Descargar información.'
-        );
-        return;
+        message = 'No hay datos locales de este negocio. Conéctese y pulse Descargar información.';
       }
-      Alert.alert('Error', e.message || 'No se pudo cargar');
+      if (hasNegocioRef.current) {
+        Alert.alert('Error', message);
+      } else {
+        setLoadError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -297,23 +323,7 @@ function NegocioDetailScreenInner() {
     }, [load])
   );
 
-  const pendingBalance = useMemo(
-    () =>
-      cuotas
-        .filter((cuota) => cuota.status !== 'anulada')
-        .reduce(
-          (total, cuota) =>
-            total +
-            Math.max(
-              Number(cuota.amount) +
-                Number(cuota.late_fee_amount || 0) -
-                Number(cuota.paid_amount || 0),
-              0
-            ),
-          0
-        ),
-    [cuotas]
-  );
+  const pendingBalance = useMemo(() => computeRemainingBalance(cuotas), [cuotas]);
 
   const pickSupportFromCamera = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -687,15 +697,8 @@ function NegocioDetailScreenInner() {
 
   const shareReceipt = async (pago: any) => {
     if (!negocio) return;
-    const remainingBalance = Math.max(
-      cuotas
-        .filter((cuota) => cuota.status !== 'anulada')
-        .reduce((total, cuota) => total + Math.max(
-          Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
-          0
-        ), 0),
-      0
-    );
+    // Saldo que quedó tras ese pago, no el saldo actual del negocio.
+    const remainingBalance = remainingAfterPago(cuotas, pagos, pago);
     const html = buildNegocioReceiptHtml({
       receiptNumber: pago.virtual_receipt_number,
       status: pago.receipt_status,
@@ -720,15 +723,7 @@ function NegocioDetailScreenInner() {
 
   const printReceipt = async (pago: any) => {
     if (!negocio) return;
-    const remainingBalance = Math.max(
-      cuotas
-        .filter((cuota) => cuota.status !== 'anulada')
-        .reduce((total, cuota) => total + Math.max(
-          Number(cuota.amount) + Number(cuota.late_fee_amount || 0) - Number(cuota.paid_amount || 0),
-          0
-        ), 0),
-      0
-    );
+    const remainingBalance = remainingAfterPago(cuotas, pagos, pago);
     await printPayment({
       receiptNumber: pago.virtual_receipt_number,
       status: pago.receipt_status,
@@ -767,6 +762,18 @@ function NegocioDetailScreenInner() {
     });
   };
 
+  /** Descarta firmas subidas para un intento que ya no se reintentará. */
+  const discardPendingSignatureUploads = () => {
+    const pending = activateSignatureUploads.current;
+    activateSignatureUploads.current = null;
+    activateIdempotencyKey.current = null;
+    if (pending?.uploadedNew.length) {
+      void removeNegocioSignatures(pending.uploadedNew).catch((cleanupError) => {
+        console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
+      });
+    }
+  };
+
   const activateDraft = async () => {
     if (activatingRef.current || !negocio) return;
     try {
@@ -776,12 +783,25 @@ function NegocioDetailScreenInner() {
       let error: any = null;
 
       if (signaturesDirty) {
-        console.info('[negocio.activate] subiendo firmas', { negocioId: negocio.id });
-        const [customerUrl, guarantorUrl, sellerUrl] = await Promise.all([
-          uploadNegocioSignature(customerSignature, { negocioId: negocio.id, role: 'cliente' }),
-          uploadNegocioSignature(guarantorSignature, { negocioId: negocio.id, role: 'fiador' }),
-          uploadNegocioSignature(sellerSignature, { negocioId: negocio.id, role: 'vendedor' }),
-        ]);
+        if (!activateSignatureUploads.current) {
+          console.info('[negocio.activate] subiendo firmas', { negocioId: negocio.id });
+          const [customerUrl, guarantorUrl, sellerUrl] = await Promise.all([
+            uploadNegocioSignature(customerSignature, { negocioId: negocio.id, role: 'cliente' }),
+            uploadNegocioSignature(guarantorSignature, { negocioId: negocio.id, role: 'fiador' }),
+            uploadNegocioSignature(sellerSignature, { negocioId: negocio.id, role: 'vendedor' }),
+          ]);
+          activateSignatureUploads.current = {
+            customer: customerUrl,
+            guarantor: guarantorUrl,
+            seller: sellerUrl,
+            uploadedNew: [
+              isNewLocalSignature(customerSignature) ? customerUrl : null,
+              isNewLocalSignature(guarantorSignature) ? guarantorUrl : null,
+              isNewLocalSignature(sellerSignature) ? sellerUrl : null,
+            ].filter((path): path is string => Boolean(path)),
+          };
+        }
+        const uploads = activateSignatureUploads.current;
         const result = await supabase.rpc('update_negocio', {
           p_negocio_id: negocio.id,
           p_idempotency_key: activateIdempotencyKey.current,
@@ -802,9 +822,9 @@ function NegocioDetailScreenInner() {
             frequency: negocio.frequency,
             first_due_date: negocio.first_due_date,
             formula_snapshot: negocio.formula_snapshot || {},
-            customer_signature_url: customerUrl,
-            guarantor_signature_url: guarantorUrl,
-            seller_signature_url: sellerUrl,
+            customer_signature_url: uploads.customer,
+            guarantor_signature_url: uploads.guarantor,
+            seller_signature_url: uploads.seller,
             notes: negocio.notes || null,
           },
           p_items: items.map((item) => ({
@@ -829,11 +849,28 @@ function NegocioDetailScreenInner() {
       }
       if (error) throw error;
       activateIdempotencyKey.current = null;
+      activateSignatureUploads.current = null;
       setSignaturesDirty(false);
       await load();
       Alert.alert('Listo', 'Negocio activado y orden de entrega creada.');
     } catch (error: any) {
       console.error('[negocio.activate] falló la activación', { negocioId: negocio?.id, message: error?.message, error });
+      // El servidor pudo activar aunque el cliente no recibiera respuesta.
+      const { data: current } = await supabase
+        .from('negocios')
+        .select('status')
+        .eq('id', negocio.id)
+        .maybeSingle();
+      if (current && !['borrador', 'por_firmar'].includes(current.status)) {
+        activateIdempotencyKey.current = null;
+        activateSignatureUploads.current = null;
+        setSignaturesDirty(false);
+        await load();
+        Alert.alert('Listo', 'Negocio activado y orden de entrega creada.');
+        return;
+      }
+      // Sigue en borrador: se conservan key y firmas subidas para reintentar
+      // con el mismo payload.
       Alert.alert('Error', error.message || 'No se pudo activar el negocio');
     } finally {
       activatingRef.current = false;
@@ -841,11 +878,37 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  const headerTitle = negocio ? labelNegocioCodigo(negocio.numero) : 'Negocio';
+  const screenOptions = {
+    title: headerTitle,
+    headerLeft: () => <BackButton onPress={handleGoBack} />,
+  };
+
+  if (!loading && !negocio) {
+    return (
+      <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
+        <Stack.Screen options={screenOptions} />
+        <View style={styles.centered}>
+          <ScreenState
+            tone="error"
+            title="No se pudo cargar el negocio"
+            description={loadError || 'Inténtalo de nuevo en unos segundos.'}
+            actionLabel="Reintentar"
+            onAction={() => void load()}
+          />
+        </View>
+      </View>
+    );
+  }
+
   if (loading || !negocio) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: colors.background.default }]}>
-        <ActivityIndicator color={colors.primary.main} />
-      </SafeAreaView>
+      <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
+        <Stack.Screen options={screenOptions} />
+        <View style={styles.centered}>
+          <ScreenState loading title="Cargando negocio…" variant="inline" />
+        </View>
+      </View>
     );
   }
 
@@ -854,573 +917,196 @@ function NegocioDetailScreenInner() {
   const totalPaid = pagos
     .filter((pago) => pago.receipt_status !== 'anulado')
     .reduce((total, pago) => total + Number(pago.amount || 0), 0);
+  const address =
+    [negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre].filter(Boolean).join(', ') ||
+    'Dirección no registrada';
+  const planLabel =
+    negocio.installments_count != null
+      ? `${negocio.installments_count} cuotas de ${formatCOP(Number(negocio.installment_amount))}${orderNumber ? ` · OE ${orderNumber}` : ''}`
+      : null;
+  const pageCuotas = cuotas.slice(installmentPage * TABLE_PAGE_SIZE, (installmentPage + 1) * TABLE_PAGE_SIZE);
+  const pagePagos = pagos.slice(paymentPage * TABLE_PAGE_SIZE, (paymentPage + 1) * TABLE_PAGE_SIZE);
+  const readOnlySignatures = [
+    { label: 'Cliente', url: customerSignature },
+    { label: 'Fiador', url: guarantorSignature },
+    { label: 'Vendedor', url: sellerSignature },
+  ].filter((entry) => Boolean(entry.url));
+
+  const closePaySheet = () => {
+    if (!saving) setPayModalOpen(false);
+  };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={[styles.headerBar, { borderBottomColor: colors.divider, backgroundColor: colors.background.paper }]}>
-          <BackButton onPress={handleGoBack} style={styles.headerBackButton} />
-          <Text style={[styles.headerTitle, { color: colors.text.primary }]}>
-            {labelNegocioCodigo(negocio.numero)}
-          </Text>
+    <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
+      <Stack.Screen options={screenOptions} />
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {loadWarning ? (
+          <Card variant="muted" style={styles.warning}>
+            <MaterialIcons name="info-outline" size={IconSize.md} color={colors.warning.dark} />
+            <Text style={[styles.warningText, { color: colors.text.primary }]}>{loadWarning}</Text>
+          </Card>
+        ) : null}
+
+        <NegocioHero
+          customerName={customerName || 'Cliente'}
+          address={address}
+          status={negocio.status}
+          totalCredit={Number(negocio.total_credit)}
+          totalPaid={totalPaid}
+          pendingBalance={pendingBalance}
+          planLabel={planLabel}
+        />
+
+        {/* El detalle local no incluye ítems ni subtotal de productos. */}
+        {!fromLocal ? <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} /> : null}
+
+        <View style={styles.section}>
+          <SectionHeader title="Cuotas" hint={`${cuotas.length} cuota${cuotas.length === 1 ? '' : 's'}`} />
+          {cuotas.length ? (
+            <View style={styles.list}>
+              {pageCuotas.map((cuota) => (
+                <InstallmentCard key={cuota.id} cuota={cuota} />
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.empty, { color: colors.text.secondary }]}>Sin cuotas registradas</Text>
+          )}
+          <Pagination page={installmentPage} pageSize={TABLE_PAGE_SIZE} total={cuotas.length} onChange={setInstallmentPage} itemLabel="cuotas" />
         </View>
 
-        <ScrollView
-          style={{ flex: 1, backgroundColor: colors.background.default }}
-          contentContainerStyle={{ padding: 16, gap: 12 }}
-        >
-          {loadWarning && (
-            <View style={[styles.warningCard, { borderColor: colors.warning.main }]}>
-              <Text style={{ color: colors.warning.main }}>{loadWarning}</Text>
-            </View>
-          )}
-          <View style={[styles.creditHero, { backgroundColor: colors.primary.main }]}>
-            <View style={styles.creditHeroTop}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroEyebrow}>CLIENTE</Text>
-                <Text style={styles.heroCustomer}>{customerName}</Text>
-                <Text style={styles.heroAddress} numberOfLines={2}>
-                  {[negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
-                    .filter(Boolean).join(', ') || 'Dirección no registrada'}
-                </Text>
-              </View>
-              <View style={styles.businessStatus}><Text style={styles.businessStatusText}>{labelNegocioStatus(negocio.status)}</Text></View>
-            </View>
-            <View style={styles.creditMetrics}>
-              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>CRÉDITO</Text><Text style={styles.heroMetricValue}>{formatCOP(Number(negocio.total_credit))}</Text></View>
-              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>PAGADO</Text><Text style={styles.heroMetricValue}>{formatCOP(totalPaid)}</Text></View>
-              <View style={styles.creditMetric}><Text style={styles.heroEyebrow}>SALDO</Text><Text style={styles.heroMetricValue}>{formatCOP(pendingBalance)}</Text></View>
-            </View>
-            <Text style={styles.heroPlan}>{negocio.installments_count} cuotas de {formatCOP(Number(negocio.installment_amount))}{orderNumber ? ` · OE ${orderNumber}` : ''}</Text>
-          </View>
-
-          <NegocioProductsSummary
-            items={items}
-            productsSubtotal={Number(negocio.products_subtotal)}
-            colors={colors}
-          />
-
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.section, { color: colors.text.primary }]}>Cuotas</Text>
-            {canPay && (
-              <Pressable
-                style={[styles.payAction, { backgroundColor: colors.primary.main }]}
-                onPress={() => setPayModalOpen(true)}
-              >
-                <MaterialIcons name="payments" size={18} color={colors.primary.contrastText} />
-                <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-                  Registrar pago
-                </Text>
-              </Pressable>
-            )}
-          </View>
-          <View style={styles.mobileCardList}>
-            {cuotas
-              .slice(installmentPage * TABLE_PAGE_SIZE, installmentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE)
-              .map((c) => {
-                const late = Number(c.late_fee_amount || 0);
-                const saldo = Math.max(Number(c.amount) + late - Number(c.paid_amount), 0);
-                const statusColor = c.status === 'pagada' ? colors.success.main : c.status === 'mora' ? colors.error.main : c.status === 'parcial' ? colors.warning.main : colors.info.main;
-                return (
-                  <View key={c.id} style={[styles.installmentCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-                    <View style={styles.installmentTop}>
-                      <View style={[styles.installmentNumber, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontWeight: '900' }}>#{c.installment_number}</Text></View>
-                      <View style={{ flex: 1 }}><Text style={[styles.installmentTitle, { color: colors.text.primary }]}>Cuota {c.installment_number}</Text><Text style={{ color: colors.text.secondary, fontSize: 12 }}>Vence {c.due_date}</Text></View>
-                      <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}><Text style={{ color: statusColor, fontSize: 11, fontWeight: '900' }}>{labelCuotaStatus(c.status)}</Text></View>
-                    </View>
-                    <View style={[styles.installmentAmounts, { borderTopColor: colors.divider }]}>
-                      <View><Text style={styles.amountLabel}>VALOR</Text><Text style={[styles.amountValue, { color: colors.text.primary }]}>{formatCOP(Number(c.amount) + late)}</Text>{late > 0 && <Text style={{ color: colors.error.main, fontSize: 10 }}>Incluye mora {formatCOP(late)}</Text>}</View>
-                      <View><Text style={styles.amountLabel}>PAGADO</Text><Text style={[styles.amountValue, { color: colors.success.main }]}>{formatCOP(Number(c.paid_amount))}</Text></View>
-                      <View style={{ alignItems: 'flex-end' }}><Text style={styles.amountLabel}>SALDO</Text><Text style={[styles.amountValue, { color: saldo > 0 ? colors.text.primary : colors.success.main }]}>{formatCOP(saldo)}</Text></View>
-                    </View>
-                  </View>
-                );
-              })}
-          </View>
-          <View style={styles.pagination}>
-            <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
-              {cuotas.length
-                ? `${installmentPage * TABLE_PAGE_SIZE + 1}–${Math.min(
-                    (installmentPage + 1) * TABLE_PAGE_SIZE,
-                    cuotas.length
-                  )} de ${cuotas.length}`
-                : '0 registros'}
+        {canActivate ? (
+          <Card variant="outlined" style={styles.signingCard}>
+            <SectionHeader title="Firmas para activar" />
+            <Text style={[styles.helper, { color: colors.text.secondary }]}>
+              Las firmas son opcionales. Puede dibujarlas o subir un PNG transparente.
             </Text>
-            <Pressable
-              style={[
-                styles.pageButton,
-                { borderColor: colors.divider },
-                installmentPage === 0 && styles.pageButtonDisabled,
-              ]}
-              disabled={installmentPage === 0}
-              onPress={() => setInstallmentPage((page) => Math.max(page - 1, 0))}
-            >
-              <Text style={{ color: colors.text.primary }}>Anterior</Text>
-            </Pressable>
-            <Text style={{ color: colors.text.secondary }}>
-              Página {installmentPage + 1} de {Math.max(Math.ceil(cuotas.length / TABLE_PAGE_SIZE), 1)}
-            </Text>
-            <Pressable
-              style={[
-                styles.pageButton,
-                { borderColor: colors.divider },
-                installmentPage + 1 >= Math.ceil(cuotas.length / TABLE_PAGE_SIZE) &&
-                  styles.pageButtonDisabled,
-              ]}
-              disabled={installmentPage + 1 >= Math.ceil(cuotas.length / TABLE_PAGE_SIZE)}
-              onPress={() => setInstallmentPage((page) => page + 1)}
-            >
-              <Text style={{ color: colors.text.primary }}>Siguiente</Text>
-            </Pressable>
-          </View>
-
-          {canActivate && (
-            <View style={[styles.signingCard, { borderColor: colors.divider }]}>
-              <Text style={[styles.section, { color: colors.text.primary }]}>
-                Firmas para activar
-              </Text>
-              <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
-                Las firmas son opcionales. Puede dibujarlas o subir un PNG transparente.
-              </Text>
+            <SignaturePad
+              label="Firma del cliente"
+              value={customerSignature}
+              onChange={(value) => {
+                setCustomerSignature(value);
+                setSignaturesDirty(true);
+                discardPendingSignatureUploads();
+              }}
+            />
+            {negocio.codeudor_customer_id ? (
               <SignaturePad
-                label="Firma del cliente"
-                value={customerSignature}
+                label="Firma del fiador"
+                value={guarantorSignature}
                 onChange={(value) => {
-                  setCustomerSignature(value);
+                  setGuarantorSignature(value);
                   setSignaturesDirty(true);
-                  activateIdempotencyKey.current = null;
+                  discardPendingSignatureUploads();
                 }}
               />
-              {negocio.codeudor_customer_id && (
-                <SignaturePad
-                  label="Firma del fiador"
-                  value={guarantorSignature}
-                  onChange={(value) => {
-                    setGuarantorSignature(value);
-                    setSignaturesDirty(true);
-                    activateIdempotencyKey.current = null;
+            ) : null}
+            <SignaturePad
+              label="Firma del vendedor"
+              value={sellerSignature}
+              onChange={(value) => {
+                setSellerSignature(value);
+                setSignaturesDirty(true);
+                discardPendingSignatureUploads();
+              }}
+            />
+          </Card>
+        ) : null}
+
+        {pagos.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader title="Pagos y recibos" hint={`${pagos.length} registro${pagos.length === 1 ? '' : 's'}`} />
+            <View style={styles.list}>
+              {pagePagos.map((pago) => (
+                <PaymentCard
+                  key={pago.id}
+                  pago={pago}
+                  printing={printingTicket}
+                  onOpenSupport={(path) => {
+                    void openPagoSupport(path).catch((error: any) =>
+                      Alert.alert('Error', error?.message || 'No se pudo abrir el soporte')
+                    );
                   }}
+                  onShare={() => void shareReceipt(pago)}
+                  onPrint={() => void printReceipt(pago)}
                 />
-              )}
-              <SignaturePad
-                label="Firma del vendedor"
-                value={sellerSignature}
-                onChange={(value) => {
-                  setSellerSignature(value);
-                  setSignaturesDirty(true);
-                  activateIdempotencyKey.current = null;
-                }}
-              />
+              ))}
             </View>
-          )}
-
-          {canActivate && (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable style={[styles.btn, { flex: 1, backgroundColor: colors.primary.main }]} onPress={activateDraft} disabled={actionSaving}>
-                <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Activar negocio</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {pagos.length > 0 && (
-            <>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.section, { color: colors.text.primary }]}>Pagos y recibos</Text>
-                <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                  {pagos.length} registro{pagos.length === 1 ? '' : 's'}
-                </Text>
-              </View>
-              <View style={styles.mobileCardList}>
-                {pagos.slice(paymentPage * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE).map((pago) => (
-                  <View key={pago.id} style={[styles.paymentCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-                    <View style={[styles.paymentIcon, { backgroundColor: `${colors.success.main}18` }]}><MaterialIcons name="receipt-long" size={23} color={colors.success.main} /></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.paymentValue, { color: colors.text.primary }]}>{formatCOP(Number(pago.amount))}</Text>
-                      <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{formatPaymentDateTime(pago.paid_at)} · {pago.virtual_receipt_number}</Text>
-                      <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text>
-                      <Text style={{ color: colors.text.secondary, fontSize: 11, marginTop: 2 }}>
-                        Soporte: {pago.support_path ? (pago.support_file_name || 'Adjunto') : 'Sin adjunto'}
-                      </Text>
-                    </View>
-                    <View style={{ gap: 6, alignItems: 'flex-end' }}>
-                      {pago.support_path ? (
-                        <Pressable
-                          style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]}
-                          onPress={() => {
-                            void openPagoSupport(pago.support_path).catch((error: any) =>
-                              Alert.alert('Error', error?.message || 'No se pudo abrir el soporte')
-                            );
-                          }}
-                        >
-                          <MaterialIcons name="attach-file" size={20} color={colors.primary.main} />
-                          <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>Soporte</Text>
-                        </Pressable>
-                      ) : null}
-                      <Pressable style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]} onPress={() => shareReceipt(pago)}>
-                        <MaterialIcons name="picture-as-pdf" size={20} color={colors.primary.main} />
-                        <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>PDF</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.receiptButton, { backgroundColor: `${colors.primary.main}12` }]}
-                        onPress={() => void printReceipt(pago)}
-                        disabled={printingTicket}
-                      >
-                        <MaterialIcons name="print" size={20} color={colors.primary.main} />
-                        <Text style={{ color: colors.primary.main, fontWeight: '800', fontSize: 11 }}>Imprimir</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
-              </View>
-              <View style={styles.pagination}>
-                <Text style={[styles.paginationSummary, { color: colors.text.secondary }]}>
-                  {paymentPage * TABLE_PAGE_SIZE + 1}–{Math.min(
-                    (paymentPage + 1) * TABLE_PAGE_SIZE,
-                    pagos.length
-                  )} de {pagos.length}
-                </Text>
-                <Pressable
-                  style={[
-                    styles.pageButton,
-                    { borderColor: colors.divider },
-                    paymentPage === 0 && styles.pageButtonDisabled,
-                  ]}
-                  disabled={paymentPage === 0}
-                  onPress={() => setPaymentPage((page) => Math.max(page - 1, 0))}
-                >
-                  <Text style={{ color: colors.text.primary }}>Anterior</Text>
-                </Pressable>
-                <Text style={{ color: colors.text.secondary }}>
-                  Página {paymentPage + 1} de {Math.max(Math.ceil(pagos.length / TABLE_PAGE_SIZE), 1)}
-                </Text>
-                <Pressable
-                  style={[
-                    styles.pageButton,
-                    { borderColor: colors.divider },
-                    paymentPage + 1 >= Math.ceil(pagos.length / TABLE_PAGE_SIZE) &&
-                      styles.pageButtonDisabled,
-                  ]}
-                  disabled={paymentPage + 1 >= Math.ceil(pagos.length / TABLE_PAGE_SIZE)}
-                  onPress={() => setPaymentPage((page) => page + 1)}
-                >
-                  <Text style={{ color: colors.text.primary }}>Siguiente</Text>
-                </Pressable>
-              </View>
-            </>
-          )}
-
-          {!canActivate && (customerSignature || guarantorSignature || sellerSignature) && (
-            <>
-              <Text style={[styles.section, { color: colors.text.primary }]}>Firmas</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                {[
-                  ['Cliente', customerSignature],
-                  ['Fiador', guarantorSignature],
-                  ['Vendedor', sellerSignature],
-                ].filter(([, url]) => Boolean(url)).map(([label, url]) => (
-                  <View key={label as string}>
-                    {(url as string).toLowerCase().includes('.svg') ? (
-                      <View style={styles.signature}>
-                        <SvgUri uri={url as string} width="100%" height="100%" />
-                      </View>
-                    ) : (
-                      <Image source={{ uri: url as string }} style={styles.signature} resizeMode="contain" />
-                    )}
-                    <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{label}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <Pressable
-              style={[styles.btn, { flex: 1, backgroundColor: colors.background.paper }]}
-              onPress={sharePdf}
-            >
-              <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
-                Compartir / PDF
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btn, { flex: 1, backgroundColor: colors.primary.main }]}
-              onPress={() => void printNegocioTicket()}
-              disabled={printingTicket}
-            >
-              <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-                {printingTicket ? 'Imprimiendo...' : 'Imprimir negocio'}
-              </Text>
-            </Pressable>
+            <Pagination page={paymentPage} pageSize={TABLE_PAGE_SIZE} total={pagos.length} onChange={setPaymentPage} itemLabel="pagos" />
           </View>
-        </ScrollView>
+        ) : null}
 
-        <Modal
-          visible={payModalOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => !saving && setPayModalOpen(false)}
-        >
-          <KeyboardAvoidingView
-            style={styles.modalBackdrop}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={[styles.modalCard, { backgroundColor: colors.background.paper }]}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Registrar pago</Text>
-                <Pressable
-                  onPress={() => setPayModalOpen(false)}
-                  disabled={saving}
-                  hitSlop={10}
-                >
-                  <MaterialIcons name="close" size={24} color={colors.text.secondary} />
-                </Pressable>
-              </View>
-              <Text style={{ color: colors.text.secondary }}>
-                {labelNegocioCodigo(negocio.numero)} · {customerName}
-              </Text>
-              <TextInput
-                placeholder="0"
-                keyboardType="number-pad"
-                value={formattedPayAmount}
-                selection={{
-                  start: formattedPayAmount.length,
-                  end: formattedPayAmount.length,
-                }}
-                onChangeText={(value) => {
-                  paymentIdempotencyKey.current = null;
-                  paymentPaidAt.current = null;
-                  setPayAmount(value.replace(/\D/g, '').slice(0, 12));
-                }}
-                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-                placeholderTextColor={colors.text.secondary}
-                autoFocus
-              />
-              <TextInput
-                placeholder="Recibo físico (opcional)"
-                value={payReceipt}
-                onChangeText={(value) => {
-                  paymentIdempotencyKey.current = null;
-                  paymentPaidAt.current = null;
-                  setPayReceipt(value);
-                }}
-                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
-                placeholderTextColor={colors.text.secondary}
-              />
-              <Pressable
-                onPress={choosePaySupport}
-                disabled={saving}
-                style={[
-                  styles.input,
-                  {
-                    borderColor: colors.divider,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                  },
-                ]}
-              >
-                <Text
-                  style={{ color: paySupportFile ? colors.text.primary : colors.text.secondary, flex: 1 }}
-                  numberOfLines={1}
-                >
-                  {paySupportFile
-                    ? paySupportFile.name
-                    : 'Soporte de pago (opcional)'}
-                </Text>
-                <MaterialIcons
-                  name={paySupportFile ? 'check-circle' : 'attach-file'}
-                  size={20}
-                  color={paySupportFile ? colors.success.main : colors.text.secondary}
-                />
-              </Pressable>
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={[styles.modalButton, { borderColor: colors.divider }]}
-                  onPress={() => setPayModalOpen(false)}
-                  disabled={saving}
-                >
-                  <Text style={{ color: colors.text.primary, fontWeight: '600' }}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.modalButton, { backgroundColor: colors.primary.main }]}
-                  onPress={registerPago}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color={colors.primary.contrastText} />
-                  ) : (
-                    <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>Guardar pago</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+        {!canActivate && readOnlySignatures.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader title="Firmas" />
+            <SignatureGallery signatures={readOnlySignatures} />
+          </View>
+        ) : null}
+      </ScrollView>
 
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <ActionBar>
+        {canPay ? (
+          <Button title="Registrar pago" icon="payments" onPress={() => setPayModalOpen(true)} style={styles.primaryAction} />
+        ) : null}
+        {canActivate ? (
+          <Button
+            title="Activar negocio"
+            icon="check-circle"
+            onPress={() => void activateDraft()}
+            loading={actionSaving}
+            style={styles.primaryAction}
+          />
+        ) : null}
+        <Button title="PDF" variant="outline" icon="picture-as-pdf" onPress={() => void sharePdf()} accessibilityLabel="Compartir contrato en PDF" style={styles.secondaryAction} />
+        <Button
+          title="Imprimir"
+          variant="outline"
+          icon="print"
+          onPress={() => void printNegocioTicket()}
+          loading={printingTicket}
+          accessibilityLabel="Imprimir negocio"
+          style={styles.secondaryAction}
+        />
+      </ActionBar>
+
+      <RegisterPaymentSheet
+        visible={payModalOpen}
+        onClose={closePaySheet}
+        subtitle={`${labelNegocioCodigo(negocio.numero)} · ${customerName}`}
+        pendingBalance={pendingBalance}
+        amount={formattedPayAmount}
+        onChangeAmount={(value) => {
+          paymentIdempotencyKey.current = null;
+          paymentPaidAt.current = null;
+          setPayAmount(value.replace(/\D/g, '').slice(0, 12));
+        }}
+        receipt={payReceipt}
+        onChangeReceipt={(value) => {
+          paymentIdempotencyKey.current = null;
+          paymentPaidAt.current = null;
+          setPayReceipt(value);
+        }}
+        supportFile={paySupportFile}
+        onPickSupport={choosePaySupport}
+        saving={saving}
+        onSubmit={() => void registerPago()}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  warningCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-  },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  headerBackButton: { marginLeft: 0 },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    flex: 1,
-    marginLeft: 12,
-  },
-  creditHero: { borderRadius: 20, padding: 17, gap: 15 },
-  creditHeroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  heroEyebrow: { color: '#bfdbfe', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
-  heroCustomer: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 3 },
-  heroAddress: { color: '#dbeafe', fontSize: 12, lineHeight: 17, marginTop: 4 },
-  businessStatus: { backgroundColor: '#ffffff22', borderRadius: 13, paddingHorizontal: 9, paddingVertical: 5 },
-  businessStatusText: { color: '#fff', fontWeight: '900', fontSize: 10, textTransform: 'uppercase' },
-  creditMetrics: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#ffffff44', paddingTop: 13 },
-  creditMetric: { flex: 1 },
-  heroMetricValue: { color: '#fff', fontSize: 14, fontWeight: '900', marginTop: 3 },
-  heroPlan: { color: '#dbeafe', fontSize: 12, fontWeight: '700' },
-  title: { fontSize: 22, fontWeight: '700' },
-  section: { fontWeight: '700', marginTop: 8 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  payAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  mobileCardList: { gap: 10 },
-  installmentCard: { borderWidth: 1, borderRadius: 16, padding: 13 },
-  installmentTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  installmentNumber: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  installmentTitle: { fontWeight: '900', fontSize: 15 },
-  statusPill: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 11 },
-  installmentAmounts: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 11, marginTop: 11 },
-  amountLabel: { color: '#64748b', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
-  amountValue: { fontSize: 13, fontWeight: '900', marginTop: 3 },
-  paymentCard: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  paymentIcon: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  paymentValue: { fontSize: 17, fontWeight: '900' },
-  receiptButton: { minWidth: 48, minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 1 },
-  installmentsTable: {
-    minWidth: 760,
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 44,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  tableHeader: { minHeight: 40 },
-  headerCell: { fontWeight: '700', fontSize: 12 },
-  cellNumber: { width: 44, paddingHorizontal: 8, textAlign: 'center' },
-  cellDate: { width: 110, paddingHorizontal: 8 },
-  cellMoney: { width: 145, paddingHorizontal: 8, textAlign: 'right' },
-  cellStatus: { width: 110, paddingHorizontal: 8, textTransform: 'capitalize' },
-  paymentsTable: {
-    minWidth: 700,
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  paymentDate: { width: 105, paddingHorizontal: 8 },
-  paymentAmount: { width: 140, paddingHorizontal: 8, textAlign: 'right' },
-  paymentReceipt: { width: 180, paddingHorizontal: 8 },
-  paymentPhysical: { width: 155, paddingHorizontal: 8 },
-  paymentPdf: { width: 80, paddingHorizontal: 8, alignItems: 'center' },
-  pagination: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  paginationSummary: { marginRight: 'auto', fontSize: 12 },
-  pageButton: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  pageButtonDisabled: { opacity: 0.4 },
-  signingCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    gap: 14,
-  },
-  row: {
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  btn: {
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  signature: { width: 140, height: 70, borderWidth: 1, borderColor: '#d0d7de' },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalCard: {
-    borderRadius: 16,
-    padding: 20,
-    gap: 14,
-    width: '100%',
-    maxWidth: 480,
-    alignSelf: 'center',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modalTitle: { fontSize: 20, fontWeight: '700' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
-  modalButton: {
-    minWidth: 120,
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
+  screen: { flex: 1 },
+  scroll: { flex: 1 },
+  content: { padding: Spacing.xl, paddingBottom: Spacing.xxl, gap: Spacing.xxl },
+  centered: { flex: 1, justifyContent: 'center', padding: Spacing.xl },
+  section: { gap: Spacing.md },
+  list: { gap: Spacing.md },
+  empty: { ...Typography.bodySmall, fontStyle: 'italic' },
+  helper: { ...Typography.caption },
+  warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
+  warningText: { ...Typography.bodySmall, flex: 1 },
+  signingCard: { gap: Spacing.lg },
+  primaryAction: { flex: 2 },
+  secondaryAction: { flex: 1, paddingHorizontal: Spacing.md },
 });

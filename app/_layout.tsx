@@ -1,6 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
+import { Typography, getColors } from '@/constants/theme';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
@@ -45,7 +46,8 @@ if (!Constants.executionEnvironment || Constants.executionEnvironment === 'stand
 
 function RootLayoutNav() {
   const { session, initialized, initialize } = useAuth();
-  const { initializeTheme } = useTheme();
+  const { initializeTheme, isDark } = useTheme();
+  const colors = getColors(isDark);
   const [appIsReady, setAppIsReady] = useState(false);
 
   useEffect(() => startSupabaseAuthLifecycle(), []);
@@ -110,7 +112,21 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, animation: stackAnimation }}>
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+        <Stack.Screen
+          name="negocio/[id]"
+          options={{
+            // Header nativo con el mismo estilo que las pantallas de (tabs);
+            // el título y el botón de volver los define la pantalla.
+            headerShown: true,
+            animation: detailAnimation,
+            headerStyle: { backgroundColor: colors.background.default },
+            headerTintColor: colors.text.primary,
+            headerTitleStyle: { ...Typography.section },
+            headerTitleAlign: 'left',
+            headerShadowVisible: false,
+            headerBackVisible: false,
+          }}
+        />
         <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
