@@ -11,11 +11,20 @@ import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const PAGE_SIZE = 20;
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
 export default function CreateCollectionRouteScreen() {
+  return (
+    <ScreenErrorBoundary screen="Crear ruta de cobro">
+      <CreateCollectionRouteScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function CreateCollectionRouteScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

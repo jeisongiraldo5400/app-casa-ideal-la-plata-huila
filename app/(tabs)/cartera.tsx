@@ -15,6 +15,7 @@ import { loadCarteraScreen } from '@/lib/cartera/loadCarteraScreen';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const PAGE_SIZE = 10;
 type Filters = { filter: CarteraFilter; search: string; municipioId: string; days: number; searchMunicipio: string };
@@ -23,6 +24,14 @@ const INITIAL_FILTERS: Filters = { filter: 'todas', search: '', municipioId: '',
 function daysOverdue(date: string) { const due=new Date(`${date}T12:00:00`); const today=new Date(); today.setHours(12,0,0,0); return Math.max(0,Math.floor((today.getTime()-due.getTime())/86400000)); }
 
 export default function CarteraScreen() {
+  return (
+    <ScreenErrorBoundary screen="Cartera">
+      <CarteraScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function CarteraScreenInner() {
   const router=useRouter(); const {isDark}=useTheme(); const colors=getColors(isDark); const {isAdmin,isGestorCobro}=useUserRoles();
   const [filters,setFilters]=useState<Filters>(INITIAL_FILTERS); const [draftFilters,setDraftFilters]=useState<Filters>(INITIAL_FILTERS); const [filtersOpen,setFiltersOpen]=useState(false);
   const [rows,setRows]=useState<CarteraRow[]>([]); const [totalCount,setTotalCount]=useState(0); const [page,setPage]=useState(1); const [loading,setLoading]=useState(true); const [loadingMore,setLoadingMore]=useState(false); const [refreshing,setRefreshing]=useState(false);

@@ -58,15 +58,15 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
-import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const TABLE_PAGE_SIZE = 5;
 
 export default function NegocioDetailScreen() {
   return (
-    <NegocioErrorBoundary screen="detail">
+    <ScreenErrorBoundary screen="Detalle de negocio">
       <NegocioDetailScreenInner />
-    </NegocioErrorBoundary>
+    </ScreenErrorBoundary>
   );
 }
 

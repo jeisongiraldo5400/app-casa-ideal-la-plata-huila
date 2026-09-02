@@ -6,7 +6,7 @@ import { getColors } from '@/constants/theme';
 import { useTheme } from '@/components/theme';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Yup from 'yup';
 
 import { EntryOptionPickerField } from './EntryOptionPickerField';
@@ -115,7 +115,11 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Card style={styles.card}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: Colors.text.primary }]}>Producto no encontrado</Text>
@@ -228,6 +232,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
         </Formik>
       </Card>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

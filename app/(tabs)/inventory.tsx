@@ -8,8 +8,17 @@ import { getColors } from '@/constants/theme';
 import React, { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function InventoryScreen() {
+  return (
+    <ScreenErrorBoundary screen="Inventario">
+      <InventoryScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function InventoryScreenInner() {
   const { loadWarehouses, inventory, totalCount, searchQuery } = useInventory();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

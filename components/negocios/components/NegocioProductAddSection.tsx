@@ -61,6 +61,7 @@ export function NegocioProductAddSection({
   const [qty, setQty] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerActive, setScannerActive] = useState(false);
 
   const filteredProducts = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
@@ -144,6 +145,20 @@ export function NegocioProductAddSection({
     onProductQueryChange('');
   };
 
+  /**
+   * Pausa la cámara ya (prop `active`) pero difiere el desmontaje del Modal
+   * un instante. Desmontar la CameraView de inmediato mientras todavía
+   * estamos dentro del callback nativo de escaneo que la invocó puede
+   * crashear la sesión de cámara (mismo riesgo que expo/expo#35386,
+   * documentado en BarcodeScanner.tsx). EntryScanningWorkspace/
+   * ExitScanningWorkspace evitan esto pausando primero y desmontando en una
+   * acción del usuario totalmente aparte; aquí replicamos el mismo orden.
+   */
+  const closeScanner = () => {
+    setScannerActive(false);
+    setTimeout(() => setScannerOpen(false), 400);
+  };
+
   const handleBarcodeScan = async (barcode: string) => {
     try {
       const product = await findActiveProductByBarcode(barcode);
@@ -153,12 +168,12 @@ export function NegocioProductAddSection({
           `No existe un producto activo con el código ${barcode}.`,
           [
             { text: 'Escanear de nuevo' },
-            { text: 'Buscar manualmente', onPress: () => setScannerOpen(false) },
+            { text: 'Buscar manualmente', onPress: () => closeScanner() },
           ]
         );
         return;
       }
-      setScannerOpen(false);
+      closeScanner();
       pickProduct(product);
     } catch (error) {
       Alert.alert(
@@ -213,7 +228,10 @@ export function NegocioProductAddSection({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Escanear código de barras"
-          onPress={() => setScannerOpen(true)}
+          onPress={() => {
+            setScannerOpen(true);
+            setScannerActive(true);
+          }}
           style={[styles.scanButton, { backgroundColor: colors.primary.main }]}
         >
           <MaterialIcons name="qr-code-scanner" size={19} color={colors.primary.contrastText} />
@@ -233,12 +251,12 @@ export function NegocioProductAddSection({
           visible
           animationType="slide"
           presentationStyle="fullScreen"
-          onRequestClose={() => setScannerOpen(false)}
+          onRequestClose={() => closeScanner()}
         >
           <BarcodeScanner
-            active={scannerOpen}
+            active={scannerActive}
             onScan={handleBarcodeScan}
-            onClose={() => setScannerOpen(false)}
+            onClose={() => closeScanner()}
             title="Escanear producto del negocio"
             instruction="Ubica el código de barras dentro del recuadro"
           />

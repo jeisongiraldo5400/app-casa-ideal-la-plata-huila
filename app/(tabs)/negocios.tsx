@@ -19,13 +19,13 @@ import { formatNegocioCodigo, labelNegocioStatus } from '@/lib/negocioLabels';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function NegociosScreen() {
   return (
-    <NegocioErrorBoundary screen="list">
+    <ScreenErrorBoundary screen="Negocios">
       <NegociosScreenInner />
-    </NegocioErrorBoundary>
+    </ScreenErrorBoundary>
   );
 }
 

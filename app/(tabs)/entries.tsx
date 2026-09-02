@@ -1,5 +1,5 @@
 import { EntryConfirmation } from '@/components/entries/components/EntryConfirmation';
-import { EntryErrorBoundary } from '@/components/entries/components/EntryErrorBoundary';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { EntryScanningWorkspace } from '@/components/entries/components/EntryScanningWorkspace';
 import { ProductForm } from '@/components/entries/components/ProductForm';
 import { SetupForm } from '@/components/entries/components/SetupForm';
@@ -36,7 +36,9 @@ export default function EntriesScreen() {
   );
 
   return (
-    <EntryErrorBoundary
+    <ScreenErrorBoundary
+      screen="Entradas"
+      logModule="entries"
       onReset={resetAll}
       getDebugContext={() => {
         const state = useEntriesStore.getState();
@@ -66,7 +68,7 @@ export default function EntriesScreen() {
           {error ? <View style={[styles.error, { backgroundColor: `${colors.error.main}14`, borderColor: colors.error.main }]}><MaterialIcons name="error-outline" size={20} color={colors.error.main} /><Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text></View> : null}
         </ScrollView>
       ) : null}
-    </EntryErrorBoundary>
+    </ScreenErrorBoundary>
   );
 }
 

@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
+import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -31,7 +31,7 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
-import { NegocioErrorBoundary } from '@/components/negocios/components/NegocioErrorBoundary';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
@@ -72,8 +72,6 @@ const WIZARD_STEPS = [
   { id: 3, label: 'Firma', icon: 'draw' },
 ];
 
-const PICKER_NONE = '__none__';
-
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (typeof error === 'object' && error && 'message' in error) {
@@ -88,9 +86,9 @@ const localDateValue = (date = new Date()) =>
 
 export default function NegocioCreateScreen() {
   return (
-    <NegocioErrorBoundary screen="create">
+    <ScreenErrorBoundary screen="Crear negocio">
       <NegocioCreateScreenInner />
-    </NegocioErrorBoundary>
+    </ScreenErrorBoundary>
   );
 }
 
@@ -272,12 +270,9 @@ function NegocioCreateScreenInner() {
     rounding_unit: 1000,
   };
   const installmentsNumber = Number(installments);
-  const minInstallments = creditSettings?.min_installments ?? 1;
-  const maxInstallments = creditSettings?.max_installments ?? Number.MAX_SAFE_INTEGER;
-  const installmentsValid =
-    Number.isSafeInteger(installmentsNumber) &&
-    installmentsNumber >= minInstallments &&
-    installmentsNumber <= maxInstallments;
+  // El vendedor define libremente la cantidad de cuotas: solo se exige un
+  // entero mayor a 0, sin tope superior.
+  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
 
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const calc = calculateCredit({
@@ -399,7 +394,7 @@ function NegocioCreateScreenInner() {
     }
     if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
     if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
-    if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
+    if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
     const parsedDownPayment = parseNegocioMoney(downPayment);
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
@@ -788,53 +783,39 @@ function NegocioCreateScreenInner() {
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
                     Departamento *
                   </Text>
-                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0 }]}>
-                    <Picker
-                      selectedValue={departamentoId || PICKER_NONE}
-                      onValueChange={(value) => {
-                        const next = String(value) === PICKER_NONE ? '' : String(value);
-                        setDepartamentoId(next);
-                        setMunicipioId('');
-                      }}
-                      style={{ color: colors.text.primary }}
-                    >
-                      <Picker.Item label="Seleccione departamento" value={PICKER_NONE} />
-                      {departamentos.map((departamento) => (
-                        <Picker.Item
-                          key={departamento.id}
-                          label={departamento.nombre || 'Departamento'}
-                          value={departamento.id}
-                        />
-                      ))}
-                    </Picker>
-                  </View>
+                  <OptionPickerField
+                    value={departamentoId}
+                    onValueChange={(next) => {
+                      setDepartamentoId(next);
+                      setMunicipioId('');
+                    }}
+                    options={departamentos.map((departamento) => ({
+                      value: departamento.id,
+                      label: departamento.nombre || 'Departamento',
+                    }))}
+                    placeholder="Seleccione departamento"
+                    modalTitle="Departamento"
+                    colors={colors}
+                  />
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
                     Municipio *
                   </Text>
-                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0, opacity: departamentoId ? 1 : 0.55 }]}>
-                    <Picker
-                      enabled={Boolean(departamentoId)}
-                      selectedValue={municipioId || PICKER_NONE}
-                      onValueChange={(value) => {
-                        const next = String(value) === PICKER_NONE ? '' : String(value);
-                        setMunicipioId(next);
-                      }}
-                      style={{ color: colors.text.primary }}
-                    >
-                      <Picker.Item label="Seleccione municipio" value={PICKER_NONE} />
-                      {municipios
-                        .filter((municipio) => municipio.departamento_id === departamentoId)
-                        .map((municipio) => (
-                          <Picker.Item
-                            key={municipio.id}
-                            label={municipio.nombre || 'Municipio'}
-                            value={municipio.id}
-                          />
-                        ))}
-                    </Picker>
-                  </View>
+                  <OptionPickerField
+                    value={municipioId}
+                    onValueChange={setMunicipioId}
+                    options={municipios
+                      .filter((municipio) => municipio.departamento_id === departamentoId)
+                      .map((municipio) => ({
+                        value: municipio.id,
+                        label: municipio.nombre || 'Municipio',
+                      }))}
+                    placeholder="Seleccione municipio"
+                    modalTitle="Municipio"
+                    colors={colors}
+                    disabled={!departamentoId}
+                  />
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
@@ -984,9 +965,7 @@ function NegocioCreateScreenInner() {
             />
             {!installmentsValid && (
               <Text style={{ color: colors.error.main, fontSize: 12 }}>
-                {creditSettings
-                  ? `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`
-                  : 'Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.'}
+                Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
               </Text>
             )}
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
@@ -1127,7 +1106,7 @@ function NegocioCreateScreenInner() {
                 }
               }
               if (step === 2) {
-                if (!installmentsValid) return Alert.alert('Cuotas inválidas', `Ingrese un número entero entre ${minInstallments} y ${maxInstallments}.`);
+                if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
                 if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
                 if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
                 const initial = parseNegocioMoney(downPayment);
@@ -1175,7 +1154,10 @@ function NegocioCreateScreenInner() {
         transparent={true}
         onRequestClose={() => setShowNewCustomerModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={[styles.modalContent, { backgroundColor: colors.background.paper }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
@@ -1186,7 +1168,11 @@ function NegocioCreateScreenInner() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 350 }} contentContainerStyle={{ gap: 12 }}>
+            <ScrollView
+              style={{ maxHeight: 350 }}
+              contentContainerStyle={{ gap: 12 }}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={{ gap: 4 }}>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
                   Nombre completo *
@@ -1251,7 +1237,7 @@ function NegocioCreateScreenInner() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

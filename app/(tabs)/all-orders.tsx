@@ -4,10 +4,19 @@ import { SearchField, SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 type TabType = 'purchase' | 'delivery';
 
 export default function AllOrdersScreen() {
+  return (
+    <ScreenErrorBoundary screen="Todas las órdenes" logModule="purchase_orders">
+      <AllOrdersScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function AllOrdersScreenInner() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

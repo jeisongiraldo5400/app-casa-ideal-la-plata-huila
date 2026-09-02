@@ -7,11 +7,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 const statusLabel = { borrador: 'Borrador', activa: 'En curso', completada: 'Completada', cancelada: 'Cancelada' };
 
 export default function CollectionRoutesScreen() {
+  return (
+    <ScreenErrorBoundary screen="Rutas de cobro">
+      <CollectionRoutesScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function CollectionRoutesScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

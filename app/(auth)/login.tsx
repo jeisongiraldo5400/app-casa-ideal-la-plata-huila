@@ -14,8 +14,17 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function LoginScreen() {
+  return (
+    <ScreenErrorBoundary screen="Iniciar sesión">
+      <LoginScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function LoginScreenInner() {
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
   const insets = useSafeAreaInsets();

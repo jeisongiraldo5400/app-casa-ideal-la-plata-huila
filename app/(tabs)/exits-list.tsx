@@ -7,8 +7,17 @@ import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect } from 'react';
 import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function ExitsListScreen() {
+  return (
+    <ScreenErrorBoundary screen="Historial de salidas">
+      <ExitsListScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ExitsListScreenInner() {
   const { loadExits, loading, exits } = useExitsList();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

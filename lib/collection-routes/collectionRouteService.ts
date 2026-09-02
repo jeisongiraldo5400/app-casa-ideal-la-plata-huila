@@ -74,6 +74,7 @@ export async function fetchCollectionRoute(routeId: string) {
   try {
     const { data, error } = await supabase.rpc('get_collection_route', { p_route_id: routeId });
     if (error) throw new Error(error.message || 'No fue posible cargar la ruta');
+    if (!data) throw new Error('No fue posible cargar la ruta');
     const raw = data as CollectionRoute & {
       stops?: CollectionRoute['stops'];
       total_expected?: number;

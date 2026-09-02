@@ -7,10 +7,19 @@ import { SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 type TabType = 'purchase' | 'delivery';
 
 export default function ReceivedOrdersScreen() {
+  return (
+    <ScreenErrorBoundary screen="Órdenes recibidas" logModule="purchase_orders">
+      <ReceivedOrdersScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ReceivedOrdersScreenInner() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { user } = useAuth();
   const { isDark } = useTheme();

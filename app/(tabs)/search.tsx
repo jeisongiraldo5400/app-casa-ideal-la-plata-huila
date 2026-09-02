@@ -5,8 +5,17 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { Alert, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function QuickSearchScreen() {
+  return (
+    <ScreenErrorBoundary screen="Buscar producto">
+      <QuickSearchScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function QuickSearchScreenInner() {
   const router = useRouter();
   const { setSearchQuery } = useInventoryStore();
   const [scannerActive, setScannerActive] = useState(true);

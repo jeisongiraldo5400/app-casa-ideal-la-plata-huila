@@ -15,14 +15,23 @@ import { getCachedActiveRoute } from '@/lib/collection-routes/routeCache';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
 export default function CollectionRouteDetailScreen() {
+  return (
+    <ScreenErrorBoundary screen="Detalle de ruta de cobro">
+      <CollectionRouteDetailScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function CollectionRouteDetailScreenInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isDark } = useTheme();
@@ -101,7 +110,7 @@ export default function CollectionRouteDetailScreen() {
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={!!selectedStop} onRequestClose={() => setSelectedStop(null)}>
-        <View style={styles.overlay}><View style={[styles.sheet, { backgroundColor: colors.background.paper }]}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><View style={[styles.sheet, { backgroundColor: colors.background.paper }]}>
           <View style={styles.sheetHandle} />
           {selectedStop && <>
             <View style={styles.sheetHeader}><View><Text style={{ color: colors.primary.main, fontWeight: '900' }}>PARADA {selectedStop.position}</Text><Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{selectedStop.customer_name}</Text><Text style={{ color: colors.text.secondary }}>Negocio {formatNegocioCodigo(selectedStop.negocio_numero)}</Text></View><TouchableOpacity onPress={() => setSelectedStop(null)}><MaterialIcons name="close" size={26} color={colors.text.secondary} /></TouchableOpacity></View>
@@ -127,7 +136,7 @@ export default function CollectionRouteDetailScreen() {
             </>}
             {outcome && <View style={{ gap: 10 }}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Motivo de la novedad</Text><TextInput value={reason} onChangeText={setReason} placeholder="Motivo obligatorio" placeholderTextColor={colors.text.secondary} style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider }]} /><TextInput value={notes} onChangeText={setNotes} placeholder="Notas adicionales (opcional)" placeholderTextColor={colors.text.secondary} multiline style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider, minHeight: 70 }]} /><View style={styles.modalActions}><TouchableOpacity onPress={() => setOutcome(null)}><Text style={{ color: colors.text.secondary, fontWeight: '800' }}>Atrás</Text></TouchableOpacity><TouchableOpacity disabled={!reason.trim() || saving} style={[styles.saveOutcome, { backgroundColor: colors.primary.main, opacity: reason.trim() ? 1 : 0.5 }]} onPress={() => run(() => updateCollectionRouteStop(selectedStop.id, outcome, reason, notes))}><Text style={styles.buttonText}>Guardar novedad</Text></TouchableOpacity></View></View>}
           </>}
-        </View></View>
+        </View></KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

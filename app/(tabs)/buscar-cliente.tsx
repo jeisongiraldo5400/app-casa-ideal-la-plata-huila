@@ -23,8 +23,17 @@ import {
   type CustomerNegocioItem,
   type CustomerWithNegocios,
 } from '@/lib/negocios/searchCustomerNegocios';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function BuscarClienteScreen() {
+  return (
+    <ScreenErrorBoundary screen="Buscar cliente">
+      <BuscarClienteScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function BuscarClienteScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);

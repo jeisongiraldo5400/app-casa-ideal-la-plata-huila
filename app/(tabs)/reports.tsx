@@ -8,10 +8,19 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const money = (value: number) => `$${Number(value || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 
 export default function ReportsScreen() {
+  return (
+    <ScreenErrorBoundary screen="Reportes">
+      <ReportsScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ReportsScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { isAdmin, isBodeguero, loading: loadingRoles } = useUserRoles();

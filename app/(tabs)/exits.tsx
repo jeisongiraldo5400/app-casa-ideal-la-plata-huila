@@ -15,8 +15,17 @@ import {
   Text,
   View,
 } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function ExitsScreen() {
+  return (
+    <ScreenErrorBoundary screen="Salidas" logModule="exits">
+      <ExitsScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ExitsScreenInner() {
   const {
     step,
     error,

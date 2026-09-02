@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { MaterialIcons } from '@expo/vector-icons';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // UI
 import { Button } from '@/components/ui/Button';
@@ -356,7 +356,10 @@ export function SetupForm() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Card style={styles.card}>
         <Text style={[styles.title, { color: Colors.text.primary }]}>Configurar entrada</Text>
         <Text style={[styles.subtitle, { color: Colors.text.secondary }]}>
@@ -395,7 +398,7 @@ export function SetupForm() {
           </>
         )}
       </Card>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

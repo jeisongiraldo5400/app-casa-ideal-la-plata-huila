@@ -14,8 +14,17 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function ProfileScreen() {
+  return (
+    <ScreenErrorBoundary screen="Perfil">
+      <ProfileScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ProfileScreenInner() {
   const { user, signOut } = useAuth();
   const { isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
