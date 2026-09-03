@@ -50,6 +50,7 @@ import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
+import { NegocioCreditSummary } from '@/components/negocios/components/NegocioCreditSummary';
 import {
   availableQtyForItem,
   fetchStockForProducts,
@@ -1180,16 +1181,14 @@ function NegocioCreateScreenInner() {
                 fecha de primera cuota.
               </Text>
             )}
-            <View style={[styles.summary, { backgroundColor: colors.background.paper, borderColor: colors.divider, borderWidth: 1 }]}>
-              <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
-                Total crédito: {formatCOP(calc.totalCredit)}
-              </Text>
-              <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
-                {planRequired
-                  ? `Valor cuota: ${formatCOP(calc.installmentAmount)}`
-                  : 'Sin cuotas: pagado con abonos iniciales'}
-              </Text>
-            </View>
+            <NegocioCreditSummary
+              calc={calc}
+              settings={settings}
+              schedule={downPaymentSchedule}
+              frequency={frequency}
+              firstDueDate={planRequired ? firstDueDate : null}
+              colors={colors}
+            />
           </View>
         )}
 
@@ -1550,7 +1549,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
-  summary: { padding: 14, borderRadius: 12, gap: 4, marginTop: 8 },
   fixedFooterNav: {
     position: 'absolute',
     bottom: 0,

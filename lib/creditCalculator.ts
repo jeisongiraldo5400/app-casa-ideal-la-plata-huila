@@ -41,10 +41,9 @@ function roundToUnit(value: number, unit: number, decimalPlaces = 2): number {
   return Math.round((rounded + Number.EPSILON) * factor) / factor;
 }
 
-function roundDownToUnit(value: number, unit: number, decimalPlaces = 2): number {
-  const rounded = !unit || unit <= 0 ? value : Math.floor(value / unit) * unit;
+function roundToDecimals(value: number, decimalPlaces = 2): number {
   const factor = 10 ** Math.max(0, Math.min(4, decimalPlaces));
-  return Math.floor((rounded + Number.EPSILON) * factor) / factor;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
 export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
@@ -82,7 +81,10 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   totalCredit = roundToUnit(totalCredit, unit, decimalPlaces);
   interestAmount = Math.max(0, totalCredit - subtotal);
   const financedAmount = Math.max(0, totalCredit - initial);
-  const installmentAmount = n > 0 ? roundDownToUnit(financedAmount / n, unit, decimalPlaces) : 0;
+  // La cuota es exactamente saldo ÷ cuotas (a los decimales configurados);
+  // rounding_unit solo aplica al total. Si la división no es exacta, la última
+  // cuota absorbe la diferencia (adjust_negocio_last_installment).
+  const installmentAmount = n > 0 ? roundToDecimals(financedAmount / n, decimalPlaces) : 0;
 
   return {
     productsSubtotal: subtotal,
