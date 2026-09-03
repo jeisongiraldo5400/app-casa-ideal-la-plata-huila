@@ -19,5 +19,6 @@ export { ScreenState } from './ScreenState';
 export { SearchField } from './SearchField';
 export { SectionHeader } from './SectionHeader';
 export { SegmentedControl, type SegmentItem } from './SegmentedControl';
+export { StackHeader } from './StackHeader';
 export { StatCard } from './StatCard';
 export { StatusChip, type StatusTone } from './StatusChip';

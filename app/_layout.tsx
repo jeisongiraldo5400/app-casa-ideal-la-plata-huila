@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
 import { PrinterPickerModal } from '@/components/printing';
+import { StackHeader } from '@/components/ui';
 import { startSupabaseAuthLifecycle } from '@/lib/supabase';
 
 // Mantener el splash screen visible hasta que la app esté lista
@@ -116,16 +117,18 @@ function RootLayoutNav() {
         <Stack.Screen
           name="negocio/[id]"
           options={{
-            // Header nativo con el mismo estilo que las pantallas de (tabs);
-            // el título y el botón de volver los define la pantalla.
+            // Header JS (el mismo que usan las pantallas de (tabs)) para que el
+            // BackButton y el título queden alineados igual que en el resto de
+            // la app; el header nativo aplica sus propios insets al botón.
+            // El título y el botón de volver los define la pantalla.
             headerShown: true,
+            header: (props) => <StackHeader {...props} />,
             animation: detailAnimation,
             headerStyle: { backgroundColor: colors.background.default },
             headerTintColor: colors.text.primary,
             headerTitleStyle: { ...Typography.section },
             headerTitleAlign: 'left',
             headerShadowVisible: false,
-            headerBackVisible: false,
           }}
         />
         <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
