@@ -67,6 +67,7 @@ export function DeliveryOrderProductsModal({
                     quantity,
                     delivered_quantity,
                     deleted_at,
+                    notes,
                     product:products!inner(id, name, sku, barcode, deleted_at),
                     warehouse:warehouses(id, name)
                 `)
@@ -98,6 +99,7 @@ export function DeliveryOrderProductsModal({
                     delivered_quantity: delivered,
                     pending_quantity: pending,
                     is_complete: pending === 0,
+                    notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : null,
                 };
             });
 
@@ -313,6 +315,15 @@ export function DeliveryOrderProductsModal({
                                                         <MaterialIcons name="warehouse" size={12} color={colors.text.secondary} />
                                                         <Text style={[styles.itemWarehouse, { color: colors.text.secondary }]}>
                                                             {item.warehouse_name}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {item.notes && (
+                                                    <View style={[styles.noteRow, { backgroundColor: colors.warning.main + '14', borderColor: colors.warning.main + '55' }]}>
+                                                        <MaterialIcons name="sticky-note-2" size={13} color={colors.warning.main} />
+                                                        <Text style={[styles.itemNote, { color: colors.text.primary }]}>
+                                                            <Text style={{ color: colors.warning.main, fontWeight: '700' }}>Nota: </Text>
+                                                            {item.notes}
                                                         </Text>
                                                     </View>
                                                 )}
@@ -577,6 +588,21 @@ const styles = StyleSheet.create({
     },
     itemWarehouse: {
         fontSize: 12,
+    },
+    noteRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+        marginTop: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    itemNote: {
+        flex: 1,
+        fontSize: 12,
+        lineHeight: 17,
     },
     itemStatus: {
         justifyContent: 'center',

@@ -110,6 +110,8 @@ export interface DeliveryOrderItem {
   /** Valor en BD por fila (delivery_order_items.delivered_quantity). */
   db_delivered_quantity: number;
   created_at: string;
+  /** Nota por producto capturada en la web al crear/editar la orden. */
+  notes?: string | null;
 }
 
 export interface DeliveryOrder {
@@ -673,7 +675,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             delivered_quantity: fp.registered,
             pending_quantity: fp.pending,
             db_delivered_quantity: Number(item.delivered_quantity) || 0,
-            created_at: item.created_at || EPOCH_ISO
+            created_at: item.created_at || EPOCH_ISO,
+            notes: item.notes?.trim() || null,
           };
         })
       };

@@ -12,6 +12,8 @@ export interface DeliveryOrderItem {
   delivered_quantity: number;
   pending_quantity: number;
   is_complete: boolean;
+  /** Nota por producto capturada en la web. */
+  notes?: string | null;
 }
 
 export interface DeliveryOrderRecipient {

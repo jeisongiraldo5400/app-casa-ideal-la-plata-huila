@@ -14,6 +14,8 @@ export type DeliveryOrderItemQueryRow = Pick<
   Database['public']['Tables']['delivery_order_items']['Row'],
   'id' | 'product_id' | 'warehouse_id' | 'quantity' | 'delivered_quantity' | 'created_at' | 'deleted_at' | 'source_delivery_order_id'
 > & {
+  /** Opcional: la columna existe desde la migración de notas por producto. */
+  notes?: string | null;
   product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
   warehouse: Pick<Warehouse, 'id' | 'name'> | null;
 };
@@ -26,7 +28,8 @@ const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
   delivered_quantity,
   created_at,
   deleted_at,
-  source_delivery_order_id
+  source_delivery_order_id,
+  notes
 `;
 
 /**
@@ -49,6 +52,7 @@ export async function fetchSelectableDeliveryOrderItems(
         created_at: item.created_at,
         deleted_at: null,
         source_delivery_order_id: item.source_delivery_order_id,
+        notes: item.notes ?? null,
         product: { id: item.product_id, name: item.product_name, barcode: item.product_barcode, sku: item.product_sku, deleted_at: null },
         warehouse: { id: item.warehouse_id, name: item.warehouse_name },
       })),

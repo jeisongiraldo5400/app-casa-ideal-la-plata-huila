@@ -14,10 +14,12 @@ interface PendingItemCardProps {
   expanded: boolean;
   metrics: { label: string; value: number; primary?: boolean }[];
   onPress: () => void;
+  /** Nota por producto (p. ej. indicaciones de quien lo solicitó). Siempre visible si existe. */
+  note?: string | null;
 }
 
 /** Línea de la orden todavía por recibir/entregar; se expande para ver el detalle. */
-export function PendingItemCard({ name, meta, tone, expanded, metrics, onPress }: PendingItemCardProps) {
+export function PendingItemCard({ name, meta, tone, expanded, metrics, onPress, note }: PendingItemCardProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const accent = tone === 'complete' ? colors.success.main : tone === 'partial' ? colors.warning.main : colors.text.secondary;
@@ -28,7 +30,7 @@ export function PendingItemCard({ name, meta, tone, expanded, metrics, onPress }
       style={({ pressed }) => [styles.card, { backgroundColor: colors.background.paper, borderColor: expanded ? accent : colors.divider }, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityState={{ expanded }}
-      accessibilityLabel={`${name}, ${meta}`}
+      accessibilityLabel={note ? `${name}, ${meta}. Nota: ${note}` : `${name}, ${meta}`}
       accessibilityHint={expanded ? 'Toca para ocultar el detalle' : 'Toca para ver el detalle'}
     >
       <View style={styles.row}>
@@ -41,6 +43,15 @@ export function PendingItemCard({ name, meta, tone, expanded, metrics, onPress }
         </View>
         <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={23} color={colors.text.secondary} />
       </View>
+      {note ? (
+        <View style={[styles.noteBox, { backgroundColor: `${colors.warning.main}14`, borderColor: `${colors.warning.main}55` }]}>
+          <MaterialIcons name="sticky-note-2" size={15} color={colors.warning.main} style={styles.noteIcon} />
+          <Text style={[styles.noteText, { color: colors.text.primary }]} numberOfLines={expanded ? undefined : 3}>
+            <Text style={[styles.noteLabel, { color: colors.warning.main }]}>Nota: </Text>
+            {note}
+          </Text>
+        </View>
+      ) : null}
       {expanded ? (
         <View style={styles.metrics}>
           {metrics.map((metric) => (
@@ -61,4 +72,8 @@ const styles = StyleSheet.create({
   name: { ...Typography.bodySmallStrong, fontWeight: '800' },
   meta: { ...Typography.metadata, fontSize: 11, lineHeight: 16, marginTop: 3 },
   metrics: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  noteBox: { alignItems: 'flex-start', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', marginTop: Spacing.sm, paddingHorizontal: Spacing.sm, paddingVertical: 6 },
+  noteIcon: { marginRight: 6, marginTop: 1 },
+  noteText: { ...Typography.metadata, flex: 1, fontSize: 12, lineHeight: 17 },
+  noteLabel: { fontWeight: '800' },
 });

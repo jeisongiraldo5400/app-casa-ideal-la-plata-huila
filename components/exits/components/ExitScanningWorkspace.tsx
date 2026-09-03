@@ -279,6 +279,7 @@ export function ExitScanningWorkspace() {
             <PendingItemCard
               name={item.progress.item.product_name}
               meta={`${item.progress.item.warehouse_name} · Pendiente ${item.progress.pending}`}
+              note={item.progress.item.notes}
               tone={item.progress.isComplete ? 'complete' : item.progress.sessionScanned > 0 ? 'partial' : 'pending'}
               expanded={expandedItemId === item.progress.item.id}
               metrics={[

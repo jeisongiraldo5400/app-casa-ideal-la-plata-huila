@@ -294,6 +294,7 @@ export type Database = {
           delivery_order_id: string
           id: string
           is_approved: boolean
+          notes: string | null
           product_id: string
           quantity: number
           requested_by_user_id: string | null
@@ -310,6 +311,7 @@ export type Database = {
           delivery_order_id: string
           id?: string
           is_approved?: boolean
+          notes?: string | null
           product_id: string
           quantity: number
           requested_by_user_id?: string | null
@@ -326,6 +328,7 @@ export type Database = {
           delivery_order_id?: string
           id?: string
           is_approved?: boolean
+          notes?: string | null
           product_id?: string
           quantity?: number
           requested_by_user_id?: string | null
@@ -2347,6 +2350,7 @@ export type Database = {
           created_at: string
           delivered_quantity: number
           id: string
+          notes: string | null
           product_barcode: string | null
           product_id: string
           product_name: string
