@@ -14,8 +14,16 @@ describe('retryPolicy', () => {
   it('clasifica errores de negocio vs red', () => {
     expect(classifyPushError('El valor supera el saldo')).toBe('fail');
     expect(classifyPushError('Sin permiso sobre este negocio')).toBe('fail');
+    expect(classifyPushError('Solo puede cobrarse la parada actual')).toBe('fail');
+    expect(classifyPushError('Negocio no encontrado')).toBe('fail');
+    expect(classifyPushError('La ruta no está disponible para iniciar')).toBe('fail');
     expect(classifyPushError('Ya existe un cliente con documento')).toBe('conflict');
-    expect(classifyPushError('Network request failed')).toBe('retry');
+    expect(classifyPushError('La clave de idempotencia ya fue usada con datos diferentes')).toBe('conflict');
+    expect(classifyPushError('Network request failed')).toBe('network');
+    expect(classifyPushError('TypeError: Failed to fetch')).toBe('network');
+    expect(classifyPushError('getSession timeout')).toBe('network');
+    expect(classifyPushError('canceling statement due to statement timeout')).toBe('network');
+    expect(classifyPushError('unexpected server error')).toBe('retry');
   });
 
   it('no reintenta indefinidamente', () => {

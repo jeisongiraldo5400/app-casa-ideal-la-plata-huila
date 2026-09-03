@@ -16,6 +16,8 @@ export type PaymentRow = {
   receipt_status: string | null;
   support_path?: string | null;
   support_file_name?: string | null;
+  /** Nombre del usuario que registró el pago. */
+  created_by_name?: string | null;
 };
 
 type Props = {
@@ -53,6 +55,9 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing }:
           <Text style={[styles.meta, { color: colors.text.secondary }]}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text>
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Soporte: {pago.support_path ? pago.support_file_name || 'Adjunto' : 'Sin adjunto'}
+          </Text>
+          <Text style={[styles.meta, { color: colors.text.secondary }]}>
+            Registrado por: {pago.created_by_name || 'Sin registro'}
           </Text>
         </View>
       </View>

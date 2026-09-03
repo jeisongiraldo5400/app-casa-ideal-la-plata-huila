@@ -8,6 +8,7 @@ import {
   selectCollectionRouteStop,
   startCollectionRoute,
   updateCollectionRouteStop,
+  type RouteActionResult,
 } from '@/lib/collection-routes/collectionRouteService';
 import { getRouteProgress } from '@/lib/collection-routes/routeState';
 import { CollectionRoute, CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
@@ -66,8 +67,18 @@ function CollectionRouteDetailScreenInner() {
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const run = async (action: () => Promise<void>, success?: string) => {
-    try { setSaving(true); await action(); if (success) Alert.alert('Listo', success); setSelectedStop(null); setOutcome(null); setReason(''); setNotes(''); await load(); }
+  const run = async (action: () => Promise<RouteActionResult>, success?: string) => {
+    try {
+      setSaving(true);
+      const result = await action();
+      if (result.queued) {
+        Alert.alert('Guardado sin conexión', `${success || 'Acción registrada'}. Se enviará automáticamente cuando haya red.`);
+      } else if (success) {
+        Alert.alert('Listo', success);
+      }
+      setSelectedStop(null); setOutcome(null); setReason(''); setNotes('');
+      await load();
+    }
     catch (e: any) { Alert.alert('No se pudo completar la acción', e.message); }
     finally { setSaving(false); }
   };
@@ -124,7 +135,7 @@ function CollectionRouteDetailScreenInner() {
                 <TouchableOpacity
                   disabled={saving}
                   style={[styles.primaryButton, { backgroundColor: colors.primary.main }]}
-                  onPress={() => run(() => selectCollectionRouteStop(selectedStop.id))}
+                  onPress={() => run(() => selectCollectionRouteStop(selectedStop.id, route.id))}
                 >
                   {saving ? <ActivityIndicator color="#fff" /> : <MaterialIcons name="near-me" size={21} color="#fff" />}
                   <Text style={styles.buttonText}>Seleccionar esta parada</Text>
@@ -135,7 +146,7 @@ function CollectionRouteDetailScreenInner() {
               <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.success.main }]} onPress={() => { setSelectedStop(null); router.push(`/negocio/${selectedStop.negocio_id}?routeStopId=${selectedStop.id}` as any); }}><MaterialIcons name="payments" size={21} color="#fff" /><Text style={styles.buttonText}>Registrar cobro</Text></TouchableOpacity>
               <View style={styles.outcomeRow}><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('sin_pago')}><MaterialIcons name="money-off" size={20} color="#f59e0b" /><Text style={styles.outcomeText}>Sin pago</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('reprogramado')}><MaterialIcons name="event-repeat" size={20} color="#7c3aed" /><Text style={styles.outcomeText}>Reprogramar</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('omitido')}><MaterialIcons name="skip-next" size={20} color="#dc2626" /><Text style={styles.outcomeText}>Omitir</Text></TouchableOpacity></View>
             </>}
-            {outcome && <View style={{ gap: 10 }}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Motivo de la novedad</Text><TextInput value={reason} onChangeText={setReason} placeholder="Motivo obligatorio" placeholderTextColor={colors.text.secondary} style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider }]} /><TextInput value={notes} onChangeText={setNotes} placeholder="Notas adicionales (opcional)" placeholderTextColor={colors.text.secondary} multiline style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider, minHeight: 70 }]} /><View style={styles.modalActions}><TouchableOpacity onPress={() => setOutcome(null)}><Text style={{ color: colors.text.secondary, fontWeight: '800' }}>Atrás</Text></TouchableOpacity><TouchableOpacity disabled={!reason.trim() || saving} style={[styles.saveOutcome, { backgroundColor: colors.primary.main, opacity: reason.trim() ? 1 : 0.5 }]} onPress={() => run(() => updateCollectionRouteStop(selectedStop.id, outcome, reason, notes))}><Text style={styles.buttonText}>Guardar novedad</Text></TouchableOpacity></View></View>}
+            {outcome && <View style={{ gap: 10 }}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Motivo de la novedad</Text><TextInput value={reason} onChangeText={setReason} placeholder="Motivo obligatorio" placeholderTextColor={colors.text.secondary} style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider }]} /><TextInput value={notes} onChangeText={setNotes} placeholder="Notas adicionales (opcional)" placeholderTextColor={colors.text.secondary} multiline style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider, minHeight: 70 }]} /><View style={styles.modalActions}><TouchableOpacity onPress={() => setOutcome(null)}><Text style={{ color: colors.text.secondary, fontWeight: '800' }}>Atrás</Text></TouchableOpacity><TouchableOpacity disabled={!reason.trim() || saving} style={[styles.saveOutcome, { backgroundColor: colors.primary.main, opacity: reason.trim() ? 1 : 0.5 }]} onPress={() => run(() => updateCollectionRouteStop(selectedStop.id, outcome, reason, notes, route.id))}><Text style={styles.buttonText}>Guardar novedad</Text></TouchableOpacity></View></View>}
           </>}
         </View></KeyboardAvoidingView>
       </Modal>

@@ -102,25 +102,32 @@ export async function fetchCollectionRoute(routeId: string) {
   }
 }
 
-export async function startCollectionRoute(routeId: string) {
+/** Resultado de una acción de ruta: `queued` indica que se guardó sin red. */
+export type RouteActionResult = { queued: boolean };
+
+export async function startCollectionRoute(routeId: string): Promise<RouteActionResult> {
   try {
     const { error } = await supabase.rpc('start_collection_route', { p_route_id: routeId });
     if (error) throw new Error(error.message || 'No fue posible iniciar la ruta');
+    return { queued: false };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand('start_route', { routeId });
+    const queued = await enqueueRouteCommand({ type: 'start_route', routeId });
     if (!queued) throw error;
+    return { queued: true };
   }
 }
 
-export async function selectCollectionRouteStop(stopId: string) {
+export async function selectCollectionRouteStop(stopId: string, routeId?: string | null): Promise<RouteActionResult> {
   try {
     const { error } = await supabase.rpc('select_collection_route_stop', { p_stop_id: stopId });
     if (error) throw new Error(error.message || 'No fue posible seleccionar la parada');
+    return { queued: false };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand('select_route_stop', { stopId });
+    const queued = await enqueueRouteCommand({ type: 'select_route_stop', stopId, routeId: routeId || null });
     if (!queued) throw error;
+    return { queued: true };
   }
 }
 
@@ -129,7 +136,8 @@ export async function updateCollectionRouteStop(
   status: Extract<StopStatus, 'sin_pago' | 'reprogramado' | 'omitido'>,
   reason: string,
   notes?: string,
-) {
+  routeId?: string | null,
+): Promise<RouteActionResult> {
   try {
     const { error } = await supabase.rpc('update_collection_route_stop', {
       p_stop_id: stopId,
@@ -138,23 +146,34 @@ export async function updateCollectionRouteStop(
       p_notes: notes || null,
     });
     if (error) throw new Error(error.message || 'No fue posible actualizar la parada');
+    return { queued: false };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand('update_route_stop', { stopId, status, reason, notes: notes || null });
+    const queued = await enqueueRouteCommand({
+      type: 'update_route_stop',
+      stopId,
+      routeId: routeId || null,
+      status,
+      reason,
+      notes: notes || null,
+    });
     if (!queued) throw error;
+    return { queued: true };
   }
 }
 
-export async function finishCollectionRoute(routeId: string, cancel = false) {
+export async function finishCollectionRoute(routeId: string, cancel = false): Promise<RouteActionResult> {
   try {
     const { error } = await supabase.rpc('finish_collection_route', {
       p_route_id: routeId,
       p_cancel: cancel,
     });
     if (error) throw new Error(error.message || 'No fue posible finalizar la ruta');
+    return { queued: false };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand('finish_route', { routeId, cancel });
+    const queued = await enqueueRouteCommand({ type: 'finish_route', routeId, cancel });
     if (!queued) throw error;
+    return { queued: true };
   }
 }

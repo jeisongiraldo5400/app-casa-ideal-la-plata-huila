@@ -3,6 +3,7 @@ import { uploadAndAttachPagoSupport } from '@/lib/uploadPagoSupport';
 import { getDatabase } from '../database';
 import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
+import { parseOutboxPayload } from './outbox';
 import { classifyPushError } from './retryPolicy';
 import { deleteLocalPagoSupportFile } from '../security/localFiles';
 import type {
@@ -15,10 +16,17 @@ import type {
 } from './types';
 
 export type PushResult =
-  | { outcome: 'done'; result?: unknown }
+  | {
+      outcome: 'done';
+      result?: unknown;
+      note?: string;
+      /** Cliente ya existente en el servidor que reemplaza al provisional local. */
+      adoptExisting?: { id: string; name: string };
+    }
+  | { outcome: 'network'; message: string }
   | { outcome: 'retry'; message: string }
   | { outcome: 'fail'; message: string }
-  | { outcome: 'conflict'; message: string; existing?: { id: string; name: string } };
+  | { outcome: 'conflict'; message: string };
 
 function asErrorMessage(error: unknown) {
   if (error && typeof error === 'object' && 'message' in error) {
@@ -28,31 +36,31 @@ function asErrorMessage(error: unknown) {
 }
 
 export async function pushOutboxItem(item: SyncOutboxItem): Promise<PushResult> {
-  const payload = JSON.parse(item.payloadJson) as Record<string, unknown>;
   try {
+    const payload = parseOutboxPayload(item);
     switch (item.type) {
       case 'create_customer':
-        return pushCreateCustomer(payload as CreateCustomerPayload, item.idempotencyKey);
+        return await pushCreateCustomer(payload as CreateCustomerPayload, item.idempotencyKey);
       case 'register_pago':
-        return pushRegisterPago(payload as RegisterPagoPayload, item.idempotencyKey);
       case 'register_route_pago':
-        return pushRegisterPago(payload as RegisterPagoPayload, item.idempotencyKey);
+        return await pushRegisterPago(payload as RegisterPagoPayload, item.idempotencyKey);
       case 'update_route_stop':
-        return pushUpdateRouteStop(payload as UpdateRouteStopPayload);
+        return await pushUpdateRouteStop(payload as UpdateRouteStopPayload);
       case 'start_route':
-        return pushStartRoute(payload as RouteIdPayload);
+        return await pushStartRoute(payload as RouteIdPayload);
       case 'finish_route':
-        return pushFinishRoute(payload as RouteIdPayload);
+        return await pushFinishRoute(payload as RouteIdPayload);
       case 'select_route_stop':
-        return pushSelectStop(payload as SelectStopPayload);
+        return await pushSelectStop(payload as SelectStopPayload);
       case 'attach_pago_support':
-        return pushAttachSupport(payload as AttachPagoSupportPayload);
+        return await pushAttachSupport(payload as AttachPagoSupportPayload);
       default:
         return { outcome: 'fail', message: `Comando desconocido: ${item.type}` };
     }
   } catch (error) {
     const message = asErrorMessage(error);
     const decision = classifyPushError(message);
+    if (decision === 'network') return { outcome: 'network', message };
     if (decision === 'retry') return { outcome: 'retry', message };
     if (decision === 'conflict') return { outcome: 'conflict', message };
     return { outcome: 'fail', message };
@@ -69,16 +77,17 @@ async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey
   });
   if (error) throw error;
   const result = data as { customer_id?: string; conflict?: boolean; existing?: { id: string; name: string } };
-  if (result?.conflict && result.existing) {
-    resolveCustomerIdNumberConflict({
-      localId: payload.customerId,
-      idNumber: payload.idNumber,
-      existing: result.existing,
-    });
+  const conflict = resolveCustomerIdNumberConflict({
+    localId: payload.customerId,
+    idNumber: payload.idNumber,
+    existing: result?.conflict && result.existing ? result.existing : null,
+  });
+  if (conflict.status === 'conflict' && conflict.conflict) {
     return {
-      outcome: 'conflict',
-      message: `Ya existe un cliente con documento ${payload.idNumber}`,
-      existing: result.existing,
+      outcome: 'done',
+      result,
+      adoptExisting: { id: conflict.conflict.existingId, name: conflict.conflict.existingName },
+      note: `Ya existía un cliente con documento ${payload.idNumber}; se usó el registro existente (${conflict.conflict.existingName}).`,
     };
   }
   return { outcome: 'done', result };
@@ -105,7 +114,9 @@ async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: st
         p_idempotency_key: idempotencyKey,
       });
   if (error) throw error;
-  return { outcome: 'done', result: { pagoId: String(data || '') } };
+  const pagoId = String(data || '');
+  if (!pagoId) return { outcome: 'retry', message: 'El servidor no devolvió el id del pago' };
+  return { outcome: 'done', result: { pagoId } };
 }
 
 async function pushUpdateRouteStop(payload: UpdateRouteStopPayload): Promise<PushResult> {
@@ -151,7 +162,11 @@ async function pushAttachSupport(payload: AttachPagoSupportPayload): Promise<Pus
   if (upload.status === 'done') {
     return { outcome: 'done' };
   }
+  if (upload.status === 'failed') {
+    return { outcome: 'fail', message: upload.lastError || 'El soporte fue descartado' };
+  }
   if (!upload.pagoServerId) {
+    // Comparte carril con su pago: solo llega aquí si el pago aún no confirmó.
     return { outcome: 'retry', message: 'El pago aún no tiene id de servidor' };
   }
   await uploadAndAttachPagoSupport({
@@ -163,8 +178,10 @@ async function pushAttachSupport(payload: AttachPagoSupportPayload): Promise<Pus
       name: upload.fileName,
     },
   });
-  await upload.update((record) => {
-    record.status = 'done';
+  await database.write(async () => {
+    await upload.update((record) => {
+      record.status = 'done';
+    });
   });
   await deleteLocalPagoSupportFile(upload.localUri);
   return { outcome: 'done' };

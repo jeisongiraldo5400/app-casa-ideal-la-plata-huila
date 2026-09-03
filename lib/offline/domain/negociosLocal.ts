@@ -41,6 +41,7 @@ export type LocalPagoRow = {
   virtualReceiptNumber: string | null;
   receiptStatus: string;
   notes: string | null;
+  createdByName?: string | null;
 };
 
 export type LocalNegocioListItem = {
@@ -109,6 +110,7 @@ export type LocalNegocioDetail = {
     virtual_receipt_number: string | null;
     receipt_status: string;
     notes: string | null;
+    created_by_name: string | null;
   }>;
 };
 
@@ -116,10 +118,17 @@ function cuotaSaldo(cuota: LocalCuotaRow) {
   return Math.max(cuota.amount + cuota.lateFeeAmount - cuota.paidAmount, 0);
 }
 
-function remainingForNegocio(negocio: LocalNegocioRow, cuotas: LocalCuotaRow[]) {
-  const related = cuotas.filter((cuota) => cuota.negocioId === negocio.id && cuota.status !== 'anulada');
+/**
+ * Saldo derivado de las cuotas locales. Solo se usa el valor guardado en el
+ * negocio cuando no hay ninguna cuota descargada; un negocio con cuotas
+ * totalmente pagadas debe mostrar 0, no el saldo viejo.
+ */
+export function remainingForNegocio(negocio: LocalNegocioRow, cuotas: LocalCuotaRow[]) {
+  const related = cuotas.filter((cuota) => cuota.negocioId === negocio.id);
   if (!related.length) return negocio.remainingBalance;
-  return related.reduce((sum, cuota) => sum + cuotaSaldo(cuota), 0);
+  return related
+    .filter((cuota) => cuota.status !== 'anulada')
+    .reduce((sum, cuota) => sum + cuotaSaldo(cuota), 0);
 }
 
 export function mapNegociosListFromLocal(
@@ -223,6 +232,7 @@ export function mapNegocioDetailFromLocal(input: {
       virtual_receipt_number: pago.virtualReceiptNumber,
       receipt_status: pago.receiptStatus,
       notes: pago.notes,
+      created_by_name: pago.createdByName ?? null,
     })),
   };
 }

@@ -1,4 +1,4 @@
-import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
+import { receiptRegisteredBy, type NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import {
@@ -25,7 +25,7 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...textLines(`Cliente: ${data.customerName}`),
     ...textLines(`Fecha y hora: ${formatPaymentDateTime(data.paidAt)}`),
     ...textLines(`Recibo fisico: ${data.physicalReceiptNumber || 'No aplica'}`),
-    ...textLines(`Registrado por: ${data.sellerName || 'Casa Ideal'}`),
+    ...textLines(`Registrado por: ${receiptRegisteredBy(data)}`),
     { type: 'separator' },
     { type: 'text', text: padRow('Valor recibido', formatTicketMoney(data.amount)), bold: true },
     { type: 'text', text: padRow('Saldo pendiente', formatTicketMoney(data.remainingBalance)) },

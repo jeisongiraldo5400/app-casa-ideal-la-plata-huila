@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { readStoredSession, supabase } from '@/lib/supabase';
 import { getLastOnlineVerifiedAt, setLastOnlineVerifiedAt } from '@/lib/offline/security/secureKeys';
 import { wipeLocalOfflineData } from '@/lib/offline/security/wipe';
 import type { Session, User } from '@supabase/supabase-js';
@@ -16,6 +16,7 @@ jest.mock('@/lib/supabase', () => ({
     },
     from: jest.fn(),
   },
+  readStoredSession: jest.fn(async () => null),
 }));
 
 jest.mock('@/lib/offline/security/secureKeys', () => ({
@@ -38,6 +39,7 @@ const mockFrom = supabase.from as jest.Mock;
 const mockGetLastOnlineVerifiedAt = getLastOnlineVerifiedAt as jest.Mock;
 const mockSetLastOnlineVerifiedAt = setLastOnlineVerifiedAt as jest.Mock;
 const mockWipe = wipeLocalOfflineData as jest.Mock;
+const mockReadStoredSession = readStoredSession as jest.Mock;
 
 type AuthChangeHandler = (event: string, session: Session | null) => void;
 
@@ -87,6 +89,7 @@ describe('authStore.initialize', () => {
     mockGetLastOnlineVerifiedAt.mockResolvedValue(null);
     mockSetLastOnlineVerifiedAt.mockResolvedValue(undefined);
     mockWipe.mockResolvedValue(undefined);
+    mockReadStoredSession.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -155,6 +158,44 @@ describe('authStore.initialize', () => {
     expect(finalState.session).toBeNull();
     expect(finalState.loading).toBe(false);
     expect(finalState.initialized).toBe(true);
+  });
+
+  it('conserva la sesión guardada cuando el token venció sin red y el TTL sigue vigente', async () => {
+    const user = createUser();
+    const stored = { ...createSession(user), refresh_token: 'refresh' } as Session;
+    // auth-js: token vencido + refresh fallido por red => session null con error.
+    auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: { name: 'AuthRetryableFetchError', message: 'Network request failed' },
+    });
+    mockReadStoredSession.mockResolvedValue(stored);
+    mockGetLastOnlineVerifiedAt.mockResolvedValue(Date.now() - 60_000);
+
+    await useAuthStore.getState().initialize();
+
+    const state = useAuthStore.getState();
+    expect(state.session).toEqual(stored);
+    expect(state.user).toEqual(user);
+    expect(state.offlineSession).toBe(true);
+    expect(state.initialized).toBe(true);
+    expect(auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it('cierra la sesión si el token venció sin red pero el TTL offline expiró', async () => {
+    const stored = { ...createSession(), refresh_token: 'refresh' } as Session;
+    auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: { name: 'AuthRetryableFetchError', message: 'Network request failed' },
+    });
+    mockReadStoredSession.mockResolvedValue(stored);
+    mockGetLastOnlineVerifiedAt.mockResolvedValue(Date.now() - 8 * 24 * 60 * 60 * 1000);
+
+    await useAuthStore.getState().initialize();
+
+    const state = useAuthStore.getState();
+    expect(state.session).toBeNull();
+    expect(state.offlineSession).toBe(false);
+    expect(state.initialized).toBe(true);
   });
 
   it('confirma la sesión cuando getUser y el perfil activo son válidos', async () => {

@@ -52,6 +52,7 @@ export class NegocioPago extends Model {
   @field('virtual_receipt_number') virtualReceiptNumber!: string | null;
   @field('receipt_status') receiptStatus!: string;
   @field('notes') notes!: string | null;
+  @field('created_by_name') createdByName!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }

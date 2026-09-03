@@ -31,6 +31,9 @@ function ProfileScreenInner() {
   const router = useRouter();
   const { roles } = useUserRoles();
   const pendingCount = useSyncStore((state) => state.pendingCount);
+  const failedCount = useSyncStore((state) => state.failedCount);
+  const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
+  const unsentCount = pendingCount + failedCount;
   const { savedPrinter, openPicker } = useBluetoothPrinter();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const roleNames = roles
@@ -41,8 +44,8 @@ function ProfileScreenInner() {
   const handleSignOut = async () => {
     Alert.alert(
       'Cerrar sesión',
-      pendingCount
-        ? `Hay ${pendingCount} cambio${pendingCount === 1 ? '' : 's'} sin sincronizar. Si cierras sesión se borrarán del dispositivo.`
+      unsentCount
+        ? `Hay ${unsentCount} cambio${unsentCount === 1 ? '' : 's'} sin sincronizar. Si cierras sesión se borrarán del dispositivo.`
         : '¿Estás seguro de que deseas cerrar sesión?',
       [
         {
@@ -120,6 +123,30 @@ function ProfileScreenInner() {
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
         <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Datos sin conexión</Text>
         <DownloadDataButton />
+        <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+        <TouchableOpacity
+          style={styles.changePasswordRow}
+          onPress={() => setQueueVisible(true)}
+          activeOpacity={0.7}
+          testID="sync-queue-button"
+        >
+          <MaterialIcons
+            name={failedCount ? 'error-outline' : 'cloud-upload'}
+            size={20}
+            color={failedCount ? colors.error.main : colors.text.secondary}
+          />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Cambios sin sincronizar</Text>
+            <Text style={[styles.infoValue, { color: failedCount ? colors.error.main : colors.text.primary }]}>
+              {failedCount
+                ? `${failedCount} rechazado${failedCount === 1 ? '' : 's'} · ${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`
+                : pendingCount
+                  ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'} de envío`
+                  : 'Todo sincronizado'}
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
       </Card>
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>

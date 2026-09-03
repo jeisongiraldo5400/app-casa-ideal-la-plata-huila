@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,9 @@ import { NegocioProductsSummary } from '@/components/negocios/components/Negocio
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
 import { PaymentCard } from '@/components/negocios/components/PaymentCard';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { displayProfileName, fetchProfileNames } from '@/lib/profileNames';
+import { getCachedProfileName, setCachedProfileName } from '@/lib/offline/security/secureKeys';
 import { SignatureGallery } from '@/components/negocios/components/SignatureGallery';
 import { RegisterPaymentSheet } from '@/components/negocios/components/RegisterPaymentSheet';
 import {
@@ -92,11 +95,25 @@ function NegocioDetailScreenInner() {
   const [customerMeta, setCustomerMeta] = useState<any>({});
   const [codeudorMeta, setCodeudorMeta] = useState<any>({});
   const [sellerName, setSellerName] = useState('');
+  /** Nombre del usuario actual: autor de los pagos que registre desde esta pantalla. */
+  const [currentUserName, setCurrentUserName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
+  const { user } = useAuth();
+  const registeredByName = currentUserName || user?.email || null;
+
+  useEffect(() => {
+    let active = true;
+    void getCachedProfileName().then((cached) => {
+      if (active && cached) setCurrentUserName((current) => current || cached);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
@@ -260,7 +277,14 @@ function NegocioDetailScreenInner() {
 
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
-      setPagos(pagosRes.data || []);
+      const pagoRows = (pagosRes.data || []) as { created_by: string | null }[];
+      const profileNames = await fetchProfileNames([...pagoRows.map((pago) => pago.created_by), user?.id]);
+      setPagos(pagoRows.map((pago) => ({ ...pago, created_by_name: displayProfileName(profileNames, pago.created_by) })));
+      if (user?.id) {
+        const myName = profileNames.get(user.id) || user.email || '';
+        setCurrentUserName(myName);
+        void setCachedProfileName(myName || null);
+      }
       setInstallmentPage(0);
       setPaymentPage(0);
       setCustomerName(custRes.data?.name || '');
@@ -326,7 +350,7 @@ function NegocioDetailScreenInner() {
     } finally {
       setLoading(false);
     }
-  }, [id, applyLocalDetail]);
+  }, [id, applyLocalDetail, user?.id, user?.email]);
 
   useFocusEffect(
     useCallback(() => {
@@ -452,6 +476,7 @@ function NegocioDetailScreenInner() {
       negocioNumero: negocio.numero,
       customerName,
       sellerName,
+      registeredBy: registeredByName,
       remainingBalance: Math.max(pendingBalance - input.amount, 0),
     });
   };
@@ -595,6 +620,7 @@ function NegocioDetailScreenInner() {
           idempotencyKey: paymentIdempotencyKey.current,
           routeStopId: routeStopId || null,
           supportFile: paySupportFile,
+          registeredBy: registeredByName,
         });
         paymentIdempotencyKey.current = null;
         paymentPaidAt.current = null;
@@ -718,6 +744,8 @@ function NegocioDetailScreenInner() {
       physicalReceiptNumber: pago.receipt_number,
       negocioNumero: negocio.numero,
       customerName,
+      sellerName,
+      registeredBy: pago.created_by_name,
       remainingBalance,
     });
     try {
@@ -744,6 +772,7 @@ function NegocioDetailScreenInner() {
       negocioNumero: negocio.numero,
       customerName,
       sellerName,
+      registeredBy: pago.created_by_name,
       remainingBalance,
     });
   };

@@ -8,6 +8,7 @@ export const SECURE_KEYS = {
   lastOnlineVerifiedAt: 'casa_ideal.last_online_verified_at',
   cachedRoles: 'casa_ideal.cached_roles',
   appLockEnabled: 'casa_ideal.app_lock_enabled',
+  profileName: 'casa_ideal.profile_name',
 } as const;
 
 const LEGACY_KEYS: Record<string, string> = {
@@ -96,9 +97,23 @@ export async function getCachedRoles(): Promise<CachedRoles | null> {
   return getSecureJson<CachedRoles>(SECURE_KEYS.cachedRoles);
 }
 
+/** Nombre visible del usuario actual, para recibos registrados sin red. */
+export async function setCachedProfileName(name: string | null) {
+  if (!name) {
+    await deleteSecureKey(SECURE_KEYS.profileName);
+    return;
+  }
+  await setSecureJson(SECURE_KEYS.profileName, name);
+}
+
+export async function getCachedProfileName(): Promise<string | null> {
+  return getSecureJson<string>(SECURE_KEYS.profileName);
+}
+
 export async function clearOfflineSecureData() {
   await Promise.all([
     deleteSecureKey(SECURE_KEYS.lastOnlineVerifiedAt),
     deleteSecureKey(SECURE_KEYS.cachedRoles),
+    deleteSecureKey(SECURE_KEYS.profileName),
   ]);
 }

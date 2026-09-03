@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type Session } from '@supabase/supabase-js'
 import { AppState, type AppStateStatus, Platform } from 'react-native'
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
@@ -33,6 +33,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 })
+
+/**
+ * Sesión persistida tal como la guardó auth-js, sin intentar refrescarla.
+ * `getSession()` devuelve null cuando el access token venció y el refresh
+ * falla por red, aunque el refresh token siga guardado y sea válido. En modo
+ * sin conexión esa sesión es la que mantiene al usuario dentro de la app.
+ */
+export async function readStoredSession(): Promise<Session | null> {
+  const storageKey = (supabase.auth as unknown as { storageKey?: string }).storageKey
+  if (!storageKey) return null
+  try {
+    const raw = await secureSessionStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<Session> | null
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!parsed.access_token || !parsed.refresh_token || !parsed.user?.id) return null
+    return parsed as Session
+  } catch {
+    return null
+  }
+}
 
 /**
  * Mantiene el refresco de la sesión activo solamente mientras la aplicación

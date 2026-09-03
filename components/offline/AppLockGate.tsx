@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
@@ -12,7 +12,24 @@ export function AppLockGate() {
   const colors = getColors(isDark);
   const locked = useSyncStore((state) => state.locked);
   const setLocked = useSyncStore((state) => state.setLocked);
+  const pendingCount = useSyncStore((state) => state.pendingCount);
+  const failedCount = useSyncStore((state) => state.failedCount);
   const { signOut } = useAuth();
+
+  /** Cerrar sesión borra la base local; los cambios sin enviar se perderían. */
+  const confirmSignOut = () => {
+    const unsent = pendingCount + failedCount;
+    Alert.alert(
+      'Cerrar sesión',
+      unsent
+        ? `Hay ${unsent} cambio${unsent === 1 ? '' : 's'} sin sincronizar. Si cierras sesión se borrarán del dispositivo. Conéctate a internet y desbloquea la app para enviarlos primero.`
+        : '¿Deseas cerrar sesión?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Cerrar sesión', style: 'destructive', onPress: () => void signOut() },
+      ]
+    );
+  };
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Desbloquea para ver cartera y clientes');
 
@@ -61,7 +78,7 @@ export function AppLockGate() {
           <Pressable onPress={() => void unlock()} style={[styles.button, { backgroundColor: colors.primary.main }]}>
             <Text style={styles.buttonText}>Desbloquear</Text>
           </Pressable>
-          <Pressable onPress={() => void signOut()} style={styles.signOutButton}>
+          <Pressable onPress={confirmSignOut} style={styles.signOutButton}>
             <Text style={[styles.signOutText, { color: colors.error.main }]}>Cerrar sesión</Text>
           </Pressable>
         </>

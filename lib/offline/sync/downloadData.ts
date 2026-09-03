@@ -1,13 +1,9 @@
-import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
+import NetInfo from '@react-native-community/netinfo';
+import { isNetInfoOnline } from '../network';
 import { useSyncStore } from '../store/syncStore';
 import { runSync } from './syncEngine';
 
-export function isNetInfoOnline(state: NetInfoState | null) {
-  if (!state) return false;
-  if (state.isConnected === false) return false;
-  if (state.isInternetReachable === false) return false;
-  return true;
-}
+export { isNetInfoOnline };
 
 export type ManualDownloadResult =
   | { ok: true }

@@ -8,6 +8,7 @@ import { shouldLockApp } from '@/lib/offline/security/sessionPolicy';
 import { getSecureJson, SECURE_KEYS } from '@/lib/offline/security/secureKeys';
 import { SyncStatusBanner } from './SyncStatusBanner';
 import { AppLockGate } from './AppLockGate';
+import { SyncQueueModal } from './SyncQueueModal';
 
 let lastBackgroundAt: number | null = null;
 
@@ -64,6 +65,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     <>
       <SyncStatusBanner />
       {children}
+      <SyncQueueModal />
       <AppLockGate />
     </>
   );

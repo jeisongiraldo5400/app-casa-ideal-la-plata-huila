@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { readStoredSession, supabase } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import {
@@ -40,6 +40,38 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       },
     );
   });
+}
+
+/**
+ * Conserva la sesión guardada cuando la verificación falló por falta de red
+ * (getSession con token vencido, timeout) y el último acceso verificado está
+ * dentro del TTL offline. Devuelve true si se restauró.
+ */
+async function restoreOfflineSession(
+  error: unknown,
+  set: (partial: Partial<AuthState>) => void
+): Promise<boolean> {
+  const stored = await readStoredSession();
+  const lastVerified = await getLastOnlineVerifiedAt();
+  if (
+    !stored ||
+    !shouldKeepLocalSession({
+      error,
+      hasStoredSession: true,
+      lastOnlineVerifiedAt: lastVerified,
+    })
+  ) {
+    return false;
+  }
+  console.warn('No se pudo verificar la sesión; se conserva la sesión local', error);
+  set({
+    session: stored,
+    user: stored.user,
+    loading: false,
+    initialized: true,
+    offlineSession: true,
+  });
+  return true;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -93,6 +125,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } = await withTimeout(supabase.auth.getSession(), AUTH_INIT_TIMEOUT_MS, 'getSession');
 
       if (error || !session) {
+        // auth-js devuelve session null cuando el access token venció y el
+        // refresh falla por red, aunque la sesión siga guardada. Sin red se
+        // conserva la sesión local dentro del TTL offline.
+        if (error && (await restoreOfflineSession(error, set))) return;
         set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
         return;
       }
@@ -166,6 +202,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error?.message?.includes('Invalid Refresh Token')
       ) {
         await supabase.auth.signOut();
+      } else if (await restoreOfflineSession(error, set)) {
+        return;
       }
       set({ session: null, user: null, loading: false, initialized: true, offlineSession: false });
     } finally {

@@ -13,15 +13,24 @@ import {
   UserProfileCache,
 } from '../models';
 
-async function upsertById<T extends Model>(
+type SyncAware = Model & { rowSyncStatus?: string };
+
+/**
+ * Upsert por id. Una fila local en `pending` tiene un cambio optimista que el
+ * servidor todavía no conoce: no se pisa. Cuando el comando confirme, la fila
+ * vuelve a `synced` y el servidor la habrá modificado (updated_at), así que el
+ * siguiente pull la traerá; si el comando falla, el rollback la restaura.
+ */
+async function upsertById<T extends SyncAware>(
   database: Database,
   table: string,
   id: string,
   prepare: (record: T) => void
-) {
+): Promise<Model | null> {
   const collection = database.get<T>(table);
   try {
     const existing = await collection.find(id);
+    if (existing.rowSyncStatus === 'pending') return null;
     return existing.prepareUpdate(prepare);
   } catch {
     return collection.prepareCreate((record) => {
@@ -40,11 +49,16 @@ async function destroyIfExists(database: Database, table: string, id: string) {
   }
 }
 
+function push(operations: Model[], op: Model | null) {
+  if (op) operations.push(op);
+}
+
 export async function applyPullPayload(database: Database, payload: PullPayload, userId: string) {
   const operations: Model[] = [];
 
   for (const row of payload.customers.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<Customer>(database, 'customers', row.id, (record) => {
         record.name = row.name;
         record.idNumber = row.id_number;
@@ -56,12 +70,12 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
     );
   }
   for (const id of payload.customers.deleted) {
-    const op = await destroyIfExists(database, 'customers', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'customers', id));
   }
 
   for (const row of payload.negocios.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<Negocio>(database, 'negocios', row.id, (record) => {
         record.numero = Number(row.numero || 0);
         record.status = row.status;
@@ -81,12 +95,12 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
     );
   }
   for (const id of payload.negocios.deleted) {
-    const op = await destroyIfExists(database, 'negocios', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'negocios', id));
   }
 
   for (const row of payload.negocio_cuotas.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<NegocioCuota>(database, 'negocio_cuotas', row.id, (record) => {
         record.negocioId = row.negocio_id;
         record.installmentNumber = Number(row.installment_number || 0);
@@ -101,12 +115,12 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
     );
   }
   for (const id of payload.negocio_cuotas.deleted) {
-    const op = await destroyIfExists(database, 'negocio_cuotas', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'negocio_cuotas', id));
   }
 
   for (const row of payload.negocio_pagos.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<NegocioPago>(database, 'negocio_pagos', row.id, (record) => {
         record.negocioId = row.negocio_id;
         record.cuotaId = row.cuota_id;
@@ -116,18 +130,19 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.virtualReceiptNumber = row.virtual_receipt_number;
         record.receiptStatus = row.receipt_status || 'emitido';
         record.notes = row.notes;
+        record.createdByName = row.created_by_name ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.created_at);
       })
     );
   }
   for (const id of payload.negocio_pagos.deleted) {
-    const op = await destroyIfExists(database, 'negocio_pagos', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'negocio_pagos', id));
   }
 
   for (const row of payload.collection_routes.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<CollectionRouteRecord>(database, 'collection_routes', row.id, (record) => {
         record.gestorId = row.gestor_id;
         record.routeDate = row.route_date;
@@ -142,12 +157,12 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
     );
   }
   for (const id of payload.collection_routes.deleted) {
-    const op = await destroyIfExists(database, 'collection_routes', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'collection_routes', id));
   }
 
   for (const row of payload.collection_route_stops.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<CollectionRouteStopRecord>(database, 'collection_route_stops', row.id, (record) => {
         record.routeId = row.route_id;
         record.negocioId = row.negocio_id;
@@ -171,12 +186,12 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
     );
   }
   for (const id of payload.collection_route_stops.deleted) {
-    const op = await destroyIfExists(database, 'collection_route_stops', id);
-    if (op) operations.push(op);
+    push(operations, await destroyIfExists(database, 'collection_route_stops', id));
   }
 
   for (const row of payload.municipios.upserts) {
-    operations.push(
+    push(
+      operations,
       await upsertById<CatalogMunicipio>(database, 'catalog_municipios', row.id, (record) => {
         record.nombre = row.nombre;
         record.isActive = Boolean(row.is_active);
@@ -209,4 +224,38 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
   await database.write(async () => {
     await database.batch(...operations.filter(Boolean));
   });
+}
+
+/**
+ * Un negocio reasignado a otro gestor deja de venir en el pull pero nunca llega
+ * como `deleted`. Con la lista completa de ids en alcance se eliminan los que
+ * ya no pertenecen al usuario, salvo los que tienen cambios locales sin enviar.
+ */
+export async function pruneOutOfScopeNegocios(database: Database, scopedIds: string[]) {
+  const scope = new Set(scopedIds);
+  const [negocios, cuotas, pagos] = await Promise.all([
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    database.get<NegocioPago>('negocio_pagos').query().fetch(),
+  ]);
+  const withPendingChanges = new Set<string>();
+  for (const row of cuotas) if (row.rowSyncStatus === 'pending') withPendingChanges.add(row.negocioId);
+  for (const row of pagos) if (row.rowSyncStatus === 'pending') withPendingChanges.add(row.negocioId);
+
+  const toRemove = new Set(
+    negocios
+      .filter((row) => !scope.has(row.id) && !withPendingChanges.has(row.id))
+      .map((row) => row.id)
+  );
+  if (!toRemove.size) return 0;
+
+  const operations: Model[] = [];
+  for (const row of negocios) if (toRemove.has(row.id)) operations.push(row.prepareDestroyPermanently());
+  for (const row of cuotas) if (toRemove.has(row.negocioId)) operations.push(row.prepareDestroyPermanently());
+  for (const row of pagos) if (toRemove.has(row.negocioId)) operations.push(row.prepareDestroyPermanently());
+
+  await database.write(async () => {
+    await database.batch(...operations);
+  });
+  return toRemove.size;
 }
