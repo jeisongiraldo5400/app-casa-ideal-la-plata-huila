@@ -691,8 +691,8 @@ function NegocioDetailScreenInner() {
       }
 
       if (Print?.printToFileAsync && Sharing?.shareAsync) {
-        // Tamaño oficio (legal): 8.5 x 14 pulgadas = 612 x 1008 puntos.
-        const { uri } = await Print.printToFileAsync({ html, width: 612, height: 1008 });
+        // Tamaño oficio: 216 x 330 mm = 612 x 935 puntos a 72 ppp (legal sería 612 x 1008).
+        const { uri } = await Print.printToFileAsync({ html, width: 612, height: 935 });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',

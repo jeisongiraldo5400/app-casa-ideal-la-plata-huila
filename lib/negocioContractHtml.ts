@@ -157,7 +157,7 @@ function buildPlanRows(data: NegocioContractData): { rows: PlanRow[]; projected:
  * Filas mínimas de la tabla de artículos: se completan con filas vacías para
  * que la orden impresa se vea bien distribuida aunque tenga pocos productos.
  */
-const MIN_ITEM_ROWS = 18;
+const MIN_ITEM_ROWS = 16;
 
 export function buildNegocioContractHtml(data: NegocioContractData): string {
   const itemsRows = data.items
@@ -221,21 +221,23 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       ? `${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}`
       : 'Sin cuotas: pagado con abonos iniciales';
 
-  // Hoja tamaño oficio (legal, 216 x 356 mm) con márgenes y tipografía
-  // reducidos para que el contrato completo, con al menos 6 artículos,
-  // quepa en una sola página. El plan de cuotas no se imprime.
+  // Hoja tamaño oficio (216 x 330 mm; no confundir con legal, 216 x 356 mm)
+  // con márgenes y tipografía reducidos para que el contrato completo, con al
+  // menos 6 artículos, quepa en una sola página. El plan de cuotas no se
+  // imprime. Mismo tamaño que PAGE_SIZE_CSS en la web y que el PDF generado
+  // en app/negocio/[id].tsx (612 x 935 puntos).
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
 <title>Solicitud de crédito ${formatNegocioCodigo(data.numero)} - Casa Ideal</title>
 <style>
-  @page { size: legal; margin: 6mm 8mm 8mm; }
+  @page { size: 216mm 330mm; margin: 5mm 8mm 7mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 8.5px; line-height: 1.25; padding-bottom: 12px; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 8.5px; line-height: 1.22; padding-bottom: 12px; }
   .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 4px; }
-  .logo { display: block; height: 58px; width: auto; max-width: 100%; object-fit: contain; }
+  .logo { display: block; height: 50px; width: auto; max-width: 100%; object-fit: contain; }
   .company { text-align: right; color: #294c77; font-size: 7.5px; line-height: 1.3; }
   .title { display: flex; justify-content: space-between; align-items: center; color: #195ba6; margin: 4px 0 3px; }
   .title h2 { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
@@ -249,7 +251,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   .party { min-width: 0; }
   .party + .party { border-left: 1px solid #195ba6; }
   .box-title { background: #eaf2fb; color: #164f91; font-size: 8px; text-align: center; text-transform: uppercase; font-weight: 800; padding: 1px 3px; border-bottom: 1px solid #195ba6; }
-  .field { display: grid; grid-template-columns: 58px 1fr; min-height: 14px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
+  .field { display: grid; grid-template-columns: 58px 1fr; min-height: 13px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
   .field:last-child { border-bottom: 0; }
   .field b { color: #3e5f84; font-size: 7px; }
   .section { color: #195ba6; font-size: 9px; font-weight: 800; text-transform: uppercase; margin: 4px 0 2px; }
@@ -278,7 +280,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   .finance strong { font-size: 9px; }
   .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; break-inside: avoid; }
   .sig { text-align: center; min-width: 0; }
-  .sig-space { height: 42px; display: grid; place-items: end center; }
+  .sig-space { height: 36px; display: grid; place-items: end center; }
   .sig img { max-width: 95%; max-height: 40px; object-fit: contain; }
   .sig-line { border-top: 1px solid #24364c; }
   .sig b, .sig small { display: block; margin-top: 1px; font-size: 7px; }
