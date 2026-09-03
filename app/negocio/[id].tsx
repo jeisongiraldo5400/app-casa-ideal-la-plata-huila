@@ -6,8 +6,6 @@ import {
   ScrollView,
   Alert,
   Share,
-  Platform,
-  ActionSheetIOS,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -41,7 +39,7 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { displayProfileName, fetchProfileNames } from '@/lib/profileNames';
 import { getCachedProfileName, setCachedProfileName } from '@/lib/offline/security/secureKeys';
 import { SignatureGallery } from '@/components/negocios/components/SignatureGallery';
-import { RegisterPaymentSheet } from '@/components/negocios/components/RegisterPaymentSheet';
+import { RegisterPaymentSheet, type PagoSupportSource } from '@/components/negocios/components/RegisterPaymentSheet';
 import {
   isNewLocalSignature,
   removeNegocioSignatures,
@@ -425,39 +423,10 @@ function NegocioDetailScreenInner() {
     setPaySupportFile(file);
   };
 
-  const choosePaySupport = () => {
-    const options = [
-      { label: 'Tomar foto', action: () => void pickSupportFromCamera() },
-      { label: 'Galería', action: () => void pickSupportFromGallery() },
-      { label: 'Archivo / PDF', action: () => void pickSupportDocument() },
-      ...(paySupportFile
-        ? [{ label: 'Quitar soporte', action: () => setPaySupportFile(null) }]
-        : []),
-    ];
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [...options.map((item) => item.label), 'Cancelar'],
-          cancelButtonIndex: options.length,
-          destructiveButtonIndex: paySupportFile ? options.length - 1 : undefined,
-        },
-        (index) => {
-          if (index == null || index >= options.length) return;
-          options[index].action();
-        }
-      );
-      return;
-    }
-
-    Alert.alert(
-      'Soporte de pago',
-      'Selecciona una opción',
-      [
-        ...options.map((item) => ({ text: item.label, onPress: item.action })),
-        { text: 'Cancelar', style: 'cancel' as const },
-      ]
-    );
+  const choosePaySupport = (source: PagoSupportSource) => {
+    if (source === 'camera') return void pickSupportFromCamera();
+    if (source === 'gallery') return void pickSupportFromGallery();
+    return void pickSupportDocument();
   };
 
   const printReceiptAfterPago = async (input: {
@@ -1232,6 +1201,7 @@ function NegocioDetailScreenInner() {
         }}
         supportFile={paySupportFile}
         onPickSupport={choosePaySupport}
+        onRemoveSupport={() => setPaySupportFile(null)}
         saving={saving}
         onSubmit={() => void registerPago()}
       />
