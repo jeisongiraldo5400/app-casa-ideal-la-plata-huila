@@ -55,6 +55,7 @@ export type LocalNegocioListItem = {
   customer: { name: string };
   installments_count: number | null;
   delivery_order_id: string | null;
+  seller_id: string | null;
 };
 
 export type LocalNegocioDetail = {
@@ -152,6 +153,7 @@ export function mapNegociosListFromLocal(
         customer: { name: customer?.name || 'Cliente' },
         installments_count: null,
         delivery_order_id: null,
+        seller_id: negocio.sellerId,
       };
     });
 }

@@ -48,8 +48,15 @@ interface NegociosState {
   fromCache: boolean;
   /** Mensaje del último fallo de `fetchList`; null cuando la carga fue exitosa. */
   error: string | null;
+  /** Negocios donde el usuario autenticado es el vendedor (módulo "Mis negocios"). */
+  myList: any[];
+  myLoading: boolean;
+  myFromCache: boolean;
+  myError: string | null;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
   fetchList: () => Promise<void>;
+  /** Carga los negocios de `sellerId`; se pasa explícito para no depender de red en modo offline. */
+  fetchMyList: (sellerId: string) => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
   createAndActivate: (input: {
     deal_date: string;
@@ -177,6 +184,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   loading: false,
   fromCache: false,
   error: null,
+  myList: [],
+  myLoading: false,
+  myFromCache: false,
+  myError: null,
   creditSettings: null,
 
   fetchList: async () => {
@@ -212,6 +223,42 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       set({ error: toUserError(e, 'No se pudieron cargar los negocios').message });
     } finally {
       set({ loading: false });
+    }
+  },
+
+  fetchMyList: async (sellerId) => {
+    set({ myLoading: true, myError: null });
+    try {
+      const { data, error } = await supabase
+        .from('negocios')
+        .select(
+          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
+        )
+        .is('deleted_at', null)
+        .eq('seller_id', sellerId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const myList = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
+        ...negocio,
+        remaining_balance: computeRemainingBalance(negocio_cuotas),
+        has_mora: (negocio_cuotas || []).some(
+          (cuota: { status: string; deleted_at: string | null }) =>
+            cuota.status === 'mora' && !cuota.deleted_at
+        ),
+      }));
+      set({ myList, myFromCache: false, myError: null });
+    } catch (e) {
+      if (isNetworkError(e) && canUseLocalDb()) {
+        const local = await fetchNegociosListFromLocal();
+        const myList = local.filter((item: any) => item.seller_id === sellerId);
+        set({ myList, myFromCache: true, myError: null });
+        return;
+      }
+      console.error(e);
+      set({ myError: toUserError(e, 'No se pudieron cargar tus negocios').message });
+    } finally {
+      set({ myLoading: false });
     }
   },
 

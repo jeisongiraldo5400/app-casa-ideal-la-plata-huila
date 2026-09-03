@@ -81,6 +81,8 @@ describe('mapNegociosListFromLocal', () => {
     expect(list[1].remaining_balance).toBe(170);
     expect(list[1].installments_count).toBeNull();
     expect(list[1].delivery_order_id).toBeNull();
+    expect(list[1].seller_id).toBe('s1');
+    expect(list[0].seller_id).toBeNull();
   });
 });
 

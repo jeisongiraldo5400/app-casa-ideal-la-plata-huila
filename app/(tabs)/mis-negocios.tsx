@@ -4,13 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { DownloadDataButton } from '@/components/offline';
-import {
-  HeroActionCard,
-  ScreenErrorBoundary,
-  ScreenState,
-  SearchField,
-  SegmentedControl,
-} from '@/components/ui';
+import { ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { NegocioListCard } from '@/components/negocios/components/NegocioListCard';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import {
@@ -21,37 +15,42 @@ import {
 } from '@/lib/negocios/negocioListFilters';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
-import { useUserRoles } from '@/hooks/useUserRoles';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 
-export default function NegociosScreen() {
+export default function MisNegociosScreen() {
   return (
-    <ScreenErrorBoundary screen="Negocios">
-      <NegociosScreenInner />
+    <ScreenErrorBoundary screen="Mis negocios">
+      <MisNegociosScreenInner />
     </ScreenErrorBoundary>
   );
 }
 
-function NegociosScreenInner() {
+function MisNegociosScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { list, loading, fromCache, error, fetchList } = useNegociosStore();
-  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const { user } = useAuth();
+  const { myList: list, myLoading: loading, myFromCache: fromCache, myError: error, fetchMyList } =
+    useNegociosStore();
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
-  const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<NegocioListFilter>('all');
+  const sellerId = user?.id;
+
+  const loadMyList = useCallback(() => {
+    if (sellerId) void fetchMyList(sellerId);
+  }, [fetchMyList, sellerId]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchList();
-    }, [fetchList])
+      loadMyList();
+    }, [loadMyList])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchList();
+    loadMyList();
     setRefreshing(false);
   };
 
@@ -68,16 +67,16 @@ function NegociosScreenInner() {
 
   const renderEmpty = () => {
     if (initialLoading) {
-      return <ScreenState loading title="Cargando negocios…" variant="inline" />;
+      return <ScreenState loading title="Cargando tus negocios…" variant="inline" />;
     }
     if (error && list.length === 0) {
       return (
         <ScreenState
           tone="error"
-          title="No se pudieron cargar los negocios"
+          title="No se pudieron cargar tus negocios"
           description={error}
           actionLabel="Reintentar"
-          onAction={() => void fetchList()}
+          onAction={loadMyList}
         />
       );
     }
@@ -108,25 +107,14 @@ function NegociosScreenInner() {
     return (
       <ScreenState
         icon="handshake"
-        title="Aún no hay negocios"
-        description={canCreate ? 'Crea el primero para empezar a gestionar créditos.' : 'Cuando se registren negocios aparecerán aquí.'}
-        actionLabel={canCreate ? 'Crear negocio' : undefined}
-        onAction={canCreate ? () => router.navigate('/(tabs)/negocio-create') : undefined}
+        title="Aún no tienes negocios"
+        description="Los negocios donde figures como vendedor aparecerán aquí."
       />
     );
   };
 
   const header = (
     <View style={styles.header}>
-      {canCreate ? (
-        <HeroActionCard
-          compact
-          title="Nuevo negocio"
-          subtitle="Crédito y orden de entrega"
-          icon="add-business"
-          onPress={() => router.navigate('/(tabs)/negocio-create')}
-        />
-      ) : null}
       <SearchField
         value={query}
         onChangeText={setQuery}

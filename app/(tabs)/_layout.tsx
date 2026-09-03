@@ -74,6 +74,15 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="mis-negocios"
+        options={{
+          title: 'Mis negocios',
+          href: null,
+          headerLeft: () => <BackButton />,
+        }}
+      />
+
+      <Tabs.Screen
         name="cartera"
         options={{
           title: 'Cartera',

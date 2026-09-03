@@ -87,7 +87,10 @@ function HomeScreenInner() {
             <View style={styles.actionGrid}>
               <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => router.navigate('/(tabs)/negocios')} style={styles.halfCard} />
               <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => router.navigate('/(tabs)/cartera')} style={styles.halfCard} />
-              <ActionCard compact title="Buscar cliente" subtitle="Historial y créditos" icon="person-search" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} style={styles.fullCard} />
+              {isVendedor() ? (
+                <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => router.navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
+              ) : null}
+              <ActionCard compact title="Buscar cliente" subtitle="Historial y créditos" icon="person-search" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
             </View>
             {isGestorCobro() ? (
               <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} />
