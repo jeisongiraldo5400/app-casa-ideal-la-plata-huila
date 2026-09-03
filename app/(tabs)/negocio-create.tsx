@@ -1241,11 +1241,17 @@ function NegocioCreateScreenInner() {
       <View style={[styles.fixedFooterNav, { backgroundColor: colors.background.paper, borderTopColor: colors.divider }]}>
         {step > 0 && (
           <TouchableOpacity
-            style={[styles.footerBtnSecondary, { borderColor: colors.divider }]}
+            style={[
+              styles.footerBtnSecondary,
+              step === 3 && styles.footerBtnIconOnly,
+              { borderColor: colors.divider },
+            ]}
             onPress={() => setStep((s) => s - 1)}
+            accessibilityRole="button"
+            accessibilityLabel="Atrás"
           >
             <MaterialIcons name="arrow-back" size={18} color={colors.text.primary} />
-            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Atrás</Text>
+            {step < 3 && <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Atrás</Text>}
           </TouchableOpacity>
         )}
         {step < 3 ? (
@@ -1304,20 +1310,32 @@ function NegocioCreateScreenInner() {
         ) : saving ? (
           <ActivityIndicator color={colors.primary.main} style={{ flex: 1 }} />
         ) : (
-          <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
+          <View style={styles.footerActions}>
             <TouchableOpacity
-              style={[styles.footerBtnSecondary, { flex: 1, borderColor: colors.divider }]}
+              style={[styles.footerBtnSecondary, styles.footerBtnCompact, { borderColor: colors.divider }]}
               onPress={() => submit(false)}
+              accessibilityRole="button"
             >
-              <Text style={{ color: colors.text.primary, fontWeight: '600', fontSize: 13 }}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={{ color: colors.text.primary, fontWeight: '600', fontSize: 13 }}
+              >
                 Guardar borrador
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.footerBtnPrimary, { flex: 1, backgroundColor: colors.primary.main }]}
+              style={[styles.footerBtnPrimary, styles.footerBtnCompact, { backgroundColor: colors.primary.main }]}
               onPress={() => submit(true)}
+              accessibilityRole="button"
             >
-              <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 14 }}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 13 }}
+              >
                 Activar negocio
               </Text>
             </TouchableOpacity>
@@ -1557,6 +1575,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
@@ -1587,6 +1606,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     minWidth: 120,
     marginLeft: 'auto',
+  },
+  /** Último paso: "Atrás" solo con ícono para dejar espacio a las dos acciones. */
+  footerBtnIconOnly: { paddingHorizontal: 12 },
+  footerActions: { flex: 1, flexDirection: 'row', gap: 8, minWidth: 0 },
+  /** Acciones finales lado a lado: sin ancho mínimo ni padding ancho para que
+   * quepan en pantallas angostas sin partir el texto en dos líneas. */
+  footerBtnCompact: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 11,
   },
   modalOverlay: {
     flex: 1,
