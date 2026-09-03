@@ -193,7 +193,11 @@ function NegociosScreenInner() {
           const customer = item.customer?.name || 'Cliente';
           const meta = [
             item.deal_date,
-            item.installments_count != null ? `${item.installments_count} cuotas` : null,
+            item.installments_count != null
+              ? Number(item.installments_count) > 0
+                ? `${item.installments_count} cuotas`
+                : 'Sin cuotas'
+              : null,
             item.installments_count != null ? (item.delivery_order_id ? 'OE creada' : 'Sin OE') : null,
           ]
             .filter(Boolean)

@@ -26,6 +26,7 @@ import { IconSize, Spacing, Typography, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
+import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
 import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
@@ -241,7 +242,8 @@ function NegocioDetailScreenInner() {
           .select('*')
           .eq('negocio_id', id)
           .is('deleted_at', null)
-          .order('installment_number'),
+          .order('installment_number')
+          .order('due_date'),
         supabase
           .from('negocio_pagos')
           .select('*')
@@ -651,6 +653,7 @@ function NegocioDetailScreenInner() {
       total_credit: Number(negocio.total_credit),
       down_payment: Number(negocio.down_payment),
       down_payment_date: negocio.down_payment_date || null,
+      down_payment_schedule: parseDownPaymentSchedule(negocio.down_payment_schedule, negocio),
       financed_amount: Number(negocio.financed_amount),
       installments_count: negocio.installments_count,
       installment_amount: Number(negocio.installment_amount),
@@ -769,6 +772,7 @@ function NegocioDetailScreenInner() {
       totalCredit: Number(negocio.total_credit),
       downPayment: Number(negocio.down_payment),
       downPaymentDate: negocio.down_payment_date || null,
+      downPaymentSchedule: parseDownPaymentSchedule(negocio.down_payment_schedule, negocio),
       financedAmount: Number(negocio.financed_amount),
       installmentsCount: negocio.installments_count,
       installmentAmount: Number(negocio.installment_amount),
@@ -842,6 +846,7 @@ function NegocioDetailScreenInner() {
             total_credit: Number(negocio.total_credit),
             down_payment: Number(negocio.down_payment),
             down_payment_date: negocio.down_payment_date || null,
+            down_payment_schedule: parseDownPaymentSchedule(negocio.down_payment_schedule, negocio),
             financed_amount: Number(negocio.financed_amount),
             installments_count: Number(negocio.installments_count),
             installment_amount: Number(negocio.installment_amount),
@@ -1025,13 +1030,24 @@ function NegocioDetailScreenInner() {
   const address =
     [negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre].filter(Boolean).join(', ') ||
     'Dirección no registrada';
+  const downPaymentSchedule = parseDownPaymentSchedule(negocio.down_payment_schedule, negocio);
   const downPaymentLabel =
     Number(negocio.down_payment) > 0
-      ? `Inicial ${formatCOP(Number(negocio.down_payment))}${negocio.down_payment_date ? ` (${negocio.down_payment_date})` : ''}`
+      ? `Inicial ${formatCOP(Number(negocio.down_payment))}${
+          downPaymentSchedule.length > 1
+            ? ` en ${downPaymentSchedule.length} abonos`
+            : downPaymentSchedule[0]
+              ? ` (${downPaymentSchedule[0].due_date})`
+              : ''
+        }`
       : null;
+  const cuotasLabel =
+    Number(negocio.installments_count) > 0
+      ? `${negocio.installments_count} cuotas de ${formatCOP(Number(negocio.installment_amount))}`
+      : 'Sin cuotas';
   const planLabel =
     negocio.installments_count != null
-      ? `${downPaymentLabel ? `${downPaymentLabel} · ` : ''}${negocio.installments_count} cuotas de ${formatCOP(Number(negocio.installment_amount))}${orderNumber ? ` · OE ${orderNumber}` : ''}`
+      ? `${downPaymentLabel ? `${downPaymentLabel} · ` : ''}${cuotasLabel}${orderNumber ? ` · OE ${orderNumber}` : ''}`
       : downPaymentLabel;
   const canReassignSeller = !fromLocal && isAdmin() && negocio.status !== 'anulado';
   const pageCuotas = cuotas.slice(installmentPage * TABLE_PAGE_SIZE, (installmentPage + 1) * TABLE_PAGE_SIZE);

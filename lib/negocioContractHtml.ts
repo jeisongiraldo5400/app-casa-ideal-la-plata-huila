@@ -1,4 +1,5 @@
 import { formatCOP } from '@/lib/creditCalculator';
+import { parseDownPaymentSchedule, type DownPaymentEntry } from '@/lib/negocios/negocioCreditRules';
 import { CASA_IDEAL_LOGO_DATA_URI } from '@/lib/casaIdealLogo';
 import {
   formatNegocioCodigo,
@@ -30,6 +31,8 @@ export type NegocioContractData = {
   down_payment: number;
   /** Fecha de pago acordada de la cuota inicial (cuota 0). */
   down_payment_date?: string | null;
+  /** Abonos iniciales pactados; si falta se reconstruye desde down_payment/down_payment_date. */
+  down_payment_schedule?: DownPaymentEntry[] | null;
   financed_amount: number;
   installments_count: number;
   installment_amount: number;
@@ -118,7 +121,7 @@ type PlanRow = { label: string; due_date: string; amount: number; status: string
 function buildPlanRows(data: NegocioContractData): { rows: PlanRow[]; projected: boolean } {
   const cuotas = (data.cuotas || [])
     .filter((c) => c.status !== 'anulada')
-    .sort((a, b) => a.installment_number - b.installment_number);
+    .sort((a, b) => a.installment_number - b.installment_number || a.due_date.localeCompare(b.due_date));
   if (cuotas.length > 0) {
     return {
       projected: false,
@@ -132,8 +135,8 @@ function buildPlanRows(data: NegocioContractData): { rows: PlanRow[]; projected:
     };
   }
   const rows: PlanRow[] = [];
-  if (data.down_payment > 0) {
-    rows.push({ label: labelCuotaNumero(0), due_date: data.down_payment_date || data.deal_date, amount: data.down_payment, status: 'pendiente', paid_amount: 0 });
+  for (const abono of parseDownPaymentSchedule(data.down_payment_schedule, data)) {
+    rows.push({ label: labelCuotaNumero(0), due_date: abono.due_date, amount: abono.amount, status: 'pendiente', paid_amount: 0 });
   }
   const first = String(data.first_due_date || '').match(/^\d{4}-\d{2}-\d{2}/) ? String(data.first_due_date).slice(0, 10) : null;
   if (first) {
@@ -198,16 +201,25 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   const formattedDate = esc(fmtDate(data.deal_date));
   const location = esc(data.location) || '—';
   const firstDueDate = esc(fmtDate(data.first_due_date)) || '—';
+  const downPaymentSchedule = parseDownPaymentSchedule(data.down_payment_schedule, data);
   const downPaymentLabel =
-    data.down_payment > 0 && data.down_payment_date
-      ? `${formatCOP(data.down_payment)} · paga el ${esc(fmtDate(data.down_payment_date))}`
-      : formatCOP(data.down_payment);
+    downPaymentSchedule.length === 1
+      ? `${formatCOP(data.down_payment)} · paga el ${esc(fmtDate(downPaymentSchedule[0].due_date))}`
+      : downPaymentSchedule.length > 1
+        ? `${formatCOP(data.down_payment)} en ${downPaymentSchedule.length} abonos: ${downPaymentSchedule
+            .map((abono) => `${formatCOP(abono.amount)} el ${esc(fmtDate(abono.due_date))}`)
+            .join(', ')}`
+        : formatCOP(data.down_payment);
   const frequencyLabel =
     data.frequency === 'quincenal'
       ? 'quincenales'
       : data.frequency === 'semanal'
         ? 'semanales'
         : 'mensuales';
+  const planLabel =
+    data.installments_count > 0
+      ? `${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}`
+      : 'Sin cuotas: pagado con abonos iniciales';
 
   // Hoja tamaño oficio (legal, 216 x 356 mm) con márgenes y tipografía
   // reducidos para que el contrato completo, con al menos 6 artículos,
@@ -317,9 +329,9 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="finance">
     <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
-    <div><span>Cuota inicial</span><strong>${downPaymentLabel}</strong></div>
+    <div><span>Abonos iniciales</span><strong>${downPaymentLabel}</strong></div>
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>
-    <div><span>Plan de pago</span><strong>${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}</strong></div>
+    <div><span>Plan de pago</span><strong>${planLabel}</strong></div>
     <div><span>Primera cuota</span><strong>${firstDueDate}</strong></div>
     <div><span>Estado</span><strong>${esc(labelNegocioStatus(data.status))}</strong></div>
     <div><span>Orden de entrega</span><strong>${esc(data.delivery_order_number) || 'Pendiente'}</strong></div>

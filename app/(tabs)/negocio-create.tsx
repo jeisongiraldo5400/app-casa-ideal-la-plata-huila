@@ -32,7 +32,17 @@ import {
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
-import { downPaymentDateError } from '@/lib/negocios/negocioCreditRules';
+import {
+  createDownPaymentRow,
+  downPaymentRowsToSchedule,
+  downPaymentScheduleError,
+  downPaymentScheduleTotal,
+  financedAfterDownPayments,
+  installmentPlanError,
+  requiresInstallmentPlan,
+  sortDownPaymentSchedule,
+  type DownPaymentRow,
+} from '@/lib/negocios/negocioCreditRules';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { getCachedProfileName } from '@/lib/offline/security/secureKeys';
 import { fetchSellerOptions, withCurrentUserOption, type SellerOption } from '@/lib/users/sellersService';
@@ -45,7 +55,6 @@ import {
   fetchStockForProducts,
   formatNegocioMoneyInput,
   itemsHaveValidStock,
-  parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 import {
@@ -128,8 +137,8 @@ function NegocioCreateScreenInner() {
   const [stockByProduct, setStockByProduct] = useState<
     Record<string, ProductWarehouseStock[]>
   >({});
-  const [downPayment, setDownPayment] = useState('0');
-  const [downPaymentDate, setDownPaymentDate] = useState('');
+  /** Abonos iniciales pactados (vacío = sin cuota inicial). */
+  const [downPayments, setDownPayments] = useState<DownPaymentRow[]>([]);
   /** '' = usuario actual. */
   const [sellerId, setSellerId] = useState('');
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
@@ -170,8 +179,7 @@ function NegocioCreateScreenInner() {
     setDireccion('');
     setItems([]);
     setStockByProduct({});
-    setDownPayment('0');
-    setDownPaymentDate('');
+    setDownPayments([]);
     setSellerId('');
     setInstallments('3');
     setFrequency(creditSettings?.default_frequency || 'mensual');
@@ -327,24 +335,41 @@ function NegocioCreateScreenInner() {
     rounding_unit: 1000,
   };
   const installmentsNumber = Number(installments);
-  // El vendedor define libremente la cantidad de cuotas: solo se exige un
-  // entero mayor a 0, sin tope superior.
-  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
-
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const downPaymentError = downPaymentDateError(
-    parseNegocioMoney(downPayment) || 0,
-    downPaymentDate,
+  const downPaymentSchedule = downPaymentRowsToSchedule(downPayments);
+  const downPaymentError = downPaymentScheduleError(downPaymentSchedule, localDateValue(), subtotal);
+  const downPaymentTotal = downPaymentScheduleTotal(downPaymentSchedule);
+  // Si los abonos cubren el valor de los productos no hay plan de cuotas.
+  const planRequired = requiresInstallmentPlan(subtotal, downPaymentSchedule);
+  // Con saldo, el vendedor define libremente la cantidad de cuotas: solo se
+  // exige un entero mayor a 0, sin tope superior.
+  const installmentsValid =
+    !planRequired || (Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1);
+  const effectiveInstallmentsCount =
+    planRequired && Number.isSafeInteger(installmentsNumber) ? installmentsNumber : 0;
+  const planError = installmentPlanError(
+    financedAfterDownPayments(subtotal, downPaymentSchedule),
+    effectiveInstallmentsCount,
+    firstDueDate,
     localDateValue()
   );
   const effectiveSellerId = sellerId || user?.id || '';
   const calc = calculateCredit({
     productsSubtotal: subtotal,
-    downPayment: parseNegocioMoney(downPayment) || 0,
-    installmentsCount: installmentsValid ? installmentsNumber : 1,
+    downPayment: downPaymentTotal,
+    installmentsCount: effectiveInstallmentsCount,
     frequency,
     settings,
   });
+  const addDownPayment = () =>
+    setDownPayments((rows) => [
+      ...rows,
+      createDownPaymentRow({ dueDate: rows.length === 0 ? localDateValue() : '' }),
+    ]);
+  const updateDownPayment = (key: string, patch: Partial<Pick<DownPaymentRow, 'amount' | 'dueDate'>>) =>
+    setDownPayments((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const removeDownPayment = (key: string) =>
+    setDownPayments((rows) => rows.filter((row) => row.key !== key));
 
   // Búsqueda de clientes: VACÍA si no hay término de búsqueda
   const filteredCustomers = useMemo(() => {
@@ -454,14 +479,8 @@ function NegocioCreateScreenInner() {
           : 'Revise la bodega y cantidad de cada producto.'
       );
     }
-    if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
-    if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
-    if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
-    const parsedDownPayment = parseNegocioMoney(downPayment);
-    if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
-      return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
-    }
-    if (downPaymentError) return Alert.alert('Cuota inicial', downPaymentError);
+    if (downPaymentError) return Alert.alert('Abonos iniciales', downPaymentError);
+    if (planError) return Alert.alert('Plan de cuotas', planError);
     const signatureError = sellerSignatureRequiredError(signature, sellerSignature);
     if (signatureError) return Alert.alert('Firma requerida', signatureError);
 
@@ -483,11 +502,10 @@ function NegocioCreateScreenInner() {
             ? selectedDeliveryOrder.id
             : null,
         items,
-        down_payment: parsedDownPayment,
-        down_payment_date: downPaymentDate || null,
-        installments_count: installmentsNumber,
+        down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
+        installments_count: effectiveInstallmentsCount,
         frequency,
-        first_due_date: firstDueDate,
+        first_due_date: planRequired ? firstDueDate : null,
         customer_signature_data_url: signature || '',
         guarantor_signature_data_url: guarantorSignature || undefined,
         seller_signature_data_url: sellerSignature || undefined,
@@ -1040,83 +1058,136 @@ function NegocioCreateScreenInner() {
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               3. Condiciones de Crédito
             </Text>
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Cuota inicial (COP)</Text>
-            <TextInput
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-              value={downPayment}
-              onChangeText={(value) =>
-                setDownPayment(formatNegocioMoneyInput(value))
-              }
-            />
-            {(parseNegocioMoney(downPayment) || 0) > 0 ? (
-              <>
-                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de pago de la cuota inicial</Text>
+            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Abonos iniciales</Text>
+            <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+              Registre la cuota inicial y los demás abonos pactados antes del plan de cuotas.
+              Cada abono queda pendiente en cartera hasta que el cliente lo pague.
+            </Text>
+            {downPayments.map((row, index) => (
+              <View
+                key={row.key}
+                style={[
+                  styles.abonoCard,
+                  { borderColor: colors.divider, backgroundColor: colors.background.paper },
+                ]}
+              >
+                <View style={styles.abonoHeader}>
+                  <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 14 }}>
+                    {index === 0 ? 'Cuota inicial' : `Abono ${index + 1}`}
+                  </Text>
+                  <Pressable
+                    onPress={() => removeDownPayment(row.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={index === 0 ? 'Quitar cuota inicial' : `Quitar abono ${index + 1}`}
+                    hitSlop={8}
+                  >
+                    <MaterialIcons name="delete-outline" size={22} color={colors.error.main} />
+                  </Pressable>
+                </View>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Valor (COP)</Text>
+                <TextInput
+                  keyboardType="numeric"
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.default }]}
+                  value={row.amount}
+                  onChangeText={(value) =>
+                    updateDownPayment(row.key, { amount: formatNegocioMoneyInput(value) })
+                  }
+                />
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de pago</Text>
                 <NegocioDatePicker
-                  value={downPaymentDate}
-                  onChange={setDownPaymentDate}
+                  value={row.dueDate}
+                  onChange={(value) => updateDownPayment(row.key, { dueDate: value })}
                   colors={colors}
                 />
-                <Text style={{ color: downPaymentError ? colors.error.main : colors.text.secondary, fontSize: 12 }}>
-                  {downPaymentError || 'La cuota inicial queda pendiente en cartera hasta que el cliente la pague.'}
-                </Text>
+              </View>
+            ))}
+            <TouchableOpacity
+              onPress={addDownPayment}
+              style={[styles.abonoAddBtn, { borderColor: colors.primary.main }]}
+              accessibilityRole="button"
+            >
+              <MaterialIcons name="add" size={18} color={colors.primary.main} />
+              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>
+                {downPayments.length === 0 ? 'Agregar cuota inicial' : 'Agregar otro abono'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ color: downPaymentError ? colors.error.main : colors.text.secondary, fontSize: 12 }}>
+              {downPaymentError ||
+                (downPayments.length > 0
+                  ? `Total abonos: ${formatCOP(downPaymentTotal)} · saldo a financiar: ${formatCOP(
+                      Math.max(0, subtotal - downPaymentTotal)
+                    )}`
+                  : 'Sin cuota inicial todo el valor se financia en cuotas.')}
+            </Text>
+            {planRequired ? (
+              <>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
+                <TextInput
+                  keyboardType="numeric"
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
+                  value={installments}
+                  onChangeText={setInstallments}
+                />
+                {!installmentsValid && (
+                  <Text style={{ color: colors.error.main, fontSize: 12 }}>
+                    Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
+                  </Text>
+                )}
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
+                <NegocioDatePicker
+                  value={firstDueDate}
+                  onChange={setFirstDueDate}
+                  colors={colors}
+                />
+                {planError && installmentsValid ? (
+                  <Text style={{ color: colors.error.main, fontSize: 12 }}>{planError}</Text>
+                ) : null}
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Frecuencia de pago</Text>
+                <View style={styles.rowWrap}>
+                  {(['mensual', 'quincenal', 'semanal'] as CreditFrequency[]).map((f) => (
+                    <Pressable
+                      key={f}
+                      onPress={() => setFrequency(f)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor:
+                            frequency === f ? colors.primary.main : colors.background.paper,
+                          borderColor: colors.divider,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color:
+                            frequency === f
+                              ? colors.primary.contrastText
+                              : colors.text.primary,
+                          fontWeight: '700',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {f}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </>
-            ) : null}
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
-            <TextInput
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-              value={installments}
-              onChangeText={setInstallments}
-            />
-            {!installmentsValid && (
-              <Text style={{ color: colors.error.main, fontSize: 12 }}>
-                Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
+            ) : (
+              <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                Los abonos iniciales cubren el valor de los productos: el negocio no lleva cuotas ni
+                fecha de primera cuota.
               </Text>
             )}
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
-            <NegocioDatePicker
-              value={firstDueDate}
-              onChange={setFirstDueDate}
-              colors={colors}
-            />
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Frecuencia de pago</Text>
-            <View style={styles.rowWrap}>
-              {(['mensual', 'quincenal', 'semanal'] as CreditFrequency[]).map((f) => (
-                <Pressable
-                  key={f}
-                  onPress={() => setFrequency(f)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor:
-                        frequency === f ? colors.primary.main : colors.background.paper,
-                      borderColor: colors.divider,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color:
-                        frequency === f
-                          ? colors.primary.contrastText
-                          : colors.text.primary,
-                      fontWeight: '700',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {f}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
             <View style={[styles.summary, { backgroundColor: colors.background.paper, borderColor: colors.divider, borderWidth: 1 }]}>
               <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
                 Total crédito: {formatCOP(calc.totalCredit)}
               </Text>
               <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
-                Valor cuota: {formatCOP(calc.installmentAmount)}
+                {planRequired
+                  ? `Valor cuota: ${formatCOP(calc.installmentAmount)}`
+                  : 'Sin cuotas: pagado con abonos iniciales'}
               </Text>
             </View>
           </View>
@@ -1128,7 +1199,8 @@ function NegocioCreateScreenInner() {
               4. Firmas y Confirmación
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 14, fontWeight: '600' }}>
-              Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} · {installments} cuotas
+              Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} ·{' '}
+              {planRequired ? `${installments} cuotas` : 'sin cuotas'}
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>
               Puede dibujar las firmas en pantalla o subir un PNG transparente. Si el cliente no firma
@@ -1190,7 +1262,7 @@ function NegocioCreateScreenInner() {
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
-                    : step === 2 && (!firstDueDate || !installmentsValid || Boolean(downPaymentError))
+                    : step === 2 && (Boolean(downPaymentError) || Boolean(planError))
                     ? 0.5
                     : 1,
               },
@@ -1219,14 +1291,8 @@ function NegocioCreateScreenInner() {
                 }
               }
               if (step === 2) {
-                if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
-                if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
-                if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
-                const initial = parseNegocioMoney(downPayment);
-                if (!Number.isSafeInteger(initial) || initial < 0 || initial > subtotal) {
-                  return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos.');
-                }
-                if (downPaymentError) return Alert.alert('Cuota inicial', downPaymentError);
+                if (downPaymentError) return Alert.alert('Abonos iniciales', downPaymentError);
+                if (planError) return Alert.alert('Plan de cuotas', planError);
               }
               setStep((s) => s + 1);
             }}
@@ -1472,6 +1538,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  abonoCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
+  abonoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  abonoAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
   chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   summary: { padding: 14, borderRadius: 12, gap: 4, marginTop: 8 },
   fixedFooterNav: {

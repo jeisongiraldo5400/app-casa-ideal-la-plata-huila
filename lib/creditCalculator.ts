@@ -49,7 +49,8 @@ function roundDownToUnit(value: number, unit: number, decimalPlaces = 2): number
 
 export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   const { productsSubtotal, downPayment, installmentsCount, frequency = "mensual", settings } = input;
-  const n = Math.max(1, Math.floor(installmentsCount || 1));
+  // 0 cuotas = los abonos iniciales cubren el valor de los productos (sin plan).
+  const n = Math.max(0, Math.floor(installmentsCount || 0));
   const rate = Number(settings.interest_rate_monthly_pct) || 0;
   const unit = Number(settings.rounding_unit) || 1;
   const decimalPlaces = Number(settings.money_decimal_places) || 0;
@@ -81,11 +82,7 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   totalCredit = roundToUnit(totalCredit, unit, decimalPlaces);
   interestAmount = Math.max(0, totalCredit - subtotal);
   const financedAmount = Math.max(0, totalCredit - initial);
-  const installmentAmount = roundDownToUnit(
-    n > 0 ? financedAmount / n : financedAmount,
-    unit,
-    decimalPlaces
-  );
+  const installmentAmount = n > 0 ? roundDownToUnit(financedAmount / n, unit, decimalPlaces) : 0;
 
   return {
     productsSubtotal: subtotal,

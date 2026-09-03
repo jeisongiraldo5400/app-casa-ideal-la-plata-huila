@@ -1,4 +1,5 @@
 import { formatNegocioCodigo, labelNegocioStatus } from '@/lib/negocioLabels';
+import { parseDownPaymentSchedule, type DownPaymentEntry } from '@/lib/negocios/negocioCreditRules';
 import {
   formatTicketMoney,
   padRow,
@@ -24,6 +25,8 @@ export type NegocioTicketData = {
   totalCredit: number;
   downPayment: number;
   downPaymentDate?: string | null;
+  /** Abonos iniciales pactados; si falta se reconstruye desde downPayment/downPaymentDate. */
+  downPaymentSchedule?: DownPaymentEntry[] | null;
   financedAmount: number;
   installmentsCount: number;
   installmentAmount: number;
@@ -71,18 +74,38 @@ export function buildNegocioTicket(data: NegocioTicketData): TicketLine[] {
     }
   }
 
+  const downPaymentSchedule = parseDownPaymentSchedule(data.downPaymentSchedule, {
+    down_payment: data.downPayment,
+    down_payment_date: data.downPaymentDate,
+    deal_date: data.dealDate,
+  });
+  const downPaymentLines: TicketLine[] =
+    downPaymentSchedule.length > 1
+      ? [
+          { type: 'text', text: padRow('Abonos iniciales', formatTicketMoney(data.downPayment)) },
+          ...downPaymentSchedule.map((abono) => ({
+            type: 'text' as const,
+            text: padRow(`  ${abono.due_date}`, formatTicketMoney(abono.amount)),
+          })),
+        ]
+      : [
+          { type: 'text', text: padRow('Cuota inicial', formatTicketMoney(data.downPayment)) },
+          ...(downPaymentSchedule[0]
+            ? [{ type: 'text' as const, text: padRow('Paga inicial', downPaymentSchedule[0].due_date) }]
+            : []),
+        ];
+
   lines.push(
     { type: 'separator' },
     { type: 'text', text: padRow('Subtotal', formatTicketMoney(data.productsSubtotal)) },
     { type: 'text', text: padRow('Interes', formatTicketMoney(data.interestAmount)) },
-    { type: 'text', text: padRow('Cuota inicial', formatTicketMoney(data.downPayment)) },
-    ...(data.downPayment > 0 && data.downPaymentDate
-      ? [{ type: 'text' as const, text: padRow('Paga inicial', data.downPaymentDate) }]
-      : []),
+    ...downPaymentLines,
     { type: 'text', text: padRow('Financiado', formatTicketMoney(data.financedAmount)), bold: true },
     { type: 'text', text: padRow('Total credito', formatTicketMoney(data.totalCredit)), bold: true },
     ...textLines(
-      `${data.installmentsCount} cuotas ${frequencyLabel(data.frequency)} de ${formatTicketMoney(data.installmentAmount)}`
+      data.installmentsCount > 0
+        ? `${data.installmentsCount} cuotas ${frequencyLabel(data.frequency)} de ${formatTicketMoney(data.installmentAmount)}`
+        : 'Sin cuotas: pagado con abonos iniciales'
     ),
     { type: 'separator' },
     { type: 'text', text: 'Contrato legal: compartir PDF', align: 'center' },

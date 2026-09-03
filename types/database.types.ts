@@ -1106,6 +1106,7 @@ export type Database = {
           direccion: string | null
           down_payment: number
           down_payment_date: string | null
+          down_payment_schedule: Json
           financed_amount: number
           first_due_date: string | null
           formula_snapshot: Json
@@ -1143,6 +1144,7 @@ export type Database = {
           direccion?: string | null
           down_payment?: number
           down_payment_date?: string | null
+          down_payment_schedule?: Json
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
@@ -1180,6 +1182,7 @@ export type Database = {
           direccion?: string | null
           down_payment?: number
           down_payment_date?: string | null
+          down_payment_schedule?: Json
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
