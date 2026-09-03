@@ -32,6 +32,10 @@ import {
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
+import { downPaymentDateError } from '@/lib/negocios/negocioCreditRules';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { getCachedProfileName } from '@/lib/offline/security/secureKeys';
+import { fetchSellerOptions, withCurrentUserOption, type SellerOption } from '@/lib/users/sellersService';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
@@ -97,6 +101,7 @@ function NegocioCreateScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { user } = useAuth();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -124,6 +129,10 @@ function NegocioCreateScreenInner() {
     Record<string, ProductWarehouseStock[]>
   >({});
   const [downPayment, setDownPayment] = useState('0');
+  const [downPaymentDate, setDownPaymentDate] = useState('');
+  /** '' = usuario actual. */
+  const [sellerId, setSellerId] = useState('');
+  const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
   const [installments, setInstallments] = useState('3');
   const [frequency, setFrequency] = useState<CreditFrequency>('mensual');
   const [firstDueDate, setFirstDueDate] = useState('');
@@ -162,6 +171,8 @@ function NegocioCreateScreenInner() {
     setItems([]);
     setStockByProduct({});
     setDownPayment('0');
+    setDownPaymentDate('');
+    setSellerId('');
     setInstallments('3');
     setFrequency(creditSettings?.default_frequency || 'mensual');
     setFirstDueDate('');
@@ -184,7 +195,7 @@ function NegocioCreateScreenInner() {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m, orders] = await Promise.all([
+        const [, d, m, orders, sellers, cachedName] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -199,6 +210,8 @@ function NegocioCreateScreenInner() {
           .is('deleted_at', null)
           .order('nombre'),
         fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
+        fetchSellerOptions().catch(() => [] as SellerOption[]),
+        getCachedProfileName().catch(() => null),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
@@ -206,6 +219,12 @@ function NegocioCreateScreenInner() {
           setDepartamentos(d.data || []);
           setMunicipios(m.data || []);
           setDeliveryOrders(orders || []);
+          setSellerOptions(
+            withCurrentUserOption(
+              sellers || [],
+              user?.id ? { id: user.id, name: cachedName || user.email || null } : null
+            )
+          );
           setInitialDataError('');
         }
       } catch (error: unknown) {
@@ -215,7 +234,7 @@ function NegocioCreateScreenInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [fetchCreditSettings, initialDataReload]);
+  }, [fetchCreditSettings, initialDataReload, user?.id, user?.email]);
 
   useEffect(() => {
     const query = customerQuery.trim();
@@ -313,6 +332,12 @@ function NegocioCreateScreenInner() {
   const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
 
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const downPaymentError = downPaymentDateError(
+    parseNegocioMoney(downPayment) || 0,
+    downPaymentDate,
+    localDateValue()
+  );
+  const effectiveSellerId = sellerId || user?.id || '';
   const calc = calculateCredit({
     productsSubtotal: subtotal,
     downPayment: parseNegocioMoney(downPayment) || 0,
@@ -436,6 +461,7 @@ function NegocioCreateScreenInner() {
     if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
       return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
     }
+    if (downPaymentError) return Alert.alert('Cuota inicial', downPaymentError);
     const signatureError = sellerSignatureRequiredError(signature, sellerSignature);
     if (signatureError) return Alert.alert('Firma requerida', signatureError);
 
@@ -449,6 +475,7 @@ function NegocioCreateScreenInner() {
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
+        seller_id: effectiveSellerId || null,
         source_delivery_order_id:
           originType === 'orden_entrega' ? selectedDeliveryOrder?.id || null : null,
         remission_id:
@@ -457,6 +484,7 @@ function NegocioCreateScreenInner() {
             : null,
         items,
         down_payment: parsedDownPayment,
+        down_payment_date: downPaymentDate || null,
         installments_count: installmentsNumber,
         frequency,
         first_due_date: firstDueDate,
@@ -823,6 +851,25 @@ function NegocioCreateScreenInner() {
 
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Vendedor *
+                  </Text>
+                  <OptionPickerField
+                    value={effectiveSellerId}
+                    onValueChange={setSellerId}
+                    options={sellerOptions.map((seller) => ({
+                      value: seller.id,
+                      label: seller.full_name,
+                    }))}
+                    placeholder="Seleccione vendedor"
+                    modalTitle="Vendedor"
+                    colors={colors}
+                  />
+                  <Text style={{ fontSize: 12, color: colors.text.secondary }}>
+                    Usuario que realizó la venta; por defecto usted.
+                  </Text>
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
                     Departamento *
                   </Text>
                   <OptionPickerField
@@ -1002,6 +1049,19 @@ function NegocioCreateScreenInner() {
                 setDownPayment(formatNegocioMoneyInput(value))
               }
             />
+            {(parseNegocioMoney(downPayment) || 0) > 0 ? (
+              <>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de pago de la cuota inicial</Text>
+                <NegocioDatePicker
+                  value={downPaymentDate}
+                  onChange={setDownPaymentDate}
+                  colors={colors}
+                />
+                <Text style={{ color: downPaymentError ? colors.error.main : colors.text.secondary, fontSize: 12 }}>
+                  {downPaymentError || 'La cuota inicial queda pendiente en cartera hasta que el cliente la pague.'}
+                </Text>
+              </>
+            ) : null}
             <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
             <TextInput
               keyboardType="numeric"
@@ -1130,7 +1190,7 @@ function NegocioCreateScreenInner() {
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
-                    : step === 2 && (!firstDueDate || !installmentsValid)
+                    : step === 2 && (!firstDueDate || !installmentsValid || Boolean(downPaymentError))
                     ? 0.5
                     : 1,
               },
@@ -1166,6 +1226,7 @@ function NegocioCreateScreenInner() {
                 if (!Number.isSafeInteger(initial) || initial < 0 || initial > subtotal) {
                   return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos.');
                 }
+                if (downPaymentError) return Alert.alert('Cuota inicial', downPaymentError);
               }
               setStep((s) => s + 1);
             }}

@@ -23,6 +23,7 @@ export type NegocioTicketData = {
   interestAmount: number;
   totalCredit: number;
   downPayment: number;
+  downPaymentDate?: string | null;
   financedAmount: number;
   installmentsCount: number;
   installmentAmount: number;
@@ -75,6 +76,9 @@ export function buildNegocioTicket(data: NegocioTicketData): TicketLine[] {
     { type: 'text', text: padRow('Subtotal', formatTicketMoney(data.productsSubtotal)) },
     { type: 'text', text: padRow('Interes', formatTicketMoney(data.interestAmount)) },
     { type: 'text', text: padRow('Cuota inicial', formatTicketMoney(data.downPayment)) },
+    ...(data.downPayment > 0 && data.downPaymentDate
+      ? [{ type: 'text' as const, text: padRow('Paga inicial', data.downPaymentDate) }]
+      : []),
     { type: 'text', text: padRow('Financiado', formatTicketMoney(data.financedAmount)), bold: true },
     { type: 'text', text: padRow('Total credito', formatTicketMoney(data.totalCredit)), bold: true },
     ...textLines(

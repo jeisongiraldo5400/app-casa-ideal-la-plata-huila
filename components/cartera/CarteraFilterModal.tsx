@@ -2,6 +2,7 @@ import { useTheme } from '@/components/theme';
 import { Button, FullScreenModal, SearchField, SegmentedControl } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import type { CarteraFilter, Municipio } from '@/lib/cartera/carteraService';
+import type { SellerOption } from '@/lib/users/sellersService';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -12,11 +13,14 @@ export type CarteraFilterValues = {
   municipioId: string;
   days: number;
   searchMunicipio: string;
+  sellerId: string;
+  searchSeller: string;
 };
 
 type Props = {
   visible: boolean;
   municipios: Municipio[];
+  sellers?: SellerOption[];
   values: CarteraFilterValues;
   onChange: (next: CarteraFilterValues) => void;
   onClose: () => void;
@@ -37,14 +41,21 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   municipioId: '',
   days: 15,
   searchMunicipio: '',
+  sellerId: '',
+  searchSeller: '',
 };
 
-/** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, días). */
-export function CarteraFilterModal({ visible, municipios, values, onChange, onClose }: Props) {
+/** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, vendedor, días). */
+export function CarteraFilterModal({ visible, municipios, sellers = [], values, onChange, onClose }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const selectedMunicipio = municipios.find((item) => item.id === values.municipioId);
   const searchMunicipio = values.searchMunicipio || '';
+  const selectedSeller = sellers.find((item) => item.id === values.sellerId);
+  const searchSeller = values.searchSeller || '';
+  const availableSellers = sellers
+    .filter((item) => item.full_name.toLowerCase().includes(searchSeller.toLowerCase()))
+    .slice(0, 30);
   const available = municipios
     .filter((item) => item.nombre.toLowerCase().includes(searchMunicipio.toLowerCase()))
     .slice(0, 30);
@@ -137,6 +148,46 @@ export function CarteraFilterModal({ visible, municipios, values, onChange, onCl
             })}
             {!available.length ? (
               <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>Sin municipios para “{searchMunicipio}”</Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.group}>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor</Text>
+          <SearchField
+            value={searchSeller}
+            onChangeText={(value) => patch({ searchSeller: value })}
+            placeholder={selectedSeller?.full_name || 'Todos los vendedores'}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <View style={[styles.options, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: !values.sellerId }}
+              onPress={() => patch({ sellerId: '', searchSeller: '' })}
+              style={[styles.option, { borderBottomColor: colors.divider }]}>
+              <Text style={[styles.optionText, { color: colors.primary.main, fontWeight: '700' }]}>Todos los vendedores</Text>
+              {!values.sellerId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+            </Pressable>
+            {availableSellers.map((seller, index) => {
+              const selected = values.sellerId === seller.id;
+              return (
+                <Pressable
+                  key={seller.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => patch({ sellerId: seller.id, searchSeller: seller.full_name })}
+                  style={[styles.option, index === availableSellers.length - 1 && styles.lastOption, { borderBottomColor: colors.divider }]}>
+                  <Text style={[styles.optionText, { color: colors.text.primary }]}>{seller.full_name}</Text>
+                  {selected ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+                </Pressable>
+              );
+            })}
+            {!availableSellers.length ? (
+              <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
+                {sellers.length ? `Sin vendedores para “${searchSeller}”` : 'Sin conexión: la lista de vendedores no está disponible'}
+              </Text>
             ) : null}
           </View>
         </View>

@@ -341,6 +341,7 @@ export async function fetchCarteraFromLocal(params: {
   pageSize: number;
   days: number;
   municipioId: string;
+  sellerId?: string;
 }): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
@@ -365,6 +366,7 @@ export async function fetchCarteraFromLocal(params: {
       customerName: customer?.name || 'Cliente',
       customerIdNumber: customer?.idNumber || null,
       municipioId: negocio?.municipioId || null,
+      sellerId: negocio?.sellerId || null,
       negocioNumero: negocio?.numero || 0,
       row: {
         cuota_id: cuota.id,
@@ -375,6 +377,8 @@ export async function fetchCarteraFromLocal(params: {
         customer_phone: customer?.phone || null,
         municipio_id: negocio?.municipioId || null,
         municipio_name: negocio?.municipioName || null,
+        seller_id: negocio?.sellerId || null,
+        seller_name: null,
         installment_number: cuota.installmentNumber,
         due_date: cuota.dueDate,
         amount: cuota.amount,

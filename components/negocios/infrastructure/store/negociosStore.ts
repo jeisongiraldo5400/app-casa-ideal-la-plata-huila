@@ -17,6 +17,7 @@ import {
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
 import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
+import { downPaymentDateError } from '@/lib/negocios/negocioCreditRules';
 import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
@@ -52,7 +53,11 @@ interface NegociosState {
     remission_id?: string | null;
     source_delivery_order_id?: string | null;
     items: NegocioItem[];
+    /** Vendedor del negocio; por defecto el usuario autenticado. */
+    seller_id?: string | null;
     down_payment: number;
+    /** Fecha de pago de la cuota inicial (obligatoria si down_payment > 0). */
+    down_payment_date?: string | null;
     installments_count: number;
     frequency: CreditFrequency;
     first_due_date: string;
@@ -119,7 +124,9 @@ function createRequestFingerprint(input: {
   remission_id?: string | null;
   source_delivery_order_id?: string | null;
   items: NegocioItem[];
+  seller_id?: string | null;
   down_payment: number;
+  down_payment_date?: string | null;
   installments_count: number;
   frequency: CreditFrequency;
   first_due_date: string;
@@ -135,10 +142,12 @@ function createRequestFingerprint(input: {
     direccion: input.direccion,
     customer_id: input.customer_id,
     codeudor_customer_id: input.codeudor_customer_id || null,
+    seller_id: input.seller_id || null,
     remission_id: input.remission_id || null,
     source_delivery_order_id: input.source_delivery_order_id || null,
     items: input.items,
     down_payment: input.down_payment,
+    down_payment_date: input.down_payment_date || null,
     installments_count: input.installments_count,
     frequency: input.frequency,
     first_due_date: input.first_due_date,
@@ -272,6 +281,12 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (input.installments_count < 1) throw new Error('El número de cuotas debe ser mayor a 0');
     if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
     if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
+    const downPaymentError = downPaymentDateError(
+      input.down_payment,
+      input.down_payment_date || '',
+      input.deal_date
+    );
+    if (downPaymentError) throw new Error(downPaymentError);
 
     if (!negocioSkipsWarehouseStock(input)) {
       const stockCheck = await validateNegocioItemsStock(input.items);
@@ -335,12 +350,14 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         direccion: input.direccion.trim(),
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
+        seller_id: input.seller_id || user.id,
         remission_id: input.remission_id || null,
         source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
         products_subtotal: calc.productsSubtotal,
         interest_amount: calc.interestAmount,
         total_credit: calc.totalCredit,
         down_payment: calc.downPayment,
+        down_payment_date: calc.downPayment > 0 ? input.down_payment_date || null : null,
         financed_amount: calc.financedAmount,
         installments_count: calc.installmentsCount,
         installment_amount: calc.installmentAmount,

@@ -1102,6 +1102,7 @@ export type Database = {
           delivery_order_id: string | null
           direccion: string | null
           down_payment: number
+          down_payment_date: string | null
           financed_amount: number
           first_due_date: string | null
           formula_snapshot: Json
@@ -1138,6 +1139,7 @@ export type Database = {
           delivery_order_id?: string | null
           direccion?: string | null
           down_payment?: number
+          down_payment_date?: string | null
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
@@ -1174,6 +1176,7 @@ export type Database = {
           delivery_order_id?: string | null
           direccion?: string | null
           down_payment?: number
+          down_payment_date?: string | null
           financed_amount?: number
           first_due_date?: string | null
           formula_snapshot?: Json
@@ -1240,6 +1243,44 @@ export type Database = {
           { foreignKeyName: "negocio_gestor_historial_gestor_anterior_id_fkey"; columns: ["gestor_anterior_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
           { foreignKeyName: "negocio_gestor_historial_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
           { foreignKeyName: "negocio_gestor_historial_asignado_por_fkey"; columns: ["asignado_por"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      negocio_vendedor_historial: {
+        Row: {
+          accion: string
+          asignado_por: string | null
+          created_at: string
+          id: string
+          motivo: string | null
+          negocio_id: string
+          vendedor_anterior_id: string | null
+          vendedor_id: string | null
+        }
+        Insert: {
+          accion: string
+          asignado_por?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          negocio_id: string
+          vendedor_anterior_id?: string | null
+          vendedor_id?: string | null
+        }
+        Update: {
+          accion?: string
+          asignado_por?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          negocio_id?: string
+          vendedor_anterior_id?: string | null
+          vendedor_id?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "negocio_vendedor_historial_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_vendedor_historial_vendedor_anterior_id_fkey"; columns: ["vendedor_anterior_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_vendedor_historial_vendedor_id_fkey"; columns: ["vendedor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "negocio_vendedor_historial_asignado_por_fkey"; columns: ["asignado_por"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
         ]
       }
       municipios: {
@@ -1667,6 +1708,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           id: string
           inventory_entry_id: string | null
           inventory_exit_id: string | null
@@ -1682,6 +1724,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_entry_id?: string | null
           inventory_exit_id?: string | null
@@ -1697,6 +1740,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           inventory_entry_id?: string | null
           inventory_exit_id?: string | null
@@ -1736,6 +1780,38 @@ export type Database = {
             columns: ["warehouse_id"]
             isOneToOne: false
             referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_order_return_reversals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          observations: string
+          return_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          observations: string
+          return_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          observations?: string
+          return_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_return_reversals_return_id_fkey"
+            columns: ["return_id"]
+            isOneToOne: false
+            referencedRelation: "returns"
             referencedColumns: ["id"]
           },
         ]
@@ -2657,9 +2733,17 @@ export type Database = {
         Args: { p_gestor_cobro_id: string; p_motivo?: string | null; p_negocio_ids: string[] }
         Returns: { unchanged_count: number; updated_count: number }[]
       }
+      assign_seller_to_negocio: {
+        Args: { p_negocio_id: string; p_seller_id: string; p_motivo?: string | null }
+        Returns: boolean
+      }
       unassign_gestor_from_negocios: {
         Args: { p_motivo?: string | null; p_negocio_ids: string[] }
         Returns: { unchanged_count: number; updated_count: number }[]
+      }
+      unassign_order_from_remission: {
+        Args: { p_remission_id: string; p_source_order_id: string }
+        Returns: boolean
       }
       get_negocio_gestor_historial: {
         Args: { p_negocio_id: string }
@@ -2675,6 +2759,22 @@ export type Database = {
           id: string
           motivo: string
           negocio_id: string
+        }[]
+      }
+      get_negocio_vendedor_historial: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          accion: string
+          asignado_por: string | null
+          asignado_por_nombre: string | null
+          created_at: string
+          id: string
+          motivo: string | null
+          negocio_id: string
+          vendedor_anterior_id: string | null
+          vendedor_anterior_nombre: string | null
+          vendedor_id: string | null
+          vendedor_nombre: string | null
         }[]
       }
       create_negocio: {
@@ -2759,6 +2859,28 @@ export type Database = {
         Args: { p_delivery_order_id: string; p_idempotency_key: string; p_inventory_exit_id: string; p_observations?: string | null; p_quantity: number; p_reason: string }
         Returns: string
       }
+      get_delivery_order_returnable_exits: {
+        Args: { p_order_id: string }
+        Returns: {
+          inventory_exit_id: string
+          product_id: string
+          product_name: string
+          product_sku: string | null
+          warehouse_id: string
+          warehouse_name: string
+          exit_quantity: number
+          already_returned: number
+          max_returnable: number
+        }[]
+      }
+      delete_delivery_order: {
+        Args: { p_delivery_order_id: string; p_idempotency_key: string }
+        Returns: boolean
+      }
+      approve_delivery_order_with_returns: {
+        Args: { p_delivery_order_id: string; p_observations: string; p_idempotency_key: string }
+        Returns: boolean
+      }
       register_negocio_pago: {
         Args: {
           p_negocio_id: string
@@ -2792,9 +2914,21 @@ export type Database = {
         Args: { p_entry_id: string; p_idempotency_key: string; p_observations: string }
         Returns: string
       }
+      cancel_purchase_order_with_entries: {
+        Args: { p_purchase_order_id: string; p_observations: string; p_idempotency_key: string }
+        Returns: Json
+      }
       cancel_inventory_exit: {
         Args: { p_exit_id: string; p_idempotency_key: string; p_observations: string }
         Returns: string
+      }
+      revert_purchase_order_return: {
+        Args: { p_return_id: string; p_observations: string; p_idempotency_key: string }
+        Returns: string
+      }
+      delete_purchase_order: {
+        Args: { p_purchase_order_id: string; p_idempotency_key: string }
+        Returns: boolean
       }
       mark_cuotas_en_mora: {
         Args: { p_negocio_id?: string | null }
@@ -2809,6 +2943,7 @@ export type Database = {
           p_page_size?: number
           p_municipio_id?: string | null
           p_gestor_id?: string | null
+          p_seller_id?: string | null
         }
         Returns: {
           cuota_id: string
@@ -2821,6 +2956,7 @@ export type Database = {
           municipio_id: string | null
           municipio_name: string | null
           departamento_name: string | null
+          seller_id: string | null
           seller_name: string | null
           installment_number: number
           due_date: string
@@ -3061,6 +3197,7 @@ export type Database = {
           created_by_name: string
           id: string
           inventory_entry_id: string
+          is_reverted: boolean
           observations: string
           order_id: string
           order_number: string
@@ -3070,6 +3207,8 @@ export type Database = {
           quantity: number
           return_reason: string
           return_type: string
+          revert_observations: string
+          reverted_at: string
           total_count: number
           warehouse_id: string
           warehouse_name: string
@@ -3084,18 +3223,31 @@ export type Database = {
         }[]
       }
       get_stock_validation: {
-        Args: { p_page?: number; p_page_size?: number; p_search_term?: string }
+        Args: {
+          p_bodega_id?: string
+          p_diagnostico?: string
+          p_estado_producto?: string
+          p_page?: number
+          p_page_size?: number
+          p_search_term?: string
+        }
         Returns: {
+          ajustes_manuales: number
           bodega: string
           bodega_id: string
           codigo_barras: string
+          count_faltante: number
+          count_negativo: number
+          count_ok: number
+          count_sobrante: number
+          devoluciones_proveedor: number
           diagnostico: string
           diferencia: number
           entradas_validas: number
           estado_producto: string
           product_id: string
           producto: string
-          reservado_sin_exit: number
+          reservado_pendiente: number
           salidas_directas: number
           salidas_ordenes_entrega: number
           sku: string

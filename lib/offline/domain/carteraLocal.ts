@@ -53,6 +53,7 @@ export function filterCarteraCuotas<
     customerName: string;
     customerIdNumber: string | null;
     municipioId: string | null;
+    sellerId?: string | null;
     negocioNumero: number;
   },
 >(
@@ -62,6 +63,7 @@ export function filterCarteraCuotas<
     search: string;
     days: number;
     municipioId: string;
+    sellerId?: string;
     today?: string;
   }
 ) {
@@ -74,6 +76,7 @@ export function filterCarteraCuotas<
   return rows.filter((row) => {
     if (row.status === 'pagada' || row.status === 'anulada') return false;
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
+    if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
     if (search) {
       const haystack = `${row.customerName} ${row.customerIdNumber || ''} ${row.negocioNumero}`.toLowerCase();
       if (!haystack.includes(search)) return false;

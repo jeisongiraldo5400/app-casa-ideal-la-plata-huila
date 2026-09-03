@@ -77,3 +77,22 @@ export function formatNegocioCodigo(numero: number | null | undefined): string {
 export function labelNegocioCodigo(numero: number | null | undefined): string {
   return `Negocio ${formatNegocioCodigo(numero)}`;
 }
+
+/** La cuota inicial se guarda como `installment_number = 0`. */
+export function isCuotaInicial(installmentNumber: number | null | undefined): boolean {
+  return Number(installmentNumber) === 0;
+}
+
+/** Etiqueta corta de una cuota: "Inicial" para la cuota 0, "#n" para el plan. */
+export function labelCuotaNumero(installmentNumber: number | null | undefined): string {
+  if (installmentNumber == null || Number.isNaN(Number(installmentNumber))) return '—';
+  if (isCuotaInicial(installmentNumber)) return 'Inicial';
+  return `#${installmentNumber}`;
+}
+
+/** Nombre largo de una cuota: "Cuota inicial" o "Cuota n". */
+export function labelCuotaNombre(installmentNumber: number | null | undefined): string {
+  if (installmentNumber == null || Number.isNaN(Number(installmentNumber))) return 'Cuota';
+  if (isCuotaInicial(installmentNumber)) return 'Cuota inicial';
+  return `Cuota ${installmentNumber}`;
+}

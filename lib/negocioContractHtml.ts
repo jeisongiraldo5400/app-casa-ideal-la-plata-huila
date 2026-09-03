@@ -1,6 +1,7 @@
 import { formatCOP } from '@/lib/creditCalculator';
 import {
   formatNegocioCodigo,
+  labelCuotaNumero,
   labelCuotaStatus,
   labelNegocioStatus,
 } from '@/lib/negocioLabels';
@@ -26,6 +27,8 @@ export type NegocioContractData = {
   interest_amount: number;
   total_credit: number;
   down_payment: number;
+  /** Fecha de pago acordada de la cuota inicial (cuota 0). */
+  down_payment_date?: string | null;
   financed_amount: number;
   installments_count: number;
   installment_amount: number;
@@ -87,7 +90,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
     .map(
       (c) => `
       <tr>
-        <td>${c.installment_number}</td>
+        <td>${esc(labelCuotaNumero(c.installment_number))}</td>
         <td>${esc(c.due_date)}</td>
         <td class="r">${formatCOP(c.amount)}</td>
         <td>${esc(labelCuotaStatus(c.status))}</td>
@@ -210,7 +213,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="finance">
     <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
-    <div><span>Cuota inicial</span><strong>${formatCOP(data.down_payment)}</strong></div>
+    <div><span>Cuota inicial</span><strong>${formatCOP(data.down_payment)}${data.down_payment > 0 && data.down_payment_date ? ` · paga el ${esc(data.down_payment_date)}` : ''}</strong></div>
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>
     <div><span>Plan de pago</span><strong>${data.installments_count} cuotas ${frequency} de ${formatCOP(data.installment_amount)}</strong></div>
     <div><span>Primera cuota</span><strong>${esc(data.first_due_date) || '—'}</strong></div>

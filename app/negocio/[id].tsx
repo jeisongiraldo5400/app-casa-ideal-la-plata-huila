@@ -34,6 +34,8 @@ import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
+import { SellerReassignSheet } from '@/components/negocios/components/SellerReassignSheet';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { PaymentCard } from '@/components/negocios/components/PaymentCard';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { displayProfileName, fetchProfileNames } from '@/lib/profileNames';
@@ -101,7 +103,10 @@ function NegocioDetailScreenInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
   const { user } = useAuth();
+  const { isAdmin } = useUserRoles();
   const registeredByName = currentUserName || user?.email || null;
+  const [sellerSheetOpen, setSellerSheetOpen] = useState(false);
+  const [sellerSaving, setSellerSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -645,6 +650,7 @@ function NegocioDetailScreenInner() {
       interest_amount: Number(negocio.interest_amount),
       total_credit: Number(negocio.total_credit),
       down_payment: Number(negocio.down_payment),
+      down_payment_date: negocio.down_payment_date || null,
       financed_amount: Number(negocio.financed_amount),
       installments_count: negocio.installments_count,
       installment_amount: Number(negocio.installment_amount),
@@ -759,6 +765,7 @@ function NegocioDetailScreenInner() {
       interestAmount: Number(negocio.interest_amount),
       totalCredit: Number(negocio.total_credit),
       downPayment: Number(negocio.down_payment),
+      downPaymentDate: negocio.down_payment_date || null,
       financedAmount: Number(negocio.financed_amount),
       installmentsCount: negocio.installments_count,
       installmentAmount: Number(negocio.installment_amount),
@@ -826,10 +833,12 @@ function NegocioDetailScreenInner() {
             direccion: negocio.direccion,
             customer_id: negocio.customer_id,
             codeudor_customer_id: negocio.codeudor_customer_id || null,
+            seller_id: negocio.seller_id || null,
             products_subtotal: Number(negocio.products_subtotal),
             interest_amount: Number(negocio.interest_amount),
             total_credit: Number(negocio.total_credit),
             down_payment: Number(negocio.down_payment),
+            down_payment_date: negocio.down_payment_date || null,
             financed_amount: Number(negocio.financed_amount),
             installments_count: Number(negocio.installments_count),
             installment_amount: Number(negocio.installment_amount),
@@ -889,6 +898,27 @@ function NegocioDetailScreenInner() {
     } finally {
       activatingRef.current = false;
       setActionSaving(false);
+    }
+  };
+
+  /** Reasigna el vendedor (solo admin); el nuevo vendedor ve el negocio y su cartera. */
+  const reassignSeller = async (sellerId: string, motivo: string) => {
+    if (!negocio || sellerSaving) return;
+    try {
+      setSellerSaving(true);
+      const { error } = await supabase.rpc('assign_seller_to_negocio', {
+        p_negocio_id: negocio.id,
+        p_seller_id: sellerId,
+        p_motivo: motivo || null,
+      });
+      if (error) throw error;
+      setSellerSheetOpen(false);
+      await load();
+      Alert.alert('Listo', 'Vendedor actualizado.');
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo cambiar el vendedor');
+    } finally {
+      setSellerSaving(false);
     }
   };
 
@@ -992,10 +1022,15 @@ function NegocioDetailScreenInner() {
   const address =
     [negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre].filter(Boolean).join(', ') ||
     'Dirección no registrada';
+  const downPaymentLabel =
+    Number(negocio.down_payment) > 0
+      ? `Inicial ${formatCOP(Number(negocio.down_payment))}${negocio.down_payment_date ? ` (${negocio.down_payment_date})` : ''}`
+      : null;
   const planLabel =
     negocio.installments_count != null
-      ? `${negocio.installments_count} cuotas de ${formatCOP(Number(negocio.installment_amount))}${orderNumber ? ` · OE ${orderNumber}` : ''}`
-      : null;
+      ? `${downPaymentLabel ? `${downPaymentLabel} · ` : ''}${negocio.installments_count} cuotas de ${formatCOP(Number(negocio.installment_amount))}${orderNumber ? ` · OE ${orderNumber}` : ''}`
+      : downPaymentLabel;
+  const canReassignSeller = !fromLocal && isAdmin() && negocio.status !== 'anulado';
   const pageCuotas = cuotas.slice(installmentPage * TABLE_PAGE_SIZE, (installmentPage + 1) * TABLE_PAGE_SIZE);
   const pagePagos = pagos.slice(paymentPage * TABLE_PAGE_SIZE, (paymentPage + 1) * TABLE_PAGE_SIZE);
   const readOnlySignatures = [
@@ -1032,6 +1067,21 @@ function NegocioDetailScreenInner() {
 
         {/* El detalle local no incluye ítems ni subtotal de productos. */}
         {!fromLocal ? <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} /> : null}
+
+        <Card variant="outlined" style={styles.sellerCard}>
+          <View style={styles.sellerRow}>
+            <MaterialIcons name="badge" size={IconSize.md} color={colors.primary.main} />
+            <View style={styles.sellerCopy}>
+              <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Vendedor</Text>
+              <Text style={[styles.sellerName, { color: colors.text.primary }]} numberOfLines={1}>
+                {sellerName || 'Sin asignar'}
+              </Text>
+            </View>
+            {canReassignSeller ? (
+              <Button title="Cambiar" variant="outline" size="sm" onPress={() => setSellerSheetOpen(true)} />
+            ) : null}
+          </View>
+        </Card>
 
         <View style={styles.section}>
           <SectionHeader title="Cuotas" hint={`${cuotas.length} cuota${cuotas.length === 1 ? '' : 's'}`} />
@@ -1182,6 +1232,14 @@ function NegocioDetailScreenInner() {
         />
       </ActionBar>
 
+      <SellerReassignSheet
+        visible={sellerSheetOpen}
+        currentSellerId={negocio.seller_id || null}
+        saving={sellerSaving}
+        onClose={() => setSellerSheetOpen(false)}
+        onConfirm={reassignSeller}
+      />
+
       <RegisterPaymentSheet
         visible={payModalOpen}
         onClose={closePaySheet}
@@ -1221,6 +1279,11 @@ const styles = StyleSheet.create({
   warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   warningText: { ...Typography.bodySmall, flex: 1 },
   signingCard: { gap: Spacing.lg },
+  sellerCard: { padding: Spacing.lg },
+  sellerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  sellerCopy: { flex: 1, gap: 2 },
+  sellerLabel: { ...Typography.label },
+  sellerName: { ...Typography.bodyStrong },
   primaryAction: { flex: 2 },
   secondaryAction: { flex: 1, paddingHorizontal: Spacing.md },
 });

@@ -2,7 +2,7 @@ import { useTheme } from '@/components/theme';
 import { ListCard, Metric, StatusChip } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
-import { cuotaStatusTone, labelCuotaStatus } from '@/lib/negocioLabels';
+import { cuotaStatusTone, labelCuotaNombre, labelCuotaNumero, labelCuotaStatus } from '@/lib/negocioLabels';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -31,10 +31,10 @@ export function InstallmentCard({ cuota }: { cuota: InstallmentRow }) {
     <ListCard>
       <View style={styles.top}>
         <View style={[styles.badge, { backgroundColor: `${accent}18` }]}>
-          <Text style={[styles.badgeText, { color: accent }]}>#{cuota.installment_number}</Text>
+          <Text style={[styles.badgeText, { color: accent }]}>{labelCuotaNumero(cuota.installment_number)}</Text>
         </View>
         <View style={styles.copy}>
-          <Text style={[styles.title, { color: colors.text.primary }]}>Cuota {cuota.installment_number}</Text>
+          <Text style={[styles.title, { color: colors.text.primary }]}>{labelCuotaNombre(cuota.installment_number)}</Text>
           <Text style={[styles.due, { color: colors.text.secondary }]}>Vence {cuota.due_date}</Text>
         </View>
         <StatusChip label={labelCuotaStatus(cuota.status)} tone={tone} />
