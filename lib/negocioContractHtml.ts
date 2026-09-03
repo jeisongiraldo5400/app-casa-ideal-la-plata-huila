@@ -154,10 +154,54 @@ function buildPlanRows(data: NegocioContractData): { rows: PlanRow[]; projected:
 }
 
 /**
- * Filas mínimas de la tabla de artículos: se completan con filas vacías para
- * que la orden impresa se vea bien distribuida aunque tenga pocos productos.
+ * Tamaño de letra y distribución del contrato. El documento debe caber
+ * siempre en una sola hoja oficio, pero un negocio con pocos artículos y sin
+ * texto legal adicional tiene mucho más espacio libre que uno con muchos
+ * artículos, muchas cuotas y condiciones adicionales largas. En vez de una
+ * talla de letra fija (que obligaba a usar ~7pt para el peor caso), se elige
+ * uno de estos dos niveles según cuánto contenido tenga el negocio. Los
+ * valores fueron validados renderizando el HTML con Chrome headless y
+ * comprobando que el PDF resultante siga teniendo 1 sola página, tanto en
+ * casos típicos como en el caso más pesado (8 artículos, 24 cuotas, fiador y
+ * texto legal adicional). Debe mantenerse igual que en
+ * frontend/src/lib/negocioContractHtml.ts.
  */
-const MIN_ITEM_ROWS = 16;
+type ContractSizeTier = {
+  body: number; company: number; titleH2: number; number: number; metaB: number; boxTitle: number;
+  fieldB: number; section: number; terms: number; authAdd: number; th: number; planNote: number;
+  financeSpan: number; financeStrong: number; sigText: number; promissoryH3: number; footer: number;
+  minItemRows: number; minItemRowsLongPlan: number; pageMargin: string;
+};
+
+/** Nivel usado por la mayoría de negocios (pocos artículos/cuotas o sin texto legal). */
+const COMFORTABLE_TIER: ContractSizeTier = {
+  body: 11.2, company: 10, titleH2: 16.5, number: 15.3, metaB: 9.4, boxTitle: 10.6,
+  fieldB: 9.4, section: 12.4, terms: 10, authAdd: 10, th: 9.4, planNote: 9.4,
+  financeSpan: 8.9, financeStrong: 12.4, sigText: 9.4, promissoryH3: 13, footer: 8.9,
+  minItemRows: 8, minItemRowsLongPlan: 6, pageMargin: '5mm 8mm 7mm',
+};
+
+/** Nivel compacto: negocios con muchos artículos, muchas cuotas y/o texto legal largo. */
+const COMPACT_TIER: ContractSizeTier = {
+  body: 10.2, company: 9.1, titleH2: 15, number: 13.9, metaB: 8.6, boxTitle: 9.6,
+  fieldB: 8.6, section: 11.2, terms: 9.1, authAdd: 9.1, th: 8.5, planNote: 8.5,
+  financeSpan: 8, financeStrong: 11.2, sigText: 8.5, promissoryH3: 11.8, footer: 8,
+  minItemRows: 9, minItemRowsLongPlan: 7, pageMargin: '4mm 6mm 4mm',
+};
+
+/** Por encima de este puntaje de densidad se usa el nivel compacto. */
+const DENSITY_THRESHOLD = 26;
+
+/**
+ * A partir de esta cantidad de cuotas el plan de pagos se imprime en dos
+ * columnas para no desbordar la hoja oficio.
+ */
+const PLAN_SPLIT_THRESHOLD = 6;
+
+function pickSizeTier(itemCount: number, planRowCount: number, hasLegalText: boolean): ContractSizeTier {
+  const density = itemCount + planRowCount + (hasLegalText ? 6 : 0);
+  return density > DENSITY_THRESHOLD ? COMPACT_TIER : COMFORTABLE_TIER;
+}
 
 export function buildNegocioContractHtml(data: NegocioContractData): string {
   const itemsRows = data.items
@@ -171,22 +215,30 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       </tr>`
     )
     .join('');
+  const plan = buildPlanRows(data);
+  const tier = pickSizeTier(data.items.length, plan.rows.length, Boolean(data.legal_text));
+  const minItemRows = plan.rows.length > PLAN_SPLIT_THRESHOLD ? tier.minItemRowsLongPlan : tier.minItemRows;
   const emptyRows = Array.from(
-    { length: Math.max(0, MIN_ITEM_ROWS - data.items.length) },
+    { length: Math.max(0, minItemRows - data.items.length) },
     () => `<tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>`
   ).join('');
-  const plan = buildPlanRows(data);
-  const planRows = plan.rows
-    .map(
-      (r) => `
+  const planRowHtml = (r: (typeof plan.rows)[number]) => `
       <tr class="${r.status === 'pagada' ? 'paid' : ''}">
         <td class="c">${esc(r.label)}</td>
         <td class="c">${fmtDate(r.due_date)}</td>
         <td class="r">${formatCOP(r.amount)}</td>
         <td class="c">${plan.projected ? '' : esc(labelCuotaStatus(r.status))}</td>
-      </tr>`
-    )
-    .join('');
+      </tr>`;
+  const planTable = (rows: typeof plan.rows) =>
+    `<table class="plan-table"><thead><tr><th class="c" style="width:44px">Cuota</th><th class="c">Fecha de pago</th><th class="r">Valor</th><th class="c" style="width:56px">Estado</th></tr></thead><tbody>${rows.map(planRowHtml).join('')}</tbody></table>`;
+  // Con muchas cuotas el plan se reparte en dos columnas para que el contrato
+  // completo siga cabiendo en una sola hoja oficio.
+  const planHtml =
+    plan.rows.length === 0
+      ? ''
+      : plan.rows.length > PLAN_SPLIT_THRESHOLD
+        ? `<div class="plan-grid">${planTable(plan.rows.slice(0, Math.ceil(plan.rows.length / 2)))}${planTable(plan.rows.slice(Math.ceil(plan.rows.length / 2)))}</div>`
+        : planTable(plan.rows);
 
   const sig = (
     url: string | null | undefined,
@@ -221,75 +273,76 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       ? `${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}`
       : 'Sin cuotas: pagado con abonos iniciales';
 
-  // Hoja tamaño oficio (216 x 330 mm; no confundir con legal, 216 x 356 mm)
-  // con márgenes y tipografía reducidos para que el contrato completo, con al
-  // menos 6 artículos, quepa en una sola página. El plan de cuotas no se
-  // imprime. Mismo tamaño que PAGE_SIZE_CSS en la web y que el PDF generado
-  // en app/negocio/[id].tsx (612 x 935 puntos).
+  // Hoja tamaño oficio (216 x 330 mm; no confundir con legal, 216 x 356 mm).
+  // La tipografía se elige según `tier` (ver pickSizeTier) para que el
+  // contrato completo siempre quepa en una sola página. Mismo tamaño que
+  // PAGE_SIZE_CSS en la web y que el PDF generado en app/negocio/[id].tsx
+  // (612 x 935 puntos).
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
 <title>Solicitud de crédito ${formatNegocioCodigo(data.numero)} - Casa Ideal</title>
 <style>
-  @page { size: 216mm 330mm; margin: 5mm 8mm 7mm; }
+  @page { size: 216mm 330mm; margin: ${tier.pageMargin}; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 8.5px; line-height: 1.22; padding-bottom: 12px; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 12px; }
   .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 4px; }
   .logo { display: block; height: 50px; width: auto; max-width: 100%; object-fit: contain; }
-  .company { text-align: right; color: #294c77; font-size: 7.5px; line-height: 1.3; }
+  .company { text-align: right; color: #294c77; font-size: ${tier.company}px; line-height: 1.3; }
   .title { display: flex; justify-content: space-between; align-items: center; color: #195ba6; margin: 4px 0 3px; }
-  .title h2 { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
-  .number { color: #a13c2f; font-size: 11px; font-weight: 800; }
+  .title h2 { margin: 0; font-size: ${tier.titleH2}px; letter-spacing: 1px; text-transform: uppercase; }
+  .number { color: #a13c2f; font-size: ${tier.number}px; font-weight: 800; }
   .meta, .parties, .finance { display: grid; border: 1px solid #195ba6; }
   .meta { grid-template-columns: 100px 1fr 1fr; margin-bottom: 4px; }
   .meta div { padding: 3px 5px; border-right: 1px solid #195ba6; }
   .meta div:last-child { border-right: 0; }
-  .meta b { color: #3e5f84; font-size: 7px; }
+  .meta b { color: #3e5f84; font-size: ${tier.metaB}px; }
   .parties { grid-template-columns: 1fr 1fr; }
   .party { min-width: 0; }
   .party + .party { border-left: 1px solid #195ba6; }
-  .box-title { background: #eaf2fb; color: #164f91; font-size: 8px; text-align: center; text-transform: uppercase; font-weight: 800; padding: 1px 3px; border-bottom: 1px solid #195ba6; }
+  .box-title { background: #eaf2fb; color: #164f91; font-size: ${tier.boxTitle}px; text-align: center; text-transform: uppercase; font-weight: 800; padding: 1px 3px; border-bottom: 1px solid #195ba6; }
   .field { display: grid; grid-template-columns: 58px 1fr; min-height: 13px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
   .field:last-child { border-bottom: 0; }
-  .field b { color: #3e5f84; font-size: 7px; }
-  .section { color: #195ba6; font-size: 9px; font-weight: 800; text-transform: uppercase; margin: 4px 0 2px; }
-  .terms { margin: 2px 0 0; padding-left: 13px; text-align: justify; font-size: 7.5px; }
+  .field b { color: #3e5f84; font-size: ${tier.fieldB}px; }
+  .section { color: #195ba6; font-size: ${tier.section}px; font-weight: 800; text-transform: uppercase; margin: 4px 0 2px; }
+  .terms { margin: 2px 0 0; padding-left: 13px; text-align: justify; font-size: ${tier.terms}px; }
   .terms li { margin-bottom: 1px; }
-  .authorization, .additional { border: 1px solid #8aaccf; background: #f6f9fd; padding: 3px 6px; text-align: justify; margin-top: 3px; font-size: 7.5px; }
+  .authorization, .additional { border: 1px solid #8aaccf; background: #f6f9fd; padding: 3px 6px; text-align: justify; margin-top: 3px; font-size: ${tier.authAdd}px; }
   .additional { white-space: pre-wrap; }
   .authorization b { display: block; text-align: center; color: #164f91; margin-bottom: 1px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #8aaccf; padding: 2px 4px; text-align: left; vertical-align: top; line-height: 1.2; }
   tbody td { height: 13px; }
-  th { background: #eaf2fb; color: #164f91; text-transform: uppercase; font-size: 7px; }
+  th { background: #eaf2fb; color: #164f91; text-transform: uppercase; font-size: ${tier.th}px; }
   tr { break-inside: avoid; }
   .r { text-align: right; white-space: nowrap; }
   .c { text-align: center; }
+  .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: start; }
   .plan-table th, .plan-table td { padding: 1px 4px; }
   .plan-table tbody td { height: auto; line-height: 1.15; }
   .plan-table tr.paid td { color: #6b7e94; background: #f3f7fb; }
   .plan-table tr.paid td:first-child::before { content: "✓ "; color: #2e7d32; }
-  .plan-note { color: #53708f; font-size: 7px; margin-top: 2px; }
+  .plan-note { color: #53708f; font-size: ${tier.planNote}px; margin-top: 2px; }
   .finance { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
   .finance div { padding: 3px 5px; border-right: 1px solid #8aaccf; border-bottom: 1px solid #8aaccf; }
   .finance div:nth-child(4n) { border-right: 0; }
   .finance div:nth-last-child(-n+4) { border-bottom: 0; }
-  .finance span { display: block; color: #53708f; font-size: 6.5px; text-transform: uppercase; }
-  .finance strong { font-size: 9px; }
+  .finance span { display: block; color: #53708f; font-size: ${tier.financeSpan}px; text-transform: uppercase; }
+  .finance strong { font-size: ${tier.financeStrong}px; }
   .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; break-inside: avoid; }
   .sig { text-align: center; min-width: 0; }
   .sig-space { height: 36px; display: grid; place-items: end center; }
   .sig img { max-width: 95%; max-height: 40px; object-fit: contain; }
   .sig-line { border-top: 1px solid #24364c; }
-  .sig b, .sig small { display: block; margin-top: 1px; font-size: 7px; }
+  .sig b, .sig small { display: block; margin-top: 1px; font-size: ${tier.sigText}px; }
   .sig small { color: #53708f; }
   .promissory { margin-top: 6px; border: 1px solid #195ba6; padding: 4px 8px; break-inside: avoid; }
-  .promissory h3 { color: #195ba6; text-align: center; font-size: 9.5px; margin: 0 0 3px; text-transform: uppercase; }
+  .promissory h3 { color: #195ba6; text-align: center; font-size: ${tier.promissoryH3}px; margin: 0 0 3px; text-transform: uppercase; }
   .promissory p { margin: 2px 0; text-align: justify; }
   .line { display: inline-block; border-bottom: 1px solid #55789d; min-width: 110px; height: 10px; vertical-align: bottom; }
-  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #6b7e94; font-size: 6.5px; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #6b7e94; font-size: ${tier.footer}px; }
 </style>
 </head>
 <body>
@@ -340,8 +393,8 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   </div>
   ${data.legal_text ? `<div class="section">Condiciones adicionales</div><div class="additional">${esc(data.legal_text)}</div>` : ''}
   <div class="section">Plan de pagos${plan.projected ? ` (proyectado)` : ''}</div>
-  ${planRows ? `<table class="plan-table"><thead><tr><th class="c" style="width:60px">Cuota</th><th class="c" style="width:110px">Fecha de pago</th><th class="r" style="width:110px">Valor</th><th class="c">Estado</th></tr></thead><tbody>${planRows}</tbody></table>` : `<div class="plan-note">Las fechas de pago se definirán al activar el negocio.</div>`}
-  ${plan.projected && planRows ? `<div class="plan-note">Fechas proyectadas a partir de la primera cuota; se confirman al activar el negocio.</div>` : ''}
+  ${planHtml || `<div class="plan-note">Las fechas de pago se definirán al activar el negocio.</div>`}
+  ${plan.projected && planHtml ? `<div class="plan-note">Fechas proyectadas a partir de la primera cuota; se confirman al activar el negocio.</div>` : ''}
   <div class="sigs">
     ${sig(data.customer_signature_url, 'Firma del cliente', data.customer_name, data.customer_id_number)}
     ${sig(data.guarantor_signature_url, 'Firma del fiador', data.codeudor_name, data.codeudor_id_number)}
