@@ -660,6 +660,7 @@ function NegocioDetailScreenInner() {
       guarantor_signature_url: guarantorSignature,
       seller_signature_url: sellerSignature,
       delivery_order_number: orderNumber,
+      first_due_date: negocio.first_due_date || null,
       items: items.map((i) => ({
         quantity: Number(i.quantity),
         description: i.description || 'Producto',
@@ -670,6 +671,7 @@ function NegocioDetailScreenInner() {
         installment_number: c.installment_number,
         due_date: c.due_date,
         amount: Number(c.amount),
+        paid_amount: Number(c.paid_amount || 0),
         status: c.status,
       })),
     });
@@ -686,7 +688,8 @@ function NegocioDetailScreenInner() {
       }
 
       if (Print?.printToFileAsync && Sharing?.shareAsync) {
-        const { uri } = await Print.printToFileAsync({ html });
+        // Tamaño oficio (legal): 8.5 x 14 pulgadas = 612 x 1008 puntos.
+        const { uri } = await Print.printToFileAsync({ html, width: 612, height: 1008 });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',

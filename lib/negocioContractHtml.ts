@@ -1,4 +1,5 @@
 import { formatCOP } from '@/lib/creditCalculator';
+import { CASA_IDEAL_LOGO_DATA_URI } from '@/lib/casaIdealLogo';
 import {
   formatNegocioCodigo,
   labelCuotaNumero,
@@ -39,18 +40,22 @@ export type NegocioContractData = {
   guarantor_signature_url?: string | null;
   seller_signature_url?: string | null;
   delivery_order_number?: string | null;
+  /**
+   * Cuotas generadas en la base de datos. Si viene vacío (negocio en borrador)
+   * el plan de pagos se proyecta a partir de first_due_date y la frecuencia.
+   */
+  cuotas?: Array<{
+    installment_number: number;
+    due_date: string;
+    amount: number;
+    paid_amount?: number | null;
+    status: string;
+  }>;
   items: Array<{
     quantity: number;
     description: string;
     unit_price: number;
     subtotal: number;
-  }>;
-  cuotas: Array<{
-    installment_number: number;
-    due_date: string;
-    amount: number;
-    paid_amount?: number;
-    status: string;
   }>;
 };
 
@@ -73,27 +78,109 @@ const CREDIT_TERMS = [
 const RISK_AUTHORIZATION =
   'Autorizo de manera previa, expresa e informada a Casa Ideal de La Plata, NIT 12.279.584-1, o a quien represente sus derechos, para consultar, reportar, conservar, suministrar, solicitar o divulgar ante operadores de información y centrales de riesgo los datos relacionados con mi comportamiento comercial, financiero y crediticio, positivo o negativo, de acuerdo con la legislación vigente. Declaro que conozco mis derechos de consulta, actualización, rectificación y reclamo. Todo reporte negativo estará sujeto a la comunicación previa y demás requisitos legales.';
 
+const COMPANY = {
+  name: 'Casa Ideal de La Plata',
+  tagline: 'Muebles y Electrodomésticos',
+  owner: 'Rubén Darío Serrato Molina',
+  nit: '12.279.584-1',
+  address: 'Calle 4 No. 2-18 - La Plata, Huila',
+  phone: '311 2227014',
+};
+
+/** Muestra fechas ISO (YYYY-MM-DD) como DD/MM/YYYY; deja intacto cualquier otro formato. */
+function fmtDate(value: string | null | undefined): string {
+  const s = String(value ?? '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+}
+
+/** Suma meses a una fecha ISO ajustando el día al fin de mes, igual que `interval '1 month'` en Postgres. */
+function addMonthsIso(iso: string, months: number): string {
+  const [y, mo, d] = iso.split('-').map(Number);
+  const target = new Date(Date.UTC(y, mo - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const [y, mo, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
+}
+
+type PlanRow = { label: string; due_date: string; amount: number; status: string; paid_amount: number };
+
+/**
+ * Plan de pagos a imprimir. Usa las cuotas reales cuando existen; si no,
+ * proyecta las fechas con la misma regla que la base de datos
+ * (semanal +7 días, quincenal +15 días, mensual +1 mes desde la primera cuota).
+ */
+function buildPlanRows(data: NegocioContractData): { rows: PlanRow[]; projected: boolean } {
+  const cuotas = (data.cuotas || [])
+    .filter((c) => c.status !== 'anulada')
+    .sort((a, b) => a.installment_number - b.installment_number);
+  if (cuotas.length > 0) {
+    return {
+      projected: false,
+      rows: cuotas.map((c) => ({
+        label: labelCuotaNumero(c.installment_number),
+        due_date: c.due_date,
+        amount: Number(c.amount),
+        status: c.status,
+        paid_amount: Number(c.paid_amount || 0),
+      })),
+    };
+  }
+  const rows: PlanRow[] = [];
+  if (data.down_payment > 0) {
+    rows.push({ label: labelCuotaNumero(0), due_date: data.down_payment_date || data.deal_date, amount: data.down_payment, status: 'pendiente', paid_amount: 0 });
+  }
+  const first = String(data.first_due_date || '').match(/^\d{4}-\d{2}-\d{2}/) ? String(data.first_due_date).slice(0, 10) : null;
+  if (first) {
+    for (let i = 1; i <= data.installments_count; i += 1) {
+      const due =
+        data.frequency === 'semanal'
+          ? addDaysIso(first, 7 * (i - 1))
+          : data.frequency === 'quincenal'
+            ? addDaysIso(first, 15 * (i - 1))
+            : addMonthsIso(first, i - 1);
+      rows.push({ label: labelCuotaNumero(i), due_date: due, amount: data.installment_amount, status: 'pendiente', paid_amount: 0 });
+    }
+  }
+  return { rows, projected: true };
+}
+
+/**
+ * Filas mínimas de la tabla de artículos: se completan con filas vacías para
+ * que la orden impresa se vea bien distribuida aunque tenga pocos productos.
+ */
+const MIN_ITEM_ROWS = 18;
+
 export function buildNegocioContractHtml(data: NegocioContractData): string {
   const itemsRows = data.items
     .map(
       (i) => `
       <tr>
-        <td>${i.quantity}</td>
+        <td class="c">${i.quantity}</td>
         <td>${esc(i.description)}</td>
         <td class="r">${formatCOP(i.unit_price)}</td>
         <td class="r">${formatCOP(i.subtotal)}</td>
       </tr>`
     )
     .join('');
-
-  const cuotasRows = data.cuotas
+  const emptyRows = Array.from(
+    { length: Math.max(0, MIN_ITEM_ROWS - data.items.length) },
+    () => `<tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>`
+  ).join('');
+  const plan = buildPlanRows(data);
+  const planRows = plan.rows
     .map(
-      (c) => `
-      <tr>
-        <td>${esc(labelCuotaNumero(c.installment_number))}</td>
-        <td>${esc(c.due_date)}</td>
-        <td class="r">${formatCOP(c.amount)}</td>
-        <td>${esc(labelCuotaStatus(c.status))}</td>
+      (r) => `
+      <tr class="${r.status === 'pagada' ? 'paid' : ''}">
+        <td class="c">${esc(r.label)}</td>
+        <td class="c">${fmtDate(r.due_date)}</td>
+        <td class="r">${formatCOP(r.amount)}</td>
+        <td class="c">${plan.projected ? '' : esc(labelCuotaStatus(r.status))}</td>
       </tr>`
     )
     .join('');
@@ -108,81 +195,98 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       ? `<div class="sig"><div class="sig-space"><img src="${esc(url)}" alt="${esc(label)}" /></div><div class="sig-line"></div><b>${esc(label)}</b><small>${esc(name) || '—'}${document ? ` · C.C. ${esc(document)}` : ''}</small></div>`
       : `<div class="sig"><div class="sig-space"></div><div class="sig-line"></div><b>${esc(label)}</b><small>${esc(name) || '—'}${document ? ` · C.C. ${esc(document)}` : ''}</small></div>`;
 
+  const formattedDate = esc(fmtDate(data.deal_date));
   const location = esc(data.location) || '—';
-  const frequency =
+  const firstDueDate = esc(fmtDate(data.first_due_date)) || '—';
+  const downPaymentLabel =
+    data.down_payment > 0 && data.down_payment_date
+      ? `${formatCOP(data.down_payment)} · paga el ${esc(fmtDate(data.down_payment_date))}`
+      : formatCOP(data.down_payment);
+  const frequencyLabel =
     data.frequency === 'quincenal'
       ? 'quincenales'
       : data.frequency === 'semanal'
         ? 'semanales'
         : 'mensuales';
 
+  // Hoja tamaño oficio (legal, 216 x 356 mm) con márgenes y tipografía
+  // reducidos para que el contrato completo, con al menos 6 artículos,
+  // quepa en una sola página. El plan de cuotas no se imprime.
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
 <title>Solicitud de crédito ${formatNegocioCodigo(data.numero)} - Casa Ideal</title>
 <style>
-  @page { size: A4; margin: 10mm 11mm 12mm; }
+  @page { size: legal; margin: 6mm 8mm 8mm; }
   * { box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; color: #17243b; margin: 0; font-size: 9.5px; line-height: 1.28; }
-  .brand { display:grid; grid-template-columns:65px 1fr 210px; gap:12px; align-items:center; border-bottom:3px solid #195ba6; padding-bottom:7px; }
-  .mark { width:60px; height:60px; border-radius:50%; background:#195ba6; color:#fff; display:grid; place-items:center; font-size:32px; font-weight:800; }
-  h1 { color:#195ba6; font:700 24px Georgia,serif; margin:0; }
-  .tag { color:#195ba6; font-size:14px; font-weight:700; }
-  .company { text-align:right; color:#294c77; }
-  .title { display:flex; justify-content:space-between; color:#195ba6; align-items:center; margin:8px 0 6px; }
-  .title h2 { margin:0; font-size:18px; letter-spacing:1px; text-transform:uppercase; }
-  .number { color:#a13c2f; font-size:15px; font-weight:800; }
-  .meta, .parties, .finance { display:grid; border:1px solid #195ba6; }
-  .meta { grid-template-columns:120px 1fr 1fr; margin-bottom:6px; }
-  .meta div { padding:4px 6px; border-right:1px solid #195ba6; }
-  .meta div:last-child { border:0; }
-  .parties { grid-template-columns:1fr 1fr; }
-  .party + .party { border-left:1px solid #195ba6; }
-  .box-title { background:#eaf2fb; color:#164f91; text-align:center; text-transform:uppercase; font-weight:800; padding:3px; border-bottom:1px solid #195ba6; }
-  .field { display:grid; grid-template-columns:76px 1fr; min-height:20px; border-bottom:1px solid #b8cce3; padding:3px 6px; }
-  .field:last-child { border:0; }
-  .field b { color:#3e5f84; font-size:8.5px; }
-  .section { color:#195ba6; font-size:11px; font-weight:800; text-transform:uppercase; margin:8px 0 4px; }
-  .terms { margin:5px 0 0; padding-left:19px; text-align:justify; }
-  .terms li { margin-bottom:3px; }
-  .authorization, .additional { border:1px solid #8aaccf; background:#f6f9fd; padding:6px 8px; text-align:justify; margin-top:6px; }
-  .authorization b { display:block; text-align:center; color:#164f91; margin-bottom:3px; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { border:1px solid #8aaccf; padding:4px 6px; text-align:left; vertical-align:top; }
-  th { background:#eaf2fb; color:#164f91; text-transform:uppercase; font-size:8.5px; }
-  tr { break-inside:avoid; }
-  .r { text-align: right; }
-  .finance { grid-template-columns:repeat(4,1fr); margin-top:6px; }
-  .finance div { padding:5px 7px; border-right:1px solid #8aaccf; border-bottom:1px solid #8aaccf; }
-  .finance div:nth-child(4n) { border-right:0; }
-  .finance div:nth-last-child(-n+4) { border-bottom:0; }
-  .finance span { display:block; color:#53708f; font-size:8px; text-transform:uppercase; }
-  .finance strong { font-size:11px; }
-  .sigs { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:12px; break-inside:avoid; }
-  .sig { text-align:center; }
-  .sig-space { height:54px; display:grid; place-items:end center; }
-  .sig img { max-width:95%; max-height:52px; object-fit:contain; }
-  .sig-line { border-top:1px solid #24364c; }
-  .sig b,.sig small { display:block; margin-top:2px; font-size:8.5px; }
-  .sig small { color:#53708f; }
-  .promissory { margin-top:13px; border:1.5px solid #195ba6; padding:8px; break-inside:avoid; }
-  .promissory h3 { color:#195ba6; text-align:center; font-size:13px; margin:0 0 6px; text-transform:uppercase; }
-  .line { display:inline-block; border-bottom:1px solid #55789d; min-width:140px; }
-  .annex { break-before:page; }
-  .footer { position:fixed; bottom:-8mm; left:0; right:0; text-align:center; color:#6b7e94; font-size:7.5px; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 8.5px; line-height: 1.25; padding-bottom: 12px; }
+  .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 4px; }
+  .logo { display: block; height: 58px; width: auto; max-width: 100%; object-fit: contain; }
+  .company { text-align: right; color: #294c77; font-size: 7.5px; line-height: 1.3; }
+  .title { display: flex; justify-content: space-between; align-items: center; color: #195ba6; margin: 4px 0 3px; }
+  .title h2 { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+  .number { color: #a13c2f; font-size: 11px; font-weight: 800; }
+  .meta, .parties, .finance { display: grid; border: 1px solid #195ba6; }
+  .meta { grid-template-columns: 100px 1fr 1fr; margin-bottom: 4px; }
+  .meta div { padding: 3px 5px; border-right: 1px solid #195ba6; }
+  .meta div:last-child { border-right: 0; }
+  .meta b { color: #3e5f84; font-size: 7px; }
+  .parties { grid-template-columns: 1fr 1fr; }
+  .party { min-width: 0; }
+  .party + .party { border-left: 1px solid #195ba6; }
+  .box-title { background: #eaf2fb; color: #164f91; font-size: 8px; text-align: center; text-transform: uppercase; font-weight: 800; padding: 1px 3px; border-bottom: 1px solid #195ba6; }
+  .field { display: grid; grid-template-columns: 58px 1fr; min-height: 14px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
+  .field:last-child { border-bottom: 0; }
+  .field b { color: #3e5f84; font-size: 7px; }
+  .section { color: #195ba6; font-size: 9px; font-weight: 800; text-transform: uppercase; margin: 4px 0 2px; }
+  .terms { margin: 2px 0 0; padding-left: 13px; text-align: justify; font-size: 7.5px; }
+  .terms li { margin-bottom: 1px; }
+  .authorization, .additional { border: 1px solid #8aaccf; background: #f6f9fd; padding: 3px 6px; text-align: justify; margin-top: 3px; font-size: 7.5px; }
+  .additional { white-space: pre-wrap; }
+  .authorization b { display: block; text-align: center; color: #164f91; margin-bottom: 1px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #8aaccf; padding: 2px 4px; text-align: left; vertical-align: top; line-height: 1.2; }
+  tbody td { height: 13px; }
+  th { background: #eaf2fb; color: #164f91; text-transform: uppercase; font-size: 7px; }
+  tr { break-inside: avoid; }
+  .r { text-align: right; white-space: nowrap; }
+  .c { text-align: center; }
+  .plan-table th, .plan-table td { padding: 1px 4px; }
+  .plan-table tbody td { height: auto; line-height: 1.15; }
+  .plan-table tr.paid td { color: #6b7e94; background: #f3f7fb; }
+  .plan-table tr.paid td:first-child::before { content: "✓ "; color: #2e7d32; }
+  .plan-note { color: #53708f; font-size: 7px; margin-top: 2px; }
+  .finance { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
+  .finance div { padding: 3px 5px; border-right: 1px solid #8aaccf; border-bottom: 1px solid #8aaccf; }
+  .finance div:nth-child(4n) { border-right: 0; }
+  .finance div:nth-last-child(-n+4) { border-bottom: 0; }
+  .finance span { display: block; color: #53708f; font-size: 6.5px; text-transform: uppercase; }
+  .finance strong { font-size: 9px; }
+  .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; break-inside: avoid; }
+  .sig { text-align: center; min-width: 0; }
+  .sig-space { height: 42px; display: grid; place-items: end center; }
+  .sig img { max-width: 95%; max-height: 40px; object-fit: contain; }
+  .sig-line { border-top: 1px solid #24364c; }
+  .sig b, .sig small { display: block; margin-top: 1px; font-size: 7px; }
+  .sig small { color: #53708f; }
+  .promissory { margin-top: 6px; border: 1px solid #195ba6; padding: 4px 8px; break-inside: avoid; }
+  .promissory h3 { color: #195ba6; text-align: center; font-size: 9.5px; margin: 0 0 3px; text-transform: uppercase; }
+  .promissory p { margin: 2px 0; text-align: justify; }
+  .line { display: inline-block; border-bottom: 1px solid #55789d; min-width: 110px; height: 10px; vertical-align: bottom; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #6b7e94; font-size: 6.5px; }
 </style>
 </head>
 <body>
-  <div class="footer">Casa Ideal de La Plata · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${new Date().toISOString().slice(0, 10)}</div>
+  <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${new Date().toISOString().slice(0, 10)}</div>
   <header class="brand">
-    <div class="mark">⌂</div>
-    <div><h1>Casa Ideal de La Plata</h1><div class="tag">Muebles y Electrodomésticos</div></div>
-    <div class="company"><b>NIT 12.279.584-1</b><br/>Rubén Darío Serrato Molina<br/>Calle 4 No. 2-18 - La Plata, Huila<br/>Cel. 311 2227014</div>
+    <img class="logo" src="${CASA_IDEAL_LOGO_DATA_URI}" alt="${COMPANY.name} - ${COMPANY.tagline}" />
+    <div class="company"><b>NIT ${COMPANY.nit}</b><br/>${COMPANY.owner}<br/>${COMPANY.address}<br/>Cel. ${COMPANY.phone}</div>
   </header>
   <div class="title"><h2>Solicitud de crédito</h2><div class="number">N.º ${formatNegocioCodigo(data.numero)}</div></div>
   <div class="meta">
-    <div><b>FECHA</b><br/>${esc(data.deal_date)}</div>
+    <div><b>FECHA</b><br/>${formattedDate}</div>
     <div><b>LUGAR</b><br/>${location}</div>
     <div><b>VENDEDOR</b><br/>${esc(data.seller_name) || '—'}</div>
   </div>
@@ -207,20 +311,23 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="authorization"><b>Autorización de consulta y reporte en centrales de riesgo</b>${esc(RISK_AUTHORIZATION)}</div>
   <div class="section">Artículos</div>
   <table>
-    <thead><tr><th>Cant.</th><th>Descripción</th><th class="r">Unitario</th><th class="r">Subtotal</th></tr></thead>
-    <tbody>${itemsRows || "<tr><td colspan='4'>Sin artículos registrados</td></tr>"}</tbody>
+    <thead><tr><th class="c" style="width:36px">Cant.</th><th>Descripción</th><th class="r" style="width:90px">Unitario</th><th class="r" style="width:90px">Subtotal</th></tr></thead>
+    <tbody>${itemsRows}${emptyRows}</tbody>
   </table>
   <div class="finance">
     <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
-    <div><span>Cuota inicial</span><strong>${formatCOP(data.down_payment)}${data.down_payment > 0 && data.down_payment_date ? ` · paga el ${esc(data.down_payment_date)}` : ''}</strong></div>
+    <div><span>Cuota inicial</span><strong>${downPaymentLabel}</strong></div>
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>
-    <div><span>Plan de pago</span><strong>${data.installments_count} cuotas ${frequency} de ${formatCOP(data.installment_amount)}</strong></div>
-    <div><span>Primera cuota</span><strong>${esc(data.first_due_date) || '—'}</strong></div>
+    <div><span>Plan de pago</span><strong>${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}</strong></div>
+    <div><span>Primera cuota</span><strong>${firstDueDate}</strong></div>
     <div><span>Estado</span><strong>${esc(labelNegocioStatus(data.status))}</strong></div>
     <div><span>Orden de entrega</span><strong>${esc(data.delivery_order_number) || 'Pendiente'}</strong></div>
   </div>
   ${data.legal_text ? `<div class="section">Condiciones adicionales</div><div class="additional">${esc(data.legal_text)}</div>` : ''}
+  <div class="section">Plan de pagos${plan.projected ? ` (proyectado)` : ''}</div>
+  ${planRows ? `<table class="plan-table"><thead><tr><th class="c" style="width:60px">Cuota</th><th class="c" style="width:110px">Fecha de pago</th><th class="r" style="width:110px">Valor</th><th class="c">Estado</th></tr></thead><tbody>${planRows}</tbody></table>` : `<div class="plan-note">Las fechas de pago se definirán al activar el negocio.</div>`}
+  ${plan.projected && planRows ? `<div class="plan-note">Fechas proyectadas a partir de la primera cuota; se confirman al activar el negocio.</div>` : ''}
   <div class="sigs">
     ${sig(data.customer_signature_url, 'Firma del cliente', data.customer_name, data.customer_id_number)}
     ${sig(data.guarantor_signature_url, 'Firma del fiador', data.codeudor_name, data.codeudor_id_number)}
@@ -228,13 +335,8 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   </div>
   <section class="promissory">
     <h3>Letra de cambio - por ${formatCOP(data.total_credit)}</h3>
-    <p>El comprador y el codeudor, si aplica, se obligan solidariamente a pagar a la orden de Rubén Darío Serrato Molina y/o Casa Ideal de La Plata la suma correspondiente al saldo exigible de esta obligación, de acuerdo con las condiciones pactadas y la legislación colombiana aplicable.</p>
-    <p>Fecha: <span class="line">${esc(data.deal_date)}</span> &nbsp; Lugar: <span class="line">${location}</span></p>
-  </section>
-  <section class="annex">
-    <div class="section">Anexo - Plan de cuotas</div>
-    <table><thead><tr><th>#</th><th>Vencimiento</th><th class="r">Valor</th><th>Estado</th></tr></thead>
-    <tbody>${cuotasRows || "<tr><td colspan='4'>Las cuotas se generarán al activar el negocio.</td></tr>"}</tbody></table>
+    <p>El comprador y el codeudor, si aplica, se obligan solidariamente a pagar a la orden de ${COMPANY.owner} y/o ${COMPANY.name} la suma correspondiente al saldo exigible de esta obligación, de acuerdo con las condiciones pactadas y la legislación colombiana aplicable.</p>
+    <p>Fecha: <span class="line">${formattedDate}</span> &nbsp; Lugar: <span class="line">${location}</span> &nbsp; Deudor: <span class="line">${esc(data.customer_name)}</span> &nbsp; C.C.: <span class="line">${esc(data.customer_id_number)}</span></p>
   </section>
 </body>
 </html>`;
