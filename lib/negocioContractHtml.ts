@@ -170,7 +170,11 @@ type ContractSizeTier = {
   body: number; company: number; titleH2: number; number: number; metaB: number; boxTitle: number;
   fieldB: number; section: number; terms: number; authAdd: number; th: number; planNote: number;
   financeSpan: number; financeStrong: number; sigText: number; promissoryH3: number; footer: number;
-  minItemRows: number; minItemRowsLongPlan: number; pageMargin: string;
+  /** Filas de artículos en el nivel compacto (plan corto / plan a dos columnas). */
+  minItemRows: number; minItemRowsLongPlan: number;
+  pageMargin: string;
+  /** Alto del área imprimible (330 mm menos márgenes, con 1 mm de holgura). */
+  contentHeight: string;
 };
 
 /** Nivel usado por la mayoría de negocios (pocos artículos/cuotas o sin texto legal). */
@@ -178,7 +182,7 @@ const COMFORTABLE_TIER: ContractSizeTier = {
   body: 11.2, company: 10, titleH2: 16.5, number: 15.3, metaB: 9.4, boxTitle: 10.6,
   fieldB: 9.4, section: 12.4, terms: 10, authAdd: 10, th: 9.4, planNote: 9.4,
   financeSpan: 8.9, financeStrong: 12.4, sigText: 9.4, promissoryH3: 13, footer: 8.9,
-  minItemRows: 8, minItemRowsLongPlan: 6, pageMargin: '5mm 8mm 7mm',
+  minItemRows: 8, minItemRowsLongPlan: 6, pageMargin: '5mm 8mm 7mm', contentHeight: '317mm',
 };
 
 /** Nivel compacto: negocios con muchos artículos, muchas cuotas y/o texto legal largo. */
@@ -186,8 +190,13 @@ const COMPACT_TIER: ContractSizeTier = {
   body: 10.2, company: 9.1, titleH2: 15, number: 13.9, metaB: 8.6, boxTitle: 9.6,
   fieldB: 8.6, section: 11.2, terms: 9.1, authAdd: 9.1, th: 8.5, planNote: 8.5,
   financeSpan: 8, financeStrong: 11.2, sigText: 8.5, promissoryH3: 11.8, footer: 8,
-  minItemRows: 9, minItemRowsLongPlan: 7, pageMargin: '4mm 6mm 4mm',
+  minItemRows: 9, minItemRowsLongPlan: 7, pageMargin: '4mm 6mm 4mm', contentHeight: '321mm',
 };
+
+/** Tope de filas de artículos aunque sobre espacio (evita una tabla absurda). */
+const MAX_ITEM_ROWS = 16;
+/** Mínimo de filas de artículos para que la tabla no se vea vacía. */
+const MIN_ITEM_ROWS = 4;
 
 /** Por encima de este puntaje de densidad se usa el nivel compacto. */
 const DENSITY_THRESHOLD = 26;
@@ -201,6 +210,28 @@ const PLAN_SPLIT_THRESHOLD = 6;
 function pickSizeTier(itemCount: number, planRowCount: number, hasLegalText: boolean): ContractSizeTier {
   const density = itemCount + planRowCount + (hasLegalText ? 6 : 0);
   return density > DENSITY_THRESHOLD ? COMPACT_TIER : COMFORTABLE_TIER;
+}
+
+/**
+ * Cuántas filas debe tener la tabla de artículos (reales + vacías) para que el
+ * contrato ocupe toda la hoja. En el nivel cómodo se calcula a partir del
+ * espacio que dejan libre el plan de pagos (alto de la columna más larga) y
+ * el texto legal adicional; la recta se ajustó con mediciones en Chrome
+ * headless (p. ej. 2 filas de plan → 18 filas caben, 12 → 8 filas) restando
+ * una fila de seguridad. El residuo que quede lo absorbe la tabla vía flex
+ * (ver CSS de `.items`). En el nivel compacto no sobra espacio, así que se
+ * usan las constantes ya validadas. Misma fórmula que en la web.
+ */
+function itemRowTarget(tier: ContractSizeTier, planRowCount: number, legalText: string | null | undefined): number {
+  const split = planRowCount > PLAN_SPLIT_THRESHOLD;
+  if (tier === COMPACT_TIER) return split ? tier.minItemRowsLongPlan : tier.minItemRows;
+  const legalLength = String(legalText ?? '').trim().length;
+  const legalPenalty = legalLength === 0 ? 0 : 2 + Math.floor(legalLength / 250);
+  // Plan a dos columnas: filas más bajas (padding 1px) → pendiente menor.
+  const rows = split
+    ? Math.floor(19.8 - 1.33 * Math.ceil(planRowCount / 2) - legalPenalty)
+    : Math.floor(20.5 - 1.5 * planRowCount - legalPenalty);
+  return Math.min(MAX_ITEM_ROWS, Math.max(MIN_ITEM_ROWS, rows));
 }
 
 export function buildNegocioContractHtml(data: NegocioContractData): string {
@@ -217,7 +248,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
     .join('');
   const plan = buildPlanRows(data);
   const tier = pickSizeTier(data.items.length, plan.rows.length, Boolean(data.legal_text));
-  const minItemRows = plan.rows.length > PLAN_SPLIT_THRESHOLD ? tier.minItemRowsLongPlan : tier.minItemRows;
+  const minItemRows = itemRowTarget(tier, plan.rows.length, data.legal_text);
   const emptyRows = Array.from(
     { length: Math.max(0, minItemRows - data.items.length) },
     () => `<tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>`
@@ -287,7 +318,11 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   @page { size: 216mm 330mm; margin: ${tier.pageMargin}; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 12px; }
+  /* El cuerpo mide exactamente el área imprimible y la tabla de artículos (flex: 1)
+     absorbe el espacio sobrante para que el documento ocupe toda la hoja. */
+  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 12px; height: ${tier.contentHeight}; display: flex; flex-direction: column; }
+  .items { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .items table { flex: 1; }
   .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 4px; }
   .logo { display: block; height: 50px; width: auto; max-width: 100%; object-fit: contain; }
   .company { text-align: right; color: #294c77; font-size: ${tier.company}px; line-height: 1.3; }
@@ -377,10 +412,10 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <ol class="terms">${CREDIT_TERMS.map((term) => `<li>${esc(term)}</li>`).join('')}</ol>
   <div class="authorization"><b>Autorización de consulta y reporte en centrales de riesgo</b>${esc(RISK_AUTHORIZATION)}</div>
   <div class="section">Artículos</div>
-  <table>
+  <div class="items"><table>
     <thead><tr><th class="c" style="width:36px">Cant.</th><th>Descripción</th><th class="r" style="width:90px">Unitario</th><th class="r" style="width:90px">Subtotal</th></tr></thead>
     <tbody>${itemsRows}${emptyRows}</tbody>
-  </table>
+  </table></div>
   <div class="finance">
     <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
