@@ -1397,6 +1397,7 @@ export type Database = {
       negocio_pagos: {
         Row: {
           amount: number
+          cierre_id: string | null
           created_at: string
           created_by: string | null
           cuota_id: string | null
@@ -1416,6 +1417,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          cierre_id?: string | null
           created_at?: string
           created_by?: string | null
           cuota_id?: string | null
@@ -1435,6 +1437,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          cierre_id?: string | null
           created_at?: string
           created_by?: string | null
           cuota_id?: string | null
@@ -1453,6 +1456,60 @@ export type Database = {
           voided_by?: string | null
         }
         Relationships: []
+      }
+      recaudo_cierres: {
+        Row: {
+          created_at: string
+          delivered_amount: number
+          difference_amount: number
+          expected_amount: number
+          gestor_id: string
+          id: string
+          numero: string
+          observations: string
+          payments_count: number
+          period_end: string
+          period_start: string
+          registered_at: string
+          registered_by: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_amount: number
+          difference_amount: number
+          expected_amount: number
+          gestor_id: string
+          id?: string
+          numero: string
+          observations: string
+          payments_count: number
+          period_end: string
+          period_start: string
+          registered_at?: string
+          registered_by: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          delivered_amount?: number
+          difference_amount?: number
+          expected_amount?: number
+          gestor_id?: string
+          id?: string
+          numero?: string
+          observations?: string
+          payments_count?: number
+          period_end?: string
+          period_start?: string
+          registered_at?: string
+          registered_by?: string
+          status?: string
+        }
+        Relationships: [
+          { foreignKeyName: "recaudo_cierres_gestor_id_fkey"; columns: ["gestor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "recaudo_cierres_registered_by_fkey"; columns: ["registered_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
       }
       profiles: {
         Row: {
@@ -2910,8 +2967,44 @@ export type Database = {
         Returns: string
       }
       void_negocio_pago: {
-        Args: { p_pago_id: string }
+        Args: { p_pago_id: string; p_reason?: string | null }
         Returns: undefined
+      }
+      get_recaudo_pending_collectors: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      get_recaudo_cierre_preview: {
+        Args: { p_gestor_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
+      create_recaudo_cierre: {
+        Args: {
+          p_gestor_id: string
+          p_from: string
+          p_to: string
+          p_expected_count: number
+          p_expected_amount: number
+          p_delivered_amount: number
+          p_observations: string
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      get_recaudo_cierres: {
+        Args: {
+          p_gestor_id?: string | null
+          p_search?: string
+          p_date_from?: string | null
+          p_date_to?: string | null
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
+      get_recaudo_cierre_detail: {
+        Args: { p_cierre_id: string }
+        Returns: Json
       }
       cancel_negocio: {
         Args: { p_idempotency_key: string; p_negocio_id: string; p_reason?: string | null }
@@ -3085,6 +3178,10 @@ export type Database = {
       finish_collection_route: {
         Args: { p_route_id: string; p_cancel?: boolean }
         Returns: undefined
+      }
+      has_permission: {
+        Args: { permission_name: string }
+        Returns: boolean
       }
       has_role: {
         Args: { role_name: string }
