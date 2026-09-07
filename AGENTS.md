@@ -42,7 +42,7 @@ Documentación de entradas: `REGISTRO_ENTRADAS.md`.
 | Área | Ruta |
 |------|------|
 | Rutas (Expo Router) | `app/` — `(auth)`, `(tabs)`, `negocio/`, `ruta-cobros/` |
-| Features | `components/<feature>/` |
+| Features | `components/<feature>/` (catálogos: `components/catalogos/`, dominio en `lib/catalogos/`) |
 | Shared / dominio ligero | `lib/` (supabase, credit, cartera, collection-routes, idempotency, …) |
 | Hooks globales | `hooks/` (`useUserRoles`, dashboard, theme) |
 | UI base | `components/ui/`, `constants/theme.ts` |
@@ -83,7 +83,8 @@ Equivalencia pragmática con Clean/Hexagonal:
 
 ## 2. Modularización y límites claros
 
-- Priorizar features con límites funcionales claros (entries, exits, purchase-orders, negocios, cartera, collection-routes, inventory, auth, reports).
+- Priorizar features con límites funcionales claros (entries, exits, purchase-orders, negocios, cartera, collection-routes, inventory, auth, reports, catalogos).
+- **Catálogos en móvil es deliberadamente ligero**: solo crear/editar catálogos propios (textos, productos, enlaces). Sin fotos, videos, portada ni diseño; eso vive en `../catalogo-casa-ideal/`. El snapshot de `lib/catalogos/snapshot.ts` debe seguir alineado con el web.
 - Alta cohesión, bajo acoplamiento; no importar internals profundos de otro feature si se puede exportar desde su `index`.
 - No mover a `components/ui` o `lib/` lógica específica de un flujo de bodega/crédito.
 - Compartir con el web solo lo genérico de dominio ya existente (`creditCalculator`, `localDate`, `idempotency`, labels) — mantener alineado, no divergir en silencio.

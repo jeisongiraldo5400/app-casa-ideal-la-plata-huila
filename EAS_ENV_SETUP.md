@@ -18,6 +18,9 @@ eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "
 
 # Configurar el DSN de Sentry (reporte de crashes nativos, opcional pero recomendado)
 eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value "tu_dsn_de_sentry"
+
+# Origen del web de catálogos (módulo Catálogos): los enlaces privados se arman como <origen>/c/<token>
+eas secret:create --scope project --name EXPO_PUBLIC_CATALOG_SITE_URL --value "https://catalogo.tu-dominio.com"
 ```
 
 ### 2. Verificar que las variables estén configuradas

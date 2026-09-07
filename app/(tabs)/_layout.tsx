@@ -216,6 +216,22 @@ export default function TabLayout() {
           headerLeft: () => <BackButton />,
         }}
       />
+      <Tabs.Screen
+        name="catalogos"
+        options={{
+          href: null,
+          title: 'Catálogos',
+          headerLeft: () => <BackButton />,
+        }}
+      />
+      <Tabs.Screen
+        name="catalogo-create"
+        options={{
+          href: null,
+          title: 'Nuevo catálogo',
+          headerLeft: () => <BackButton />,
+        }}
+      />
     </Tabs>
   );
 }

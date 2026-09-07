@@ -4,6 +4,7 @@ import { useTheme, useThemeStore } from '@/components/theme';
 import { Typography, getColors } from '@/constants/theme';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
+import type { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -104,7 +105,22 @@ function RootLayoutNav() {
   }, [initialized, appIsReady]);
 
   const stackAnimation = Platform.OS === 'web' ? 'none' : undefined;
-  const detailAnimation = Platform.OS === 'web' ? 'none' : 'slide_from_right';
+  const detailAnimation: 'none' | 'slide_from_right' = Platform.OS === 'web' ? 'none' : 'slide_from_right';
+
+  // Header JS (el mismo que usan las pantallas de (tabs)) para que el
+  // BackButton y el título queden alineados igual que en el resto de la app;
+  // el header nativo aplica sus propios insets al botón. El título y el botón
+  // de volver los define cada pantalla de detalle.
+  const detailScreenOptions = {
+    headerShown: true,
+    header: (props: NativeStackHeaderProps) => <StackHeader {...props} />,
+    animation: detailAnimation,
+    headerStyle: { backgroundColor: colors.background.default },
+    headerTintColor: colors.text.primary,
+    headerTitleStyle: { ...Typography.section },
+    headerTitleAlign: 'left' as const,
+    headerShadowVisible: false,
+  };
 
   if (!initialized && !appIsReady) {
     return null;
@@ -114,23 +130,10 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, animation: stackAnimation }}>
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="negocio/[id]"
-          options={{
-            // Header JS (el mismo que usan las pantallas de (tabs)) para que el
-            // BackButton y el título queden alineados igual que en el resto de
-            // la app; el header nativo aplica sus propios insets al botón.
-            // El título y el botón de volver los define la pantalla.
-            headerShown: true,
-            header: (props) => <StackHeader {...props} />,
-            animation: detailAnimation,
-            headerStyle: { backgroundColor: colors.background.default },
-            headerTintColor: colors.text.primary,
-            headerTitleStyle: { ...Typography.section },
-            headerTitleAlign: 'left',
-            headerShadowVisible: false,
-          }}
-        />
+        <Stack.Screen name="negocio/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/productos" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/compartir" options={detailScreenOptions} />
         <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>

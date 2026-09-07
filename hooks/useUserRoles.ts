@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { getCachedRoles, setCachedRoles } from '@/lib/offline/security/secureKeys';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { hasCatalogRole } from '@/lib/catalogos/access';
 
 interface UserRole {
   id: string;
@@ -131,6 +132,11 @@ export function useUserRoles() {
     return hasRole('gestor de cobro');
   };
 
+  /** Módulo de catálogos: admin, catalog_admin, catalog_editor o catalog_seller. */
+  const canAccessCatalogs = (): boolean => {
+    return hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? ''));
+  };
+
   const canMarkOrderAsReceived = (): boolean => {
     return isAdmin() || isBodeguero();
   };
@@ -149,6 +155,7 @@ export function useUserRoles() {
     isBodeguero,
     isVendedor,
     isGestorCobro,
+    canAccessCatalogs,
     canMarkOrderAsReceived,
     preferSellerWorkspace,
   };

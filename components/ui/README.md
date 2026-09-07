@@ -46,7 +46,8 @@ para texto sobre `primary.main` / `navigation.background`; `overlay` para fondos
   completa con área segura, header con cierre y pie opcional en `ActionBar`).
 
 Los tonos de estado de negocios y cuotas salen de `negocioStatusTone` / `cuotaStatusTone`
-(`lib/negocioLabels.ts`), no de condicionales en pantalla.
+(`lib/negocioLabels.ts`), no de condicionales en pantalla. Los de catálogos y sus enlaces, de
+`catalogStatusTone` / `shareLinkStatusTone` (`lib/catalogos/labels.ts`).
 
 ## Reglas de composición
 

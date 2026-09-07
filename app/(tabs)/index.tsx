@@ -23,7 +23,7 @@ function HomeScreenInner() {
   const router = useRouter();
   const { user } = useAuth();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
-  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const { isAdmin, isVendedor, isGestorCobro, canAccessCatalogs } = useUserRoles();
   const [now, setNow] = useState(new Date());
   const showCommercialSection = isAdmin() || isVendedor() || isGestorCobro();
   const canCreateNegocio = showCommercialSection;
@@ -95,6 +95,16 @@ function HomeScreenInner() {
             {isGestorCobro() ? (
               <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} />
             ) : null}
+          </View>
+        ) : null}
+
+        {canAccessCatalogs() ? (
+          <View style={styles.section}>
+            <SectionHeader title="Catálogos" />
+            <View style={styles.actionGrid}>
+              <ActionCard compact title="Catálogos" subtitle="Ediciones para clientes" icon="auto-stories" onPress={() => router.navigate('/(tabs)/catalogos' as never)} style={styles.halfCard} />
+              <ActionCard compact title="Nuevo catálogo" subtitle="Elegir productos y compartir" icon="add-circle-outline" tone="info" onPress={() => router.navigate('/(tabs)/catalogo-create' as never)} style={styles.halfCard} />
+            </View>
           </View>
         ) : null}
 

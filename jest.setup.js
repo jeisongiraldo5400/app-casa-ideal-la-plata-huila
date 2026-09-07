@@ -1,6 +1,7 @@
 // Mock de variables de entorno
 process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
+process.env.EXPO_PUBLIC_CATALOG_SITE_URL = 'https://catalogo.test';
 
 // Mock del runtime de Expo para evitar errores de import
 if (typeof global.__ExpoImportMetaRegistry === 'undefined') {
@@ -34,6 +35,18 @@ global.console = {
 jest.mock('@react-native-community/netinfo', () => ({
   addEventListener: jest.fn(() => jest.fn()),
   fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+}));
+
+jest.mock('expo-crypto', () => ({
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  CryptoEncoding: { HEX: 'hex' },
+  getRandomBytesAsync: jest.fn(async (length) => Uint8Array.from({ length }, (_, index) => index)),
+  digestStringAsync: jest.fn(async () => 'a'.repeat(64)),
+  randomUUID: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
+}));
+
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn(async () => true),
 }));
 
 jest.mock('expo-local-authentication', () => ({
