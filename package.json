@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "android": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:android",
+    "ios": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
