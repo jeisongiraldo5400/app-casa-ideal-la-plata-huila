@@ -1,3 +1,4 @@
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { supabase } from '@/lib/supabase';
 
 export const UNAUTHORIZED_EXIT_MESSAGE =
@@ -25,7 +26,13 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
       .eq('delivery_order_id', orderId)
       .is('deleted_at', null);
     if (assignmentsError) {
-      console.error('Error loading pickup assignments:', assignmentsError);
+      // Sin red se deniega por prudencia, pero es el camino previsto:
+      // `console.error` levantaría la pantalla roja de LogBox en desarrollo.
+      if (isNetworkError(assignmentsError)) {
+        console.warn('Sin conexión al validar la autorización de la salida.');
+      } else {
+        console.error('Error loading pickup assignments:', assignmentsError);
+      }
       return DENIED;
     }
 
@@ -34,7 +41,13 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
       .select('role_id')
       .eq('user_id', user.id);
     if (userRolesError) {
-      console.error('Error loading user roles:', userRolesError);
+      // Sin red se deniega por prudencia, pero es el camino previsto:
+      // `console.error` levantaría la pantalla roja de LogBox en desarrollo.
+      if (isNetworkError(userRolesError)) {
+        console.warn('Sin conexión al validar la autorización de la salida.');
+      } else {
+        console.error('Error loading user roles:', userRolesError);
+      }
       return DENIED;
     }
 

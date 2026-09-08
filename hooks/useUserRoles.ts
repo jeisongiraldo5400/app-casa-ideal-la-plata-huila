@@ -74,7 +74,15 @@ export function useUserRoles() {
         setRoles(transformedRoles);
         await setCachedRoles({ userId: user.id, roles: transformedRoles });
       } catch (error) {
-        console.error('Error loading user roles:', error);
+        // Sin red se usan los roles cacheados: es el camino previsto y no un
+        // fallo. `console.error` levantaba la pantalla roja de LogBox en
+        // desarrollo y tapaba los avisos de la propia pantalla (por ejemplo el
+        // "Pago guardado sin conexión").
+        if (isNetworkError(error)) {
+          console.warn('Sin conexión al leer los roles: se usan los guardados en el dispositivo.');
+        } else {
+          console.error('Error loading user roles:', error);
+        }
         const cached = await getCachedRoles();
         if (cached?.userId === user.id) {
           setRoles(cached.roles);

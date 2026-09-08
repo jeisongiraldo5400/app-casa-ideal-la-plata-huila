@@ -382,6 +382,30 @@ function NegocioDetailScreenInner() {
     }, [load])
   );
 
+  // Cuando la cola de sincronización sube lo que quedó pendiente, el detalle
+  // abierto tiene que enterarse: antes había que salir del negocio y volver a
+  // entrar para ver el pago con su consecutivo definitivo y el saldo del
+  // servidor. `useFocusEffect` solo dispara al enfocar la pantalla.
+  //
+  // Se recarga al vaciarse la cola (lo nuestro ya subió) y también cuando la
+  // pantalla está mostrando datos del dispositivo y termina una sincronización,
+  // que es justo el momento en que hay algo más fresco que enseñar. No se
+  // recarga en cada ciclo de sincronización para no parpadear sin motivo.
+  const pendingCount = useSyncStore((state) => state.pendingCount);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const hadPendingRef = useRef(false);
+  const lastSyncSeenRef = useRef<number | null>(null);
+  useEffect(() => {
+    const hadPending = hadPendingRef.current;
+    hadPendingRef.current = pendingCount > 0;
+    const syncChanged = lastSyncedAt !== null && lastSyncedAt !== lastSyncSeenRef.current;
+    const firstRead = lastSyncSeenRef.current === null;
+    lastSyncSeenRef.current = lastSyncedAt;
+    if (firstRead) return;
+    const colaVaciada = hadPending && pendingCount === 0;
+    if (colaVaciada || (syncChanged && fromLocal)) void load();
+  }, [pendingCount, lastSyncedAt, fromLocal, load]);
+
   const pendingBalance = useMemo(() => computeRemainingBalance(cuotas), [cuotas]);
 
   const pickSupportFromCamera = async () => {
@@ -641,13 +665,17 @@ function NegocioDetailScreenInner() {
         setPayReceipt('');
         setPaySupportFile(null);
         setPayModalOpen(false);
+
+        // Igual que en la ruta con conexión: el pago ya está guardado en el
+        // dispositivo, así que la pantalla se refresca antes de imprimir.
+        await refreshAfterPago({ preferLocal: true });
+
         const printed = await printReceiptAfterPago({
           receiptNumber: payReceipt || 'Provisional',
           paidAt,
           amount,
           physicalReceiptNumber: payReceipt || null,
         });
-        await refreshAfterPago({ preferLocal: true });
         notifyPagoResult(
           'Pago guardado sin conexión',
           offlineResult.supportWarning
