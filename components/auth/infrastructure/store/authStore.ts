@@ -7,6 +7,7 @@ import {
 } from '@/lib/offline/security/secureKeys';
 import { shouldKeepLocalSession } from '@/lib/offline/security/sessionPolicy';
 import { wipeLocalOfflineData } from '@/lib/offline/security/wipe';
+import { unregisterPushDevice } from '@/components/notifications/infrastructure/services/pushDeviceService';
 
 interface AuthState {
   session: Session | null;
@@ -255,6 +256,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    // El orden importa dos veces: dar de baja el token necesita la sesión viva
+    // (va antes de signOut) y lee el almacén seguro (va antes del borrado). Si
+    // no, el siguiente usuario de este teléfono recibiría los avisos del
+    // anterior. Un fallo aquí no puede impedir cerrar sesión.
+    await unregisterPushDevice();
     await wipeLocalOfflineData();
     await supabase.auth.signOut();
     set({ session: null, user: null, offlineSession: false });

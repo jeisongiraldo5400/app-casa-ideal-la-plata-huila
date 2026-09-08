@@ -2,6 +2,7 @@ import { AllDeliveryOrdersList, AllOrdersList, usePurchaseOrders } from '@/compo
 import { useTheme } from '@/components/theme';
 import { SearchField, SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
@@ -20,8 +21,14 @@ function AllOrdersScreenInner() {
   const { loadPurchaseOrders, loading } = usePurchaseOrders();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [activeTab, setActiveTab] = useState<TabType>('delivery');
-  const [searchQuery, setSearchQuery] = useState('');
+  // Una notificación abre esta pantalla ya situada: en su pestaña y con el
+  // número de orden escrito en el buscador, así que la lista queda filtrada a
+  // la orden del aviso.
+  const params = useLocalSearchParams<{ tab?: string; q?: string }>();
+  const [activeTab, setActiveTab] = useState<TabType>(
+    params.tab === 'purchase' ? 'purchase' : 'delivery'
+  );
+  const [searchQuery, setSearchQuery] = useState(params.q ?? '');
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
 
   useEffect(() => {

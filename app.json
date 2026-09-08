@@ -48,8 +48,10 @@
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.BLUETOOTH_SCAN",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
+      "googleServicesFile": "./google-services.json",
       "package": "com.casaideal.laplatahuila"
     },
     "web": {
@@ -100,6 +102,14 @@
         {
           "bluetoothAlwaysUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio.",
           "bluetoothPeripheralUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#1e3a8a",
+          "defaultChannel": "default"
         }
       ],
       "@sentry/react-native"

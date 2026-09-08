@@ -10,10 +10,28 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
+      admin_api_rate_limits: {
+        Row: {
+          request_count: number
+          user_id: string
+          window_started_at: string
+        }
+        Insert: {
+          request_count: number
+          user_id: string
+          window_started_at: string
+        }
+        Update: {
+          request_count?: number
+          user_id?: string
+          window_started_at?: string
+        }
+        Relationships: []
+      }
       brands: {
         Row: {
           created_at: string
@@ -37,6 +55,853 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      catalog_3d_hotspots: {
+        Row: {
+          catalog_media_id: string
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string | null
+          normal: string | null
+          position: string
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          catalog_media_id: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          normal?: string | null
+          position: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          catalog_media_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          normal?: string | null
+          position?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_3d_hotspots_catalog_media_id_fkey"
+            columns: ["catalog_media_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_media"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_collaborators: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          granted_by: string
+          user_id: string
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          granted_by: string
+          user_id: string
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          granted_by?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_collaborators_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_collaborators_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_collaborators_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_content_blocks: {
+        Row: {
+          catalog_product_id: string
+          configuration: Json
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          sort_order: number
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          catalog_product_id: string
+          configuration?: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          catalog_product_id?: string
+          configuration?: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_content_blocks_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_highlights: {
+        Row: {
+          catalog_product_id: string
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          icon: string | null
+          id: string
+          sort_order: number
+          title: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          catalog_product_id: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          catalog_product_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_highlights_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_items: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          id: string
+          is_featured: boolean
+          item_type: string
+          reference_id: string
+          section_id: string
+          sort_order: number
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          id?: string
+          is_featured?: boolean
+          item_type: string
+          reference_id: string
+          section_id: string
+          sort_order?: number
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          id?: string
+          is_featured?: boolean
+          item_type?: string
+          reference_id?: string
+          section_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_items_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_items_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_media: {
+        Row: {
+          alt_text: string | null
+          bucket: string
+          catalog_product_id: string
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          is_cover: boolean
+          metadata: Json
+          mime_type: string | null
+          poster_path: string | null
+          product_id: string
+          sort_order: number
+          storage_path: string
+          thumbnail_path: string | null
+          title: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          alt_text?: string | null
+          bucket: string
+          catalog_product_id: string
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          is_cover?: boolean
+          metadata?: Json
+          mime_type?: string | null
+          poster_path?: string | null
+          product_id: string
+          sort_order?: number
+          storage_path: string
+          thumbnail_path?: string | null
+          title?: string | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          alt_text?: string | null
+          bucket?: string
+          catalog_product_id?: string
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          is_cover?: boolean
+          metadata?: Json
+          mime_type?: string | null
+          poster_path?: string | null
+          product_id?: string
+          sort_order?: number
+          storage_path?: string
+          thumbnail_path?: string | null
+          title?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_media_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_media_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_media_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_product_specification_values: {
+        Row: {
+          catalog_product_id: string
+          created_at: string
+          definition_id: string
+          deleted_at: string | null
+          id: string
+          updated_at: string
+          value_boolean: boolean | null
+          value_json: Json | null
+          value_number: number | null
+          value_text: string | null
+        }
+        Insert: {
+          catalog_product_id: string
+          created_at?: string
+          definition_id: string
+          deleted_at?: string | null
+          id?: string
+          updated_at?: string
+          value_boolean?: boolean | null
+          value_json?: Json | null
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Update: {
+          catalog_product_id?: string
+          created_at?: string
+          definition_id?: string
+          deleted_at?: string | null
+          id?: string
+          updated_at?: string
+          value_boolean?: boolean | null
+          value_json?: Json | null
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_product_specification_values_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_product_specification_values_definition_id_fkey"
+            columns: ["definition_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_specification_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_products: {
+        Row: {
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          display_name: string | null
+          id: string
+          is_featured: boolean
+          marketing_description: string | null
+          product_id: string
+          published_at: string | null
+          seo_description: string | null
+          seo_title: string | null
+          short_description: string | null
+          slug: string
+          status: string
+          subtitle: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_featured?: boolean
+          marketing_description?: string | null
+          product_id: string
+          published_at?: string | null
+          seo_description?: string | null
+          seo_title?: string | null
+          short_description?: string | null
+          slug: string
+          status?: string
+          subtitle?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_featured?: boolean
+          marketing_description?: string | null
+          product_id?: string
+          published_at?: string | null
+          seo_description?: string | null
+          seo_title?: string | null
+          short_description?: string | null
+          slug?: string
+          status?: string
+          subtitle?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_products_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_related_products: {
+        Row: {
+          catalog_product_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          related_product_id: string
+          relation_type: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          catalog_product_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          related_product_id: string
+          relation_type: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          catalog_product_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          related_product_id?: string
+          relation_type?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_related_products_catalog_product_id_fkey"
+            columns: ["catalog_product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_related_products_related_product_id_fkey"
+            columns: ["related_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_sections: {
+        Row: {
+          body: string | null
+          catalog_id: string
+          created_at: string
+          id: string
+          image_url: string | null
+          kicker: string | null
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          catalog_id: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          kicker?: string | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          catalog_id?: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          kicker?: string | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_sections_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_share_links: {
+        Row: {
+          catalog_id: string
+          catalog_version_id: string
+          created_at: string
+          created_by: string
+          expires_at: string
+          first_viewed_at: string | null
+          id: string
+          label: string
+          last_viewed_at: string | null
+          revoked_at: string | null
+          token: string | null
+          token_hash: string
+          token_hint: string
+          view_count: number
+        }
+        Insert: {
+          catalog_id: string
+          catalog_version_id: string
+          created_at?: string
+          created_by: string
+          expires_at: string
+          first_viewed_at?: string | null
+          id?: string
+          label: string
+          last_viewed_at?: string | null
+          revoked_at?: string | null
+          token?: string | null
+          token_hash: string
+          token_hint: string
+          view_count?: number
+        }
+        Update: {
+          catalog_id?: string
+          catalog_version_id?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          first_viewed_at?: string | null
+          id?: string
+          label?: string
+          last_viewed_at?: string | null
+          revoked_at?: string | null
+          token?: string | null
+          token_hash?: string
+          token_hint?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_share_links_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_share_links_catalog_version_id_fkey"
+            columns: ["catalog_version_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_share_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_specification_definitions: {
+        Row: {
+          created_at: string
+          data_type: string
+          deleted_at: string | null
+          group_id: string
+          id: string
+          is_comparable: boolean
+          is_filterable: boolean
+          is_required: boolean
+          key: string
+          label: string
+          options: Json | null
+          sort_order: number
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data_type: string
+          deleted_at?: string | null
+          group_id: string
+          id?: string
+          is_comparable?: boolean
+          is_filterable?: boolean
+          is_required?: boolean
+          key: string
+          label: string
+          options?: Json | null
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data_type?: string
+          deleted_at?: string | null
+          group_id?: string
+          id?: string
+          is_comparable?: boolean
+          is_filterable?: boolean
+          is_required?: boolean
+          key?: string
+          label?: string
+          options?: Json | null
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_specification_definitions_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_specification_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_specification_groups: {
+        Row: {
+          category_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_specification_groups_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "category"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_versions: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          created_by: string
+          id: string
+          snapshot: Json
+          version_number: number
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          snapshot: Json
+          version_number: number
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          snapshot?: Json
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_versions_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_views: {
+        Row: {
+          id: number
+          share_link_id: string
+          viewed_at: string
+        }
+        Insert: {
+          id?: never
+          share_link_id: string
+          viewed_at?: string
+        }
+        Update: {
+          id?: never
+          share_link_id?: string
+          viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_views_share_link_id_fkey"
+            columns: ["share_link_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_share_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalogs: {
+        Row: {
+          accent_color: string
+          archived_at: string | null
+          cover_image_url: string | null
+          created_at: string
+          id: string
+          internal_title: string
+          introduction: string | null
+          owner_id: string
+          public_title: string
+          show_availability: boolean
+          show_contact: boolean
+          show_price: boolean
+          show_sku: boolean
+          status: string
+          template: string
+          updated_at: string
+          visibility: string
+        }
+        Insert: {
+          accent_color?: string
+          archived_at?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          id?: string
+          internal_title: string
+          introduction?: string | null
+          owner_id: string
+          public_title: string
+          show_availability?: boolean
+          show_contact?: boolean
+          show_price?: boolean
+          show_sku?: boolean
+          status?: string
+          template?: string
+          updated_at?: string
+          visibility?: string
+        }
+        Update: {
+          accent_color?: string
+          archived_at?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          id?: string
+          internal_title?: string
+          introduction?: string | null
+          owner_id?: string
+          public_title?: string
+          show_availability?: boolean
+          show_contact?: boolean
+          show_price?: boolean
+          show_sku?: boolean
+          status?: string
+          template?: string
+          updated_at?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalogs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       category: {
         Row: {
@@ -65,6 +930,198 @@ export type Database = {
         }
         Relationships: []
       }
+      collection_route_events: {
+        Row: {
+          actor_id: string
+          created_at: string
+          event_type: string
+          id: number
+          metadata: Json
+          route_id: string
+          stop_id: string | null
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          event_type: string
+          id?: never
+          metadata?: Json
+          route_id: string
+          stop_id?: string | null
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          event_type?: string
+          id?: never
+          metadata?: Json
+          route_id?: string
+          stop_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_route_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_route_events_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "collection_routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_route_events_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "collection_route_stops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_route_stops: {
+        Row: {
+          arrived_at: string | null
+          completed_at: string | null
+          created_at: string
+          customer_address: string
+          customer_name: string
+          customer_phone: string | null
+          expected_balance: number
+          id: string
+          municipality_name: string | null
+          negocio_id: string
+          notes: string | null
+          outcome_reason: string | null
+          payment_id: string | null
+          position: number
+          route_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          arrived_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          customer_address: string
+          customer_name: string
+          customer_phone?: string | null
+          expected_balance: number
+          id?: string
+          municipality_name?: string | null
+          negocio_id: string
+          notes?: string | null
+          outcome_reason?: string | null
+          payment_id?: string | null
+          position: number
+          route_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          arrived_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          customer_address?: string
+          customer_name?: string
+          customer_phone?: string | null
+          expected_balance?: number
+          id?: string
+          municipality_name?: string | null
+          negocio_id?: string
+          notes?: string | null
+          outcome_reason?: string | null
+          payment_id?: string | null
+          position?: number
+          route_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_route_stops_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_route_stops_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_pago_integrity_issues"
+            referencedColumns: ["pago_id"]
+          },
+          {
+            foreignKeyName: "collection_route_stops_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_pagos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_route_stops_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "collection_routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collection_routes: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          gestor_id: string
+          id: string
+          route_date: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          gestor_id: string
+          id?: string
+          route_date?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          gestor_id?: string
+          id?: string
+          route_date?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_routes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_routes_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       colors: {
         Row: {
           created_at: string
@@ -89,6 +1146,57 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_settings: {
+        Row: {
+          created_at: string
+          default_frequency: string
+          deleted_at: string | null
+          formula_type: string
+          id: string
+          interest_rate_monthly_pct: number
+          is_active: boolean
+          late_fee_rate_pct: number
+          legal_text: string | null
+          max_installments: number
+          min_installments: number
+          money_decimal_places: number
+          rounding_unit: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_frequency?: string
+          deleted_at?: string | null
+          formula_type?: string
+          id?: string
+          interest_rate_monthly_pct?: number
+          is_active?: boolean
+          late_fee_rate_pct?: number
+          legal_text?: string | null
+          max_installments?: number
+          min_installments?: number
+          money_decimal_places?: number
+          rounding_unit?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_frequency?: string
+          deleted_at?: string | null
+          formula_type?: string
+          id?: string
+          interest_rate_monthly_pct?: number
+          is_active?: boolean
+          late_fee_rate_pct?: number
+          legal_text?: string | null
+          max_installments?: number
+          min_installments?: number
+          money_decimal_places?: number
+          rounding_unit?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string | null
@@ -99,9 +1207,9 @@ export type Database = {
           email: string | null
           id: string
           id_number: string
+          municipio_id: string | null
           name: string
           neighborhood: string | null
-          municipio_id: string | null
           notes: string | null
           phone: string | null
           phone_secondary: string | null
@@ -116,9 +1224,9 @@ export type Database = {
           email?: string | null
           id?: string
           id_number: string
+          municipio_id?: string | null
           name: string
           neighborhood?: string | null
-          municipio_id?: string | null
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
@@ -133,9 +1241,9 @@ export type Database = {
           email?: string | null
           id?: string
           id_number?: string
+          municipio_id?: string | null
           name?: string
           neighborhood?: string | null
-          municipio_id?: string | null
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
@@ -156,29 +1264,6 @@ export type Database = {
             referencedRelation: "municipios"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      departamentos: {
-        Row: {
-          codigo: string | null
-          created_at: string
-          deleted_at: string | null
-          id: string
-          is_active: boolean
-          nombre: string
-          updated_at: string | null
-        }
-        Insert: { codigo?: string | null; created_at?: string; deleted_at?: string | null; id?: string; is_active?: boolean; nombre: string; updated_at?: string | null }
-        Update: { codigo?: string | null; created_at?: string; deleted_at?: string | null; id?: string; is_active?: boolean; nombre?: string; updated_at?: string | null }
-        Relationships: []
-      }
-      gestor_municipios: {
-        Row: { assigned_by: string | null; created_at: string; deleted_at: string | null; gestor_id: string; id: string; municipio_id: string }
-        Insert: { assigned_by?: string | null; created_at?: string; deleted_at?: string | null; gestor_id: string; id?: string; municipio_id: string }
-        Update: { assigned_by?: string | null; created_at?: string; deleted_at?: string | null; gestor_id?: string; id?: string; municipio_id?: string }
-        Relationships: [
-          { foreignKeyName: "gestor_municipios_gestor_id_fkey"; columns: ["gestor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "gestor_municipios_municipio_id_fkey"; columns: ["municipio_id"]; isOneToOne: false; referencedRelation: "municipios"; referencedColumns: ["id"] },
         ]
       }
       delivery_order_edit_observations: {
@@ -605,6 +1690,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "delivery_orders_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "delivery_orders_zone_id_fkey"
             columns: ["zone_id"]
             isOneToOne: false
@@ -626,6 +1718,118 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      departamentos: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          nombre: string
+          updated_at?: string | null
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          nombre?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      gestor_municipios: {
+        Row: {
+          assigned_by: string | null
+          created_at: string
+          deleted_at: string | null
+          gestor_id: string
+          id: string
+          municipio_id: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          gestor_id: string
+          id?: string
+          municipio_id: string
+        }
+        Update: {
+          assigned_by?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          gestor_id?: string
+          id?: string
+          municipio_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestor_municipios_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestor_municipios_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestor_municipios_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      idempotency_requests: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          idempotency_key: string
+          operation: string
+          payload_hash: string
+          response: Json | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          operation: string
+          payload_hash: string
+          response?: Json | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          operation?: string
+          payload_hash?: string
+          response?: Json | null
+          user_id?: string
+        }
+        Relationships: []
       }
       inventory_entries: {
         Row: {
@@ -862,6 +2066,688 @@ export type Database = {
           },
         ]
       }
+      municipios: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          deleted_at: string | null
+          departamento_id: string
+          id: string
+          is_active: boolean
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          departamento_id: string
+          id?: string
+          is_active?: boolean
+          nombre: string
+          updated_at?: string | null
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          departamento_id?: string
+          id?: string
+          is_active?: boolean
+          nombre?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "municipios_departamento_id_fkey"
+            columns: ["departamento_id"]
+            isOneToOne: false
+            referencedRelation: "departamentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_cuotas: {
+        Row: {
+          amount: number
+          created_at: string
+          deleted_at: string | null
+          due_date: string
+          id: string
+          installment_number: number
+          late_fee_amount: number
+          negocio_id: string
+          notes: string | null
+          paid_amount: number
+          paid_at: string | null
+          receipt_number: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          deleted_at?: string | null
+          due_date: string
+          id?: string
+          installment_number: number
+          late_fee_amount?: number
+          negocio_id: string
+          notes?: string | null
+          paid_amount?: number
+          paid_at?: string | null
+          receipt_number?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          deleted_at?: string | null
+          due_date?: string
+          id?: string
+          installment_number?: number
+          late_fee_amount?: number
+          negocio_id?: string
+          notes?: string | null
+          paid_amount?: number
+          paid_at?: string | null
+          receipt_number?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_cuotas_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_gestor_historial: {
+        Row: {
+          accion: string
+          asignado_por: string | null
+          created_at: string
+          gestor_anterior_id: string | null
+          gestor_cobro_id: string | null
+          id: string
+          motivo: string | null
+          negocio_id: string
+        }
+        Insert: {
+          accion: string
+          asignado_por?: string | null
+          created_at?: string
+          gestor_anterior_id?: string | null
+          gestor_cobro_id?: string | null
+          id?: string
+          motivo?: string | null
+          negocio_id: string
+        }
+        Update: {
+          accion?: string
+          asignado_por?: string | null
+          created_at?: string
+          gestor_anterior_id?: string | null
+          gestor_cobro_id?: string | null
+          id?: string
+          motivo?: string | null
+          negocio_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_gestor_historial_asignado_por_fkey"
+            columns: ["asignado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_gestor_historial_gestor_anterior_id_fkey"
+            columns: ["gestor_anterior_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_gestor_historial_gestor_cobro_id_fkey"
+            columns: ["gestor_cobro_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_gestor_historial_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_items: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          negocio_id: string
+          product_id: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+          updated_at: string
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          negocio_id: string
+          product_id: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+          updated_at?: string
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          negocio_id?: string
+          product_id?: string
+          quantity?: number
+          subtotal?: number
+          unit_price?: number
+          updated_at?: string
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_items_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_items_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_numero_counters: {
+        Row: {
+          last_seq: number
+          year: number
+        }
+        Insert: {
+          last_seq?: number
+          year: number
+        }
+        Update: {
+          last_seq?: number
+          year?: number
+        }
+        Relationships: []
+      }
+      negocio_pago_aplicaciones: {
+        Row: {
+          amount: number
+          created_at: string
+          cuota_id: string
+          id: string
+          pago_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          cuota_id: string
+          id?: string
+          pago_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          cuota_id?: string
+          id?: string
+          pago_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_pago_aplicaciones_cuota_id_fkey"
+            columns: ["cuota_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_cuotas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pago_aplicaciones_pago_id_fkey"
+            columns: ["pago_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_pago_integrity_issues"
+            referencedColumns: ["pago_id"]
+          },
+          {
+            foreignKeyName: "negocio_pago_aplicaciones_pago_id_fkey"
+            columns: ["pago_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_pagos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_pagos: {
+        Row: {
+          amount: number
+          cierre_id: string | null
+          created_at: string
+          created_by: string | null
+          cuota_id: string | null
+          deleted_at: string | null
+          id: string
+          negocio_id: string
+          notes: string | null
+          paid_at: string
+          receipt_number: string | null
+          receipt_status: string
+          support_file_name: string | null
+          support_mime: string | null
+          support_path: string | null
+          updated_at: string
+          virtual_receipt_number: string
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          amount: number
+          cierre_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          cuota_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          negocio_id: string
+          notes?: string | null
+          paid_at?: string
+          receipt_number?: string | null
+          receipt_status?: string
+          support_file_name?: string | null
+          support_mime?: string | null
+          support_path?: string | null
+          updated_at?: string
+          virtual_receipt_number: string
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          amount?: number
+          cierre_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          cuota_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          negocio_id?: string
+          notes?: string | null
+          paid_at?: string
+          receipt_number?: string | null
+          receipt_status?: string
+          support_file_name?: string | null
+          support_mime?: string | null
+          support_path?: string | null
+          updated_at?: string
+          virtual_receipt_number?: string
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_pagos_cierre_id_fkey"
+            columns: ["cierre_id"]
+            isOneToOne: false
+            referencedRelation: "recaudo_cierres"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pagos_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pagos_cuota_id_fkey"
+            columns: ["cuota_id"]
+            isOneToOne: false
+            referencedRelation: "negocio_cuotas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pagos_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocio_vendedor_historial: {
+        Row: {
+          accion: string
+          asignado_por: string | null
+          created_at: string
+          id: string
+          motivo: string | null
+          negocio_id: string
+          vendedor_anterior_id: string | null
+          vendedor_id: string | null
+        }
+        Insert: {
+          accion: string
+          asignado_por?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          negocio_id: string
+          vendedor_anterior_id?: string | null
+          vendedor_id?: string | null
+        }
+        Update: {
+          accion?: string
+          asignado_por?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          negocio_id?: string
+          vendedor_anterior_id?: string | null
+          vendedor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_vendedor_historial_asignado_por_fkey"
+            columns: ["asignado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_vendedor_historial_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_vendedor_historial_vendedor_anterior_id_fkey"
+            columns: ["vendedor_anterior_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_vendedor_historial_vendedor_id_fkey"
+            columns: ["vendedor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negocios: {
+        Row: {
+          codeudor_customer_id: string | null
+          codeudor_snapshot: Json | null
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          customer_signature_url: string | null
+          deal_date: string
+          deleted_at: string | null
+          delivery_order_id: string | null
+          direccion: string | null
+          down_payment: number
+          down_payment_date: string | null
+          down_payment_schedule: Json
+          financed_amount: number
+          first_due_date: string | null
+          formula_snapshot: Json
+          frequency: string
+          gestor_cobro_id: string | null
+          guarantor_signature_url: string | null
+          id: string
+          installment_amount: number
+          installments_count: number
+          interest_amount: number
+          location: string | null
+          municipio_id: string | null
+          notes: string | null
+          numero: number
+          products_subtotal: number
+          remission_id: string | null
+          seller_id: string
+          seller_signature_url: string | null
+          signed_at: string | null
+          source_delivery_order_id: string | null
+          status: string
+          total_credit: number
+          updated_at: string
+        }
+        Insert: {
+          codeudor_customer_id?: string | null
+          codeudor_snapshot?: Json | null
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          customer_signature_url?: string | null
+          deal_date?: string
+          deleted_at?: string | null
+          delivery_order_id?: string | null
+          direccion?: string | null
+          down_payment?: number
+          down_payment_date?: string | null
+          down_payment_schedule?: Json
+          financed_amount?: number
+          first_due_date?: string | null
+          formula_snapshot?: Json
+          frequency?: string
+          gestor_cobro_id?: string | null
+          guarantor_signature_url?: string | null
+          id?: string
+          installment_amount?: number
+          installments_count?: number
+          interest_amount?: number
+          location?: string | null
+          municipio_id?: string | null
+          notes?: string | null
+          numero: number
+          products_subtotal?: number
+          remission_id?: string | null
+          seller_id: string
+          seller_signature_url?: string | null
+          signed_at?: string | null
+          source_delivery_order_id?: string | null
+          status?: string
+          total_credit?: number
+          updated_at?: string
+        }
+        Update: {
+          codeudor_customer_id?: string | null
+          codeudor_snapshot?: Json | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          customer_signature_url?: string | null
+          deal_date?: string
+          deleted_at?: string | null
+          delivery_order_id?: string | null
+          direccion?: string | null
+          down_payment?: number
+          down_payment_date?: string | null
+          down_payment_schedule?: Json
+          financed_amount?: number
+          first_due_date?: string | null
+          formula_snapshot?: Json
+          frequency?: string
+          gestor_cobro_id?: string | null
+          guarantor_signature_url?: string | null
+          id?: string
+          installment_amount?: number
+          installments_count?: number
+          interest_amount?: number
+          location?: string | null
+          municipio_id?: string | null
+          notes?: string | null
+          numero?: number
+          products_subtotal?: number
+          remission_id?: string | null
+          seller_id?: string
+          seller_signature_url?: string | null
+          signed_at?: string | null
+          source_delivery_order_id?: string | null
+          status?: string
+          total_credit?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocios_codeudor_customer_id_fkey"
+            columns: ["codeudor_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_delivery_order_id_fkey"
+            columns: ["delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_gestor_cobro_id_fkey"
+            columns: ["gestor_cobro_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_remission_id_fkey"
+            columns: ["remission_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_source_delivery_order_id_fkey"
+            columns: ["source_delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_events: {
+        Row: {
+          attempts: number
+          audience_roles: string[]
+          audience_user_ids: string[]
+          available_at: string
+          body: string
+          created_at: string
+          data: Json
+          delivered_device_ids: string[]
+          entity_id: string
+          event_type: string
+          exclude_user_ids: string[]
+          id: string
+          last_error: string | null
+          sent_at: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          attempts?: number
+          audience_roles?: string[]
+          audience_user_ids?: string[]
+          available_at?: string
+          body: string
+          created_at?: string
+          data?: Json
+          delivered_device_ids?: string[]
+          entity_id: string
+          event_type: string
+          exclude_user_ids?: string[]
+          id?: string
+          last_error?: string | null
+          sent_at?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          attempts?: number
+          audience_roles?: string[]
+          audience_user_ids?: string[]
+          available_at?: string
+          body?: string
+          created_at?: string
+          data?: Json
+          delivered_device_ids?: string[]
+          entity_id?: string
+          event_type?: string
+          exclude_user_ids?: string[]
+          id?: string
+          last_error?: string | null
+          sent_at?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
+      }
       operation_error_logs: {
         Row: {
           context: Json | null
@@ -1040,477 +2926,6 @@ export type Database = {
           },
         ]
       }
-
-      credit_settings: {
-        Row: {
-          created_at: string
-          default_frequency: string
-          deleted_at: string | null
-          formula_type: string
-          id: string
-          interest_rate_monthly_pct: number
-          is_active: boolean
-          late_fee_rate_pct: number
-          legal_text: string | null
-          max_installments: number
-          money_decimal_places: number
-          min_installments: number
-          rounding_unit: number
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          default_frequency?: string
-          deleted_at?: string | null
-          formula_type?: string
-          id?: string
-          interest_rate_monthly_pct?: number
-          is_active?: boolean
-          late_fee_rate_pct?: number
-          legal_text?: string | null
-          max_installments?: number
-          money_decimal_places?: number
-          min_installments?: number
-          rounding_unit?: number
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          default_frequency?: string
-          deleted_at?: string | null
-          formula_type?: string
-          id?: string
-          interest_rate_monthly_pct?: number
-          is_active?: boolean
-          late_fee_rate_pct?: number
-          legal_text?: string | null
-          max_installments?: number
-          money_decimal_places?: number
-          min_installments?: number
-          rounding_unit?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      negocios: {
-        Row: {
-          codeudor_customer_id: string | null
-          codeudor_snapshot: Json | null
-          created_at: string
-          created_by: string | null
-          customer_id: string
-          customer_signature_url: string | null
-          deal_date: string
-          deleted_at: string | null
-          delivery_order_id: string | null
-          direccion: string | null
-          down_payment: number
-          down_payment_date: string | null
-          down_payment_schedule: Json
-          financed_amount: number
-          first_due_date: string | null
-          formula_snapshot: Json
-          frequency: string
-          guarantor_signature_url: string | null
-          gestor_cobro_id: string | null
-          id: string
-          installment_amount: number
-          installments_count: number
-          interest_amount: number
-          location: string | null
-          municipio_id: string | null
-          notes: string | null
-          numero: number
-          products_subtotal: number
-          remission_id: string | null
-          seller_id: string
-          seller_signature_url: string | null
-          signed_at: string | null
-          source_delivery_order_id: string | null
-          status: string
-          total_credit: number
-          updated_at: string
-        }
-        Insert: {
-          codeudor_customer_id?: string | null
-          codeudor_snapshot?: Json | null
-          created_at?: string
-          created_by?: string | null
-          customer_id: string
-          customer_signature_url?: string | null
-          deal_date?: string
-          deleted_at?: string | null
-          delivery_order_id?: string | null
-          direccion?: string | null
-          down_payment?: number
-          down_payment_date?: string | null
-          down_payment_schedule?: Json
-          financed_amount?: number
-          first_due_date?: string | null
-          formula_snapshot?: Json
-          frequency?: string
-          guarantor_signature_url?: string | null
-          gestor_cobro_id?: string | null
-          id?: string
-          installment_amount?: number
-          installments_count?: number
-          interest_amount?: number
-          location?: string | null
-          municipio_id?: string | null
-          notes?: string | null
-          numero?: number
-          products_subtotal?: number
-          remission_id?: string | null
-          seller_id: string
-          seller_signature_url?: string | null
-          signed_at?: string | null
-          source_delivery_order_id?: string | null
-          status?: string
-          total_credit?: number
-          updated_at?: string
-        }
-        Update: {
-          codeudor_customer_id?: string | null
-          codeudor_snapshot?: Json | null
-          created_at?: string
-          created_by?: string | null
-          customer_id?: string
-          customer_signature_url?: string | null
-          deal_date?: string
-          deleted_at?: string | null
-          delivery_order_id?: string | null
-          direccion?: string | null
-          down_payment?: number
-          down_payment_date?: string | null
-          down_payment_schedule?: Json
-          financed_amount?: number
-          first_due_date?: string | null
-          formula_snapshot?: Json
-          frequency?: string
-          guarantor_signature_url?: string | null
-          gestor_cobro_id?: string | null
-          id?: string
-          installment_amount?: number
-          installments_count?: number
-          interest_amount?: number
-          location?: string | null
-          municipio_id?: string | null
-          notes?: string | null
-          numero?: number
-          products_subtotal?: number
-          remission_id?: string | null
-          seller_id?: string
-          seller_signature_url?: string | null
-          signed_at?: string | null
-          source_delivery_order_id?: string | null
-          status?: string
-          total_credit?: number
-          updated_at?: string
-        }
-        Relationships: [
-          { foreignKeyName: "negocios_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocios_municipio_id_fkey"; columns: ["municipio_id"]; isOneToOne: false; referencedRelation: "municipios"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocios_source_delivery_order_id_fkey"; columns: ["source_delivery_order_id"]; isOneToOne: false; referencedRelation: "delivery_orders"; referencedColumns: ["id"] },
-        ]
-      }
-      negocio_gestor_historial: {
-        Row: {
-          accion: string
-          asignado_por: string | null
-          created_at: string
-          gestor_anterior_id: string | null
-          gestor_cobro_id: string | null
-          id: string
-          motivo: string | null
-          negocio_id: string
-        }
-        Insert: {
-          accion: string
-          asignado_por?: string | null
-          created_at?: string
-          gestor_anterior_id?: string | null
-          gestor_cobro_id?: string | null
-          id?: string
-          motivo?: string | null
-          negocio_id: string
-        }
-        Update: {
-          accion?: string
-          asignado_por?: string | null
-          created_at?: string
-          gestor_anterior_id?: string | null
-          gestor_cobro_id?: string | null
-          id?: string
-          motivo?: string | null
-          negocio_id?: string
-        }
-        Relationships: [
-          { foreignKeyName: "negocio_gestor_historial_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_gestor_historial_gestor_anterior_id_fkey"; columns: ["gestor_anterior_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_gestor_historial_gestor_cobro_id_fkey"; columns: ["gestor_cobro_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_gestor_historial_asignado_por_fkey"; columns: ["asignado_por"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-        ]
-      }
-      negocio_vendedor_historial: {
-        Row: {
-          accion: string
-          asignado_por: string | null
-          created_at: string
-          id: string
-          motivo: string | null
-          negocio_id: string
-          vendedor_anterior_id: string | null
-          vendedor_id: string | null
-        }
-        Insert: {
-          accion: string
-          asignado_por?: string | null
-          created_at?: string
-          id?: string
-          motivo?: string | null
-          negocio_id: string
-          vendedor_anterior_id?: string | null
-          vendedor_id?: string | null
-        }
-        Update: {
-          accion?: string
-          asignado_por?: string | null
-          created_at?: string
-          id?: string
-          motivo?: string | null
-          negocio_id?: string
-          vendedor_anterior_id?: string | null
-          vendedor_id?: string | null
-        }
-        Relationships: [
-          { foreignKeyName: "negocio_vendedor_historial_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_vendedor_historial_vendedor_anterior_id_fkey"; columns: ["vendedor_anterior_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_vendedor_historial_vendedor_id_fkey"; columns: ["vendedor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_vendedor_historial_asignado_por_fkey"; columns: ["asignado_por"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-        ]
-      }
-      municipios: {
-        Row: { codigo: string | null; created_at: string; deleted_at: string | null; departamento_id: string; id: string; is_active: boolean; nombre: string; updated_at: string | null }
-        Insert: { codigo?: string | null; created_at?: string; deleted_at?: string | null; departamento_id: string; id?: string; is_active?: boolean; nombre: string; updated_at?: string | null }
-        Update: { codigo?: string | null; created_at?: string; deleted_at?: string | null; departamento_id?: string; id?: string; is_active?: boolean; nombre?: string; updated_at?: string | null }
-        Relationships: [
-          { foreignKeyName: "municipios_departamento_id_fkey"; columns: ["departamento_id"]; isOneToOne: false; referencedRelation: "departamentos"; referencedColumns: ["id"] },
-        ]
-      }
-      negocio_items: {
-        Row: {
-          created_at: string
-          deleted_at: string | null
-          description: string | null
-          id: string
-          negocio_id: string
-          product_id: string
-          quantity: number
-          subtotal: number
-          unit_price: number
-          updated_at: string
-          warehouse_id: string
-        }
-        Insert: {
-          created_at?: string
-          deleted_at?: string | null
-          description?: string | null
-          id?: string
-          negocio_id: string
-          product_id: string
-          quantity: number
-          subtotal: number
-          unit_price: number
-          updated_at?: string
-          warehouse_id: string
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          description?: string | null
-          id?: string
-          negocio_id?: string
-          product_id?: string
-          quantity?: number
-          subtotal?: number
-          unit_price?: number
-          updated_at?: string
-          warehouse_id?: string
-        }
-        Relationships: [
-          { foreignKeyName: "negocio_items_negocio_id_fkey"; columns: ["negocio_id"]; isOneToOne: false; referencedRelation: "negocios"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_items_product_id_fkey"; columns: ["product_id"]; isOneToOne: false; referencedRelation: "products"; referencedColumns: ["id"] },
-          { foreignKeyName: "negocio_items_warehouse_id_fkey"; columns: ["warehouse_id"]; isOneToOne: false; referencedRelation: "warehouses"; referencedColumns: ["id"] },
-        ]
-      }
-      negocio_cuotas: {
-        Row: {
-          amount: number
-          created_at: string
-          deleted_at: string | null
-          due_date: string
-          id: string
-          installment_number: number
-          late_fee_amount: number
-          negocio_id: string
-          notes: string | null
-          paid_amount: number
-          paid_at: string | null
-          receipt_number: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          amount: number
-          created_at?: string
-          deleted_at?: string | null
-          due_date: string
-          id?: string
-          installment_number: number
-          late_fee_amount?: number
-          negocio_id: string
-          notes?: string | null
-          paid_amount?: number
-          paid_at?: string | null
-          receipt_number?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          amount?: number
-          created_at?: string
-          deleted_at?: string | null
-          due_date?: string
-          id?: string
-          installment_number?: number
-          late_fee_amount?: number
-          negocio_id?: string
-          notes?: string | null
-          paid_amount?: number
-          paid_at?: string | null
-          receipt_number?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      negocio_pagos: {
-        Row: {
-          amount: number
-          cierre_id: string | null
-          created_at: string
-          created_by: string | null
-          cuota_id: string | null
-          deleted_at: string | null
-          id: string
-          negocio_id: string
-          notes: string | null
-          paid_at: string
-          receipt_number: string | null
-          receipt_status: string
-          support_file_name: string | null
-          support_mime: string | null
-          support_path: string | null
-          virtual_receipt_number: string
-          voided_at: string | null
-          voided_by: string | null
-        }
-        Insert: {
-          amount: number
-          cierre_id?: string | null
-          created_at?: string
-          created_by?: string | null
-          cuota_id?: string | null
-          deleted_at?: string | null
-          id?: string
-          negocio_id: string
-          notes?: string | null
-          paid_at?: string
-          receipt_number?: string | null
-          receipt_status?: string
-          support_file_name?: string | null
-          support_mime?: string | null
-          support_path?: string | null
-          virtual_receipt_number?: string
-          voided_at?: string | null
-          voided_by?: string | null
-        }
-        Update: {
-          amount?: number
-          cierre_id?: string | null
-          created_at?: string
-          created_by?: string | null
-          cuota_id?: string | null
-          deleted_at?: string | null
-          id?: string
-          negocio_id?: string
-          notes?: string | null
-          paid_at?: string
-          receipt_number?: string | null
-          receipt_status?: string
-          support_file_name?: string | null
-          support_mime?: string | null
-          support_path?: string | null
-          virtual_receipt_number?: string
-          voided_at?: string | null
-          voided_by?: string | null
-        }
-        Relationships: []
-      }
-      recaudo_cierres: {
-        Row: {
-          created_at: string
-          delivered_amount: number
-          difference_amount: number
-          expected_amount: number
-          gestor_id: string
-          id: string
-          numero: string
-          observations: string
-          payments_count: number
-          period_end: string
-          period_start: string
-          registered_at: string
-          registered_by: string
-          status: string
-        }
-        Insert: {
-          created_at?: string
-          delivered_amount: number
-          difference_amount: number
-          expected_amount: number
-          gestor_id: string
-          id?: string
-          numero: string
-          observations: string
-          payments_count: number
-          period_end: string
-          period_start: string
-          registered_at?: string
-          registered_by: string
-          status: string
-        }
-        Update: {
-          created_at?: string
-          delivered_amount?: number
-          difference_amount?: number
-          expected_amount?: number
-          gestor_id?: string
-          id?: string
-          numero?: string
-          observations?: string
-          payments_count?: number
-          period_end?: string
-          period_start?: string
-          registered_at?: string
-          registered_by?: string
-          status?: string
-        }
-        Relationships: [
-          { foreignKeyName: "recaudo_cierres_gestor_id_fkey"; columns: ["gestor_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-          { foreignKeyName: "recaudo_cierres_registered_by_fkey"; columns: ["registered_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
-        ]
-      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1640,6 +3055,38 @@ export type Database = {
           },
         ]
       }
+      purchase_order_return_reversals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          observations: string
+          return_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          observations: string
+          return_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          observations?: string
+          return_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_return_reversals_return_id_fkey"
+            columns: ["return_id"]
+            isOneToOne: false
+            referencedRelation: "returns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_order_status_observations: {
         Row: {
           created_at: string
@@ -1724,6 +3171,132 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_devices: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          device_key: string | null
+          disabled_at: string | null
+          disabled_reason: string | null
+          expo_push_token: string
+          id: string
+          is_active: boolean
+          last_seen_at: string
+          platform: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          device_key?: string | null
+          disabled_at?: string | null
+          disabled_reason?: string | null
+          expo_push_token: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          device_key?: string | null
+          disabled_at?: string | null
+          disabled_reason?: string | null
+          expo_push_token?: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      recaudo_cierre_counters: {
+        Row: {
+          last_seq: number
+          year: number
+        }
+        Insert: {
+          last_seq?: number
+          year: number
+        }
+        Update: {
+          last_seq?: number
+          year?: number
+        }
+        Relationships: []
+      }
+      recaudo_cierres: {
+        Row: {
+          created_at: string
+          delivered_amount: number
+          difference_amount: number
+          expected_amount: number
+          gestor_id: string
+          id: string
+          numero: string
+          observations: string
+          payments_count: number
+          period_end: string
+          period_start: string
+          registered_at: string
+          registered_by: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_amount: number
+          difference_amount: number
+          expected_amount: number
+          gestor_id: string
+          id?: string
+          numero: string
+          observations: string
+          payments_count: number
+          period_end: string
+          period_start: string
+          registered_at?: string
+          registered_by: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          delivered_amount?: number
+          difference_amount?: number
+          expected_amount?: number
+          gestor_id?: string
+          id?: string
+          numero?: string
+          observations?: string
+          payments_count?: number
+          period_end?: string
+          period_start?: string
+          registered_at?: string
+          registered_by?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recaudo_cierres_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recaudo_cierres_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1847,38 +3420,6 @@ export type Database = {
           },
         ]
       }
-      purchase_order_return_reversals: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          id: string
-          observations: string
-          return_id: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          observations: string
-          return_id: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          observations?: string
-          return_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "purchase_order_return_reversals_return_id_fkey"
-            columns: ["return_id"]
-            isOneToOne: false
-            referencedRelation: "returns"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       roles: {
         Row: {
           created_at: string
@@ -1941,6 +3482,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      search_events: {
+        Row: {
+          command: string | null
+          created_at: string
+          duration_ms: number | null
+          event_type: string
+          had_error: boolean
+          id: string
+          result_count: number | null
+          scopes: string[]
+          selected_id: string | null
+          selected_scope: string | null
+          term_kind: string
+          term_length: number
+          user_id: string
+        }
+        Insert: {
+          command?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          event_type: string
+          had_error?: boolean
+          id?: string
+          result_count?: number | null
+          scopes?: string[]
+          selected_id?: string | null
+          selected_scope?: string | null
+          term_kind: string
+          term_length?: number
+          user_id: string
+        }
+        Update: {
+          command?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          event_type?: string
+          had_error?: boolean
+          id?: string
+          result_count?: number | null
+          scopes?: string[]
+          selected_id?: string | null
+          selected_scope?: string | null
+          term_kind?: string
+          term_length?: number
+          user_id?: string
+        }
+        Relationships: []
       }
       stock_adjustment_logs: {
         Row: {
@@ -2222,6 +3811,39 @@ export type Database = {
       }
     }
     Views: {
+      delivery_return_integrity_issues: {
+        Row: {
+          created_at: string | null
+          inventory_entry_id: string | null
+          issue: string | null
+        }
+        Relationships: []
+      }
+      inventory_entry_integrity_issues: {
+        Row: {
+          created_at: string | null
+          inventory_entry_id: string | null
+          issue: string | null
+        }
+        Relationships: []
+      }
+      negocio_pago_integrity_issues: {
+        Row: {
+          applied_amount: number | null
+          negocio_id: string | null
+          pago_id: string | null
+          payment_amount: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocio_pagos_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: false
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_transfers_searchable: {
         Row: {
           created_at: string | null
@@ -2346,6 +3968,18 @@ export type Database = {
       }
     }
     Functions: {
+      activate_negocio: {
+        Args: { p_idempotency_key?: string; p_negocio_id: string }
+        Returns: string
+      }
+      activate_negocio_locked: {
+        Args: { p_negocio_id: string }
+        Returns: string
+      }
+      activate_negocio_unlocked: {
+        Args: { p_negocio_id: string }
+        Returns: string
+      }
       adjust_product_stock: {
         Args: {
           p_new_quantity: number
@@ -2355,6 +3989,55 @@ export type Database = {
         }
         Returns: Json
       }
+      adjust_product_stock_internal: {
+        Args: {
+          p_new_quantity: number
+          p_product_id: string
+          p_reason: string
+          p_warehouse_id: string
+        }
+        Returns: Json
+      }
+      apply_cuotas_en_mora: {
+        Args: { p_negocio_id: string; p_only_manageable: boolean }
+        Returns: number
+      }
+      approve_delivery_order_with_returns: {
+        Args: {
+          p_delivery_order_id: string
+          p_idempotency_key: string
+          p_observations: string
+        }
+        Returns: boolean
+      }
+      archive_own_catalog: {
+        Args: { p_catalog_id: string }
+        Returns: undefined
+      }
+      assert_negocio_installment_plan: {
+        Args: {
+          p_deal_date: string
+          p_financed: number
+          p_first_due_date: string
+          p_installments_count: number
+        }
+        Returns: undefined
+      }
+      assert_negocio_seller: {
+        Args: { p_seller_id: string }
+        Returns: undefined
+      }
+      assign_gestor_to_negocios: {
+        Args: {
+          p_gestor_cobro_id: string
+          p_motivo?: string
+          p_negocio_ids: string[]
+        }
+        Returns: {
+          unchanged_count: number
+          updated_count: number
+        }[]
+      }
       assign_orders_to_remission_batch: {
         Args: { p_order_ids: string[]; p_remission_id: string }
         Returns: {
@@ -2363,15 +4046,266 @@ export type Database = {
           success: boolean
         }[]
       }
+      assign_orders_to_remission_batch_internal: {
+        Args: { p_order_ids: string[]; p_remission_id: string }
+        Returns: {
+          error_message: string
+          order_id: string
+          success: boolean
+        }[]
+      }
+      assign_seller_to_negocio: {
+        Args: { p_motivo?: string; p_negocio_id: string; p_seller_id: string }
+        Returns: boolean
+      }
+      attach_negocio_pago_support: {
+        Args: {
+          p_file_name?: string
+          p_mime: string
+          p_pago_id: string
+          p_path: string
+        }
+        Returns: string
+      }
+      can_manage_collection_for_customer: {
+        Args: { p_customer_id: string }
+        Returns: boolean
+      }
+      can_manage_collection_for_negocio: {
+        Args: { p_negocio_id: string }
+        Returns: boolean
+      }
+      can_read_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
+      can_write_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       cancel_delivery_order_with_items: {
         Args: { p_cancelled_at?: string; p_order_id: string }
+        Returns: undefined
+      }
+      cancel_delivery_order_with_items_internal: {
+        Args: { p_cancelled_at?: string; p_order_id: string }
+        Returns: undefined
+      }
+      cancel_inventory_entry: {
+        Args: {
+          p_entry_id: string
+          p_idempotency_key: string
+          p_observations: string
+        }
+        Returns: string
+      }
+      cancel_inventory_exit: {
+        Args: {
+          p_exit_id: string
+          p_idempotency_key: string
+          p_observations: string
+        }
+        Returns: string
+      }
+      cancel_negocio: {
+        Args: {
+          p_idempotency_key?: string
+          p_negocio_id: string
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      cancel_purchase_order_entries: {
+        Args: { p_observations: string; p_purchase_order_id: string }
+        Returns: Json
+      }
+      cancel_purchase_order_with_entries: {
+        Args: {
+          p_idempotency_key: string
+          p_observations: string
+          p_purchase_order_id: string
+        }
+        Returns: Json
+      }
+      cartera_today: { Args: never; Returns: string }
+      claim_notification_events: {
+        Args: { p_limit?: number }
+        Returns: {
+          body: string
+          data: Json
+          devices: Json
+          event_type: string
+          id: string
+          title: string
+        }[]
+      }
+      complete_notification_event: {
+        Args: {
+          p_delivered_device_ids?: string[]
+          p_error?: string
+          p_event_id: string
+          p_failed?: boolean
+        }
         Returns: undefined
       }
       consume_admin_api_rate_limit: {
         Args: { p_max_requests?: number; p_window_seconds?: number }
         Returns: boolean
       }
+      create_app_user_profile_and_roles: {
+        Args: {
+          p_email: string
+          p_full_name: string
+          p_role_ids: string[]
+          p_user_id: string
+        }
+        Returns: {
+          avatar_url: string | null
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_collection_route: {
+        Args: { p_negocio_ids: string[]; p_route_date?: string }
+        Returns: string
+      }
+      create_customer_offline: {
+        Args: {
+          p_customer_id: string
+          p_id_number: string
+          p_idempotency_key: string
+          p_name: string
+          p_phone: string
+        }
+        Returns: Json
+      }
+      create_delivery_order: {
+        Args: {
+          p_assigned_to_user_id: string
+          p_customer_id: string
+          p_delivery_address: string
+          p_idempotency_key: string
+          p_items: Json
+          p_notes: string
+          p_order_id: string
+          p_order_type: string
+          p_zone_id: string
+        }
+        Returns: string
+      }
+      create_inventory_product: {
+        Args: {
+          p_barcode: string
+          p_brand_id: string
+          p_category_id: string
+          p_description: string
+          p_idempotency_key: string
+          p_name: string
+          p_sku: string
+          p_supplier_id: string
+        }
+        Returns: {
+          barcode: string
+          brand_id: string
+          category_id: string
+          color_id: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          name: string
+          sale_price: number
+          sku: string
+          status: boolean | null
+          updated_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "products"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_negocio: {
+        Args: {
+          p_activate: boolean
+          p_idempotency_key: string
+          p_items: Json
+          p_negocio: Json
+          p_negocio_id: string
+        }
+        Returns: string
+      }
+      create_private_catalog_share_link: {
+        Args: {
+          p_catalog_id: string
+          p_expires_at: string
+          p_label: string
+          p_snapshot: Json
+          p_token: string
+          p_token_hash: string
+          p_token_hint: string
+        }
+        Returns: Json
+      }
+      create_purchase_order: {
+        Args: {
+          p_idempotency_key: string
+          p_items: Json
+          p_notes: string
+          p_order_id: string
+          p_supplier_id: string
+        }
+        Returns: string
+      }
+      create_recaudo_cierre: {
+        Args: {
+          p_delivered_amount: number
+          p_expected_amount: number
+          p_expected_count: number
+          p_from: string
+          p_gestor_id: string
+          p_idempotency_key: string
+          p_observations: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      deactivate_push_device: {
+        Args: { p_expo_push_token: string }
+        Returns: undefined
+      }
+      deactivate_push_devices_by_token: {
+        Args: { p_reason?: string; p_tokens: string[] }
+        Returns: number
+      }
+      delete_delivery_order: {
+        Args: { p_delivery_order_id: string; p_idempotency_key: string }
+        Returns: boolean
+      }
+      delete_purchase_order: {
+        Args: { p_idempotency_key: string; p_purchase_order_id: string }
+        Returns: boolean
+      }
+      deliver_delivery_order: {
+        Args: { p_delivery_order_id: string }
+        Returns: Json
+      }
       edit_delivery_order_items: {
+        Args: {
+          p_delivery_address?: string
+          p_delivery_order_id: string
+          p_items: Json
+          p_notes?: string
+          p_status?: string
+        }
+        Returns: Json
+      }
+      edit_delivery_order_items_internal: {
         Args: {
           p_delivery_address?: string
           p_delivery_order_id: string
@@ -2391,8 +4325,40 @@ export type Database = {
         }
         Returns: Json
       }
+      edit_purchase_order_items_internal: {
+        Args: {
+          p_items: Json
+          p_notes?: string
+          p_purchase_order_id: string
+          p_status?: string
+          p_supplier_id?: string
+        }
+        Returns: Json
+      }
+      enqueue_notification_event: {
+        Args: {
+          p_audience_roles: string[]
+          p_audience_user_ids: string[]
+          p_body: string
+          p_data: Json
+          p_entity_id: string
+          p_event_type: string
+          p_exclude_user_ids: string[]
+          p_title: string
+        }
+        Returns: undefined
+      }
+      f_unaccent: { Args: { "": string }; Returns: string }
+      finish_collection_route: {
+        Args: { p_cancel?: boolean; p_route_id: string }
+        Returns: undefined
+      }
       fn_assert_delivery_order_can_be_returned: {
         Args: { p_order_id: string }
+        Returns: undefined
+      }
+      fn_assert_inventory_exit_can_be_cancelled: {
+        Args: { p_exit_id: string }
         Returns: undefined
       }
       fn_decrement_delivery_order_item_delivered: {
@@ -2404,23 +4370,125 @@ export type Database = {
         }
         Returns: undefined
       }
+      fn_maybe_mark_delivery_order_returned: {
+        Args: { p_order_id: string; p_trigger_reason?: string }
+        Returns: boolean
+      }
+      fn_maybe_revert_delivery_order_to_pending: {
+        Args: { p_order_id: string }
+        Returns: boolean
+      }
+      get_admin_executive_report: {
+        Args: { p_end_date: string; p_start_date: string }
+        Returns: Json
+      }
       get_authorized_delivery_order_items: {
         Args: { p_order_id: string }
         Returns: {
           created_at: string
           delivered_quantity: number
           id: string
-          notes: string | null
-          product_barcode: string | null
+          notes: string
+          product_barcode: string
           product_id: string
           product_name: string
-          product_sku: string | null
+          product_sku: string
           quantity: number
-          source_delivery_order_id: string | null
+          source_delivery_order_id: string
           warehouse_id: string
           warehouse_name: string
         }[]
       }
+      get_cartera_cuotas: {
+        Args: {
+          p_days?: number
+          p_filter?: string
+          p_gestor_id?: string
+          p_municipio_id?: string
+          p_page?: number
+          p_page_size?: number
+          p_search?: string
+          p_seller_id?: string
+        }
+        Returns: {
+          amount: number
+          cuota_id: string
+          customer_address: string
+          customer_id_number: string
+          customer_name: string
+          customer_phone: string
+          departamento_name: string
+          due_date: string
+          installment_number: number
+          late_fee_amount: number
+          municipio_id: string
+          municipio_name: string
+          negocio_id: string
+          negocio_numero: number
+          negocio_status: string
+          paid_amount: number
+          saldo: number
+          seller_id: string
+          seller_name: string
+          status: string
+          total_count: number
+        }[]
+      }
+      get_cartera_management_dashboard: {
+        Args: { p_municipio_id?: string }
+        Returns: Json
+      }
+      get_collection_manager_businesses: {
+        Args: { p_gestor_id: string; p_limit?: number; p_search?: string }
+        Returns: {
+          current_assignment: boolean
+          customer_id_number: string
+          customer_name: string
+          historical_assignment: boolean
+          negocio_id: string
+          negocio_numero: number
+        }[]
+      }
+      get_collection_manager_payments: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_gestor_id: string
+          p_negocio_id?: string
+          p_page?: number
+          p_page_size?: number
+          p_receipt_status?: string
+          p_scope?: string
+          p_search?: string
+        }
+        Returns: Json
+      }
+      get_collection_route: { Args: { p_route_id: string }; Returns: Json }
+      get_collection_route_candidates: {
+        Args: {
+          p_filter?: string
+          p_municipio_id?: string
+          p_page?: number
+          p_page_size?: number
+          p_search?: string
+        }
+        Returns: {
+          customer_address: string
+          customer_id_number: string
+          customer_name: string
+          customer_phone: string
+          expected_balance: number
+          municipality_id: string
+          municipality_name: string
+          negocio_id: string
+          negocio_numero: number
+          next_due_date: string
+          open_installments: number
+          overdue_balance: number
+          total_count: number
+        }[]
+      }
+      get_current_user_profile: { Args: never; Returns: Json }
       get_customer_delivery_orders: {
         Args: { customer_id_param: string; page?: number; page_size?: number }
         Returns: {
@@ -2489,6 +4557,20 @@ export type Database = {
           customers_without_exits: number
           total_customers: number
           total_exits_to_customers: number
+        }[]
+      }
+      get_delivery_order_returnable_exits: {
+        Args: { p_order_id: string }
+        Returns: {
+          already_returned: number
+          exit_quantity: number
+          inventory_exit_id: string
+          max_returnable: number
+          product_id: string
+          product_name: string
+          product_sku: string
+          warehouse_id: string
+          warehouse_name: string
         }[]
       }
       get_delivery_orders_admin_list: {
@@ -2675,6 +4757,113 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_my_authorized_delivery_orders: {
+        Args: never
+        Returns: {
+          assigned_to_user_id: string
+          created_at: string
+          customer_id: string
+          customer_id_number: string
+          customer_name: string
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          notes: string
+          order_number: string
+          order_type: string
+          pending_quantity: number
+          status: string
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_my_collection_routes: {
+        Args: { p_limit?: number }
+        Returns: {
+          collected_total: number
+          completed_count: number
+          expected_total: number
+          id: string
+          route_date: string
+          status: string
+          stop_count: number
+        }[]
+      }
+      get_my_registered_delivery_order_items: {
+        Args: { p_order_id: string }
+        Returns: {
+          cancellation_observations: string
+          created_at: string
+          delivery_observations: string
+          exit_id: string
+          is_cancelled: boolean
+          product_barcode: string
+          product_id: string
+          product_name: string
+          product_sku: string
+          quantity: number
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_my_registered_delivery_orders: {
+        Args: { p_page?: number; p_page_size?: number; p_search_term?: string }
+        Returns: {
+          created_at: string
+          customer_id: string
+          customer_id_number: string
+          customer_name: string
+          delivered_quantity: number
+          delivery_address: string
+          id: string
+          last_exit_at: string
+          my_active_exit_count: number
+          my_active_quantity: number
+          my_cancelled_exit_count: number
+          my_cancelled_quantity: number
+          order_number: string
+          order_type: string
+          pending_quantity: number
+          recipient_name: string
+          recipient_type: string
+          status: string
+          total_count: number
+          total_items: number
+          total_quantity: number
+        }[]
+      }
+      get_negocio_gestor_historial: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          accion: string
+          asignado_por: string
+          asignado_por_nombre: string
+          created_at: string
+          gestor_anterior_id: string
+          gestor_anterior_nombre: string
+          gestor_cobro_id: string
+          gestor_cobro_nombre: string
+          id: string
+          motivo: string
+          negocio_id: string
+        }[]
+      }
+      get_negocio_vendedor_historial: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          accion: string
+          asignado_por: string
+          asignado_por_nombre: string
+          created_at: string
+          id: string
+          motivo: string
+          negocio_id: string
+          vendedor_anterior_id: string
+          vendedor_anterior_nombre: string
+          vendedor_id: string
+          vendedor_nombre: string
+        }[]
+      }
       get_orders_for_return:
         | {
             Args: { return_type_param: string }
@@ -2764,9 +4953,9 @@ export type Database = {
       get_products_dashboard: {
         Args: {
           include_deleted?: boolean
+          p_warehouse_id?: string
           page?: number
           page_size?: number
-          p_warehouse_id?: string
           search_term?: string
         }
         Returns: {
@@ -2788,408 +4977,6 @@ export type Database = {
           total_count: number
           total_stock: number
         }[]
-      }
-      activate_negocio: {
-        Args: { p_idempotency_key?: string; p_negocio_id: string }
-        Returns: string
-      }
-      assign_gestor_to_negocios: {
-        Args: { p_gestor_cobro_id: string; p_motivo?: string | null; p_negocio_ids: string[] }
-        Returns: { unchanged_count: number; updated_count: number }[]
-      }
-      assign_seller_to_negocio: {
-        Args: { p_negocio_id: string; p_seller_id: string; p_motivo?: string | null }
-        Returns: boolean
-      }
-      unassign_gestor_from_negocios: {
-        Args: { p_motivo?: string | null; p_negocio_ids: string[] }
-        Returns: { unchanged_count: number; updated_count: number }[]
-      }
-      unassign_order_from_remission: {
-        Args: { p_remission_id: string; p_source_order_id: string }
-        Returns: boolean
-      }
-      get_negocio_gestor_historial: {
-        Args: { p_negocio_id: string }
-        Returns: {
-          accion: string
-          asignado_por: string
-          asignado_por_nombre: string
-          created_at: string
-          gestor_anterior_id: string
-          gestor_anterior_nombre: string
-          gestor_cobro_id: string
-          gestor_cobro_nombre: string
-          id: string
-          motivo: string
-          negocio_id: string
-        }[]
-      }
-      get_negocio_vendedor_historial: {
-        Args: { p_negocio_id: string }
-        Returns: {
-          accion: string
-          asignado_por: string | null
-          asignado_por_nombre: string | null
-          created_at: string
-          id: string
-          motivo: string | null
-          negocio_id: string
-          vendedor_anterior_id: string | null
-          vendedor_anterior_nombre: string | null
-          vendedor_id: string | null
-          vendedor_nombre: string | null
-        }[]
-      }
-      create_negocio: {
-        Args: {
-          p_activate: boolean
-          p_idempotency_key: string
-          p_items: Json
-          p_negocio: Json
-          p_negocio_id: string
-        }
-        Returns: string
-      }
-      create_purchase_order: {
-        Args: {
-          p_idempotency_key: string
-          p_items: Json
-          p_notes: string | null
-          p_order_id: string
-          p_supplier_id: string
-        }
-        Returns: string
-      }
-      create_delivery_order: {
-        Args: {
-          p_assigned_to_user_id: string | null
-          p_customer_id: string | null
-          p_delivery_address: string | null
-          p_idempotency_key: string
-          p_items: Json
-          p_notes: string | null
-          p_order_id: string
-          p_order_type: string
-          p_zone_id: string | null
-        }
-        Returns: string
-      }
-      create_inventory_product: {
-        Args: {
-          p_barcode: string
-          p_brand_id: string
-          p_category_id: string
-          p_description: string | null
-          p_idempotency_key: string
-          p_name: string
-          p_sku: string
-          p_supplier_id: string | null
-        }
-        Returns: Database["public"]["Tables"]["products"]["Row"]
-      }
-      register_negocio_customer_signature: {
-        Args: { p_customer_signature_url: string; p_negocio_id: string }
-        Returns: string
-      }
-      update_negocio: {
-        Args: { p_activate: boolean; p_idempotency_key: string; p_items: Json; p_negocio: Json; p_negocio_id: string }
-        Returns: string
-      }
-      register_inventory_entries_batch: {
-        Args: {
-          p_entry_type: string
-          p_idempotency_key: string
-          p_items: Json
-          p_purchase_order_id: string | null
-          p_supplier_id: string | null
-          p_warehouse_id: string
-        }
-        Returns: Json
-      }
-      register_inventory_exits_batch: {
-        Args: {
-          p_delivered_to_customer_id: string | null
-          p_delivered_to_user_id: string | null
-          p_delivery_observations: string | null
-          p_delivery_order_id: string | null
-          p_exit_mode: string
-          p_idempotency_key: string
-          p_items: Json
-        }
-        Returns: Json
-      }
-      register_delivery_order_return: {
-        Args: { p_delivery_order_id: string; p_idempotency_key: string; p_inventory_exit_id: string; p_observations?: string | null; p_quantity: number; p_reason: string }
-        Returns: string
-      }
-      get_delivery_order_returnable_exits: {
-        Args: { p_order_id: string }
-        Returns: {
-          inventory_exit_id: string
-          product_id: string
-          product_name: string
-          product_sku: string | null
-          warehouse_id: string
-          warehouse_name: string
-          exit_quantity: number
-          already_returned: number
-          max_returnable: number
-        }[]
-      }
-      delete_delivery_order: {
-        Args: { p_delivery_order_id: string; p_idempotency_key: string }
-        Returns: boolean
-      }
-      approve_delivery_order_with_returns: {
-        Args: { p_delivery_order_id: string; p_observations: string; p_idempotency_key: string }
-        Returns: boolean
-      }
-      register_negocio_pago: {
-        Args: {
-          p_negocio_id: string
-          p_amount: number
-          p_paid_at?: string
-          p_receipt_number?: string | null
-          p_cuota_id?: string | null
-          p_notes?: string | null
-          p_idempotency_key?: string | null
-        }
-        Returns: string
-      }
-      attach_negocio_pago_support: {
-        Args: {
-          p_pago_id: string
-          p_path: string
-          p_mime: string
-          p_file_name?: string | null
-        }
-        Returns: string
-      }
-      void_negocio_pago: {
-        Args: { p_pago_id: string; p_reason?: string | null }
-        Returns: undefined
-      }
-      get_recaudo_pending_collectors: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      get_recaudo_cierre_preview: {
-        Args: { p_gestor_id: string; p_from: string; p_to: string }
-        Returns: Json
-      }
-      create_recaudo_cierre: {
-        Args: {
-          p_gestor_id: string
-          p_from: string
-          p_to: string
-          p_expected_count: number
-          p_expected_amount: number
-          p_delivered_amount: number
-          p_observations: string
-          p_idempotency_key: string
-        }
-        Returns: Json
-      }
-      get_recaudo_cierres: {
-        Args: {
-          p_gestor_id?: string | null
-          p_search?: string
-          p_date_from?: string | null
-          p_date_to?: string | null
-          p_page?: number
-          p_page_size?: number
-        }
-        Returns: Json
-      }
-      get_recaudo_cierre_detail: {
-        Args: { p_cierre_id: string }
-        Returns: Json
-      }
-      cancel_negocio: {
-        Args: { p_idempotency_key: string; p_negocio_id: string; p_reason?: string | null }
-        Returns: undefined
-      }
-      cancel_inventory_entry: {
-        Args: { p_entry_id: string; p_idempotency_key: string; p_observations: string }
-        Returns: string
-      }
-      cancel_purchase_order_with_entries: {
-        Args: { p_purchase_order_id: string; p_observations: string; p_idempotency_key: string }
-        Returns: Json
-      }
-      cancel_inventory_exit: {
-        Args: { p_exit_id: string; p_idempotency_key: string; p_observations: string }
-        Returns: string
-      }
-      revert_purchase_order_return: {
-        Args: { p_return_id: string; p_observations: string; p_idempotency_key: string }
-        Returns: string
-      }
-      delete_purchase_order: {
-        Args: { p_purchase_order_id: string; p_idempotency_key: string }
-        Returns: boolean
-      }
-      mark_cuotas_en_mora: {
-        Args: { p_negocio_id?: string | null }
-        Returns: number
-      }
-      get_cartera_cuotas: {
-        Args: {
-          p_filter?: string
-          p_days?: number
-          p_search?: string
-          p_page?: number
-          p_page_size?: number
-          p_municipio_id?: string | null
-          p_gestor_id?: string | null
-          p_seller_id?: string | null
-        }
-        Returns: {
-          cuota_id: string
-          negocio_id: string
-          negocio_numero: number
-          customer_name: string | null
-          customer_id_number: string | null
-          customer_phone: string | null
-          customer_address: string | null
-          municipio_id: string | null
-          municipio_name: string | null
-          departamento_name: string | null
-          seller_id: string | null
-          seller_name: string | null
-          installment_number: number
-          due_date: string
-          amount: number
-          paid_amount: number
-          late_fee_amount: number
-          saldo: number
-          status: string
-          negocio_status: string
-          total_count: number
-        }[]
-      }
-      get_cartera_management_dashboard: {
-        Args: { p_municipio_id?: string | null }
-        Returns: Json
-      }
-      search_collection_managers: {
-        Args: { p_search?: string; p_limit?: number }
-        Returns: { id: string; full_name: string }[]
-      }
-      get_collection_manager_businesses: {
-        Args: { p_gestor_id: string; p_search?: string; p_limit?: number }
-        Returns: {
-          negocio_id: string
-          negocio_numero: number
-          customer_name: string
-          customer_id_number: string
-          current_assignment: boolean
-          historical_assignment: boolean
-        }[]
-      }
-      get_collection_manager_payments: {
-        Args: {
-          p_gestor_id: string
-          p_scope?: string
-          p_negocio_id?: string | null
-          p_date_from?: string | null
-          p_date_to?: string | null
-          p_receipt_status?: string
-          p_search?: string
-          p_page?: number
-          p_page_size?: number
-        }
-        Returns: Json
-      }
-      get_collection_route_candidates: {
-        Args: {
-          p_search?: string
-          p_filter?: string
-          p_municipio_id?: string | null
-          p_page?: number
-          p_page_size?: number
-        }
-        Returns: {
-          negocio_id: string
-          negocio_numero: number
-          customer_name: string
-          customer_id_number: string
-          customer_phone: string
-          customer_address: string
-          municipality_id: string
-          municipality_name: string
-          expected_balance: number
-          overdue_balance: number
-          next_due_date: string
-          open_installments: number
-          total_count: number
-        }[]
-      }
-      create_collection_route: {
-        Args: { p_negocio_ids: string[]; p_route_date?: string }
-        Returns: string
-      }
-      get_collection_route: {
-        Args: { p_route_id: string }
-        Returns: Json
-      }
-      get_my_collection_routes: {
-        Args: { p_limit?: number }
-        Returns: {
-          id: string
-          route_date: string
-          status: string
-          stop_count: number
-          completed_count: number
-          expected_total: number
-          collected_total: number
-        }[]
-      }
-      start_collection_route: {
-        Args: { p_route_id: string }
-        Returns: undefined
-      }
-      select_collection_route_stop: {
-        Args: { p_stop_id: string }
-        Returns: undefined
-      }
-      update_collection_route_stop: {
-        Args: {
-          p_stop_id: string
-          p_status: string
-          p_reason?: string | null
-          p_notes?: string | null
-        }
-        Returns: undefined
-      }
-      register_collection_route_payment: {
-        Args: {
-          p_stop_id: string
-          p_amount: number
-          p_paid_at: string
-          p_receipt_number?: string | null
-          p_cuota_id?: string | null
-          p_notes?: string | null
-          p_idempotency_key?: string | null
-        }
-        Returns: string
-      }
-      finish_collection_route: {
-        Args: { p_route_id: string; p_cancel?: boolean }
-        Returns: undefined
-      }
-      has_permission: {
-        Args: { permission_name: string }
-        Returns: boolean
-      }
-      has_role: {
-        Args: { role_name: string }
-        Returns: boolean
-      }
-      is_admin_or_vendedor: {
-        Args: never
-        Returns: boolean
       }
       get_products_for_return: {
         Args: { order_id_param: string; return_type_param: string }
@@ -3220,6 +5007,60 @@ export type Database = {
           product_name: string
           product_sku: string
           stock_by_warehouse: Json
+        }[]
+      }
+      get_public_catalog_categories: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
+      get_public_catalog_listing: {
+        Args: {
+          p_category_id?: string
+          page?: number
+          page_size?: number
+          search?: string
+        }
+        Returns: {
+          brand_name: string
+          catalog_product_id: string
+          category_id: string
+          category_name: string
+          cover_bucket: string
+          cover_storage_path: string
+          display_name: string
+          is_featured: boolean
+          product_id: string
+          published_at: string
+          sale_price: number
+          short_description: string
+          slug: string
+          total_count: number
+        }[]
+      }
+      get_public_catalog_product: {
+        Args: { product_slug: string }
+        Returns: Json
+      }
+      get_public_catalog_products_by_ids: {
+        Args: { p_product_ids: string[] }
+        Returns: {
+          brand_name: string
+          catalog_product_id: string
+          category_id: string
+          category_name: string
+          cover_bucket: string
+          cover_storage_path: string
+          display_name: string
+          is_featured: boolean
+          product_id: string
+          published_at: string
+          sale_price: number
+          short_description: string
+          slug: string
+          total_count: number
         }[]
       }
       get_purchase_orders_dashboard:
@@ -3275,6 +5116,26 @@ export type Database = {
           total_quantity: number
         }[]
       }
+      get_recaudo_cierre_detail: {
+        Args: { p_cierre_id: string }
+        Returns: Json
+      }
+      get_recaudo_cierre_preview: {
+        Args: { p_from: string; p_gestor_id: string; p_to: string }
+        Returns: Json
+      }
+      get_recaudo_cierres: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_gestor_id?: string
+          p_page?: number
+          p_page_size?: number
+          p_search?: string
+        }
+        Returns: Json
+      }
+      get_recaudo_pending_collectors: { Args: never; Returns: Json }
       get_reports_stats_today: {
         Args: never
         Returns: {
@@ -3394,73 +5255,6 @@ export type Database = {
           total_quantity: number
         }[]
       }
-      get_my_authorized_delivery_orders: {
-        Args: never
-        Returns: {
-          assigned_to_user_id: string | null
-          created_at: string
-          customer_id: string | null
-          customer_id_number: string | null
-          customer_name: string | null
-          delivered_quantity: number
-          delivery_address: string | null
-          id: string
-          notes: string | null
-          order_number: string | null
-          order_type: string
-          pending_quantity: number
-          status: string
-          total_items: number
-          total_quantity: number
-        }[]
-      }
-      get_my_registered_delivery_order_items: {
-        Args: { p_order_id: string }
-        Returns: {
-          cancellation_observations: string | null
-          created_at: string
-          delivery_observations: string | null
-          exit_id: string
-          is_cancelled: boolean
-          product_barcode: string | null
-          product_id: string
-          product_name: string
-          product_sku: string | null
-          quantity: number
-          warehouse_id: string
-          warehouse_name: string
-        }[]
-      }
-      get_my_registered_delivery_orders: {
-        Args: {
-          p_page?: number
-          p_page_size?: number
-          p_search_term?: string | null
-        }
-        Returns: {
-          created_at: string
-          customer_id: string | null
-          customer_id_number: string | null
-          customer_name: string | null
-          delivered_quantity: number
-          delivery_address: string | null
-          id: string
-          last_exit_at: string
-          my_active_exit_count: number
-          my_active_quantity: number
-          my_cancelled_exit_count: number
-          my_cancelled_quantity: number
-          order_number: string | null
-          order_type: string
-          pending_quantity: number
-          recipient_name: string | null
-          recipient_type: string
-          status: string
-          total_count: number
-          total_items: number
-          total_quantity: number
-        }[]
-      }
       get_users_dashboard: {
         Args: { page?: number; page_size?: number; search_term?: string }
         Returns: {
@@ -3473,6 +5267,10 @@ export type Database = {
           roles: Json
           total_count: number
         }[]
+      }
+      get_users_management_page: {
+        Args: { p_page?: number; p_page_size?: number; p_search?: string }
+        Returns: Json
       }
       get_users_stats: {
         Args: never
@@ -3497,6 +5295,251 @@ export type Database = {
           total_units: number
         }[]
       }
+      global_search: {
+        Args: {
+          p_limit?: number
+          p_scopes?: string[]
+          p_status?: string
+          p_term: string
+        }
+        Returns: Json
+      }
+      has_permission: { Args: { permission_name: string }; Returns: boolean }
+      has_role: { Args: { role_name: string }; Returns: boolean }
+      is_admin_or_bodeguero: { Args: never; Returns: boolean }
+      is_admin_or_vendedor: { Args: never; Returns: boolean }
+      is_gestor_cobro: { Args: never; Returns: boolean }
+      log_search_event: {
+        Args: {
+          p_command?: string
+          p_duration_ms?: number
+          p_event_type: string
+          p_had_error?: boolean
+          p_result_count?: number
+          p_scopes?: string[]
+          p_selected_id?: string
+          p_selected_scope?: string
+          p_term_kind?: string
+          p_term_length?: number
+        }
+        Returns: undefined
+      }
+      mark_cuotas_en_mora: { Args: { p_negocio_id?: string }; Returns: number }
+      negocio_down_payment_schedule_first_date: {
+        Args: { p_schedule: Json }
+        Returns: string
+      }
+      negocio_down_payment_schedule_total: {
+        Args: { p_schedule: Json }
+        Returns: number
+      }
+      negocio_legacy_down_payment_schedule: {
+        Args: { p_down_payment: number; p_down_payment_date: string }
+        Returns: Json
+      }
+      next_negocio_numero: { Args: { p_deal_date?: string }; Returns: number }
+      next_recaudo_cierre_numero: { Args: never; Returns: string }
+      norm_text: { Args: { "": string }; Returns: string }
+      normalize_negocio_down_payment_schedule: {
+        Args: {
+          p_deal_date: string
+          p_down_payment: number
+          p_products_subtotal: number
+          p_schedule: Json
+        }
+        Returns: Json
+      }
+      normalize_negocio_paid_at: { Args: { p_value: string }; Returns: string }
+      pago_support_object_negocio_id: {
+        Args: { object_name: string }
+        Returns: string
+      }
+      pago_support_object_pago_id: {
+        Args: { object_name: string }
+        Returns: string
+      }
+      pull_mobile_scope: { Args: { p_limit?: number }; Returns: Json }
+      pull_mobile_sync: {
+        Args: { p_last_pulled_at?: string; p_limit?: number }
+        Returns: Json
+      }
+      purge_expired_share_link_tokens: { Args: never; Returns: undefined }
+      purge_notification_events: { Args: { p_days?: number }; Returns: number }
+      purge_search_events: { Args: { p_days?: number }; Returns: number }
+      rebuild_negocio_payment_applications: {
+        Args: { p_negocio_id: string }
+        Returns: number
+      }
+      recalc_negocio_cuota_status: {
+        Args: { p_cuota_id: string }
+        Returns: undefined
+      }
+      recaudo_cierre_payment_rows: {
+        Args: {
+          p_cierre_id: string
+          p_from: string
+          p_gestor_id: string
+          p_to: string
+        }
+        Returns: {
+          amount: number
+          cierre_id: string
+          created_at: string
+          created_by: string
+          created_by_name: string
+          cuota_id: string
+          customer_id_number: string
+          customer_name: string
+          installment_number: number
+          negocio_id: string
+          negocio_numero: number
+          notes: string
+          paid_at: string
+          payment_id: string
+          receipt_number: string
+          receipt_status: string
+          remaining_balance: number
+          support_file_name: string
+          support_mime: string
+          support_path: string
+          virtual_receipt_number: string
+          voided_after_close: boolean
+          voided_at: string
+        }[]
+      }
+      register_collection_route_payment: {
+        Args: {
+          p_amount: number
+          p_cuota_id: string
+          p_idempotency_key: string
+          p_notes: string
+          p_paid_at: string
+          p_receipt_number: string
+          p_stop_id: string
+        }
+        Returns: string
+      }
+      register_delivery_order_return: {
+        Args: {
+          p_delivery_order_id: string
+          p_idempotency_key?: string
+          p_inventory_exit_id: string
+          p_observations?: string
+          p_quantity: number
+          p_reason: string
+        }
+        Returns: string
+      }
+      register_inventory_entries_batch: {
+        Args: {
+          p_entry_type: string
+          p_idempotency_key: string
+          p_items: Json
+          p_purchase_order_id: string
+          p_supplier_id: string
+          p_warehouse_id: string
+        }
+        Returns: Json
+      }
+      register_inventory_exits_batch: {
+        Args: {
+          p_delivered_to_customer_id: string
+          p_delivered_to_user_id: string
+          p_delivery_observations: string
+          p_delivery_order_id: string
+          p_exit_mode: string
+          p_idempotency_key: string
+          p_items: Json
+        }
+        Returns: Json
+      }
+      register_negocio_customer_signature: {
+        Args: { p_customer_signature_url: string; p_negocio_id: string }
+        Returns: string
+      }
+      register_negocio_pago: {
+        Args: {
+          p_amount: number
+          p_cuota_id: string
+          p_idempotency_key: string
+          p_negocio_id: string
+          p_notes: string
+          p_paid_at: string
+          p_receipt_number: string
+        }
+        Returns: string
+      }
+      register_push_device: {
+        Args: {
+          p_app_version?: string
+          p_device_key?: string
+          p_expo_push_token: string
+          p_platform: string
+        }
+        Returns: string
+      }
+      reissue_private_catalog_share_link: {
+        Args: {
+          p_expires_at: string
+          p_share_link_id: string
+          p_token: string
+          p_token_hash: string
+          p_token_hint: string
+        }
+        Returns: Json
+      }
+      replace_app_user_profile_and_roles: {
+        Args: {
+          p_email: string
+          p_full_name: string
+          p_role_ids: string[]
+          p_user_id: string
+        }
+        Returns: {
+          avatar_url: string | null
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      resolve_private_catalog: { Args: { p_token_hash: string }; Returns: Json }
+      revert_purchase_order_return: {
+        Args: {
+          p_idempotency_key: string
+          p_observations: string
+          p_return_id: string
+        }
+        Returns: string
+      }
+      revoke_all_private_catalog_share_links: {
+        Args: { p_catalog_id: string }
+        Returns: undefined
+      }
+      revoke_private_catalog_share_link: {
+        Args: { p_catalog_id: string; p_share_link_id: string }
+        Returns: undefined
+      }
+      run_cartera_mora_daily: { Args: never; Returns: number }
+      search_collection_managers: {
+        Args: { p_limit?: number; p_search?: string }
+        Returns: {
+          full_name: string
+          id: string
+        }[]
+      }
+      search_customer_negocios: {
+        Args: { p_limit?: number; p_search?: string }
+        Returns: Json
+      }
       search_customers: {
         Args: { limit_count?: number; search_term?: string }
         Returns: {
@@ -3505,10 +5548,6 @@ export type Database = {
           id_number: string
           name: string
         }[]
-      }
-      search_customer_negocios: {
-        Args: { p_search?: string; p_limit?: number }
-        Returns: Json
       }
       search_products_for_delivery_order: {
         Args: { p_search_term?: string }
@@ -3519,8 +5558,35 @@ export type Database = {
           product_sku: string
         }[]
       }
+      select_collection_route_stop: {
+        Args: { p_stop_id: string }
+        Returns: undefined
+      }
+      shared_catalog_ids: { Args: never; Returns: string[] }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      soft_delete_app_user: {
+        Args: { p_user_id: string }
+        Returns: {
+          avatar_url: string | null
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      start_collection_route: {
+        Args: { p_route_id: string }
+        Returns: undefined
+      }
       transfer_product_between_warehouses: {
         Args: {
           p_destination_warehouse_id: string
@@ -3530,6 +5596,36 @@ export type Database = {
           p_source_warehouse_id: string
         }
         Returns: Json
+      }
+      transfer_product_between_warehouses_internal: {
+        Args: {
+          p_destination_warehouse_id: string
+          p_observations: string
+          p_product_id: string
+          p_quantity: number
+          p_source_warehouse_id: string
+        }
+        Returns: Json
+      }
+      unassign_gestor_from_negocios: {
+        Args: { p_motivo?: string; p_negocio_ids: string[] }
+        Returns: {
+          unchanged_count: number
+          updated_count: number
+        }[]
+      }
+      unassign_order_from_remission: {
+        Args: { p_remission_id: string; p_source_order_id: string }
+        Returns: boolean
+      }
+      update_collection_route_stop: {
+        Args: {
+          p_notes?: string
+          p_reason?: string
+          p_status: string
+          p_stop_id: string
+        }
+        Returns: undefined
       }
       update_delivery_order_progress: {
         Args: {
@@ -3544,9 +5640,23 @@ export type Database = {
         Args: { items_param: Json; order_id_param: string }
         Returns: Json
       }
+      update_negocio: {
+        Args: {
+          p_activate: boolean
+          p_idempotency_key: string
+          p_items: Json
+          p_negocio: Json
+          p_negocio_id: string
+        }
+        Returns: string
+      }
       update_purchase_order_progress: {
         Args: { order_id_param: string }
         Returns: Json
+      }
+      void_negocio_pago: {
+        Args: { p_pago_id: string; p_reason?: string }
+        Returns: undefined
       }
     }
     Enums: {
@@ -3566,12 +5676,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3595,11 +5705,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3620,11 +5730,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3645,11 +5755,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3662,11 +5772,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

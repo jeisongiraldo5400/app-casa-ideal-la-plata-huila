@@ -15,6 +15,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
+import { PushNotificationsProvider } from '@/components/notifications';
 import { PrinterPickerModal } from '@/components/printing';
 import { StackHeader } from '@/components/ui';
 import { startSupabaseAuthLifecycle } from '@/lib/supabase';
@@ -149,9 +150,11 @@ function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <OfflineProvider>
-          <RootLayoutNav />
-          <PrinterPickerModal />
-          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <PushNotificationsProvider>
+            <RootLayoutNav />
+            <PrinterPickerModal />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+          </PushNotificationsProvider>
         </OfflineProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

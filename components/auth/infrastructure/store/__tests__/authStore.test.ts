@@ -1,6 +1,7 @@
 import { readStoredSession, supabase } from '@/lib/supabase';
 import { getLastOnlineVerifiedAt, setLastOnlineVerifiedAt } from '@/lib/offline/security/secureKeys';
 import { wipeLocalOfflineData } from '@/lib/offline/security/wipe';
+import { unregisterPushDevice } from '@/components/notifications/infrastructure/services/pushDeviceService';
 import type { Session, User } from '@supabase/supabase-js';
 import { useAuthStore } from '../authStore';
 
@@ -28,6 +29,10 @@ jest.mock('@/lib/offline/security/wipe', () => ({
   wipeLocalOfflineData: jest.fn(),
 }));
 
+jest.mock('@/components/notifications/infrastructure/services/pushDeviceService', () => ({
+  unregisterPushDevice: jest.fn(async () => undefined),
+}));
+
 const auth = supabase.auth as unknown as {
   onAuthStateChange: jest.Mock;
   getSession: jest.Mock;
@@ -39,6 +44,7 @@ const mockFrom = supabase.from as jest.Mock;
 const mockGetLastOnlineVerifiedAt = getLastOnlineVerifiedAt as jest.Mock;
 const mockSetLastOnlineVerifiedAt = setLastOnlineVerifiedAt as jest.Mock;
 const mockWipe = wipeLocalOfflineData as jest.Mock;
+const mockUnregisterPush = unregisterPushDevice as jest.Mock;
 const mockReadStoredSession = readStoredSession as jest.Mock;
 
 type AuthChangeHandler = (event: string, session: Session | null) => void;
@@ -215,5 +221,46 @@ describe('authStore.initialize', () => {
     expect(state.offlineSession).toBe(false);
     expect(mockSetLastOnlineVerifiedAt).toHaveBeenCalled();
     expect(auth.signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('signOut y las notificaciones', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    auth.signOut.mockResolvedValue({ error: null });
+    mockUnregisterPush.mockResolvedValue(undefined);
+  });
+
+  it('da de baja el token antes de borrar los datos locales y de cerrar la sesión', async () => {
+    const orden: string[] = [];
+    mockUnregisterPush.mockImplementation(async () => {
+      orden.push('push');
+    });
+    mockWipe.mockImplementation(async () => {
+      orden.push('wipe');
+    });
+    auth.signOut.mockImplementation(async () => {
+      orden.push('signOut');
+      return { error: null };
+    });
+
+    await useAuthStore.getState().signOut();
+
+    // El RPC necesita la sesión viva y el token vive en el almacén seguro que
+    // borra el wipe: cualquier otro orden deja el token apuntando a un usuario
+    // que ya no está en el teléfono.
+    expect(orden).toEqual(['push', 'wipe', 'signOut']);
+  });
+
+  it('deja la sesión limpia aunque el dispositivo no se pudiera dar de baja', async () => {
+    // El servicio real absorbe sus errores (ver pushDeviceService.test.ts), así
+    // que aquí se comprueba lo que importa: que el cierre llega hasta el final.
+    mockUnregisterPush.mockResolvedValue(undefined);
+
+    await useAuthStore.getState().signOut();
+
+    expect(auth.signOut).toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
   });
 });

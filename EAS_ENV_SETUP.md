@@ -21,6 +21,9 @@ eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value "tu_dsn_
 
 # Origen del web de catálogos (módulo Catálogos): los enlaces privados se arman como <origen>/c/<token>
 eas secret:create --scope project --name EXPO_PUBLIC_CATALOG_SITE_URL --value "https://catalogo.tu-dominio.com"
+
+# Endpoint que despacha las notificaciones push (ruta del panel web).
+eas secret:create --scope project --name EXPO_PUBLIC_NOTIFICATIONS_DISPATCH_URL --value "https://tu-panel.com/api/notifications/dispatch"
 ```
 
 ### 2. Verificar que las variables estén configuradas

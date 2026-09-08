@@ -1,3 +1,4 @@
+import { kickNotificationDispatch } from '@/components/notifications/infrastructure/services/dispatchNotifications';
 import { logHandledError } from '@/lib/errorMessage';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
@@ -466,6 +467,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     }
 
     pendingCreateRequests.delete(requestFingerprint);
+
+    // Adelanta el aviso a los administradores. Activar genera además la orden
+    // de entrega, así que puede haber dos avisos que despachar.
+    kickNotificationDispatch();
 
     await get().fetchList();
     return { numero: negocio.numero, id: negocio.id };

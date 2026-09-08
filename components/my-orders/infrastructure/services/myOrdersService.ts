@@ -5,8 +5,22 @@ export type PendingDeliveryOrder =
   Database['public']['Functions']['get_my_authorized_delivery_orders']['Returns'][number];
 export type RegisteredDeliveryOrder =
   Database['public']['Functions']['get_my_registered_delivery_orders']['Returns'][number];
-export type RegisteredDeliveryOrderItem =
+type RawRegisteredDeliveryOrderItem =
   Database['public']['Functions']['get_my_registered_delivery_order_items']['Returns'][number];
+
+/**
+ * Los tipos generados declaran no nulas todas las columnas de un RETURNS TABLE,
+ * porque Postgres no expresa la nulabilidad de una función. Estas dos sí llegan
+ * nulas: la observación de entrega es opcional y la de anulación viene de un
+ * LEFT JOIN que solo tiene fila cuando la salida se canceló.
+ */
+export type RegisteredDeliveryOrderItem = Omit<
+  RawRegisteredDeliveryOrderItem,
+  'delivery_observations' | 'cancellation_observations'
+> & {
+  delivery_observations: string | null;
+  cancellation_observations: string | null;
+};
 
 export interface RegisteredOrdersPage {
   orders: RegisteredDeliveryOrder[];

@@ -9,6 +9,10 @@ export const SECURE_KEYS = {
   cachedRoles: 'casa_ideal.cached_roles',
   appLockEnabled: 'casa_ideal.app_lock_enabled',
   profileName: 'casa_ideal.profile_name',
+  /** Identificador estable del aparato, para diagnosticar registros de push. */
+  pushDeviceKey: 'casa_ideal.push_device_key',
+  /** Último token de Expo registrado: hace falta para darlo de baja al salir. */
+  pushToken: 'casa_ideal.push_token',
 } as const;
 
 const LEGACY_KEYS: Record<string, string> = {
