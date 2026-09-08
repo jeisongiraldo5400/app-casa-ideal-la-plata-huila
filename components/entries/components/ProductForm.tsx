@@ -1,12 +1,14 @@
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Spacing, Typography, getColors } from '@/constants/theme';
+import { errorMessage } from '@/lib/errorMessage';
+import { useTheme } from '@/components/theme';
 import { Formik, FormikHelpers } from 'formik';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Yup from 'yup';
 
 import { EntryOptionPickerField } from './EntryOptionPickerField';
@@ -43,12 +45,11 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     loadCategories,
     loadBrands,
     createProduct,
-    currentQuantity,
-  } = useEntriesStore();
+  } = useEntriesStore(useShallow((state) => ({ categories: state.categories, brands: state.brands, supplierId: state.supplierId, loadCategories: state.loadCategories, loadBrands: state.loadBrands, createProduct: state.createProduct })));
 
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  const uiColorScheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const { isDark } = useTheme();
+  const Colors = getColors(isDark);
+  const uiColorScheme = isDark ? 'dark' : 'light';
   const [loading, setLoading] = useState(false);
 
   const categoryOptions = useMemo(
@@ -63,7 +64,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
   useEffect(() => {
     loadCategories();
     loadBrands();
-  }, []);
+  }, [loadBrands, loadCategories]);
 
   const initialValues: ProductFormValues = {
     name: '',
@@ -78,6 +79,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
     values: ProductFormValues,
     { setSubmitting }: FormikHelpers<ProductFormValues>
   ) => {
+    const capturedGeneration = useEntriesStore.getState().getResetGeneration();
     setLoading(true);
     try {
       const { product, error } = await createProduct({
@@ -92,14 +94,22 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
 
       if (error) {
         Alert.alert('Error', error.message || 'Error al crear el producto');
-      } else if (product) {
-        // Agregar el producto a la entrada automáticamente
-        useEntriesStore.getState().addProductToEntry(product, currentQuantity, barcode);
-        Alert.alert('Éxito', 'Producto creado y agregado a la entrada');
+      } else if (product && useEntriesStore.getState().getResetGeneration() === capturedGeneration) {
+        // El producto debe pasar por la misma verificación de cantidad que uno escaneado.
+        // Si el store fue reseteado mientras se creaba (usuario cambió de pantalla),
+        // el producto ya quedó guardado en BD, pero no reanudamos el flujo de entrada.
+        useEntriesStore.setState({
+          currentProduct: product,
+          currentScannedBarcode: barcode,
+          currentQuantity: 1,
+          step: 'scanning',
+          uiStage: 'product_review',
+          error: null,
+        });
         onProductCreated(product.id);
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+    } catch (error: unknown) {
+      Alert.alert('Error', errorMessage(error, 'Ocurrió un error inesperado'));
     } finally {
       setLoading(false);
       setSubmitting(false);
@@ -107,7 +117,11 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Card style={styles.card}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: Colors.text.primary }]}>Producto no encontrado</Text>
@@ -220,49 +234,20 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
         </Formik>
       </Card>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  card: {
-    margin: 20,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  buttons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-  },
-  cancelButton: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  card: { margin: Spacing.xl },
+  header: { marginBottom: Spacing.xxl },
+  title: { ...Typography.section, marginBottom: Spacing.sm },
+  subtitle: { ...Typography.bodySmall },
+  field: { marginBottom: Spacing.lg },
+  label: { ...Typography.bodySmallStrong, fontWeight: '600', marginBottom: Spacing.sm },
+  errorText: { ...Typography.metadata, marginTop: Spacing.xs },
+  buttons: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.sm },
+  button: { flex: 1 },
+  cancelButton: { flex: 1 },
 });
-

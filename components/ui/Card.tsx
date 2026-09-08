@@ -1,26 +1,30 @@
+import { useTheme } from '@/components/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
-import { getColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle | ViewStyle[];
+  style?: StyleProp<ViewStyle>;
+  variant?: 'elevated' | 'outlined' | 'muted';
 }
 
-export function Card({ children, style }: CardProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const Colors = getColors(colorScheme === 'dark');
-  
+export function Card({ children, style, variant = 'elevated' }: CardProps) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+
   return (
-    <View style={[
-      styles.card,
-      {
-        backgroundColor: Colors.background.paper,
-        borderColor: Colors.divider,
-      },
-      style
-    ]}>
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor:
+            variant === 'muted' ? colors.surface.muted : colors.background.paper,
+          borderColor: colors.divider,
+        },
+        variant === 'outlined' && styles.outlined,
+        style,
+      ]}>
       {children}
     </View>
   );
@@ -28,17 +32,13 @@ export function Card({ children, style }: CardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    borderRadius: Radius.card,
+    padding: Spacing.xl,
+    ...Shadows.card,
     borderWidth: 1,
   },
+  outlined: {
+    elevation: 0,
+    shadowOpacity: 0,
+  },
 });
-

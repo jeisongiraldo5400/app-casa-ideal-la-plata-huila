@@ -3,7 +3,7 @@
     "name": "Casa Ideal",
     "slug": "app-casa-ideal",
     "version": "2.0.1",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/images/icono.png",
@@ -20,7 +20,11 @@
       "icon": "./assets/images/icono.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras."
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras y capturar soportes de pago.",
+        "NSPhotoLibraryUsageDescription": "Permitir acceso a la galería para adjuntar soportes de pago.",
+        "NSFaceIDUsageDescription": "Usamos Face ID para proteger la cartera y los datos de clientes en este dispositivo.",
+        "NSBluetoothAlwaysUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio.",
+        "NSBluetoothPeripheralUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio."
       }
     },
     "android": {
@@ -36,8 +40,18 @@
         "imageWidth": 200
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./google-services.json",
       "package": "com.casaideal.laplatahuila"
     },
     "web": {
@@ -46,6 +60,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -60,7 +80,39 @@
         {
           "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barras."
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Permitir acceso a la cámara para capturar soportes de pago.",
+          "photosPermission": "Permitir acceso a la galería para adjuntar soportes de pago."
+        }
+      ],
+      "expo-local-authentication",
+      [
+        "@morrowdigital/watermelondb-expo-plugin",
+        {
+          "disableJsi": false
+        }
+      ],
+      "./plugins/withWatermelonJsiCmakePath",
+      "./plugins/withAndroidBluetoothPrinterPermissions",
+      [
+        "react-native-thermal-printer-driver",
+        {
+          "bluetoothAlwaysUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio.",
+          "bluetoothPeripheralUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#1e3a8a",
+          "defaultChannel": "default"
+        }
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -3,7 +3,6 @@ import { create } from 'zustand';
 
 import { Database } from '@/types/database.types';
 
-type Product = Database['public']['Tables']['products']['Row'];
 type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 
 // Tipo para el resultado de get_products_dashboard RPC
@@ -23,11 +22,20 @@ export interface InventoryItem {
   created_at: string;
 }
 
+interface InventoryLoadOptions {
+  page?: number;
+  append?: boolean;
+  refreshing?: boolean;
+  warehouseId?: string | null;
+}
+
 interface InventoryState {
   inventory: InventoryItem[];
   warehouses: Warehouse[];
   selectedWarehouseId: string | null;
   loading: boolean;
+  refreshing: boolean;
+  loadingMore: boolean;
   error: string | null;
   searchQuery: string;
   // Paginación
@@ -36,24 +44,27 @@ interface InventoryState {
   totalCount: number;
   hasMore: boolean;
   loadWarehouses: () => Promise<void>;
-  loadInventory: (warehouseId?: string) => Promise<void>;
+  loadInventory: (options?: InventoryLoadOptions) => Promise<void>;
+  refreshInventory: () => Promise<void>;
   setSelectedWarehouse: (warehouseId: string | null) => void;
   setSearchQuery: (query: string) => void;
-  setPage: (page: number) => void;
-  setPageSize: (size: number) => void;
   loadNextPage: () => Promise<void>;
   clearError: () => void;
 }
+
+let latestInventoryRequestId = 0;
 
 export const useInventoryStore = create<InventoryState>((set, get) => ({
   inventory: [],
   warehouses: [],
   selectedWarehouseId: null,
   loading: false,
+  refreshing: false,
+  loadingMore: false,
   error: null,
   searchQuery: '',
   currentPage: 1,
-  pageSize: 50,
+  pageSize: 20,
   totalCount: 0,
   hasMore: false,
 
@@ -83,33 +94,60 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     }
   },
 
-  loadInventory: async (warehouseId?: string) => {
-    const { searchQuery, currentPage, pageSize } = get();
-    const targetWarehouseId = warehouseId || get().selectedWarehouseId;
+  loadInventory: async (options = {}) => {
+    const { searchQuery, pageSize, selectedWarehouseId } = get();
+    const page = options.page ?? 1;
+    const append = options.append ?? false;
+    const refreshing = options.refreshing ?? false;
+    const targetWarehouseId = options.warehouseId === undefined
+      ? selectedWarehouseId
+      : options.warehouseId;
+    const requestId = ++latestInventoryRequestId;
 
-    set({ loading: true, error: null });
+    set({
+      loading: !append && !refreshing,
+      refreshing,
+      loadingMore: append,
+      error: null,
+    });
 
     try {
-      // OPTIMIZADO: Usar RPC get_products_dashboard con paginación y búsqueda del lado del servidor
       const { data, error } = await supabase.rpc('get_products_dashboard', {
-        page: currentPage,
+        page,
         page_size: pageSize,
         search_term: searchQuery || null,
+        include_deleted: false,
+        ...(targetWarehouseId ? { p_warehouse_id: targetWarehouseId } : {}),
       });
+
+      if (requestId !== latestInventoryRequestId) return;
 
       if (error) {
         console.error('Error loading inventory:', error);
-        set({ inventory: [], loading: false, error: error.message });
+        set({
+          loading: false,
+          refreshing: false,
+          loadingMore: false,
+          error: error.message,
+        });
         return;
       }
 
       if (!data || data.length === 0) {
-        set({ inventory: [], loading: false, totalCount: 0, hasMore: false });
+        set((state) => ({
+          inventory: append ? state.inventory : [],
+          currentPage: append ? state.currentPage : 1,
+          loading: false,
+          refreshing: false,
+          loadingMore: false,
+          totalCount: append ? state.inventory.length : 0,
+          hasMore: false,
+        }));
         return;
       }
 
       // El primer resultado contiene total_count para paginación
-      const totalCount = data[0]?.total_count || 0;
+      const totalCount = Number(data[0]?.total_count || 0);
 
       // Transformar datos del RPC al formato de InventoryItem
       const inventoryItems: InventoryItem[] = data.map((item: ProductDashboardResult) => {
@@ -153,52 +191,78 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         };
       });
 
-      // Filtrar por bodega si está seleccionada (filtro del lado del cliente para warehouse)
-      const filteredItems = targetWarehouseId
-        ? inventoryItems.filter(item => item.stock_by_warehouse[targetWarehouseId])
-        : inventoryItems;
+      const hasMore = totalCount > page * pageSize;
 
-      const hasMore = totalCount > currentPage * pageSize;
-
-      set({
-        inventory: filteredItems,
+      set((state) => ({
+        inventory: append
+          ? [
+              ...state.inventory,
+              ...inventoryItems.filter(
+                (item) => !state.inventory.some((current) => current.id === item.id)
+              ),
+            ]
+          : inventoryItems,
+        currentPage: page,
         loading: false,
+        refreshing: false,
+        loadingMore: false,
         totalCount,
         hasMore,
-      });
+      }));
     } catch (error: any) {
+      if (requestId !== latestInventoryRequestId) return;
       console.error('Error loading inventory (catch):', error);
-      set({ inventory: [], loading: false, error: error.message || 'Error al cargar el inventario' });
+      set({
+        loading: false,
+        refreshing: false,
+        loadingMore: false,
+        error: error.message || 'Error al cargar el inventario',
+      });
     }
   },
 
+  refreshInventory: async () => {
+    await get().loadInventory({ page: 1, refreshing: true });
+  },
+
   setSelectedWarehouse: (warehouseId) => {
-    set({ selectedWarehouseId: warehouseId, currentPage: 1 });
-    // Recargar inventario con el nuevo filtro
-    get().loadInventory(warehouseId || undefined);
+    if (warehouseId === get().selectedWarehouseId) return;
+    latestInventoryRequestId += 1;
+    set({
+      selectedWarehouseId: warehouseId,
+      inventory: [],
+      currentPage: 1,
+      totalCount: 0,
+      hasMore: false,
+      loading: false,
+      refreshing: false,
+      loadingMore: false,
+      error: null,
+    });
+    void get().loadInventory({ page: 1, warehouseId });
   },
 
   setSearchQuery: (query) => {
-    set({ searchQuery: query, currentPage: 1 });
-    // Debounce se maneja en el componente, aquí solo actualizamos el estado
-  },
-
-  setPage: (page) => {
-    set({ currentPage: page });
-    get().loadInventory();
-  },
-
-  setPageSize: (size) => {
-    set({ pageSize: size, currentPage: 1 });
-    get().loadInventory();
+    if (query === get().searchQuery) return;
+    latestInventoryRequestId += 1;
+    set({
+      searchQuery: query,
+      inventory: [],
+      currentPage: 1,
+      totalCount: 0,
+      hasMore: false,
+      loading: false,
+      refreshing: false,
+      loadingMore: false,
+      error: null,
+    });
   },
 
   loadNextPage: async () => {
-    const { currentPage, hasMore, loading } = get();
-    if (!hasMore || loading) return;
+    const { currentPage, hasMore, loading, refreshing, loadingMore } = get();
+    if (!hasMore || loading || refreshing || loadingMore) return;
 
-    set({ currentPage: currentPage + 1 });
-    await get().loadInventory();
+    await get().loadInventory({ page: currentPage + 1, append: true });
   },
 
   clearError: () => {

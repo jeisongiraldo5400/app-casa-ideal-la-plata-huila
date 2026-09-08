@@ -1,10 +1,11 @@
 import { LoginForm } from '@/components/auth/components/LoginForm';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Spacing, getColors } from '@/constants/theme';
 import Constants from 'expo-constants';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,51 +14,75 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function LoginScreen() {
+  return (
+    <ScreenErrorBoundary screen="Iniciar sesión">
+      <LoginScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function LoginScreenInner() {
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: Colors.background.default }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: Math.max(insets.top, 16),
-            paddingBottom: Math.max(insets.bottom, 24),
-          },
-        ]}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.brandPanel}>
-          <View
-            style={[
-              styles.logoContainer,
-              {
-                backgroundColor: Colors.background.paper,
-                borderColor: Colors.divider,
-              },
-            ]}>
-            <Image
-              source={require('@/assets/images/logo_completo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-              accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
-            />
-          </View>
-          <Text style={[styles.brandTagline, { color: Colors.text.secondary }]}>
-            Portal operativo
-          </Text>
-        </View>
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-        <LoginForm />
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
 
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const keyboardPadding =
+    Platform.OS === 'ios' ? Spacing.xxl : keyboardHeight + Spacing.lg;
+
+  const content = (
+    <ScrollView
+      contentContainerStyle={[
+        styles.scrollContent,
+        {
+          justifyContent: keyboardVisible ? 'flex-start' : 'center',
+          paddingTop: keyboardVisible ? Math.max(insets.top, 8) : Math.max(insets.top, 16),
+          paddingBottom: keyboardVisible
+            ? keyboardPadding
+            : Math.max(insets.bottom, 24),
+        },
+      ]}
+      keyboardShouldPersistTaps="always"
+      keyboardDismissMode="none"
+      showsVerticalScrollIndicator={false}>
+      <View style={[styles.brand, keyboardVisible && styles.brandCompact]}>
+        <Text style={[styles.portalLabel, { color: Colors.primary.main }]}>
+          PORTAL OPERATIVO
+        </Text>
+        <Image
+          source={require('@/assets/images/logo_completo.png')}
+          style={[styles.logoImage, keyboardVisible && styles.logoImageCompact]}
+          resizeMode="contain"
+          accessibilityLabel="Casa Ideal — Muebles y electrodomésticos"
+        />
+      </View>
+
+      <LoginForm />
+
+      {!keyboardVisible ? (
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: Colors.text.secondary }]}>
             Versión {Constants.expoConfig?.version || '1.0.0'}
@@ -66,9 +91,21 @@ export default function LoginScreen() {
             © {new Date().getFullYear()} Casa Ideal
           </Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      ) : null}
+    </ScrollView>
   );
+
+  const screenStyle = [styles.container, { backgroundColor: Colors.background.default }];
+
+  if (Platform.OS === 'ios') {
+    return (
+      <KeyboardAvoidingView style={screenStyle} behavior="padding">
+        {content}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return <View style={screenStyle}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -77,41 +114,36 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.xxl,
   },
-  brandPanel: {
+  brand: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    borderRadius: 18,
-    borderWidth: 1,
-    elevation: 2,
-    justifyContent: 'center',
+    alignSelf: 'center',
     width: '100%',
-    maxWidth: 300,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    maxWidth: 400,
+    marginBottom: Spacing.lg,
+  },
+  brandCompact: {
+    marginBottom: Spacing.sm,
+  },
+  portalLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    marginBottom: Spacing.md,
   },
   logoImage: {
     width: '100%',
-    height: 76,
+    maxWidth: 240,
+    height: 72,
   },
-  brandTagline: {
-    marginTop: 10,
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
+  logoImageCompact: {
+    height: 48,
+    maxWidth: 180,
   },
   footer: {
-    marginTop: 28,
+    marginTop: Spacing.xxl,
     alignItems: 'center',
     gap: 4,
   },

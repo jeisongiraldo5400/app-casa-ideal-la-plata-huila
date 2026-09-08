@@ -11,11 +11,12 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
+import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -24,22 +25,53 @@ import {
   formatCOP,
   type CreditFrequency,
 } from '@/lib/creditCalculator';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import {
   useNegociosStore,
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import {
+  negocioSaveBlockedBySignature,
+  sellerSignatureRequiredError,
+} from '@/lib/negocioSignatureRules';
+import {
+  createDownPaymentRow,
+  downPaymentRowsToSchedule,
+  downPaymentScheduleError,
+  downPaymentScheduleTotal,
+  financedAfterDownPayments,
+  installmentPlanError,
+  requiresInstallmentPlan,
+  sortDownPaymentSchedule,
+  type DownPaymentRow,
+} from '@/lib/negocios/negocioCreditRules';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { getCachedProfileName } from '@/lib/offline/security/secureKeys';
+import { fetchSellerOptions, withCurrentUserOption, type SellerOption } from '@/lib/users/sellersService';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
+import { NegocioCreditSummary } from '@/components/negocios/components/NegocioCreditSummary';
 import {
   availableQtyForItem,
   fetchStockForProducts,
   formatNegocioMoneyInput,
   itemsHaveValidStock,
-  parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import {
+  fetchAvailableDeliveryOrders,
+  formatDeliveryOrderOptionLabel,
+  stockMapFromDeliveryOrder,
+  type DeliveryOrderOption,
+} from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
+import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
+import {
+  searchProductsForNegocio,
+  type NegocioProduct,
+} from '@/components/negocios/infrastructure/services/negociosProductsService';
 
 type Customer = {
   id: string;
@@ -47,11 +79,7 @@ type Customer = {
   id_number: string;
 };
 
-type Product = {
-  id: string;
-  name: string;
-  sale_price: number;
-};
+type Product = NegocioProduct;
 type Departamento = { id: string; nombre: string };
 type Municipio = { id: string; nombre: string; departamento_id: string };
 
@@ -62,13 +90,31 @@ const WIZARD_STEPS = [
   { id: 3, label: 'Firma', icon: 'draw' },
 ];
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'object' && error && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
+
 const localDateValue = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 export default function NegocioCreateScreen() {
+  return (
+    <ScreenErrorBoundary screen="Crear negocio">
+      <NegocioCreateScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function NegocioCreateScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { user } = useAuth();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -95,7 +141,11 @@ export default function NegocioCreateScreen() {
   const [stockByProduct, setStockByProduct] = useState<
     Record<string, ProductWarehouseStock[]>
   >({});
-  const [downPayment, setDownPayment] = useState('0');
+  /** Abonos iniciales pactados (vacío = sin cuota inicial). */
+  const [downPayments, setDownPayments] = useState<DownPaymentRow[]>([]);
+  /** '' = usuario actual. */
+  const [sellerId, setSellerId] = useState('');
+  const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
   const [installments, setInstallments] = useState('3');
   const [frequency, setFrequency] = useState<CreditFrequency>('mensual');
   const [firstDueDate, setFirstDueDate] = useState('');
@@ -111,12 +161,53 @@ export default function NegocioCreateScreen() {
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
+  const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderOption[]>([]);
+  const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
+
+  /**
+   * La pantalla vive en Tabs (href: null) y no se desmonta al navegar: sin
+   * este reset, al volver a "Nuevo" el wizard reaparece lleno en el último
+   * paso y un segundo "Activar" crearía un negocio duplicado.
+   */
+  const resetForm = useCallback(() => {
+    setStep(0);
+    setCustomers([]);
+    setProducts([]);
+    setCustomerQuery('');
+    setProductQuery('');
+    setCustomer(null);
+    setCodeudor(null);
+    setDepartamentoId('');
+    setMunicipioId('');
+    setDireccion('');
+    setItems([]);
+    setStockByProduct({});
+    setDownPayments([]);
+    setSellerId('');
+    setInstallments('3');
+    setFrequency(creditSettings?.default_frequency || 'mensual');
+    setFirstDueDate('');
+    setSignature('');
+    setSellerSignature('');
+    setGuarantorSignature('');
+    setShowNewCustomerModal(false);
+    setNewCustomerName('');
+    setNewCustomerId('');
+    setNewCustomerPhone('');
+    setPickingCodeudor(false);
+    setOriginType('bodega');
+    setSelectedDeliveryOrder(null);
+    // Las OE disponibles cambian tras vincular una: se recargan.
+    setLoadingInitialData(true);
+    setInitialDataReload((value) => value + 1);
+  }, [creditSettings?.default_frequency]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m] = await Promise.all([
+        const [, d, m, orders, sellers, cachedName] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -130,38 +221,46 @@ export default function NegocioCreateScreen() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .order('nombre'),
+        fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
+        fetchSellerOptions().catch(() => [] as SellerOption[]),
+        getCachedProfileName().catch(() => null),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
         if (!cancelled) {
           setDepartamentos(d.data || []);
           setMunicipios(m.data || []);
+          setDeliveryOrders(orders || []);
+          setSellerOptions(
+            withCurrentUserOption(
+              sellers || [],
+              user?.id ? { id: user.id, name: cachedName || user.email || null } : null
+            )
+          );
           setInitialDataError('');
         }
-      } catch (error: any) {
-        if (!cancelled) setInitialDataError(error.message || 'No fue posible cargar los datos requeridos');
+      } catch (error: unknown) {
+        if (!cancelled) setInitialDataError(errorMessage(error, 'No fue posible cargar los datos requeridos'));
       } finally {
         if (!cancelled) setLoadingInitialData(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [fetchCreditSettings, initialDataReload]);
+  }, [fetchCreditSettings, initialDataReload, user?.id, user?.email]);
 
   useEffect(() => {
     const query = customerQuery.trim();
     if (!query) { setCustomers([]); return; }
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const pattern = `%${query}%`;
-      const [byName, byDocument] = await Promise.all([
-        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('name', pattern).order('name').limit(20),
-        supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('id_number', pattern).order('name').limit(20),
-      ]);
-      if (!cancelled) {
-        const error = byName.error || byDocument.error;
-        if (error) Alert.alert('Error', 'No fue posible buscar clientes');
-        const unique = new Map([...(byName.data || []), ...(byDocument.data || [])].map((row) => [row.id, row]));
-        setCustomers(error ? [] : [...unique.values()].slice(0, 20));
+      try {
+        const rows = await searchCustomersForNegocio(query);
+        if (!cancelled) setCustomers(rows);
+      } catch {
+        if (!cancelled) {
+          Alert.alert('Error', 'No fue posible buscar clientes');
+          setCustomers([]);
+        }
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -172,17 +271,14 @@ export default function NegocioCreateScreen() {
     if (!query) { setProducts([]); return; }
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, sale_price')
-        .is('deleted_at', null)
-        .eq('status', true)
-        .ilike('name', `%${query}%`)
-        .order('name')
-        .limit(20);
-      if (!cancelled) {
-        if (error) Alert.alert('Error', 'No fue posible buscar productos');
-        setProducts(error ? [] : data || []);
+      try {
+        const rows = await searchProductsForNegocio(query);
+        if (!cancelled) setProducts(rows);
+      } catch (error) {
+        if (!cancelled) {
+          Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          setProducts([]);
+        }
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -198,6 +294,16 @@ export default function NegocioCreateScreen() {
   const stockProductIdsKey = [...new Set(items.map((i) => i.product_id))].sort().join(',');
 
   useEffect(() => {
+    if (originType === 'orden_entrega') {
+      try {
+        setStockByProduct(stockMapFromDeliveryOrder(selectedDeliveryOrder));
+      } catch (error: unknown) {
+        setStockByProduct({});
+        Alert.alert('Error', errorMessage(error, 'No se pudieron cargar los productos de la orden'));
+      }
+      return;
+    }
+
     const productIds = stockProductIdsKey ? stockProductIdsKey.split(',') : [];
     if (!productIds.length) {
       setStockByProduct({});
@@ -209,16 +315,16 @@ export default function NegocioCreateScreen() {
       .then((map) => {
         if (!cancelled) setStockByProduct(map);
       })
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          Alert.alert('Error', error.message || 'No se pudo consultar stock');
+          Alert.alert('Error', errorMessage(error, 'No se pudo consultar stock'));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [stockProductIdsKey]);
+  }, [stockProductIdsKey, originType, selectedDeliveryOrder]);
 
   const handleStockLoaded = useCallback(
     (productId: string, stock: ProductWarehouseStock[]) => {
@@ -233,16 +339,46 @@ export default function NegocioCreateScreen() {
     rounding_unit: 1000,
   };
   const installmentsNumber = Number(installments);
-  const installmentsValid = Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1;
-
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const downPaymentSchedule = downPaymentRowsToSchedule(downPayments);
+  const downPaymentError = downPaymentScheduleError(downPaymentSchedule, localDateValue(), subtotal);
+  const downPaymentTotal = downPaymentScheduleTotal(downPaymentSchedule);
+  // Si los abonos cubren el valor de los productos no hay plan de cuotas.
+  const planRequired = requiresInstallmentPlan(subtotal, downPaymentSchedule);
+  // Con saldo, el vendedor define libremente la cantidad de cuotas: solo se
+  // exige un entero mayor a 0, sin tope superior.
+  const installmentsValid =
+    !planRequired || (Number.isSafeInteger(installmentsNumber) && installmentsNumber >= 1);
+  const effectiveInstallmentsCount =
+    planRequired && Number.isSafeInteger(installmentsNumber) ? installmentsNumber : 0;
+  const planError = installmentPlanError(
+    financedAfterDownPayments(subtotal, downPaymentSchedule),
+    effectiveInstallmentsCount,
+    firstDueDate,
+    localDateValue()
+  );
+  // Antes los dos botones del último paso quedaban habilitados sin firmas: al
+  // pulsarlos saltaba una alerta que repetía el aviso ya visible en pantalla,
+  // así que parecía que no hacían nada. Ahora se deshabilitan y el texto dice
+  // qué falta. "Guardar borrador" incluido: la base exige la firma al insertar.
+  const saveBlockedReason = negocioSaveBlockedBySignature(signature, sellerSignature);
+  const effectiveSellerId = sellerId || user?.id || '';
   const calc = calculateCredit({
     productsSubtotal: subtotal,
-    downPayment: parseNegocioMoney(downPayment) || 0,
-    installmentsCount: installmentsValid ? installmentsNumber : 1,
+    downPayment: downPaymentTotal,
+    installmentsCount: effectiveInstallmentsCount,
     frequency,
     settings,
   });
+  const addDownPayment = () =>
+    setDownPayments((rows) => [
+      ...rows,
+      createDownPaymentRow({ dueDate: rows.length === 0 ? localDateValue() : '' }),
+    ]);
+  const updateDownPayment = (key: string, patch: Partial<Pick<DownPaymentRow, 'amount' | 'dueDate'>>) =>
+    setDownPayments((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const removeDownPayment = (key: string) =>
+    setDownPayments((rows) => rows.filter((row) => row.key !== key));
 
   // Búsqueda de clientes: VACÍA si no hay término de búsqueda
   const filteredCustomers = useMemo(() => {
@@ -251,8 +387,8 @@ export default function NegocioCreateScreen() {
     return customers
       .filter(
         (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.id_number.toLowerCase().includes(q)
+          (c.name || '').toLowerCase().includes(q) ||
+          (c.id_number || '').toLowerCase().includes(q)
       )
       .slice(0, 8);
   }, [customers, customerQuery]);
@@ -269,31 +405,33 @@ export default function NegocioCreateScreen() {
     index: number,
     patch: Partial<Pick<NegocioItem, 'quantity' | 'unit_price' | 'warehouse_id'>>
   ) => {
-    setItems((prev) => {
-      const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row));
-      const updated = next[index];
-      if (!updated) return next;
+    const current = items[index];
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    const next = items.map((row, i) => (i === index ? updated : row));
 
-      if (patch.quantity !== undefined || patch.warehouse_id !== undefined) {
-        const available = availableQtyForItem(
-          stockByProduct,
-          next,
-          updated.product_id,
-          updated.warehouse_id,
-          index
+    if (patch.quantity !== undefined || patch.warehouse_id !== undefined) {
+      const available = availableQtyForItem(
+        stockByProduct,
+        next,
+        updated.product_id,
+        updated.warehouse_id,
+        index
+      );
+      if (updated.quantity > available) {
+        Alert.alert(
+          'Stock insuficiente',
+          `Disponible en ${warehouseLabel(updated.product_id, updated.warehouse_id)}: ${available}`
         );
-        if (updated.quantity > available) {
-          Alert.alert(
-            'Stock insuficiente',
-            `Disponible en ${warehouseLabel(updated.product_id, updated.warehouse_id)}: ${available}`
-          );
-          return prev;
-        }
+        return;
       }
+    }
 
-      return next;
-    });
+    setItems(next);
   };
+
+  const customerLocked =
+    originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'customer';
 
   const canAdvanceProductsStep = () => {
     if (!items.length) return false;
@@ -307,17 +445,11 @@ export default function NegocioCreateScreen() {
     }
     try {
       setCreatingCustomer(true);
-      const { data, error } = await supabase
-        .from('customers')
-        .insert({
-          name: newCustomerName.trim(),
-          id_number: newCustomerId.trim(),
-          phone: newCustomerPhone.trim() || null,
-        })
-        .select('id, name, id_number')
-        .single();
-
-      if (error) throw error;
+      const data = await createCustomer({
+        name: newCustomerName.trim(),
+        idNumber: newCustomerId.trim(),
+        phone: newCustomerPhone.trim() || null,
+      });
 
       setCustomers((prev) => [data, ...prev]);
       if (pickingCodeudor) {
@@ -331,8 +463,8 @@ export default function NegocioCreateScreen() {
       setNewCustomerPhone('');
       setShowNewCustomerModal(false);
       Alert.alert('¡Éxito!', `Cliente ${data.name} creado y seleccionado.`);
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo crear el cliente');
+    } catch (e: unknown) {
+      Alert.alert('Error', errorMessage(e, 'No se pudo crear el cliente'));
     } finally {
       setCreatingCustomer(false);
     }
@@ -350,47 +482,57 @@ export default function NegocioCreateScreen() {
     }
     if (!itemsHaveValidStock(items, stockByProduct)) {
       return Alert.alert(
-        'Stock insuficiente',
-        'Revise la bodega y cantidad de cada producto.'
+        originType === 'orden_entrega' ? 'Cantidad no disponible' : 'Stock insuficiente',
+        originType === 'orden_entrega'
+          ? 'Revise la cantidad respecto a la orden de entrega.'
+          : 'Revise la bodega y cantidad de cada producto.'
       );
     }
-    if (!firstDueDate) return Alert.alert('Indique fecha primera cuota');
-    if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado');
-    if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0');
-    const parsedDownPayment = parseNegocioMoney(downPayment);
-    if (!Number.isSafeInteger(parsedDownPayment) || parsedDownPayment < 0 || parsedDownPayment > subtotal) {
-      return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos');
-    }
-    if (activate && !signature) return Alert.alert('Firma del cliente requerida');
+    if (downPaymentError) return Alert.alert('Abonos iniciales', downPaymentError);
+    if (planError) return Alert.alert('Plan de cuotas', planError);
+    const signatureError = sellerSignatureRequiredError(signature, sellerSignature);
+    if (signatureError) return Alert.alert('Firma requerida', signatureError);
 
     try {
       savingRef.current = true;
       setSaving(true);
+      const numeroLabel = (numero: number | null | undefined) => formatNegocioCodigo(numero);
       const result = await createAndActivate({
         deal_date: localDateValue(),
         municipio_id: municipioId,
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
+        seller_id: effectiveSellerId || null,
+        source_delivery_order_id:
+          originType === 'orden_entrega' ? selectedDeliveryOrder?.id || null : null,
+        remission_id:
+          originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'remission'
+            ? selectedDeliveryOrder.id
+            : null,
         items,
-        down_payment: parsedDownPayment,
-        installments_count: installmentsNumber,
+        down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
+        installments_count: effectiveInstallmentsCount,
         frequency,
-        first_due_date: firstDueDate,
+        first_due_date: planRequired ? firstDueDate : null,
         customer_signature_data_url: signature || '',
         guarantor_signature_data_url: guarantorSignature || undefined,
         seller_signature_data_url: sellerSignature || undefined,
         activate,
       });
+      const fromDeliveryOrder = originType === 'orden_entrega';
+      resetForm();
       Alert.alert(
         '¡Éxito!',
         activate
-          ? `Negocio #${result?.numero} activado. Se creó la orden de entrega.`
-          : `Negocio #${result?.numero} guardado como borrador.`,
+          ? fromDeliveryOrder
+            ? `Negocio ${numeroLabel(result?.numero)} activado. Se vinculó la orden de entrega existente.`
+            : `Negocio ${numeroLabel(result?.numero)} activado. Se creó la orden de entrega.`
+          : `Negocio ${numeroLabel(result?.numero)} guardado como borrador.`,
         [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
       );
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo crear el negocio');
+    } catch (e: unknown) {
+      Alert.alert('Error', errorMessage(e, 'No se pudo crear el negocio'));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -398,7 +540,7 @@ export default function NegocioCreateScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.default }} edges={['bottom', 'left', 'right']}>
       {loadingInitialData && (
         <View style={{ padding: 12, flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
           <ActivityIndicator color={colors.primary.main} />
@@ -421,6 +563,10 @@ export default function NegocioCreateScreen() {
         </View>
       ) : null}
       {/* Wizard Steps Header */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={[styles.wizardHeader, { backgroundColor: colors.background.paper, borderBottomColor: colors.divider }]}>
         {WIZARD_STEPS.map((s, idx) => {
           const isActive = step === s.id;
@@ -471,9 +617,114 @@ export default function NegocioCreateScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}
+        keyboardShouldPersistTaps="handled"
       >
         {step === 0 && (
           <View style={styles.block}>
+            <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Origen del inventario
+            </Text>
+            <View style={styles.rowWrap}>
+              {([
+                { id: 'bodega' as const, label: 'Bodega central' },
+                { id: 'orden_entrega' as const, label: 'Orden de entrega existente' },
+              ]).map((option) => (
+                <Pressable
+                  key={option.id}
+                  onPress={() => {
+                    setOriginType(option.id);
+                    setSelectedDeliveryOrder(null);
+                    setItems([]);
+                    if (option.id === 'bodega') {
+                      setStockByProduct({});
+                    }
+                  }}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor:
+                        originType === option.id ? colors.primary.main : colors.background.paper,
+                      borderColor: colors.divider,
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color:
+                        originType === option.id
+                          ? colors.primary.contrastText
+                          : colors.text.primary,
+                      fontWeight: '700',
+                      fontSize: 12,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+              {originType === 'bodega'
+                ? 'Se genera una orden de entrega nueva y se reserva stock.'
+                : 'Se usan productos ya salidos o reservados. No se vuelve a descontar stock.'}
+            </Text>
+            {originType === 'orden_entrega' && (
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                  Orden de entrega *
+                </Text>
+                {deliveryOrders.length === 0 ? (
+                  <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                    No hay órdenes con productos disponibles.
+                  </Text>
+                ) : (
+                  deliveryOrders.map((order) => {
+                    const selected = selectedDeliveryOrder?.id === order.id;
+                    return (
+                      <Pressable
+                        key={order.id}
+                        onPress={() => {
+                          setSelectedDeliveryOrder(order);
+                          setItems([]);
+                          if (order.order_type === 'customer' && order.customer_id) {
+                            setCustomer({
+                              id: order.customer_id,
+                              name: order.customer_name || 'Cliente',
+                              id_number: order.customer_id_number || '',
+                            });
+                          }
+                        }}
+                        style={[
+                          styles.selectedCard,
+                          {
+                            backgroundColor: selected
+                              ? colors.primary.main + '12'
+                              : colors.background.paper,
+                            borderColor: selected ? colors.primary.main : colors.divider,
+                          },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name={selected ? 'check-circle' : 'local-shipping'}
+                          size={22}
+                          color={selected ? colors.primary.main : colors.text.secondary}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.selectedCardTitle, { color: colors.text.primary }]}>
+                            {formatDeliveryOrderOptionLabel(order)}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.text.secondary }}>
+                            {order.items?.length || 0} producto(s) disponible(s)
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            )}
+
             {/* SECCIÓN CLIENTE */}
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               {pickingCodeudor ? '1. Selección de Codeudor' : '1. Selección de Cliente'}
@@ -497,8 +748,11 @@ export default function NegocioCreateScreen() {
                 <TouchableOpacity
                   style={[styles.changeBtn, { borderColor: colors.primary.main }]}
                   onPress={() => setCustomer(null)}
+                  disabled={customerLocked}
                 >
-                  <Text style={{ color: colors.primary.main, fontSize: 12, fontWeight: '700' }}>Cambiar</Text>
+                  <Text style={{ color: colors.primary.main, fontSize: 12, fontWeight: '700' }}>
+                    {customerLocked ? 'Fijado por la OE' : 'Cambiar'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : pickingCodeudor && codeudor ? (
@@ -624,43 +878,60 @@ export default function NegocioCreateScreen() {
 
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Vendedor *
+                  </Text>
+                  <OptionPickerField
+                    value={effectiveSellerId}
+                    onValueChange={setSellerId}
+                    options={sellerOptions.map((seller) => ({
+                      value: seller.id,
+                      label: seller.full_name,
+                    }))}
+                    placeholder="Seleccione vendedor"
+                    modalTitle="Vendedor"
+                    colors={colors}
+                  />
+                  <Text style={{ fontSize: 12, color: colors.text.secondary }}>
+                    Usuario que realizó la venta; por defecto usted.
+                  </Text>
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
                     Departamento *
                   </Text>
-                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0 }]}>
-                    <Picker
-                      selectedValue={departamentoId}
-                      onValueChange={(value) => {
-                        setDepartamentoId(String(value));
-                        setMunicipioId('');
-                      }}
-                      style={{ color: colors.text.primary }}
-                    >
-                      <Picker.Item label="Seleccione departamento" value="" />
-                      {departamentos.map((departamento) => (
-                        <Picker.Item key={departamento.id} label={departamento.nombre} value={departamento.id} />
-                      ))}
-                    </Picker>
-                  </View>
+                  <OptionPickerField
+                    value={departamentoId}
+                    onValueChange={(next) => {
+                      setDepartamentoId(next);
+                      setMunicipioId('');
+                    }}
+                    options={departamentos.map((departamento) => ({
+                      value: departamento.id,
+                      label: departamento.nombre || 'Departamento',
+                    }))}
+                    placeholder="Seleccione departamento"
+                    modalTitle="Departamento"
+                    colors={colors}
+                  />
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
                     Municipio *
                   </Text>
-                  <View style={[styles.input, { borderColor: colors.divider, backgroundColor: colors.background.paper, paddingHorizontal: 0, opacity: departamentoId ? 1 : 0.55 }]}>
-                    <Picker
-                      enabled={Boolean(departamentoId)}
-                      selectedValue={municipioId}
-                      onValueChange={(value) => setMunicipioId(String(value))}
-                      style={{ color: colors.text.primary }}
-                    >
-                      <Picker.Item label="Seleccione municipio" value="" />
-                      {municipios
-                        .filter((municipio) => municipio.departamento_id === departamentoId)
-                        .map((municipio) => (
-                          <Picker.Item key={municipio.id} label={municipio.nombre} value={municipio.id} />
-                        ))}
-                    </Picker>
-                  </View>
+                  <OptionPickerField
+                    value={municipioId}
+                    onValueChange={setMunicipioId}
+                    options={municipios
+                      .filter((municipio) => municipio.departamento_id === departamentoId)
+                      .map((municipio) => ({
+                        value: municipio.id,
+                        label: municipio.nombre || 'Municipio',
+                      }))}
+                    placeholder="Seleccione municipio"
+                    modalTitle="Municipio"
+                    colors={colors}
+                    disabled={!departamentoId}
+                  />
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
@@ -684,19 +955,93 @@ export default function NegocioCreateScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               2. Selección de Productos
             </Text>
-            <NegocioProductAddSection
-              products={products}
-              productQuery={productQuery}
-              onProductQueryChange={setProductQuery}
-              items={items}
-              onAdd={handleAddItem}
-              onStockLoaded={handleStockLoaded}
-              colors={colors}
-            />
+            {originType === 'orden_entrega' ? (
+              <View style={{ gap: 8 }}>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                  {selectedDeliveryOrder
+                    ? `Productos de la orden #${selectedDeliveryOrder.order_number}`
+                    : 'Regrese y seleccione una orden de entrega.'}
+                </Text>
+                {(selectedDeliveryOrder?.items || []).map((remItem) => {
+                  const alreadyAdded = items.find(
+                    (i) =>
+                      i.product_id === remItem.product_id &&
+                      i.warehouse_id === remItem.warehouse_id
+                  );
+                  return (
+                    <View
+                      key={`${remItem.product_id}-${remItem.warehouse_id}`}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingVertical: 8,
+                        borderBottomWidth: 1,
+                        borderBottomColor: colors.divider,
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ color: colors.text.primary, fontWeight: '600' }}>
+                          {remItem.product_name}
+                        </Text>
+                        <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+                          {remItem.warehouse_name} · Disp: {remItem.available_quantity}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        disabled={Boolean(alreadyAdded)}
+                        onPress={() =>
+                          handleAddItem({
+                            product_id: remItem.product_id,
+                            warehouse_id: remItem.warehouse_id,
+                            quantity: 1,
+                            description: remItem.product_name,
+                            unit_price: remItem.sale_price || 0,
+                          })
+                        }
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: alreadyAdded
+                              ? colors.background.paper
+                              : colors.primary.main,
+                            borderWidth: 1,
+                            borderColor: colors.divider,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: alreadyAdded
+                              ? colors.text.secondary
+                              : colors.primary.contrastText,
+                            fontWeight: '700',
+                            fontSize: 12,
+                          }}
+                        >
+                          {alreadyAdded ? 'Agregado' : '+ Agregar'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <NegocioProductAddSection
+                products={products}
+                productQuery={productQuery}
+                onProductQueryChange={setProductQuery}
+                items={items}
+                onAdd={handleAddItem}
+                onStockLoaded={handleStockLoaded}
+                colors={colors}
+              />
+            )}
 
             <NegocioItemsList
               items={items}
               stockByProduct={stockByProduct}
+              warehouseLocked={originType === 'orden_entrega'}
               onUpdateItem={updateItem}
               onRemoveItem={(index) =>
                 setItems((prev) => prev.filter((_, i) => i !== index))
@@ -722,75 +1067,136 @@ export default function NegocioCreateScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               3. Condiciones de Crédito
             </Text>
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Cuota inicial (COP)</Text>
-            <TextInput
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-              value={downPayment}
-              onChangeText={(value) =>
-                setDownPayment(formatNegocioMoneyInput(value))
-              }
-            />
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
-            <TextInput
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
-              value={installments}
-              onChangeText={setInstallments}
-            />
-            {!installmentsValid && (
-              <Text style={{ color: colors.error.main, fontSize: 12 }}>
-                Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
+            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Abonos iniciales</Text>
+            <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
+              Registre la cuota inicial y los demás abonos pactados antes del plan de cuotas.
+              Cada abono queda pendiente en cartera hasta que el cliente lo pague.
+            </Text>
+            {downPayments.map((row, index) => (
+              <View
+                key={row.key}
+                style={[
+                  styles.abonoCard,
+                  { borderColor: colors.divider, backgroundColor: colors.background.paper },
+                ]}
+              >
+                <View style={styles.abonoHeader}>
+                  <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 14 }}>
+                    {index === 0 ? 'Cuota inicial' : `Abono ${index + 1}`}
+                  </Text>
+                  <Pressable
+                    onPress={() => removeDownPayment(row.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={index === 0 ? 'Quitar cuota inicial' : `Quitar abono ${index + 1}`}
+                    hitSlop={8}
+                  >
+                    <MaterialIcons name="delete-outline" size={22} color={colors.error.main} />
+                  </Pressable>
+                </View>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Valor (COP)</Text>
+                <TextInput
+                  keyboardType="numeric"
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.default }]}
+                  value={row.amount}
+                  onChangeText={(value) =>
+                    updateDownPayment(row.key, { amount: formatNegocioMoneyInput(value) })
+                  }
+                />
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de pago</Text>
+                <NegocioDatePicker
+                  value={row.dueDate}
+                  onChange={(value) => updateDownPayment(row.key, { dueDate: value })}
+                  colors={colors}
+                />
+              </View>
+            ))}
+            <TouchableOpacity
+              onPress={addDownPayment}
+              style={[styles.abonoAddBtn, { borderColor: colors.primary.main }]}
+              accessibilityRole="button"
+            >
+              <MaterialIcons name="add" size={18} color={colors.primary.main} />
+              <Text style={{ color: colors.primary.main, fontWeight: '700' }}>
+                {downPayments.length === 0 ? 'Agregar cuota inicial' : 'Agregar otro abono'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ color: downPaymentError ? colors.error.main : colors.text.secondary, fontSize: 12 }}>
+              {downPaymentError ||
+                (downPayments.length > 0
+                  ? `Total abonos: ${formatCOP(downPaymentTotal)} · saldo a financiar: ${formatCOP(
+                      Math.max(0, subtotal - downPaymentTotal)
+                    )}`
+                  : 'Sin cuota inicial todo el valor se financia en cuotas.')}
+            </Text>
+            {planRequired ? (
+              <>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Número de cuotas</Text>
+                <TextInput
+                  keyboardType="numeric"
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.paper }]}
+                  value={installments}
+                  onChangeText={setInstallments}
+                />
+                {!installmentsValid && (
+                  <Text style={{ color: colors.error.main, fontSize: 12 }}>
+                    Ingrese un número entero mayor a 0. El vendedor define la cantidad de cuotas.
+                  </Text>
+                )}
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
+                <NegocioDatePicker
+                  value={firstDueDate}
+                  onChange={setFirstDueDate}
+                  colors={colors}
+                />
+                {planError && installmentsValid ? (
+                  <Text style={{ color: colors.error.main, fontSize: 12 }}>{planError}</Text>
+                ) : null}
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Frecuencia de pago</Text>
+                <View style={styles.rowWrap}>
+                  {(['mensual', 'quincenal', 'semanal'] as CreditFrequency[]).map((f) => (
+                    <Pressable
+                      key={f}
+                      onPress={() => setFrequency(f)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor:
+                            frequency === f ? colors.primary.main : colors.background.paper,
+                          borderColor: colors.divider,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color:
+                            frequency === f
+                              ? colors.primary.contrastText
+                              : colors.text.primary,
+                          fontWeight: '700',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {f}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                Los abonos iniciales cubren el valor de los productos: el negocio no lleva cuotas ni
+                fecha de primera cuota.
               </Text>
             )}
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Fecha de la primera cuota</Text>
-            <NegocioDatePicker
-              value={firstDueDate}
-              onChange={setFirstDueDate}
+            <NegocioCreditSummary
+              calc={calc}
+              settings={settings}
+              schedule={downPaymentSchedule}
+              frequency={frequency}
+              firstDueDate={planRequired ? firstDueDate : null}
               colors={colors}
             />
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>Frecuencia de pago</Text>
-            <View style={styles.rowWrap}>
-              {(['mensual', 'quincenal', 'semanal'] as CreditFrequency[]).map((f) => (
-                <Pressable
-                  key={f}
-                  onPress={() => setFrequency(f)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor:
-                        frequency === f ? colors.primary.main : colors.background.paper,
-                      borderColor: colors.divider,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color:
-                        frequency === f
-                          ? colors.primary.contrastText
-                          : colors.text.primary,
-                      fontWeight: '700',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {f}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={[styles.summary, { backgroundColor: colors.background.paper, borderColor: colors.divider, borderWidth: 1 }]}>
-              <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
-                Total crédito: {formatCOP(calc.totalCredit)}
-              </Text>
-              <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>
-                Valor cuota: {formatCOP(calc.installmentAmount)}
-              </Text>
-              <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                Interés: {formatCOP(calc.interestAmount)} · {settings.formula_type}
-              </Text>
-            </View>
           </View>
         )}
 
@@ -800,13 +1206,21 @@ export default function NegocioCreateScreen() {
               4. Firmas y Confirmación
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 14, fontWeight: '600' }}>
-              Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} · {installments} cuotas
+              Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} ·{' '}
+              {planRequired ? `${installments} cuotas` : 'sin cuotas'}
             </Text>
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>
-              Pase el dispositivo al cliente para firmar en pantalla completa:
+              Puede dibujar las firmas en pantalla o subir un PNG transparente. Si el cliente no firma
+              ahora, la firma del vendedor es obligatoria; la firma del cliente podrá registrarse
+              después desde el detalle, incluso con el negocio activo.
             </Text>
+            {saveBlockedReason ? (
+              <Text style={{ color: colors.warning.dark, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
+                {saveBlockedReason}
+              </Text>
+            ) : null}
             <SignaturePad
-              label="Firma del cliente *"
+              label="Firma del cliente"
               value={signature}
               onChange={setSignature}
             />
@@ -818,7 +1232,7 @@ export default function NegocioCreateScreen() {
               />
             )}
             <SignaturePad
-              label="Firma del vendedor"
+              label={signature ? 'Firma del vendedor' : 'Firma del vendedor (obligatoria)'}
               value={sellerSignature}
               onChange={setSellerSignature}
             />
@@ -835,11 +1249,17 @@ export default function NegocioCreateScreen() {
       <View style={[styles.fixedFooterNav, { backgroundColor: colors.background.paper, borderTopColor: colors.divider }]}>
         {step > 0 && (
           <TouchableOpacity
-            style={[styles.footerBtnSecondary, { borderColor: colors.divider }]}
+            style={[
+              styles.footerBtnSecondary,
+              step === 3 && styles.footerBtnIconOnly,
+              { borderColor: colors.divider },
+            ]}
             onPress={() => setStep((s) => s - 1)}
+            accessibilityRole="button"
+            accessibilityLabel="Atrás"
           >
             <MaterialIcons name="arrow-back" size={18} color={colors.text.primary} />
-            <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Atrás</Text>
+            {step < 3 && <Text style={{ color: colors.text.primary, fontWeight: '700' }}>Atrás</Text>}
           </TouchableOpacity>
         )}
         {step < 3 ? (
@@ -851,11 +1271,11 @@ export default function NegocioCreateScreen() {
                 opacity:
                   loadingInitialData || initialDataError
                     ? 0.5
-                    : step === 0 && (!customer || !departamentoId || !municipioId || !direccion.trim())
+                    : step === 0 && (originType === 'orden_entrega' && !selectedDeliveryOrder || !customer || !departamentoId || !municipioId || !direccion.trim())
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
-                    : step === 2 && (!firstDueDate || !installmentsValid)
+                    : step === 2 && (Boolean(downPaymentError) || Boolean(planError))
                     ? 0.5
                     : 1,
               },
@@ -863,6 +1283,9 @@ export default function NegocioCreateScreen() {
             disabled={loadingInitialData || Boolean(initialDataError)}
             onPress={() => {
               if (step === 0) {
+                if (originType === 'orden_entrega' && !selectedDeliveryOrder) {
+                  return Alert.alert('Selección requerida', 'Seleccione una orden de entrega.');
+                }
                 if (!customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
                 if (!departamentoId) return Alert.alert('Campo requerido', 'Seleccione un departamento.');
                 if (!municipioId) return Alert.alert('Campo requerido', 'Seleccione un municipio.');
@@ -881,13 +1304,8 @@ export default function NegocioCreateScreen() {
                 }
               }
               if (step === 2) {
-                if (!installmentsValid) return Alert.alert('Cuotas inválidas', 'Ingrese un número entero mayor a 0.');
-                if (!firstDueDate) return Alert.alert('Fecha requerida', 'Ingrese la fecha de la primera cuota.');
-                if (firstDueDate < localDateValue()) return Alert.alert('Fecha inválida', 'La primera cuota no puede estar en el pasado.');
-                const initial = parseNegocioMoney(downPayment);
-                if (!Number.isSafeInteger(initial) || initial < 0 || initial > subtotal) {
-                  return Alert.alert('Cuota inicial inválida', 'Debe ser un valor entre $0 y el subtotal de productos.');
-                }
+                if (downPaymentError) return Alert.alert('Abonos iniciales', downPaymentError);
+                if (planError) return Alert.alert('Plan de cuotas', planError);
               }
               setStep((s) => s + 1);
             }}
@@ -900,26 +1318,55 @@ export default function NegocioCreateScreen() {
         ) : saving ? (
           <ActivityIndicator color={colors.primary.main} style={{ flex: 1 }} />
         ) : (
-          <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
+          <View style={styles.footerActions}>
             <TouchableOpacity
-              style={[styles.footerBtnSecondary, { flex: 1, borderColor: colors.divider }]}
+              style={[
+                styles.footerBtnSecondary,
+                styles.footerBtnCompact,
+                { borderColor: colors.divider },
+                saveBlockedReason ? { opacity: 0.45 } : null,
+              ]}
               onPress={() => submit(false)}
+              disabled={Boolean(saveBlockedReason)}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: Boolean(saveBlockedReason) }}
+              accessibilityHint={saveBlockedReason || undefined}
             >
-              <Text style={{ color: colors.text.primary, fontWeight: '600', fontSize: 13 }}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={{ color: colors.text.primary, fontWeight: '600', fontSize: 13 }}
+              >
                 Guardar borrador
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.footerBtnPrimary, { flex: 1, backgroundColor: colors.primary.main }]}
+              style={[
+                styles.footerBtnPrimary,
+                styles.footerBtnCompact,
+                { backgroundColor: colors.primary.main },
+                saveBlockedReason ? { opacity: 0.45 } : null,
+              ]}
               onPress={() => submit(true)}
+              disabled={Boolean(saveBlockedReason)}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: Boolean(saveBlockedReason) }}
+              accessibilityHint={saveBlockedReason || undefined}
             >
-              <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 14 }}>
-                Activar con firma
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 13 }}
+              >
+                Activar negocio
               </Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
+      </KeyboardAvoidingView>
 
       {/* MODAL CREAR CLIENTE NUEVO */}
       <Modal
@@ -928,7 +1375,10 @@ export default function NegocioCreateScreen() {
         transparent={true}
         onRequestClose={() => setShowNewCustomerModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={[styles.modalContent, { backgroundColor: colors.background.paper }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
@@ -939,7 +1389,11 @@ export default function NegocioCreateScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 350 }} contentContainerStyle={{ gap: 12 }}>
+            <ScrollView
+              style={{ maxHeight: 350 }}
+              contentContainerStyle={{ gap: 12 }}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={{ gap: 4 }}>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
                   Nombre completo *
@@ -1004,7 +1458,7 @@ export default function NegocioCreateScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1125,8 +1579,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  abonoCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
+  abonoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  abonoAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
   chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
-  summary: { padding: 14, borderRadius: 12, gap: 4, marginTop: 8 },
   fixedFooterNav: {
     position: 'absolute',
     bottom: 0,
@@ -1135,6 +1599,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
@@ -1165,6 +1630,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     minWidth: 120,
     marginLeft: 'auto',
+  },
+  /** Último paso: "Atrás" solo con ícono para dejar espacio a las dos acciones. */
+  footerBtnIconOnly: { paddingHorizontal: 12 },
+  footerActions: { flex: 1, flexDirection: 'row', gap: 8, minWidth: 0 },
+  /** Acciones finales lado a lado: sin ancho mínimo ni padding ancho para que
+   * quepan en pantallas angostas sin partir el texto en dos líneas. */
+  footerBtnCompact: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 11,
   },
   modalOverlay: {
     flex: 1,

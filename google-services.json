@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "111670783126",
+    "project_id": "casa-ideal-la-plata-huila",
+    "storage_bucket": "casa-ideal-la-plata-huila.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:111670783126:android:c697655ace6db3b88226b7",
+        "android_client_info": {
+          "package_name": "com.casaideal.laplatahuila"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0Ynx_ZCuqu6MLV2hCz8pf2DHWz7AQNh8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -5,19 +5,20 @@ import {
   Text,
   StyleSheet,
   TextInputProps,
+  StyleProp,
   ViewStyle,
 } from 'react-native';
-import { getColors } from '@/constants/theme';
+import { Radius, Spacing, getColors } from '@/constants/theme';
 import { useTheme } from '@/components/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
-  containerStyle?: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
   rightElement?: React.ReactNode;
 }
 
-export function Input({
+export const Input = React.forwardRef<TextInput, InputProps>(function Input({
   label,
   error,
   containerStyle,
@@ -26,7 +27,7 @@ export function Input({
   onFocus,
   onBlur,
   ...props
-}: InputProps) {
+}, ref) {
   const [isFocused, setIsFocused] = useState(false);
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
@@ -61,6 +62,7 @@ export function Input({
           },
         ]}>
         <TextInput
+          ref={ref}
           style={[
             styles.input,
             { color: Colors.text.primary },
@@ -83,16 +85,16 @@ export function Input({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -100,14 +102,14 @@ const styles = StyleSheet.create({
     // Border width fijo: cambiar 1.5→2 al focus provoca re-layout
     // y en iOS el TextInput pierde el teclado / no deja escribir.
     borderWidth: 1.5,
-    borderRadius: 12,
+    borderRadius: Radius.control,
     minHeight: 52,
   },
   input: {
     flex: 1,
     minHeight: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     fontSize: 16,
   },
   inputWithRight: {

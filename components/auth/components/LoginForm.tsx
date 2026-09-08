@@ -1,17 +1,12 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
-import { getColors } from '@/constants/theme';
+import { Input } from '@/components/ui/Input';
+import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Keyboard, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -27,6 +22,7 @@ export function LoginForm() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
 
@@ -58,6 +54,8 @@ export function LoginForm() {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    Keyboard.dismiss();
     setFormError(null);
     if (!validate()) return;
 
@@ -66,9 +64,9 @@ export function LoginForm() {
       const { error } = await signIn(email.trim(), password);
       if (error) {
         setFormError(error.message || 'Error al iniciar sesión');
-      } else {
-        router.replace('/(tabs)');
+        return;
       }
+      router.replace('/(tabs)');
     } catch (error: any) {
       setFormError(error.message || 'Ocurrió un error inesperado');
     } finally {
@@ -105,95 +103,70 @@ export function LoginForm() {
               borderColor: Colors.error.main,
             },
           ]}>
+          <MaterialIcons name="error-outline" size={18} color={Colors.error.main} />
           <Text style={[styles.errorBannerText, { color: Colors.error.main }]}>
             {formError}
           </Text>
         </View>
       ) : null}
 
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: Colors.text.primary }]}>
-          Correo electrónico
-        </Text>
-        <TextInput
-          style={[
-            styles.input,
-            {
-              color: Colors.text.primary,
-              borderColor: emailError ? Colors.error.main : Colors.divider,
-              backgroundColor: Colors.background.paper,
-            },
-          ]}
-          placeholder="tu@correo.com"
-          placeholderTextColor={Colors.text.secondary}
-          value={email}
-          onChangeText={(text) => {
-            setEmail(text);
-            setEmailError(null);
-            setFormError(null);
-          }}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="email"
-          textContentType="username"
-          editable={!submitting}
-        />
-        {emailError ? (
-          <Text style={[styles.errorText, { color: Colors.error.main }]}>
-            {emailError}
-          </Text>
-        ) : null}
-      </View>
+      <Input
+        label="Correo electrónico"
+        placeholder="tu@correo.com"
+        value={email}
+        onChangeText={(text) => {
+          setEmail(text);
+          setEmailError(null);
+          setFormError(null);
+        }}
+        error={emailError ?? undefined}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="email"
+        textContentType="username"
+        returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        editable={!submitting}
+        autoFocus
+        accessibilityLabel="Correo electrónico"
+      />
 
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: Colors.text.primary }]}>
-          Contraseña
-        </Text>
-        <View
-          style={[
-            styles.passwordRow,
-            {
-              borderColor: passwordError ? Colors.error.main : Colors.divider,
-              backgroundColor: Colors.background.paper,
-            },
-          ]}>
-          <TextInput
-            style={[styles.passwordInput, { color: Colors.text.primary }]}
-            placeholder="••••••••"
-            placeholderTextColor={Colors.text.secondary}
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              setPasswordError(null);
-              setFormError(null);
-            }}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="password"
-            textContentType="password"
-            editable={!submitting}
-          />
+      <Input
+        ref={passwordRef}
+        label="Contraseña"
+        placeholder="••••••••"
+        value={password}
+        onChangeText={(text) => {
+          setPassword(text);
+          setPasswordError(null);
+          setFormError(null);
+        }}
+        error={passwordError ?? undefined}
+        secureTextEntry={!showPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="password"
+        textContentType="password"
+        returnKeyType="done"
+        onSubmitEditing={handleSubmit}
+        editable={!submitting}
+        accessibilityLabel="Contraseña"
+        rightElement={
           <TouchableOpacity
             onPress={() => setShowPassword((v) => !v)}
             activeOpacity={0.7}
             accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={styles.eyeButton}>
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <MaterialIcons
               name={showPassword ? 'visibility' : 'visibility-off'}
               size={22}
               color={Colors.text.secondary}
             />
           </TouchableOpacity>
-        </View>
-        {passwordError ? (
-          <Text style={[styles.errorText, { color: Colors.error.main }]}>
-            {passwordError}
-          </Text>
-        ) : null}
-      </View>
+        }
+      />
 
       <Button
         title="Iniciar sesión"
@@ -210,73 +183,34 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
-    borderRadius: 16,
+    borderRadius: Radius.panel,
     borderWidth: 1,
-    padding: 24,
+    padding: Spacing.xxl,
+    ...Shadows.card,
   },
   formHeader: {
     marginBottom: 20,
   },
   formTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    ...Typography.title,
     marginBottom: 6,
   },
   formSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    ...Typography.bodySmall,
   },
   errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 16,
   },
   errorBannerText: {
-    fontSize: 13,
-    fontWeight: '500',
-    lineHeight: 18,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    minHeight: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    minHeight: 52,
-  },
-  passwordInput: {
+    ...Typography.caption,
     flex: 1,
-    minHeight: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  eyeButton: {
-    paddingRight: 12,
-    paddingLeft: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 13,
-    marginTop: 6,
     fontWeight: '500',
   },
   button: {

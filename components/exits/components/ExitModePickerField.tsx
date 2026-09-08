@@ -1,12 +1,26 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- Carga perezosa por plataforma (evita resolver .ios en Android y viceversa). */
+import type { ExitMode } from '@/components/exits/infrastructure/store/exitsStore';
+import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import React from 'react';
-import { Platform } from 'react-native';
 
 import type { ExitModePickerFieldProps } from './pickerFieldTypes';
 
 export type { ExitModePickerFieldProps };
 
-export const ExitModePickerField: React.ComponentType<ExitModePickerFieldProps> =
-  Platform.OS === 'ios'
-    ? require('./ExitModePickerField.ios').ExitModePickerField
-    : require('./ExitModePickerField.android').ExitModePickerField;
+const OPTIONS: { value: ExitMode; label: string }[] = [
+  { value: 'direct_user', label: 'Remisión' },
+  { value: 'direct_customer', label: 'Entrega a Cliente' },
+];
+
+/** Selector del tipo de salida sobre el `OptionPickerField` compartido ('' = ninguno). */
+export function ExitModePickerField({ exitMode, onExitModeChange, colors }: ExitModePickerFieldProps) {
+  return (
+    <OptionPickerField
+      value={exitMode ?? ''}
+      onValueChange={(value) => onExitModeChange((value as ExitMode) || null)}
+      options={OPTIONS}
+      placeholder="Seleccione el tipo de salida"
+      modalTitle="Tipo de salida"
+      colors={colors}
+    />
+  );
+}

@@ -1,137 +1,140 @@
+import { useTheme } from '@/components/theme';
+import { IconSize, Radius, Spacing, Typography, getColors } from '@/constants/theme';
+import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  TouchableOpacity,
-  Text,
-  StyleSheet,
   ActivityIndicator,
-  ViewStyle,
-  TextStyle,
+  Pressable,
   StyleProp,
+  StyleSheet,
+  Text,
+  TextStyle,
+  ViewStyle,
 } from 'react-native';
-import { Colors } from '@/constants/theme';
+
+type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
+  /** `sm` = 44 px de alto, para acciones secundarias y cabeceras. */
+  size?: 'md' | 'sm';
+  /** Icono a la izquierda del texto. */
+  icon?: IconName;
+  /** Oculta el texto y deja solo el icono (requiere pasar `icon`). */
+  iconOnly?: boolean;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  accessibilityLabel?: string;
 }
 
 export function Button({
   title,
   onPress,
   variant = 'primary',
+  size = 'md',
+  icon,
+  iconOnly = false,
   disabled = false,
   loading = false,
   style,
   textStyle,
+  accessibilityLabel,
 }: ButtonProps) {
-  const getButtonStyle = () => {
-    if (disabled || loading) {
-      return [styles.button, styles.buttonDisabled, style];
-    }
-    switch (variant) {
-      case 'primary':
-        return [styles.button, styles.buttonPrimary, style];
-      case 'secondary':
-        return [styles.button, styles.buttonSecondary, style];
-      case 'outline':
-        return [styles.button, styles.buttonOutline, style];
-      default:
-        return [styles.button, styles.buttonPrimary, style];
-    }
-  };
-
-  const getTextStyle = () => {
-    if (disabled || loading) {
-      return [styles.text, styles.textDisabled, textStyle];
-    }
-    switch (variant) {
-      case 'primary':
-        return [styles.text, styles.textPrimary, textStyle];
-      case 'secondary':
-        return [styles.text, styles.textSecondary, textStyle];
-      case 'outline':
-        return [styles.text, styles.textOutline, textStyle];
-      default:
-        return [styles.text, styles.textPrimary, textStyle];
-    }
-  };
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const unavailable = disabled || loading;
+  const backgroundColor =
+    variant === 'primary'
+      ? colors.primary.main
+      : variant === 'secondary'
+        ? colors.secondary.main
+        : variant === 'destructive'
+          ? colors.error.main
+          : 'transparent';
+  const foregroundColor =
+    variant === 'outline' || variant === 'ghost'
+      ? colors.primary.main
+      : colors.primary.contrastText;
 
   return (
-    <TouchableOpacity
-      style={getButtonStyle()}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityState={{ disabled: unavailable, busy: loading }}
       onPress={onPress}
-      disabled={disabled || loading}
-      activeOpacity={0.8}>
+      disabled={unavailable}
+      style={({ pressed }) => [
+        styles.button,
+        size === 'sm' && styles.small,
+        iconOnly && (size === 'sm' ? styles.iconOnlySmall : styles.iconOnly),
+        { backgroundColor },
+        variant === 'outline' && { borderColor: colors.primary.main, borderWidth: 1.5 },
+        variant === 'ghost' && styles.ghost,
+        unavailable && { backgroundColor: colors.divider, opacity: 0.58 },
+        pressed && !unavailable && styles.pressed,
+        style,
+      ]}>
       {loading ? (
         <ActivityIndicator
           testID="activity-indicator"
-          color={variant === 'outline' ? Colors.primary.main : Colors.primary.contrastText}
+          color={variant === 'outline' || variant === 'ghost' ? colors.primary.main : colors.primary.contrastText}
         />
       ) : (
-        <Text style={getTextStyle()}>{title}</Text>
+        <>
+          {icon ? (
+            <MaterialIcons
+              name={icon}
+              size={size === 'sm' ? IconSize.sm : IconSize.md}
+              color={unavailable ? colors.text.secondary : foregroundColor}
+            />
+          ) : null}
+          {iconOnly ? null : (
+            <Text style={[styles.text, size === 'sm' && styles.textSmall, { color: unavailable ? colors.text.secondary : foregroundColor }, textStyle]}>
+              {title}
+            </Text>
+          )}
+        </>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    minHeight: 52,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xxl,
+    borderRadius: Radius.control,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
-    shadowColor: Colors.primary.main,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: Spacing.sm,
   },
-  buttonPrimary: {
-    backgroundColor: Colors.primary.main,
+  small: {
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
   },
-  buttonSecondary: {
-    backgroundColor: Colors.secondary.main,
-    shadowColor: Colors.secondary.main,
+  iconOnly: {
+    paddingHorizontal: Spacing.md,
+    gap: 0,
   },
-  buttonOutline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: Colors.primary.main,
-    shadowOpacity: 0,
-    elevation: 0,
+  iconOnlySmall: {
+    paddingHorizontal: Spacing.sm,
+    gap: 0,
   },
-  buttonDisabled: {
-    backgroundColor: Colors.divider,
-    opacity: 0.5,
-    shadowOpacity: 0,
-    elevation: 0,
+  ghost: {
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
   },
-  text: {
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'System',
+  pressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.99 }],
   },
-  textPrimary: {
-    color: Colors.primary.contrastText,
-  },
-  textSecondary: {
-    color: Colors.secondary.contrastText,
-  },
-  textOutline: {
-    color: Colors.primary.main,
-  },
-  textDisabled: {
-    color: Colors.text.secondary,
-  },
+  text: { ...Typography.button },
+  textSmall: { ...Typography.bodySmallStrong },
 });
-

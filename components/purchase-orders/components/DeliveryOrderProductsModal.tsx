@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Spacing, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -12,7 +12,9 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DeliveryOrderItem } from '../types';
 
 interface DeliveryOrderProductsModalProps {
@@ -28,6 +30,10 @@ export function DeliveryOrderProductsModal({
     orderId,
     orderNumber,
 }: DeliveryOrderProductsModalProps) {
+    const insets = useSafeAreaInsets();
+    const { height: windowHeight } = useWindowDimensions();
+    // Nunca tapar la barra de estado ni la de gestos en pantallas con notch.
+    const sheetInsets = { maxHeight: windowHeight - insets.top - Spacing.xxl, paddingBottom: Math.max(insets.bottom, Spacing.md) };
     const { isDark } = useTheme();
     const colors = getColors(isDark);
 
@@ -61,6 +67,7 @@ export function DeliveryOrderProductsModal({
                     quantity,
                     delivered_quantity,
                     deleted_at,
+                    notes,
                     product:products!inner(id, name, sku, barcode, deleted_at),
                     warehouse:warehouses(id, name)
                 `)
@@ -92,6 +99,7 @@ export function DeliveryOrderProductsModal({
                     delivered_quantity: delivered,
                     pending_quantity: pending,
                     is_complete: pending === 0,
+                    notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : null,
                 };
             });
 
@@ -154,7 +162,7 @@ export function DeliveryOrderProductsModal({
             onRequestClose={handleClose}
         >
             <View style={styles.overlay}>
-                <View style={[styles.modalContainer, { backgroundColor: colors.background.paper }]}>
+                <View style={[styles.modalContainer, sheetInsets, { backgroundColor: colors.background.paper }]}>
                     {/* Header */}
                     <View style={[styles.header, { borderBottomColor: colors.divider }]}>
                         <View style={styles.headerContent}>
@@ -310,6 +318,15 @@ export function DeliveryOrderProductsModal({
                                                         </Text>
                                                     </View>
                                                 )}
+                                                {item.notes && (
+                                                    <View style={[styles.noteRow, { backgroundColor: colors.warning.main + '14', borderColor: colors.warning.main + '55' }]}>
+                                                        <MaterialIcons name="sticky-note-2" size={13} color={colors.warning.main} />
+                                                        <Text style={[styles.itemNote, { color: colors.text.primary }]}>
+                                                            <Text style={{ color: colors.warning.main, fontWeight: '700' }}>Nota: </Text>
+                                                            {item.notes}
+                                                        </Text>
+                                                    </View>
+                                                )}
                                             </View>
                                             <View style={styles.itemStatus}>
                                                 {item.is_complete ? (
@@ -395,7 +412,6 @@ const styles = StyleSheet.create({
     },
     modalContainer: {
         flex: 1,
-        maxHeight: '90%',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
@@ -572,6 +588,21 @@ const styles = StyleSheet.create({
     },
     itemWarehouse: {
         fontSize: 12,
+    },
+    noteRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+        marginTop: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    itemNote: {
+        flex: 1,
+        fontSize: 12,
+        lineHeight: 17,
     },
     itemStatus: {
         justifyContent: 'center',

@@ -12,6 +12,8 @@ export interface DeliveryOrderItem {
   delivered_quantity: number;
   pending_quantity: number;
   is_complete: boolean;
+  /** Nota por producto capturada en la web. */
+  notes?: string | null;
 }
 
 export interface DeliveryOrderRecipient {
@@ -161,6 +163,7 @@ export function formatDate(dateString: string | null): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
   } catch {
     return 'Fecha inválida';

@@ -1,29 +1,47 @@
-import { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
-import { getColors } from '@/constants/theme';
+import { Spacing, Typography, getColors } from '@/constants/theme';
+import { DownloadDataButton } from '@/components/offline';
+import {
+  HeroActionCard,
+  ScreenErrorBoundary,
+  ScreenState,
+  SearchField,
+  SegmentedControl,
+} from '@/components/ui';
+import { NegocioListCard } from '@/components/negocios/components/NegocioListCard';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
-import { formatCOP } from '@/lib/creditCalculator';
+import {
+  NEGOCIO_LIST_FILTERS,
+  matchesNegocioListFilter,
+  matchesNegocioListQuery,
+  type NegocioListFilter,
+} from '@/lib/negocios/negocioListFilters';
+import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 export default function NegociosScreen() {
+  return (
+    <ScreenErrorBoundary screen="Negocios">
+      <NegociosScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function NegociosScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { list, loading, fetchList } = useNegociosStore();
+  const { list, loading, fromCache, error, fetchList } = useNegociosStore();
   const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<NegocioListFilter>('all');
 
   useFocusEffect(
     useCallback(() => {
@@ -37,96 +55,131 @@ export default function NegociosScreen() {
     setRefreshing(false);
   };
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      list.filter(
+        (item) => matchesNegocioListFilter(item, filter) && matchesNegocioListQuery(item, normalizedQuery)
+      ),
+    [list, filter, normalizedQuery]
+  );
+  const hasFilters = filter !== 'all' || normalizedQuery.length > 0;
+  const initialLoading = loading && !refreshing && list.length === 0;
+
+  const renderEmpty = () => {
+    if (initialLoading) {
+      return <ScreenState loading title="Cargando negocios…" variant="inline" />;
+    }
+    if (error && list.length === 0) {
+      return (
+        <ScreenState
+          tone="error"
+          title="No se pudieron cargar los negocios"
+          description={error}
+          actionLabel="Reintentar"
+          onAction={() => void fetchList()}
+        />
+      );
+    }
+    if (hasFilters) {
+      return (
+        <ScreenState
+          icon="filter-list-off"
+          title="Sin coincidencias"
+          description="Ningún negocio coincide con la búsqueda o el filtro."
+          actionLabel="Limpiar filtros"
+          onAction={() => {
+            setQuery('');
+            setFilter('all');
+          }}
+        />
+      );
+    }
+    if (fromCache) {
+      return (
+        <ScreenState
+          icon="cloud-off"
+          title="Sin datos locales"
+          description="Conéctese y descargue la información para trabajar sin conexión.">
+          <DownloadDataButton variant="cta" />
+        </ScreenState>
+      );
+    }
+    return (
+      <ScreenState
+        icon="handshake"
+        title="Aún no hay negocios"
+        description={canCreate ? 'Crea el primero para empezar a gestionar créditos.' : 'Cuando se registren negocios aparecerán aquí.'}
+        actionLabel={canCreate ? 'Crear negocio' : undefined}
+        onAction={canCreate ? () => router.navigate('/(tabs)/negocio-create') : undefined}
+      />
+    );
+  };
+
+  const header = (
+    <View style={styles.header}>
+      {canCreate ? (
+        <HeroActionCard
+          compact
+          title="Nuevo negocio"
+          subtitle="Crédito y orden de entrega"
+          icon="add-business"
+          onPress={() => router.navigate('/(tabs)/negocio-create')}
+        />
+      ) : null}
+      <SearchField
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Buscar por código o cliente"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+      />
+      <SegmentedControl
+        items={NEGOCIO_LIST_FILTERS}
+        value={filter}
+        onChange={(value) => setFilter(value as NegocioListFilter)}
+      />
+      {fromCache ? (
+        <Text style={[styles.notice, { color: colors.text.secondary }]}>{formatLocalDataLabel(lastSyncedAt)}</Text>
+      ) : null}
+      {error && list.length > 0 ? (
+        <Text style={[styles.notice, { color: colors.warning.dark }]} accessibilityLiveRegion="polite">
+          No se pudo actualizar. Mostrando la última lista cargada.
+        </Text>
+      ) : null}
+      {!initialLoading && list.length > 0 ? (
+        <Text style={[styles.count, { color: colors.text.secondary }]}>
+          {filtered.length} de {list.length} negocio{list.length === 1 ? '' : 's'}
+        </Text>
+      ) : null}
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Negocios</Text>
-        {canCreate && (
-          <Pressable
-            style={[styles.cta, { backgroundColor: colors.primary.main }]}
-            onPress={() => router.push('/(tabs)/negocio-create')}
-          >
-            <MaterialIcons name="add" size={22} color={colors.primary.contrastText} />
-            <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-              Nuevo
-            </Text>
-          </Pressable>
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />}
+        ListHeaderComponent={header}
+        ListEmptyComponent={renderEmpty()}
+        renderItem={({ item }) => (
+          <NegocioListCard item={item} onPress={() => router.push(`/negocio/${item.id}`)} />
         )}
-      </View>
-
-      {loading && !refreshing ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary.main} />
-      ) : (
-        <FlatList
-          data={list}
-          keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListEmptyComponent={
-            <Text style={{ textAlign: 'center', marginTop: 40, color: colors.text.secondary }}>
-              No hay negocios. Crea el primero.
-            </Text>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              style={[
-                styles.card,
-                { backgroundColor: colors.background.paper, borderColor: colors.divider },
-              ]}
-              onPress={() => router.push(`/negocio/${item.id}`)}
-            >
-              <View style={styles.row}>
-                <Text style={[styles.numero, { color: colors.text.primary }]}>
-                  #{item.numero}
-                </Text>
-                <Text style={{ color: colors.primary.main, fontWeight: '600' }}>
-                  {item.status}
-                </Text>
-              </View>
-              <Text style={{ color: colors.text.secondary }}>
-                {item.customer?.name || 'Cliente'} · {item.deal_date}
-              </Text>
-              <Text style={[styles.total, { color: colors.text.primary }]}>
-                {formatCOP(Number(item.total_credit))}
-              </Text>
-              <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                {item.installments_count} cuotas ·{' '}
-                {item.delivery_order_id ? 'OE creada' : 'Sin OE'}
-              </Text>
-            </Pressable>
-          )}
-        />
-      )}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  title: { fontSize: 24, fontWeight: '700' },
-  cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    gap: 4,
-  },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  numero: { fontSize: 18, fontWeight: '700' },
-  total: { fontSize: 16, fontWeight: '700', marginTop: 4 },
+  container: { flex: 1 },
+  content: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
+  header: { gap: Spacing.md, marginBottom: Spacing.lg },
+  notice: { ...Typography.metadata },
+  count: { ...Typography.metadata, textAlign: 'right' },
+  separator: { height: Spacing.md },
 });

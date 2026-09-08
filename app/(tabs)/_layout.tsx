@@ -1,23 +1,24 @@
 import { useTheme } from '@/components/theme';
-import { BackButton } from '@/components/ui/BackButton';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { getColors } from '@/constants/theme';
+import { BackButton, FloatingTabBar, IconButton } from '@/components/ui';
+import { IconSize, Typography, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+
+const isWeb = Platform.OS === 'web';
+
+function HeaderIconButton({ icon, label, onPress }: { icon: 'person' | 'person-search'; label: string; onPress: () => void }) {
+  return <IconButton icon={icon} onPress={onPress} accessibilityLabel={label} size={IconSize.md} style={styles.headerButton} />;
+}
 
 function ProfileHeaderButton() {
   const router = useRouter();
-  const { isDark } = useTheme();
-  const colors = getColors(isDark);
-  return (
-    <TouchableOpacity
-      onPress={() => router.push('/(tabs)/profile')}
-      style={{ marginRight: 16 }}>
-      <MaterialIcons name="account-circle" size={28} color={colors.primary.contrastText} />
-    </TouchableOpacity>
-  );
+  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => router.navigate('/(tabs)/profile')} />;
+}
+
+function SearchCustomerHeaderButton() {
+  const router = useRouter();
+  return <HeaderIconButton icon="person-search" label="Buscar cliente" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} />;
 }
 
 export default function TabLayout() {
@@ -35,34 +36,28 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
+      backBehavior={isWeb ? 'none' : 'firstRoute'}
+      detachInactiveScreens={!isWeb}
       screenOptions={{
-        tabBarActiveTintColor: colors.primary.main,
-        tabBarInactiveTintColor: colors.text.secondary,
+        animation: isWeb ? 'none' : undefined,
+        sceneStyle: { backgroundColor: colors.background.default },
         headerShown: true,
         headerStyle: {
-          backgroundColor: colors.primary.main,
+          backgroundColor: colors.background.default,
         },
-        headerTintColor: colors.primary.contrastText,
+        headerTintColor: colors.text.primary,
+        headerTitleStyle: { ...Typography.section },
+        headerTitleAlign: 'left',
         headerShadowVisible: false,
-        tabBarStyle: {
-          backgroundColor: colors.background.paper,
-          borderTopColor: colors.primary.main,
-          borderTopWidth: 2,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
-          elevation: 5,
-        },
+        tabBarHideOnKeyboard: true,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
           tabBarLabel: 'Inicio',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
-          ),
+          headerShown: false,
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -73,10 +68,17 @@ export default function TabLayout() {
           title: 'Negocios',
           tabBarLabel: 'Negocios',
           href: null,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="handshake" size={28} color={color} />
-          ),
-          headerRight: () => <ProfileHeaderButton />,
+          headerLeft: () => <BackButton />,
+          headerRight: () => <SearchCustomerHeaderButton />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="mis-negocios"
+        options={{
+          title: 'Mis negocios',
+          href: null,
+          headerLeft: () => <BackButton />,
         }}
       />
 
@@ -86,10 +88,7 @@ export default function TabLayout() {
           title: 'Cartera',
           tabBarLabel: 'Cartera',
           href: null,
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="account-balance-wallet" size={28} color={color} />
-          ),
-          headerRight: () => <ProfileHeaderButton />,
+          headerLeft: () => <BackButton />,
         }}
       />
 
@@ -117,9 +116,7 @@ export default function TabLayout() {
         options={{
           title: 'Inventario',
           tabBarLabel: 'Inventario',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="inventory" size={28} color={color} />
-          ),
+          headerShown: false,
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -129,9 +126,6 @@ export default function TabLayout() {
         options={{
           title: 'Búsqueda Rápida',
           tabBarLabel: 'Buscar',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="qr-code-scanner" size={28} color={color} />
-          ),
           headerShown: false,
         }}
       />
@@ -141,9 +135,7 @@ export default function TabLayout() {
         options={{
           title: 'Salidas',
           tabBarLabel: 'Salidas',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="local-shipping" size={28} color={color} />
-          ),
+          headerShown: false,
           headerRight: () => <ProfileHeaderButton />,
         }}
       />
@@ -153,10 +145,7 @@ export default function TabLayout() {
         options={{
           title: 'Perfil',
           tabBarLabel: 'Perfil',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="account-circle" size={28} color={color} />
-          ),
-          headerShown: true,
+          headerShown: false,
         }}
       />
 
@@ -166,6 +155,16 @@ export default function TabLayout() {
           href: null,
           title: 'Nuevo negocio',
           headerLeft: () => <BackButton />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="buscar-cliente"
+        options={{
+          href: null,
+          title: 'Buscar por cliente',
+          headerLeft: () => <BackButton />,
+          headerRight: () => <ProfileHeaderButton />,
         }}
       />
 
@@ -217,6 +216,26 @@ export default function TabLayout() {
           headerLeft: () => <BackButton />,
         }}
       />
+      <Tabs.Screen
+        name="catalogos"
+        options={{
+          href: null,
+          title: 'Catálogos',
+          headerLeft: () => <BackButton />,
+        }}
+      />
+      <Tabs.Screen
+        name="catalogo-create"
+        options={{
+          href: null,
+          title: 'Nuevo catálogo',
+          headerLeft: () => <BackButton />,
+        }}
+      />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  headerButton: { width: 42, height: 42, marginRight: 12 },
+});

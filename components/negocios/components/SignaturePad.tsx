@@ -7,11 +7,21 @@ import {
   Pressable,
   Modal,
   Image,
+  Alert,
   useWindowDimensions,
   StatusBar,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, SvgUri, SvgXml } from 'react-native-svg';
+import Svg, { Path, Rect, SvgUri, SvgXml } from 'react-native-svg';
+import {
+  fitSignaturePad,
+  mapPointToSignature,
+  SIGNATURE_CANVAS_HEIGHT,
+  SIGNATURE_CANVAS_WIDTH,
+} from '@/lib/signatureGeometry';
+import { validateTransparentPngUri } from '@/lib/signaturePng';
+import { useSignatureLandscape } from './useSignatureLandscape';
 
 interface Props {
   label: string;
@@ -51,6 +61,47 @@ function SignaturePreview({ value }: { value: string }) {
  */
 export function SignaturePad({ label, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const { preparing, openLandscape, restorePortrait } = useSignatureLandscape();
+
+  const openSigning = async () => {
+    try {
+      if (await openLandscape()) setOpen(true);
+    } catch (error) {
+      Alert.alert(
+        'No se pudo abrir la firma',
+        'Gire el dispositivo y vuelva a intentarlo. ' +
+          (error instanceof Error ? error.message : '')
+      );
+    }
+  };
+
+  const closeSigning = async () => {
+    setOpen(false);
+    try {
+      await restorePortrait();
+    } catch (error) {
+      console.warn('No se pudo restaurar la orientación vertical', error);
+    }
+  };
+
+  const selectPng = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/png',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      if ((asset.mimeType || '').toLowerCase() !== 'image/png') {
+        throw new Error('Solo se permiten archivos PNG');
+      }
+      await validateTransparentPngUri(asset.uri);
+      onChange(asset.uri);
+    } catch (error) {
+      Alert.alert('PNG inválido', error instanceof Error ? error.message : 'No se pudo cargar el PNG');
+    }
+  };
 
   return (
     <View style={styles.field}>
@@ -64,23 +115,26 @@ export function SignaturePad({ label, value, onChange }: Props) {
           <Text style={styles.emptyText}>Sin firma</Text>
         </View>
       )}
-      <Pressable
-        style={styles.openBtn}
-        onPress={() => setOpen(true)}
-        accessibilityRole="button"
-      >
-        <Text style={styles.openBtnText}>
-          {value ? 'Volver a firmar' : 'Firmar'}
-        </Text>
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable style={[styles.openBtn, preparing && styles.btnDisabled]} onPress={() => void openSigning()} disabled={preparing} accessibilityRole="button">
+          <Text style={styles.openBtnText}>{preparing ? 'Girando…' : value ? 'Volver a firmar' : 'Firmar'}</Text>
+        </Pressable>
+        <Pressable style={styles.uploadBtn} onPress={() => void selectPng()} accessibilityRole="button">
+          <Text style={styles.uploadBtnText}>Subir PNG</Text>
+        </Pressable>
+        {value ? (
+          <Pressable style={styles.removeBtn} onPress={() => onChange('')} accessibilityRole="button">
+            <Text style={styles.removeBtnText}>Quitar</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <SignatureFullscreenModal
         visible={open}
-        title={label}
-        onCancel={() => setOpen(false)}
-        onConfirm={(dataUrl) => {
+        onCancel={() => void closeSigning()}
+        onConfirm={async (dataUrl) => {
           onChange(dataUrl);
-          setOpen(false);
+          await closeSigning();
         }}
       />
     </View>
@@ -89,24 +143,18 @@ export function SignaturePad({ label, value, onChange }: Props) {
 
 function SignatureFullscreenModal({
   visible,
-  title,
   onCancel,
   onConfirm,
 }: {
   visible: boolean;
-  title: string;
   onCancel: () => void;
   onConfirm: (dataUrl: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const landscape = width > height;
+  const readyForInput = width > height;
 
-  const padW = Math.max(280, width - (landscape ? 48 : 24));
-  const padH = Math.max(
-    280,
-    height - insets.top - insets.bottom - (landscape ? 120 : 180)
-  );
+  const { width: padW, height: padH } = fitSignaturePad(width - 32, height - insets.top - insets.bottom - 96);
 
   const pathsRef = useRef<string[]>([]);
   const currentRef = useRef<string>('');
@@ -123,15 +171,21 @@ function SignatureFullscreenModal({
   // Reset al abrir
   React.useEffect(() => {
     if (visible) reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const confirmPng = () => {
     svgRef.current?.toDataURL(
       (base64: string) => onConfirm(`data:image/png;base64,${base64}`),
-      { width: Math.round(padW), height: Math.round(padH) }
+      { width: SIGNATURE_CANVAS_WIDTH, height: SIGNATURE_CANVAS_HEIGHT }
     );
   };
+
+  const finishStroke = React.useCallback(() => {
+    if (!currentRef.current) return;
+    pathsRef.current.push(currentRef.current);
+    currentRef.current = '';
+    setTick((t) => t + 1);
+  }, []);
 
   const pan = useMemo(
     () =>
@@ -140,36 +194,35 @@ function SignatureFullscreenModal({
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (evt) => {
           const { locationX, locationY } = evt.nativeEvent;
-          currentRef.current = `M${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          const point = mapPointToSignature(
+            locationX,
+            locationY,
+            padW,
+            padH
+          );
+          currentRef.current = `M${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
           setTick((t) => t + 1);
         },
         onPanResponderMove: (evt) => {
           const { locationX, locationY } = evt.nativeEvent;
-          currentRef.current += ` L${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          const point = mapPointToSignature(
+            locationX,
+            locationY,
+            padW,
+            padH
+          );
+          currentRef.current += ` L${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
           setTick((t) => t + 1);
         },
-        onPanResponderRelease: () => {
-          if (currentRef.current) {
-            pathsRef.current.push(
-              `<path d="${currentRef.current}" stroke="#111" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
-            );
-            currentRef.current = '';
-            setTick((t) => t + 1);
-          }
-        },
+        onPanResponderRelease: finishStroke,
+        onPanResponderTerminate: finishStroke,
       }),
-    []
+    [finishStroke, padH, padW]
   );
 
   const displayPath = useMemo(() => {
     void tick;
-    return [
-      ...pathsRef.current.map((p) => {
-        const m = p.match(/d="([^"]+)"/);
-        return m?.[1] || '';
-      }),
-      currentRef.current,
-    ].filter(Boolean);
+    return [...pathsRef.current, currentRef.current].filter(Boolean);
   }, [tick]);
 
   return (
@@ -177,40 +230,47 @@ function SignatureFullscreenModal({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
+      supportedOrientations={['landscape']}
       onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" hidden />
       <View
         style={[
           styles.modalRoot,
           {
             paddingTop: insets.top + 8,
             paddingBottom: insets.bottom + 8,
-            paddingHorizontal: landscape ? 16 : 12,
+            paddingHorizontal: 16,
           },
         ]}
       >
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          <Text style={styles.modalHint}>
-            {landscape
-              ? 'Firme en el área blanca · Confirme al terminar'
-              : 'Gire el teléfono (horizontal) si le resulta más cómodo'}
-          </Text>
-        </View>
-
         <View
           style={[styles.fullPad, { width: padW, height: padH }]}
+          pointerEvents={readyForInput ? 'auto' : 'none'}
           {...pan.panHandlers}
         >
-          <Svg ref={svgRef} width={padW} height={padH} style={{ backgroundColor: '#fff' }}>
+          <Svg
+            ref={svgRef}
+            width={padW}
+            height={padH}
+            viewBox={`0 0 ${SIGNATURE_CANVAS_WIDTH} ${SIGNATURE_CANVAS_HEIGHT}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ backgroundColor: '#fff' }}
+          >
+            <Rect
+              x={0}
+              y={0}
+              width={SIGNATURE_CANVAS_WIDTH}
+              height={SIGNATURE_CANVAS_HEIGHT}
+              fill="#fff"
+            />
             {displayPath.map((d, i) => (
               <Path
                 key={`${i}-${d.slice(0, 12)}`}
                 d={d}
                 stroke="#111"
-                strokeWidth={2.5}
+                strokeWidth={8}
                 fill="none"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -219,7 +279,7 @@ function SignatureFullscreenModal({
           </Svg>
           {!hasStroke && (
             <View style={styles.padPlaceholder} pointerEvents="none">
-              <Text style={styles.padPlaceholderText}>Firme aquí</Text>
+              <Text style={styles.padPlaceholderText}>{readyForInput ? 'Firme aquí' : 'Preparando área de firma…'}</Text>
             </View>
           )}
         </View>
@@ -233,7 +293,7 @@ function SignatureFullscreenModal({
           </Pressable>
           <Pressable
             style={[styles.primaryBtn, !hasStroke && styles.btnDisabled]}
-            disabled={!hasStroke}
+            disabled={!hasStroke || !readyForInput}
             onPress={confirmPng}
           >
             <Text style={styles.primaryBtnText}>Confirmar firma</Text>
@@ -269,21 +329,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
   emptyText: { color: '#888', fontSize: 13 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   openBtn: {
     backgroundColor: '#1565c0',
     borderRadius: 8,
     paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
   },
   openBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  uploadBtn: { borderWidth: 1, borderColor: '#1565c0', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 14 },
+  uploadBtnText: { color: '#1565c0', fontWeight: '700', fontSize: 15 },
+  removeBtn: { borderWidth: 1, borderColor: '#777', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 14 },
+  removeBtnText: { color: '#444', fontWeight: '700', fontSize: 15 },
   modalRoot: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    gap: 10,
+    justifyContent: 'space-between',
   },
-  modalHeader: { gap: 4 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
-  modalHint: { fontSize: 13, color: '#666' },
   fullPad: {
     alignSelf: 'center',
     borderWidth: 1,

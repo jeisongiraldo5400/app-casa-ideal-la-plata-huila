@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import { formatCOP } from '@/lib/creditCalculator';
 import type { NegocioItem } from '@/components/negocios/infrastructure/store/negociosStore';
@@ -19,6 +20,7 @@ type ThemeColors = {
 type Props = {
   items: NegocioItem[];
   stockByProduct: Record<string, ProductWarehouseStock[]>;
+  warehouseLocked?: boolean;
   onUpdateItem: (
     index: number,
     patch: Partial<Pick<NegocioItem, 'quantity' | 'unit_price' | 'warehouse_id'>>
@@ -27,9 +29,117 @@ type Props = {
   colors: ThemeColors;
 };
 
+function EditableMoneyInput({
+  value,
+  label,
+  colors,
+  onChange,
+}: {
+  value: number;
+  label: string;
+  colors: ThemeColors;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatNegocioMoneyInput(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(formatNegocioMoneyInput(value));
+  }, [focused, value]);
+
+  const handleChange = (text: string) => {
+    const formatted = formatNegocioMoneyInput(text);
+    setDraft(formatted);
+
+    const parsed = parseNegocioMoney(formatted);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) onChange(parsed);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    const parsed = parseNegocioMoney(draft);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) {
+      onChange(parsed);
+      setDraft(formatNegocioMoneyInput(parsed));
+    } else {
+      setDraft(formatNegocioMoneyInput(value));
+    }
+  };
+
+  return (
+    <TextInput
+      accessibilityLabel={label}
+      keyboardType="numeric"
+      selectTextOnFocus
+      style={[
+        styles.input,
+        { borderColor: colors.divider, color: colors.text.primary },
+      ]}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onBlur={handleBlur}
+      onChangeText={handleChange}
+    />
+  );
+}
+
+/**
+ * Cantidad con borrador local: un input controlado que ignora textos
+ * inválidos impide borrar el dígito para escribir otro ("1" → "" → "15").
+ */
+function EditableQuantityInput({
+  value,
+  label,
+  hasIssue,
+  colors,
+  onChange,
+}: {
+  value: number;
+  label: string;
+  hasIssue: boolean;
+  colors: ThemeColors;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [focused, value]);
+
+  const handleChange = (text: string) => {
+    const digits = text.replace(/\D/g, '');
+    setDraft(digits);
+    const quantity = parseNegocioQuantity(digits);
+    if (Number.isSafeInteger(quantity) && quantity > 0 && quantity !== value) {
+      onChange(quantity);
+    }
+  };
+
+  return (
+    <TextInput
+      accessibilityLabel={label}
+      keyboardType="numeric"
+      selectTextOnFocus
+      style={[
+        styles.input,
+        {
+          borderColor: hasIssue ? 'crimson' : colors.divider,
+          color: colors.text.primary,
+        },
+      ]}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChangeText={handleChange}
+    />
+  );
+}
+
 export function NegocioItemsList({
   items,
   stockByProduct,
+  warehouseLocked = false,
   onUpdateItem,
   onRemoveItem,
   colors,
@@ -70,7 +180,11 @@ export function NegocioItemsList({
             <Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 4 }}>
               Bodega
             </Text>
-            {stockOptions.length === 0 ? (
+            {warehouseLocked ? (
+              <Text style={{ color: colors.text.primary, fontSize: 13 }}>
+                {warehouseName}
+              </Text>
+            ) : stockOptions.length === 0 ? (
               <Text style={{ color: 'crimson', fontSize: 12 }}>Sin stock</Text>
             ) : (
               <View style={styles.rowWrap}>
@@ -121,22 +235,12 @@ export function NegocioItemsList({
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text.secondary, fontSize: 12 }}>Cant.</Text>
-                <TextInput
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    {
-                      borderColor: qtyIssue ? 'crimson' : colors.divider,
-                      color: colors.text.primary,
-                    },
-                  ]}
-                  value={String(item.quantity)}
-                  onChangeText={(text) => {
-                    const quantity = parseNegocioQuantity(text);
-                    if (Number.isSafeInteger(quantity) && quantity > 0) {
-                      onUpdateItem(idx, { quantity });
-                    }
-                  }}
+                <EditableQuantityInput
+                  value={item.quantity}
+                  label={`Cantidad de ${item.description}`}
+                  hasIssue={qtyIssue}
+                  colors={colors}
+                  onChange={(quantity) => onUpdateItem(idx, { quantity })}
                 />
                 {qtyIssue ? (
                   <Text style={{ color: 'crimson', fontSize: 11 }}>Máx: {maxQty}</Text>
@@ -151,17 +255,11 @@ export function NegocioItemsList({
                 <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
                   Vr. unitario
                 </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    { borderColor: colors.divider, color: colors.text.primary },
-                  ]}
-                  value={formatNegocioMoneyInput(item.unit_price)}
-                  onChangeText={(text) => {
-                    const unit_price = parseNegocioMoney(text);
-                    if (unit_price >= 0) onUpdateItem(idx, { unit_price });
-                  }}
+                <EditableMoneyInput
+                  value={item.unit_price}
+                  label={`Valor unitario de ${item.description}`}
+                  colors={colors}
+                  onChange={(unit_price) => onUpdateItem(idx, { unit_price })}
                 />
               </View>
             </View>

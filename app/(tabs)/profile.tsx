@@ -1,22 +1,40 @@
+import { DownloadDataButton } from '@/components/offline';
 import { ChangePasswordForm } from '@/components/auth/components/ChangePasswordForm';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { getColors } from '@/constants/theme';
+import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useBluetoothPrinter } from '@/components/printing';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function ProfileScreen() {
+  return (
+    <ScreenErrorBoundary screen="Perfil">
+      <ProfileScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function ProfileScreenInner() {
   const { user, signOut } = useAuth();
-  const { themeMode, isDark, setThemeMode } = useTheme();
+  const { isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
   const { roles } = useUserRoles();
+  const pendingCount = useSyncStore((state) => state.pendingCount);
+  const failedCount = useSyncStore((state) => state.failedCount);
+  const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
+  const unsentCount = pendingCount + failedCount;
+  const { savedPrinter, openPicker } = useBluetoothPrinter();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const roleNames = roles
     .map((r) => r.role?.nombre)
@@ -26,7 +44,9 @@ export default function ProfileScreen() {
   const handleSignOut = async () => {
     Alert.alert(
       'Cerrar sesión',
-      '¿Estás seguro de que deseas cerrar sesión?',
+      unsentCount
+        ? `Hay ${unsentCount} cambio${unsentCount === 1 ? '' : 's'} sin sincronizar. Si cierras sesión se borrarán del dispositivo.`
+        : '¿Estás seguro de que deseas cerrar sesión?',
       [
         {
           text: 'Cancelar',
@@ -45,15 +65,17 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background.default }]} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          <MaterialIcons name="account-circle" size={80} color={colors.primary.main} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background.default }]} edges={['top']}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={[styles.header, { backgroundColor: colors.navigation.background }]}>
+        <View style={[styles.avatarContainer, { backgroundColor: colors.primary.main }]}>
+          <MaterialIcons name="person" size={42} color={colors.primary.contrastText} />
         </View>
-        <Text style={[styles.userName, { color: colors.text.primary }]}>{user?.email?.split('@')[0] || 'Usuario'}</Text>
-        <Text style={[styles.userEmail, { color: colors.text.secondary }]}>{user?.email}</Text>
+        <Text style={styles.profileLabel}>MI PERFIL</Text>
+        <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Usuario'}</Text>
+        <Text style={styles.userEmail}>{user?.email}</Text>
         {!!roleNames && (
-          <Text style={[styles.userEmail, { color: colors.primary.main, marginTop: 4 }]}>
+          <Text style={styles.roleText}>
             Rol: {roleNames}
           </Text>
         )}
@@ -93,6 +115,53 @@ export default function ProfileScreen() {
           <View style={styles.infoContent}>
             <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Contraseña</Text>
             <Text style={[styles.infoValue, { color: colors.primary.main }]}>Cambiar contraseña</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
+      </Card>
+
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Datos sin conexión</Text>
+        <DownloadDataButton />
+        <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+        <TouchableOpacity
+          style={styles.changePasswordRow}
+          onPress={() => setQueueVisible(true)}
+          activeOpacity={0.7}
+          testID="sync-queue-button"
+        >
+          <MaterialIcons
+            name={failedCount ? 'error-outline' : 'cloud-upload'}
+            size={20}
+            color={failedCount ? colors.error.main : colors.text.secondary}
+          />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>Cambios sin sincronizar</Text>
+            <Text style={[styles.infoValue, { color: failedCount ? colors.error.main : colors.text.primary }]}>
+              {failedCount
+                ? `${failedCount} rechazado${failedCount === 1 ? '' : 's'} · ${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`
+                : pendingCount
+                  ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'} de envío`
+                  : 'Todo sincronizado'}
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
+      </Card>
+
+      <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
+        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Impresora Bluetooth</Text>
+        <TouchableOpacity
+          style={styles.changePasswordRow}
+          onPress={openPicker}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="print" size={20} color={colors.text.secondary} />
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>PT-210</Text>
+            <Text style={[styles.infoValue, { color: savedPrinter ? colors.text.primary : colors.primary.main }]}>
+              {savedPrinter ? savedPrinter.name : 'Vincular impresora'}
+            </Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
         </TouchableOpacity>
@@ -154,6 +223,7 @@ export default function ProfileScreen() {
         onClose={() => setShowChangePasswordModal(false)}
       />
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -162,33 +232,56 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
-    paddingTop: 20,
+    padding: Spacing.xl,
+    paddingTop: Spacing.lg,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 32,
-    marginTop: 20,
+    marginBottom: Spacing.xxl,
+    padding: Spacing.xxl,
+    borderRadius: Radius.panel,
+    ...Shadows.floating,
   },
   avatarContainer: {
-    marginBottom: 16,
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  profileLabel: {
+    color: '#bfdbfe',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 4,
   },
   userName: {
-    fontSize: 24,
-    fontWeight: '700',
+    color: '#ffffff',
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '800',
     marginBottom: 4,
     textTransform: 'capitalize',
   },
   userEmail: {
-    fontSize: 16,
+    color: '#cbd5e1',
+    fontSize: 14,
+  },
+  roleText: {
+    color: '#93c5fd',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
   },
   card: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
+    fontWeight: '800',
+    marginBottom: Spacing.lg,
   },
   infoRow: {
     flexDirection: 'row',
@@ -233,4 +326,3 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 });
-

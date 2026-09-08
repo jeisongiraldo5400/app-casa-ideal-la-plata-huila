@@ -1,3 +1,4 @@
+import { logHandledError } from "@/lib/errorMessage";
 import { logOperationError } from "@/lib/operationLogger";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/database.types";
@@ -162,8 +163,8 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
               .is("deleted_at", null);
 
             if (itemsError) {
-              console.error(
-                "Error loading purchase order items batch:",
+              logHandledError(
+                "No se pudo cargar un lote de ítems de órdenes de compra",
                 itemsError,
               );
             } else {

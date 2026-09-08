@@ -91,6 +91,140 @@ describe('entriesStore', () => {
       expect(state.step).toBe('setup');
       expect(state.error).toMatch(/orden de compra/i);
     });
+
+    it('validates the setup and goes straight to scanning (no intermediate confirmation screen)', () => {
+      useEntriesStore.setState({ entryType: 'INITIAL_LOAD', warehouseId: 'warehouse-1', step: 'setup' });
+
+      expect(useEntriesStore.getState().openEntryConfirmation()).toBe(true);
+      expect(useEntriesStore.getState().step).toBe('setup');
+
+      useEntriesStore.getState().startEntry();
+      expect(useEntriesStore.getState().step).toBe('scanning');
+      expect(useEntriesStore.getState().uiStage).toBe('idle');
+    });
+  });
+
+  describe('guided scanning', () => {
+    const originalSearch = useEntriesStore.getState().searchProductByBarcode;
+
+    afterEach(() => {
+      useEntriesStore.setState({ searchProductByBarcode: originalSearch });
+    });
+
+    it('opens product creation only for a manual entry', async () => {
+      useEntriesStore.setState({
+        entryType: 'ENTRY',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(result.status).toBe('not_found');
+      expect(useEntriesStore.getState().step).toBe('product-form');
+      expect(useEntriesStore.getState().currentScannedBarcode).toBe('UNKNOWN');
+    });
+
+    it('resets uiStage when routing an unknown barcode to product creation', async () => {
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        uiStage: 'product_review',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(useEntriesStore.getState().step).toBe('product-form');
+      expect(useEntriesStore.getState().uiStage).toBe('idle');
+    });
+
+    it('ignores a scanBarcode result that resolves after the store was reset', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      let resolveSearch: (value: any) => void = () => undefined;
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(
+          () => new Promise((resolve) => { resolveSearch = resolve; })
+        ),
+      });
+
+      const pending = useEntriesStore.getState().scanBarcode('770123');
+      useEntriesStore.getState().resetAll();
+      resolveSearch(product);
+      await pending;
+
+      const state = useEntriesStore.getState();
+      expect(state.step).toBe('flow-selection');
+      expect(state.currentProduct).toBeNull();
+    });
+
+    it('does not toggle global loading while looking up a barcode', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      useEntriesStore.setState({
+        entryType: 'INITIAL_LOAD',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        loading: false,
+        searchProductByBarcode: jest.fn(async () => {
+          expect(useEntriesStore.getState().loading).toBe(false);
+          return product;
+        }),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('770123');
+
+      expect(result.status).toBe('found');
+      expect(useEntriesStore.getState().loading).toBe(false);
+      expect(useEntriesStore.getState().uiStage).toBe('product_review');
+    });
+
+    it('does not create an unknown product inside a purchase order', async () => {
+      useEntriesStore.setState({
+        entryType: 'PO_ENTRY',
+        purchaseOrderId: 'order-1',
+        warehouseId: 'warehouse-1',
+        step: 'scanning',
+        searchProductByBarcode: jest.fn(async () => null),
+      });
+
+      const result = await useEntriesStore.getState().scanBarcode('UNKNOWN');
+
+      expect(result.status).toBe('error');
+      expect(useEntriesStore.getState().step).toBe('scanning');
+      expect(useEntriesStore.getState().error).toMatch(/orden de compra/i);
+    });
+
+    it('returns a typed result and retains an invalid product for correction', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      useEntriesStore.setState({ currentProduct: product, currentScannedBarcode: '123' });
+
+      const result = await useEntriesStore.getState().addProductToEntry(product, 0, '123');
+
+      expect(result).toEqual({ ok: false, error: 'La cantidad debe ser un número mayor que cero' });
+      expect(useEntriesStore.getState().currentProduct).toBe(product);
+    });
+
+    it('does not mutate an existing entry item when adding more quantity', async () => {
+      const product = { id: 'product-1', name: 'Producto' } as any;
+      const existing = { product, quantity: 2, barcode: '123' };
+      useEntriesStore.setState({
+        currentProduct: product,
+        currentScannedBarcode: '123',
+        entryItems: [existing],
+      });
+
+      const result = await useEntriesStore.getState().addProductToEntry(product, 3, '123');
+
+      expect(result.ok).toBe(true);
+      expect(existing.quantity).toBe(2);
+      expect(useEntriesStore.getState().entryItems[0]).not.toBe(existing);
+      expect(useEntriesStore.getState().entryItems[0].quantity).toBe(5);
+    });
   });
 
   describe('finalizeEntry', () => {
@@ -137,18 +271,19 @@ describe('entriesStore', () => {
 
       useEntriesStore.setState({ purchaseOrders: [mockOrder as any] });
 
+      // Las entradas registradas se consultan con .in() (una sola función para 1 o N órdenes).
+      const entriesResult = () =>
+        Promise.resolve({
+          data: [
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 10 },
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 5 },
+          ],
+          error: null,
+        });
       (supabase.from as jest.Mock).mockImplementation(() => ({
         select: () => ({
-          eq: () => ({
-            is: () =>
-              Promise.resolve({
-                data: [
-                  { product_id: 'product-1', quantity: 10 },
-                  { product_id: 'product-1', quantity: 5 },
-                ],
-                error: null,
-              }),
-          }),
+          eq: () => ({ is: entriesResult }),
+          in: () => ({ is: entriesResult }),
         }),
       }));
 
@@ -179,7 +314,7 @@ describe('entriesStore', () => {
         select: () => ({
           eq: () => ({
             is: () => ({
-              single: () =>
+              maybeSingle: () =>
                 Promise.resolve({
                   data: null,
                   error: { code: '42501', message: 'permission denied' },
@@ -192,6 +327,22 @@ describe('entriesStore', () => {
       await expect(
         useEntriesStore.getState().searchProductByBarcode('123456')
       ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('returns null when the barcode is not registered', async () => {
+      (supabase.from as jest.Mock).mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }));
+
+      await expect(
+        useEntriesStore.getState().searchProductByBarcode('UNKNOWN')
+      ).resolves.toBeNull();
     });
   });
 

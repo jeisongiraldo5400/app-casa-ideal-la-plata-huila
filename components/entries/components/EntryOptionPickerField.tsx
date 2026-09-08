@@ -1,12 +1,20 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- Carga perezosa por plataforma */
+import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import React from 'react';
-import { Platform } from 'react-native';
 
 import type { EntryOptionPickerFieldProps } from './entriesPickerFieldTypes';
 
 export type { EntryOptionPickerFieldProps };
 
-export const EntryOptionPickerField: React.ComponentType<EntryOptionPickerFieldProps> =
-  Platform.OS === 'ios'
-    ? require('./EntryOptionPickerField.ios').EntryOptionPickerField
-    : require('./EntryOptionPickerField.android').EntryOptionPickerField;
+/** Alias del `OptionPickerField` compartido para categorías/marcas del formulario de producto. */
+export function EntryOptionPickerField({ value, onValueChange, options, placeholder, modalTitle, colors }: EntryOptionPickerFieldProps) {
+  return (
+    <OptionPickerField
+      value={value}
+      onValueChange={onValueChange}
+      options={options}
+      placeholder={placeholder}
+      modalTitle={modalTitle}
+      colors={colors}
+    />
+  );
+}

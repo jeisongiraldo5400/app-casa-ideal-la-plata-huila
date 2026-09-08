@@ -1,9 +1,10 @@
-import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useEntriesStore, type EntriesState } from '@/components/entries/infrastructure/store/entriesStore';
 
 /**
- * Hook personalizado para acceder al estado y funciones del módulo de entradas
+ * Acceso al store de entradas con selector y comparación superficial: el componente
+ * solo se vuelve a renderizar cuando cambia alguno de los campos que pide.
  */
-export function useEntries() {
-  return useEntriesStore();
+export function useEntries<T>(selector: (state: EntriesState) => T): T {
+  return useEntriesStore(useShallow(selector));
 }
-

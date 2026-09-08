@@ -15,6 +15,15 @@ eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "tu_ur
 
 # Configurar la clave anónima de Supabase
 eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "tu_clave_anonima_de_supabase"
+
+# Configurar el DSN de Sentry (reporte de crashes nativos, opcional pero recomendado)
+eas secret:create --scope project --name EXPO_PUBLIC_SENTRY_DSN --value "tu_dsn_de_sentry"
+
+# Origen del web de catálogos (módulo Catálogos): los enlaces privados se arman como <origen>/c/<token>
+eas secret:create --scope project --name EXPO_PUBLIC_CATALOG_SITE_URL --value "https://catalogo.tu-dominio.com"
+
+# Endpoint que despacha las notificaciones push (ruta del panel web).
+eas secret:create --scope project --name EXPO_PUBLIC_NOTIFICATIONS_DISPATCH_URL --value "https://tu-panel.com/api/notifications/dispatch"
 ```
 
 ### 2. Verificar que las variables estén configuradas

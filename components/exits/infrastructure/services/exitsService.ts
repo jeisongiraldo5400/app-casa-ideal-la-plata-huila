@@ -1,24 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/database.types";
 
-type Warehouse = Database["public"]["Tables"]["warehouses"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type Customer = Database["public"]["Tables"]["customers"]["Row"];
-type Product = Database["public"]["Tables"]["products"]["Row"];
-
-export async function fetchActiveWarehouses(): Promise<Warehouse[]> {
-  const { data, error } = await supabase
-    .from("warehouses")
-    .select("*")
-    .eq("is_active", true)
-    .order("name");
-
-  if (error) {
-    throw error;
-  }
-
-  return data || [];
-}
 
 export async function fetchActiveProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
@@ -34,11 +18,23 @@ export async function fetchActiveProfiles(): Promise<Profile[]> {
   return (data as Profile[]) || [];
 }
 
+/**
+ * Deja solo letras, números, espacios, puntos, guiones y apóstrofes. El término se
+ * interpola en un filtro PostgREST `.or(...)`, donde comas, paréntesis, comillas, `%`
+ * y `_` cambian el significado de la consulta (o la rompen).
+ */
+export function sanitizeSearchTerm(searchTerm: string): string {
+  return searchTerm
+    .replace(/[^\p{L}\p{N}\s.'-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function searchCustomersByTerm(
   searchTerm: string,
   limit = 50
 ): Promise<Customer[]> {
-  const normalizedSearchTerm = searchTerm.trim();
+  const normalizedSearchTerm = sanitizeSearchTerm(searchTerm);
   if (!normalizedSearchTerm) {
     return [];
   }
@@ -58,23 +54,6 @@ export async function searchCustomersByTerm(
   }
 
   return data || [];
-}
-
-export async function fetchProductByBarcode(
-  barcode: string
-): Promise<Product | null> {
-  const { data, error } = await supabase
-    .from("products")
-    .select("*")
-    .eq("barcode", barcode)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
 }
 
 export async function fetchWarehouseStock(

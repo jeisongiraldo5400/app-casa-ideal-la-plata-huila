@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
 import { create } from 'zustand';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { loadReportSnapshot, saveReportSnapshot } from '@/lib/offline/repositories/offlineRepository';
 
 // Tipos para los resultados de RPC
 type PeriodStatsResult = Database['public']['Functions']['get_period_stats']['Returns'][0];
@@ -204,8 +206,20 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         },
         loading: false,
       });
+      await saveReportSnapshot('operational-reports', {
+        periodStats: periodStatsData,
+        summary,
+        recentMovements,
+      });
     } catch (error: any) {
       console.error('Error loading reports:', error);
+      if (isNetworkError(error)) {
+        const snapshot = await loadReportSnapshot<ReportData>('operational-reports');
+        if (snapshot) {
+          set({ reportData: snapshot.payload, loading: false, error: null });
+          return;
+        }
+      }
       set({
         error: error.message || 'Error al cargar reportes',
         loading: false,
@@ -221,6 +235,13 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         p_end_date: dateRange.endDate.toISOString().slice(0, 10),
       });
       if (error) {
+        if (isNetworkError(error)) {
+          const snapshot = await loadReportSnapshot<ExecutiveReport>('executive-report');
+          if (snapshot) {
+            set({ executiveReport: snapshot.payload });
+            return;
+          }
+        }
         const context = [error.code, error.details, error.hint].filter(Boolean).join(' · ');
         set({
           error: [error.message || 'Error al cargar el resumen ejecutivo', context]
@@ -230,7 +251,15 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         return;
       }
       set({ executiveReport: data as unknown as ExecutiveReport });
+      await saveReportSnapshot('executive-report', data);
     } catch (error: any) {
+      if (isNetworkError(error)) {
+        const snapshot = await loadReportSnapshot<ExecutiveReport>('executive-report');
+        if (snapshot) {
+          set({ executiveReport: snapshot.payload });
+          return;
+        }
+      }
       set({ error: error.message || 'Error al cargar el resumen ejecutivo' });
     }
   },

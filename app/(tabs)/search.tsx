@@ -1,14 +1,23 @@
-import { BarcodeScanner } from '@/components/entries/components/BarcodeScanner';
+import { BarcodeScanner } from '@/components/scanning';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { Alert, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 export default function QuickSearchScreen() {
+  return (
+    <ScreenErrorBoundary screen="Buscar producto">
+      <QuickSearchScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function QuickSearchScreenInner() {
   const router = useRouter();
-  const { setSearchQuery, loadInventory } = useInventoryStore();
+  const { setSearchQuery } = useInventoryStore();
   const [scannerActive, setScannerActive] = useState(true);
 
   useFocusEffect(
@@ -21,7 +30,7 @@ export default function QuickSearchScreen() {
   );
 
   const goHome = () => {
-    router.push('/(tabs)');
+    router.navigate('/(tabs)');
   };
 
   const handleScan = async (barcode: string) => {
@@ -49,9 +58,8 @@ export default function QuickSearchScreen() {
         return;
       }
 
-      await loadInventory();
       setSearchQuery(barcode);
-      router.push('/(tabs)/inventory');
+      router.navigate('/(tabs)/inventory');
       setScannerActive(false);
     } catch (error: any) {
       console.error('Error searching product:', error);

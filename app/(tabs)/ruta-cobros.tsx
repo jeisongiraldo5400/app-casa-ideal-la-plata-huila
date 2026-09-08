@@ -7,11 +7,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 const statusLabel = { borrador: 'Borrador', activa: 'En curso', completada: 'Completada', cancelada: 'Cancelada' };
 
 export default function CollectionRoutesScreen() {
+  return (
+    <ScreenErrorBoundary screen="Rutas de cobro">
+      <CollectionRoutesScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
+
+function CollectionRoutesScreenInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -77,7 +86,7 @@ export default function CollectionRoutesScreen() {
           </View>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => router.push('/(tabs)/ruta-cobros-crear' as any)}>
+        <TouchableOpacity style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => router.navigate('/(tabs)/ruta-cobros-crear' as any)}>
           <MaterialIcons name="add-road" size={38} color={colors.primary.main} />
           <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Crear ruta del día</Text>
           <Text style={{ color: colors.text.secondary, textAlign: 'center' }}>Selecciona y ordena los negocios que visitarás.</Text>

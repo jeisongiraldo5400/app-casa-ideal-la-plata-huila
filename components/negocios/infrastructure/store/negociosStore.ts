@@ -1,16 +1,39 @@
+import { kickNotificationDispatch } from '@/components/notifications/infrastructure/services/dispatchNotifications';
+import { logHandledError } from '@/lib/errorMessage';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import {
+  canUseLocalDb,
+  fetchNegociosListFromLocal,
+} from '@/lib/offline/repositories/offlineRepository';
 import {
   calculateCredit,
+  type CreditCalcResult,
   type CreditFrequency,
   type CreditSettingsInput,
 } from '@/lib/creditCalculator';
-import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import {
+  isNewLocalSignature,
+  removeNegocioSignatures,
+  uploadNegocioSignature,
+} from '@/lib/uploadSignature';
+import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
+import {
+  downPaymentScheduleError,
+  downPaymentScheduleTotal,
+  financedAfterDownPayments,
+  installmentPlanError,
+  sortDownPaymentSchedule,
+  type DownPaymentEntry,
+} from '@/lib/negocios/negocioCreditRules';
+import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
   validateNegocioItemsStock,
 } from '../services/negociosStockService';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { negocioSkipsWarehouseStock } from '../services/negociosDeliveryOrdersService';
 import type { Json } from '@/types/database.types';
 
 export interface NegocioItem {
@@ -24,8 +47,18 @@ export interface NegocioItem {
 interface NegociosState {
   list: any[];
   loading: boolean;
+  fromCache: boolean;
+  /** Mensaje del último fallo de `fetchList`; null cuando la carga fue exitosa. */
+  error: string | null;
+  /** Negocios donde el usuario autenticado es el vendedor (módulo "Mis negocios"). */
+  myList: any[];
+  myLoading: boolean;
+  myFromCache: boolean;
+  myError: string | null;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
   fetchList: () => Promise<void>;
+  /** Carga los negocios de `sellerId`; se pasa explícito para no depender de red en modo offline. */
+  fetchMyList: (sellerId: string) => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
   createAndActivate: (input: {
     deal_date: string;
@@ -34,11 +67,17 @@ interface NegociosState {
     customer_id: string;
     codeudor_customer_id?: string | null;
     remission_id?: string | null;
+    source_delivery_order_id?: string | null;
     items: NegocioItem[];
-    down_payment: number;
+    /** Vendedor del negocio; por defecto el usuario autenticado. */
+    seller_id?: string | null;
+    /** Abonos iniciales pactados (vacío = sin cuota inicial). */
+    down_payment_schedule: DownPaymentEntry[];
+    /** 0 cuando los abonos iniciales cubren el valor de los productos. */
     installments_count: number;
     frequency: CreditFrequency;
-    first_due_date: string;
+    /** Obligatoria solo cuando hay plan de cuotas. */
+    first_due_date?: string | null;
     notes?: string;
     customer_signature_data_url: string;
     guarantor_signature_data_url?: string;
@@ -60,9 +99,80 @@ interface PendingCreateRequest {
     guarantor: string | null;
     seller: string | null;
   }>;
+  /**
+   * Snapshot de fórmula fijado en el primer intento. `calculated_at` cambia en
+   * cada cálculo y el servidor hashea `p_negocio` completo contra la
+   * idempotency key: reutilizarlo evita "clave usada con datos diferentes".
+   */
+  formulaSnapshot?: CreditCalcResult['formulaSnapshot'];
+}
+
+function sameFormulaSnapshot(
+  a: CreditCalcResult['formulaSnapshot'] | undefined,
+  b: CreditCalcResult['formulaSnapshot']
+): boolean {
+  if (!a) return false;
+  const { calculated_at: _a, ...restA } = a;
+  const { calculated_at: _b, ...restB } = b;
+  return JSON.stringify(restA) === JSON.stringify(restB);
 }
 
 const pendingCreateRequests = new Map<string, PendingCreateRequest>();
+
+function toUserError(error: unknown, fallback: string): Error {
+  if (error instanceof Error && error.message.trim()) {
+    return error;
+  }
+  if (typeof error === 'object' && error && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return new Error(message);
+    }
+  }
+  return new Error(fallback);
+}
+
+function createRequestFingerprint(input: {
+  deal_date: string;
+  municipio_id: string;
+  direccion: string;
+  customer_id: string;
+  codeudor_customer_id?: string | null;
+  remission_id?: string | null;
+  source_delivery_order_id?: string | null;
+  items: NegocioItem[];
+  seller_id?: string | null;
+  down_payment_schedule: DownPaymentEntry[];
+  installments_count: number;
+  frequency: CreditFrequency;
+  first_due_date?: string | null;
+  notes?: string;
+  customer_signature_data_url: string;
+  guarantor_signature_data_url?: string;
+  seller_signature_data_url?: string;
+  activate: boolean;
+}): string {
+  return JSON.stringify({
+    deal_date: input.deal_date,
+    municipio_id: input.municipio_id,
+    direccion: input.direccion,
+    customer_id: input.customer_id,
+    codeudor_customer_id: input.codeudor_customer_id || null,
+    seller_id: input.seller_id || null,
+    remission_id: input.remission_id || null,
+    source_delivery_order_id: input.source_delivery_order_id || null,
+    items: input.items,
+    down_payment_schedule: sortDownPaymentSchedule(input.down_payment_schedule),
+    installments_count: input.installments_count,
+    frequency: input.frequency,
+    first_due_date: input.first_due_date || null,
+    notes: input.notes || null,
+    activate: input.activate,
+    customer_signature_source: input.customer_signature_data_url || null,
+    guarantor_signature_source: input.guarantor_signature_data_url || null,
+    seller_signature_source: input.seller_signature_data_url || null,
+  });
+}
 
 const isValidDateValue = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -74,24 +184,83 @@ const isValidDateValue = (value: string) => {
 export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
   loading: false,
+  fromCache: false,
+  error: null,
+  myList: [],
+  myLoading: false,
+  myFromCache: false,
+  myError: null,
   creditSettings: null,
 
   fetchList: async () => {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
+      // `negocios` no tiene columna remaining_balance: se deriva de las cuotas.
       const { data, error } = await supabase
         .from('negocios')
-        .select('*, customer:customers!negocios_customer_id_fkey(name)')
+        .select(
+          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
+        )
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      set({ list: data || [] });
+      const list = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
+        ...negocio,
+        remaining_balance: computeRemainingBalance(negocio_cuotas),
+        has_mora: (negocio_cuotas || []).some(
+          (cuota: { status: string; deleted_at: string | null }) =>
+            cuota.status === 'mora' && !cuota.deleted_at
+        ),
+      }));
+      set({ list, fromCache: false, error: null });
     } catch (e) {
-      console.error(e);
-      set({ list: [] });
+      if (isNetworkError(e) && canUseLocalDb()) {
+        const local = await fetchNegociosListFromLocal();
+        set({ list: local, fromCache: true, error: null });
+        return;
+      }
+      logHandledError('No se pudieron cargar los negocios', e);
+      // Conservar la lista anterior: un fallo transitorio no debe vaciar la pantalla.
+      set({ error: toUserError(e, 'No se pudieron cargar los negocios').message });
     } finally {
       set({ loading: false });
+    }
+  },
+
+  fetchMyList: async (sellerId) => {
+    set({ myLoading: true, myError: null });
+    try {
+      const { data, error } = await supabase
+        .from('negocios')
+        .select(
+          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
+        )
+        .is('deleted_at', null)
+        .eq('seller_id', sellerId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const myList = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
+        ...negocio,
+        remaining_balance: computeRemainingBalance(negocio_cuotas),
+        has_mora: (negocio_cuotas || []).some(
+          (cuota: { status: string; deleted_at: string | null }) =>
+            cuota.status === 'mora' && !cuota.deleted_at
+        ),
+      }));
+      set({ myList, myFromCache: false, myError: null });
+    } catch (e) {
+      if (isNetworkError(e) && canUseLocalDb()) {
+        const local = await fetchNegociosListFromLocal();
+        const myList = local.filter((item: any) => item.seller_id === sellerId);
+        set({ myList, myFromCache: true, myError: null });
+        return;
+      }
+      logHandledError('No se pudieron cargar tus negocios', e);
+      set({ myError: toUserError(e, 'No se pudieron cargar tus negocios').message });
+    } finally {
+      set({ myLoading: false });
     }
   },
 
@@ -151,41 +320,50 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!input.municipio_id) throw new Error('Seleccione un municipio');
     if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
     if (!isValidDateValue(input.deal_date)) throw new Error('Fecha del negocio inválida');
-    if (!isValidDateValue(input.first_due_date)) throw new Error('Fecha de primera cuota inválida');
     validateNegocioItemsInput(input.items);
+    const signatureError = sellerSignatureRequiredError(
+      input.customer_signature_data_url,
+      input.seller_signature_data_url
+    );
+    if (signatureError) throw new Error(signatureError);
 
     const settings = get().creditSettings;
     if (!settings) throw new Error('La configuración de crédito aún no está disponible');
-    if (!Number.isSafeInteger(input.installments_count)) throw new Error('El número de cuotas debe ser entero');
-    if (input.installments_count < 1) throw new Error('El número de cuotas debe ser mayor a 0');
     if (!['mensual', 'quincenal', 'semanal'].includes(input.frequency)) throw new Error('Frecuencia de pago inválida');
-    if (!Number.isSafeInteger(input.down_payment) || input.down_payment < 0) throw new Error('Cuota inicial inválida');
+    // Abonos iniciales y plan de cuotas: mismas reglas que la base de datos
+    // (normalize_negocio_down_payment_schedule / assert_negocio_installment_plan).
+    // El vendedor define libremente la cantidad de cuotas cuando hay saldo.
+    const productsSubtotal = input.items.reduce(
+      (s, i) => s + i.unit_price * i.quantity,
+      0
+    );
+    const schedule = sortDownPaymentSchedule(input.down_payment_schedule);
+    const scheduleError = downPaymentScheduleError(schedule, input.deal_date, productsSubtotal);
+    if (scheduleError) throw new Error(scheduleError);
+    const planError = installmentPlanError(
+      financedAfterDownPayments(productsSubtotal, schedule),
+      input.installments_count,
+      input.first_due_date,
+      input.deal_date
+    );
+    if (planError) throw new Error(planError);
 
-    if (!input.remission_id) {
+    if (!negocioSkipsWarehouseStock(input)) {
       const stockCheck = await validateNegocioItemsStock(input.items);
       if (!stockCheck.ok) {
         throw new Error(stockCheck.message);
       }
     }
 
-    const productsSubtotal = input.items.reduce(
-      (s, i) => s + i.unit_price * i.quantity,
-      0
-    );
-    if (input.down_payment > productsSubtotal) throw new Error('La cuota inicial no puede superar el subtotal');
     const calc = calculateCredit({
       productsSubtotal,
-      downPayment: input.down_payment,
+      downPayment: downPaymentScheduleTotal(schedule),
       installmentsCount: input.installments_count,
       frequency: input.frequency,
       settings,
     });
 
-    if (input.activate && !input.customer_signature_data_url?.trim()) {
-      throw new Error('Se requiere firma del cliente para activar');
-    }
-
-    const requestFingerprint = JSON.stringify(input);
+    const requestFingerprint = createRequestFingerprint(input);
     let request = pendingCreateRequests.get(requestFingerprint);
     if (!request) {
       request = {
@@ -213,6 +391,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
+    if (!sameFormulaSnapshot(request.formulaSnapshot, calc.formulaSnapshot)) {
+      request.formulaSnapshot = calc.formulaSnapshot;
+    }
+
     const { data: negocioId, error } = await supabase.rpc('create_negocio', {
       p_negocio_id: request.draftId,
       p_idempotency_key: request.idempotencyKey,
@@ -223,17 +405,21 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         direccion: input.direccion.trim(),
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,
+        seller_id: input.seller_id || user.id,
         remission_id: input.remission_id || null,
+        source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
         products_subtotal: calc.productsSubtotal,
         interest_amount: calc.interestAmount,
         total_credit: calc.totalCredit,
         down_payment: calc.downPayment,
+        down_payment_date: schedule[0]?.due_date ?? null,
+        down_payment_schedule: schedule,
         financed_amount: calc.financedAmount,
         installments_count: calc.installmentsCount,
         installment_amount: calc.installmentAmount,
         frequency: input.frequency,
-        first_due_date: input.first_due_date,
-        formula_snapshot: calc.formulaSnapshot,
+        first_due_date: calc.installmentsCount > 0 ? input.first_due_date || null : null,
+        formula_snapshot: request.formulaSnapshot,
         customer_signature_url: request.signatureUrls.customer,
         guarantor_signature_url: request.signatureUrls.guarantor,
         seller_signature_url: request.signatureUrls.seller,
@@ -244,16 +430,47 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         subtotal: item.unit_price * item.quantity,
       })) as unknown as Json,
     });
-    if (error || !negocioId) throw error || new Error('No se pudo crear el negocio');
+    let createdId: string | null = negocioId ?? null;
+    if (error || !createdId) {
+      // El RPC pudo completarse en servidor aunque el cliente no recibiera la
+      // respuesta (timeout): si el negocio existe, se trata como éxito.
+      const { data: persisted } = await supabase
+        .from('negocios')
+        .select('id')
+        .eq('id', request.draftId)
+        .maybeSingle();
+      if (persisted) {
+        createdId = persisted.id;
+      } else {
+        const uploaded = [
+          isNewLocalSignature(input.customer_signature_data_url) ? request.signatureUrls.customer : null,
+          isNewLocalSignature(input.guarantor_signature_data_url) ? request.signatureUrls.guarantor : null,
+          isNewLocalSignature(input.seller_signature_data_url) ? request.signatureUrls.seller : null,
+        ];
+        await removeNegocioSignatures(uploaded).catch((cleanupError) => {
+          console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
+        });
+        request.signatureUrls = undefined;
+        request.signaturePromise = undefined;
+        pendingCreateRequests.delete(requestFingerprint);
+        throw toUserError(error, 'No se pudo crear el negocio');
+      }
+    }
 
     const { data: negocio, error: loadError } = await supabase
       .from('negocios')
       .select('id, numero')
-      .eq('id', negocioId)
+      .eq('id', createdId)
       .single();
-    if (loadError || !negocio) throw loadError || new Error('No se pudo cargar el negocio creado');
+    if (loadError || !negocio) {
+      throw toUserError(loadError, 'No se pudo cargar el negocio creado');
+    }
 
     pendingCreateRequests.delete(requestFingerprint);
+
+    // Adelanta el aviso a los administradores. Activar genera además la orden
+    // de entrega, así que puede haber dos avisos que despachar.
+    kickNotificationDispatch();
 
     await get().fetchList();
     return { numero: negocio.numero, id: negocio.id };

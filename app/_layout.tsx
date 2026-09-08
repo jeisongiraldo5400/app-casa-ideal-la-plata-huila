@@ -1,17 +1,38 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
+import { Typography, getColors } from '@/constants/theme';
+import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import type { NativeStackHeaderProps } from '@react-navigation/native-stack';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
+import { OfflineProvider } from '@/components/offline';
+import { PushNotificationsProvider } from '@/components/notifications';
+import { PrinterPickerModal } from '@/components/printing';
+import { StackHeader } from '@/components/ui';
+import { startSupabaseAuthLifecycle } from '@/lib/supabase';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync();
+
+// Captura crashes nativos (no solo errores de JS) para dejar de adivinar cuando la app
+// se cierra sin dejar rastro en los logs propios. Sin DSN configurado, no hace nada.
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    enabled: true,
+    tracesSampleRate: 0.2,
+  });
+}
 
 // Configurar las opciones de animación del splash screen solo si no estamos en Expo Go
 // setOptions no funciona en Expo Go, solo en development builds y production
@@ -28,12 +49,21 @@ if (!Constants.executionEnvironment || Constants.executionEnvironment === 'stand
 }
 
 function RootLayoutNav() {
-  const { session, loading, initialize } = useAuth();
-  const { initializeTheme } = useTheme();
-  const segments = useSegments();
-  const router = useRouter();
+  const { session, initialized, initialize } = useAuth();
+  const { initializeTheme, isDark } = useTheme();
+  const colors = getColors(isDark);
   const [appIsReady, setAppIsReady] = useState(false);
-  const [navigationReady, setNavigationReady] = useState(false);
+
+  useEffect(() => startSupabaseAuthLifecycle(), []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.PORTRAIT_UP
+    ).catch((error) => {
+      console.warn('No se pudo fijar la orientación vertical inicial:', error);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,80 +80,91 @@ function RootLayoutNav() {
         console.error('Error durante la inicialización:', e);
         if (e?.message) console.error('Mensaje de error:', e.message);
         if (e?.stack) console.error('Stack trace:', e.stack);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
         if (!cancelled) setAppIsReady(true);
       }
     }
 
     prepare();
 
+    const failsafe = setTimeout(() => {
+      if (cancelled) return;
+      setAppIsReady(true);
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }, 10_000);
+
     return () => {
       cancelled = true;
+      clearTimeout(failsafe);
       useAuthStore.getState().cleanup();
       useThemeStore.getState().cleanup();
     };
   }, [initialize, initializeTheme]);
 
   useEffect(() => {
-    if (loading || !appIsReady) return;
+    if (!initialized || !appIsReady) return;
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, [initialized, appIsReady]);
 
-    const inAuthGroup = segments[0] === '(auth)';
+  const stackAnimation = Platform.OS === 'web' ? 'none' : undefined;
+  const detailAnimation: 'none' | 'slide_from_right' = Platform.OS === 'web' ? 'none' : 'slide_from_right';
 
-    // Solo redirigir cuando el grupo de rutas no coincide con la sesión.
-    // Evita remounts del login que impiden escribir en los inputs.
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
-    }
+  // Header JS (el mismo que usan las pantallas de (tabs)) para que el
+  // BackButton y el título queden alineados igual que en el resto de la app;
+  // el header nativo aplica sus propios insets al botón. El título y el botón
+  // de volver los define cada pantalla de detalle.
+  const detailScreenOptions = {
+    headerShown: true,
+    header: (props: NativeStackHeaderProps) => <StackHeader {...props} />,
+    animation: detailAnimation,
+    headerStyle: { backgroundColor: colors.background.default },
+    headerTintColor: colors.text.primary,
+    headerTitleStyle: { ...Typography.section },
+    headerTitleAlign: 'left' as const,
+    headerShadowVisible: false,
+  };
 
-    const timer = setTimeout(() => {
-      setNavigationReady(true);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [session, loading, segments, appIsReady]);
-
-  useEffect(() => {
-    // Solo ocultar el splash screen cuando todo esté listo: inicialización, navegación y carga completa
-    if (appIsReady && navigationReady && !loading) {
-      // Pequeño delay adicional para asegurar que la pantalla esté renderizada
-      setTimeout(async () => {
-        await SplashScreen.hideAsync();
-      }, 200);
-    }
-  }, [appIsReady, navigationReady, loading]);
-
-  // No mostrar loading container mientras se carga, dejar que el splash screen se muestre
-  // El splash screen se ocultará automáticamente cuando termine la inicialización
+  if (!initialized && !appIsReady) {
+    return null;
+  }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="negocio/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+    <Stack screenOptions={{ headerShown: false, animation: stackAnimation }}>
+      <Stack.Protected guard={!!session}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="negocio/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/productos" options={detailScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/compartir" options={detailScreenOptions} />
+        <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
     </Stack>
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const { isDark } = useTheme();
   return (
     <GestureHandlerRootView style={styles.root}>
-      <RootLayoutNav />
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <SafeAreaProvider>
+        <OfflineProvider>
+          <PushNotificationsProvider>
+            <RootLayoutNav />
+            <PrinterPickerModal />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+          </PushNotificationsProvider>
+        </OfflineProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
+export default sentryDsn ? Sentry.wrap(RootLayout) : RootLayout;
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

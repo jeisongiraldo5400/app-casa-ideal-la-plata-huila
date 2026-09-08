@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
+import { formatNegocioCodigo } from '@/lib/negocioLabels';
 
 const STATUS_META: Record<StopStatus, { color: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = {
   pendiente: { color: '#94a3b8', label: 'Pendiente', icon: 'schedule' },
@@ -48,7 +49,9 @@ export function RouteRoadmap({
               style={[styles.card, left ? styles.cardRight : styles.cardLeft, { borderLeftColor: meta.color }]}
             >
               <View style={styles.cardHeader}>
-                <Text style={styles.business}>Negocio #{stop.negocio_numero}</Text>
+                <Text style={styles.business}>
+                  Negocio {formatNegocioCodigo(stop.negocio_numero)}
+                </Text>
                 <View style={[styles.badge, { backgroundColor: `${meta.color}18` }]}>
                   <MaterialIcons name={meta.icon} size={14} color={meta.color} />
                   <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>

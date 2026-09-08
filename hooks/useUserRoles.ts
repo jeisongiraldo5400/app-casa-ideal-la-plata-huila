@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
+import { logHandledError } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { getCachedRoles, setCachedRoles } from '@/lib/offline/security/secureKeys';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { hasCatalogRole } from '@/lib/catalogos/access';
 
 interface UserRole {
   id: string;
@@ -35,14 +40,12 @@ export function useUserRoles() {
           .eq('user_id', user.id);
 
         if (userRolesError) {
-          console.error('Error loading user roles:', userRolesError);
-          setRoles([]);
-          setLoading(false);
-          return;
+          throw userRolesError;
         }
 
         if (!userRolesData || userRolesData.length === 0) {
           setRoles([]);
+          await setCachedRoles({ userId: user.id, roles: [] });
           setLoading(false);
           return;
         }
@@ -56,10 +59,7 @@ export function useUserRoles() {
           .is('deleted_at', null);
 
         if (rolesError) {
-          console.error('Error loading roles:', rolesError);
-          setRoles([]);
-          setLoading(false);
-          return;
+          throw rolesError;
         }
 
         // Combinar user_roles con roles
@@ -73,15 +73,46 @@ export function useUserRoles() {
         });
 
         setRoles(transformedRoles);
+        await setCachedRoles({ userId: user.id, roles: transformedRoles });
       } catch (error) {
-        console.error('Error loading user roles:', error);
-        setRoles([]);
+        // Sin red se usan los roles cacheados: es el camino previsto y no un
+        // fallo. Con `console.error`, LogBox pintaba la pantalla roja en
+        // desarrollo y tapaba los avisos propios (el "Pago guardado sin
+        // conexión", por ejemplo).
+        logHandledError('No se pudieron leer los roles del usuario', error);
+        const cached = await getCachedRoles();
+        if (cached?.userId === user.id) {
+          setRoles(cached.roles);
+        } else if (!isNetworkError(error)) {
+          setRoles([]);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     loadUserRoles();
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void loadUserRoles();
+    });
+    const rolesChannel = supabase
+      .channel(`user-roles-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadUserRoles()
+      )
+      .subscribe();
+
+    return () => {
+      appStateSubscription.remove();
+      void supabase.removeChannel(rolesChannel);
+    };
   }, [user]);
 
   const hasRole = (roleName: string): boolean => {
@@ -106,6 +137,11 @@ export function useUserRoles() {
     return hasRole('gestor de cobro');
   };
 
+  /** Módulo de catálogos: admin, catalog_admin, catalog_editor o catalog_seller. */
+  const canAccessCatalogs = (): boolean => {
+    return hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? ''));
+  };
+
   const canMarkOrderAsReceived = (): boolean => {
     return isAdmin() || isBodeguero();
   };
@@ -124,6 +160,7 @@ export function useUserRoles() {
     isBodeguero,
     isVendedor,
     isGestorCobro,
+    canAccessCatalogs,
     canMarkOrderAsReceived,
     preferSellerWorkspace,
   };
