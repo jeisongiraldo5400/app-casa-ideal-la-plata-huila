@@ -101,10 +101,16 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   };
 }
 
-export function formatCOP(value: number): string {
+export function formatCOP(value: number, decimalPlaces?: number): string {
+  const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
+  // Se decide sobre el monto redondeado a centavos para que el ruido de coma
+  // flotante (800000.0000000001) no dispare decimales espurios. Sin esto el
+  // plan de cuotas impreso no sumaba el saldo declarado en el contrato.
+  const places = decimalPlaces ?? (Math.round(amount * 100) % 100 === 0 ? 0 : 2);
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+    minimumFractionDigits: places,
+    maximumFractionDigits: places,
+  }).format(amount);
 }

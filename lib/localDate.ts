@@ -31,6 +31,12 @@ function formatTwelveHourTime(hour: string, minute: string): string {
   return `${hour12}:${minute} ${period}`;
 }
 
+/** Día calendario en America/Bogota (YYYY-MM-DD). */
+export function bogotaDateValue(date: Date = new Date()): string {
+  const parts = bogotaParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export function formatPaymentDateTime(value: string | null | undefined): string {
   if (!value) return '—';
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {

@@ -53,6 +53,8 @@ describe('loadCarteraScreen', () => {
           late_fee_amount: 0,
           saldo: 100,
           status: 'pendiente',
+          seller_id: null,
+          seller_name: null,
           total_count: 1,
         },
       ],

@@ -248,7 +248,12 @@ function NegocioDetailScreenInner() {
           .from('negocio_pagos')
           .select('*')
           .eq('negocio_id', id)
-          .order('paid_at', { ascending: false }),
+          // Mismo desempate que `comparePagosOldestFirst`: con dos abonos a la
+          // misma hora, ordenar solo por `paid_at` deja el orden indeterminado
+          // y los recibos salen con el saldo cruzado.
+          .order('paid_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('virtual_receipt_number', { ascending: false }),
         supabase
           .from('customers')
           .select('name, id_number, phone, email, address')
@@ -283,8 +288,22 @@ function NegocioDetailScreenInner() {
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
       const pagoRows = (pagosRes.data || []) as { created_by: string | null }[];
-      const profileNames = await fetchProfileNames([...pagoRows.map((pago) => pago.created_by), user?.id]);
-      setPagos(pagoRows.map((pago) => ({ ...pago, created_by_name: displayProfileName(profileNames, pago.created_by) })));
+      // Los pagos se pintan antes de resolver los nombres: el autor es un dato
+      // decorativo y su consulta (tabla `profiles`, sujeta a RLS) no puede
+      // dejar la lista de pagos sin actualizar si falla.
+      setPagos(pagoRows);
+      let profileNames = new Map<string, string>();
+      try {
+        profileNames = await fetchProfileNames([...pagoRows.map((pago) => pago.created_by), user?.id]);
+        setPagos(
+          pagoRows.map((pago) => ({
+            ...pago,
+            created_by_name: displayProfileName(profileNames, pago.created_by),
+          }))
+        );
+      } catch {
+        // Sin nombres, cada pago queda como "Sistema"; la lista sigue al día.
+      }
       if (user?.id) {
         const myName = profileNames.get(user.id) || user.email || '';
         setCurrentUserName(myName);
@@ -457,6 +476,19 @@ function NegocioDetailScreenInner() {
     });
   };
 
+  /**
+   * Refresco posterior a un pago. Nunca propaga: si la recarga falla, el pago
+   * ya está registrado y el recibo debe poder imprimirse igual. `load()` avisa
+   * por su cuenta de lo que no pudo traer.
+   */
+  const refreshAfterPago = async (options?: { preferLocal?: boolean }) => {
+    try {
+      await load(options);
+    } catch {
+      // load() ya gestiona y muestra sus propios errores.
+    }
+  };
+
   const notifyPagoResult = (title: string, body: string, printed: boolean) => {
     Alert.alert(
       title,
@@ -551,6 +583,12 @@ function NegocioDetailScreenInner() {
         setPaySupportFile(null);
         setPayModalOpen(false);
 
+        // El pago ya está confirmado por el servidor: la pantalla se refresca
+        // aquí, antes de buscar el consecutivo, imprimir y avisar. Si la
+        // recarga va después, queda atada a que la impresora responda y los
+        // saldos se quedan viejos cuando no imprime.
+        await refreshAfterPago();
+
         let receiptNumber = payReceipt || 'Provisional';
         let physicalReceiptNumber = payReceipt || null;
         let persistedPaidAt = paidAt;
@@ -585,7 +623,6 @@ function NegocioDetailScreenInner() {
         } else {
           notifyPagoResult('Listo', successBody, printed);
         }
-        await load();
       } catch (onlineError: any) {
         if (!isNetworkError(onlineError) || !canUseLocalDb()) throw onlineError;
         const offlineResult = await registerPagoOffline({
@@ -610,6 +647,7 @@ function NegocioDetailScreenInner() {
           amount,
           physicalReceiptNumber: payReceipt || null,
         });
+        await refreshAfterPago({ preferLocal: true });
         notifyPagoResult(
           'Pago guardado sin conexión',
           offlineResult.supportWarning
@@ -617,7 +655,6 @@ function NegocioDetailScreenInner() {
             : 'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
           printed
         );
-        await load({ preferLocal: true });
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo registrar');

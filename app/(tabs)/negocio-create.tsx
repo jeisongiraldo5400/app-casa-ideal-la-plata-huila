@@ -31,7 +31,10 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
-import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
+import {
+  negocioSaveBlockedBySignature,
+  sellerSignatureRequiredError,
+} from '@/lib/negocioSignatureRules';
 import {
   createDownPaymentRow,
   downPaymentRowsToSchedule,
@@ -354,6 +357,11 @@ function NegocioCreateScreenInner() {
     firstDueDate,
     localDateValue()
   );
+  // Antes los dos botones del último paso quedaban habilitados sin firmas: al
+  // pulsarlos saltaba una alerta que repetía el aviso ya visible en pantalla,
+  // así que parecía que no hacían nada. Ahora se deshabilitan y el texto dice
+  // qué falta. "Guardar borrador" incluido: la base exige la firma al insertar.
+  const saveBlockedReason = negocioSaveBlockedBySignature(signature, sellerSignature);
   const effectiveSellerId = sellerId || user?.id || '';
   const calc = calculateCredit({
     productsSubtotal: subtotal,
@@ -1206,9 +1214,9 @@ function NegocioCreateScreenInner() {
               ahora, la firma del vendedor es obligatoria; la firma del cliente podrá registrarse
               después desde el detalle, incluso con el negocio activo.
             </Text>
-            {sellerSignatureRequiredError(signature, sellerSignature) ? (
+            {saveBlockedReason ? (
               <Text style={{ color: colors.warning.dark, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
-                {sellerSignatureRequiredError(signature, sellerSignature)}
+                {saveBlockedReason}
               </Text>
             ) : null}
             <SignaturePad
@@ -1312,9 +1320,17 @@ function NegocioCreateScreenInner() {
         ) : (
           <View style={styles.footerActions}>
             <TouchableOpacity
-              style={[styles.footerBtnSecondary, styles.footerBtnCompact, { borderColor: colors.divider }]}
+              style={[
+                styles.footerBtnSecondary,
+                styles.footerBtnCompact,
+                { borderColor: colors.divider },
+                saveBlockedReason ? { opacity: 0.45 } : null,
+              ]}
               onPress={() => submit(false)}
+              disabled={Boolean(saveBlockedReason)}
               accessibilityRole="button"
+              accessibilityState={{ disabled: Boolean(saveBlockedReason) }}
+              accessibilityHint={saveBlockedReason || undefined}
             >
               <Text
                 numberOfLines={1}
@@ -1326,9 +1342,17 @@ function NegocioCreateScreenInner() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.footerBtnPrimary, styles.footerBtnCompact, { backgroundColor: colors.primary.main }]}
+              style={[
+                styles.footerBtnPrimary,
+                styles.footerBtnCompact,
+                { backgroundColor: colors.primary.main },
+                saveBlockedReason ? { opacity: 0.45 } : null,
+              ]}
               onPress={() => submit(true)}
+              disabled={Boolean(saveBlockedReason)}
               accessibilityRole="button"
+              accessibilityState={{ disabled: Boolean(saveBlockedReason) }}
+              accessibilityHint={saveBlockedReason || undefined}
             >
               <Text
                 numberOfLines={1}

@@ -1,4 +1,4 @@
-import { calculateCredit, type CreditSettingsInput } from '../creditCalculator';
+import { calculateCredit, formatCOP, type CreditSettingsInput } from '../creditCalculator';
 
 const settings: CreditSettingsInput = {
   formula_type: 'cash_includes_interest',
@@ -41,5 +41,29 @@ describe('calculateCredit mobile/web parity', () => {
       settings: { ...settings, formula_type: 'simple_markup', interest_rate_monthly_pct: 1 },
     });
     expect(result.totalCredit).toBe(102_800);
+  });
+});
+
+describe('formatCOP', () => {
+  it('omite los centavos en montos redondos', () => {
+    expect(formatCOP(800000)).toContain('800.000');
+    expect(formatCOP(800000)).not.toContain(',00');
+  });
+
+  it('conserva los centavos cuando existen, para que el plan sume el saldo', () => {
+    // 12 cuotas de 66.666,67 y una última de 66.666,63 suman 800.000 exactos.
+    // Redondeadas a pesos el contrato imprimía 800.004.
+    const cuota = 66666.67;
+    expect(formatCOP(cuota)).toContain('66.666,67');
+    const impreso = 11 * cuota + 66666.63;
+    expect(Math.round(impreso * 100) / 100).toBe(800000);
+  });
+
+  it('ignora el ruido de coma flotante', () => {
+    expect(formatCOP(800000.0000000001)).not.toContain(',00');
+  });
+
+  it('respeta los decimales pedidos explícitamente', () => {
+    expect(formatCOP(1000, 2)).toContain('1.000,00');
   });
 });

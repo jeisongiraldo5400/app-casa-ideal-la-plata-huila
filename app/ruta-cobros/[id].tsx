@@ -71,13 +71,19 @@ function CollectionRouteDetailScreenInner() {
     try {
       setSaving(true);
       const result = await action();
+      setSelectedStop(null); setOutcome(null); setReason(''); setNotes('');
+      // La recarga va antes del aviso y no puede hacer fracasar la acción: ya
+      // está registrada, y un fallo aquí solo significa pantalla desactualizada.
+      try {
+        await load();
+      } catch {
+        // load() ya deja su propio mensaje de error en pantalla.
+      }
       if (result.queued) {
         Alert.alert('Guardado sin conexión', `${success || 'Acción registrada'}. Se enviará automáticamente cuando haya red.`);
       } else if (success) {
         Alert.alert('Listo', success);
       }
-      setSelectedStop(null); setOutcome(null); setReason(''); setNotes('');
-      await load();
     }
     catch (e: any) { Alert.alert('No se pudo completar la acción', e.message); }
     finally { setSaving(false); }

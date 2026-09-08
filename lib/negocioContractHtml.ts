@@ -1,3 +1,4 @@
+import { bogotaDateValue } from '@/lib/localDate';
 import { formatCOP } from '@/lib/creditCalculator';
 import { parseDownPaymentSchedule, type DownPaymentEntry } from '@/lib/negocios/negocioCreditRules';
 import { CASA_IDEAL_LOGO_DATA_URI } from '@/lib/casaIdealLogo';
@@ -67,7 +68,8 @@ function esc(s: string | null | undefined) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 const CREDIT_TERMS = [
@@ -320,43 +322,43 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   html, body { margin: 0; padding: 0; }
   /* El cuerpo mide exactamente el área imprimible y la tabla de artículos (flex: 1)
      absorbe el espacio sobrante para que el documento ocupe toda la hoja. */
-  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 12px; height: ${tier.contentHeight}; display: flex; flex-direction: column; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 14px; height: ${tier.contentHeight}; display: flex; flex-direction: column; }
   .items { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .items table { flex: 1; }
-  .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 4px; }
-  .logo { display: block; height: 50px; width: auto; max-width: 100%; object-fit: contain; }
+  .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 3px; }
+  .logo { display: block; height: 56px; width: auto; max-width: 100%; object-fit: contain; }
   .company { text-align: right; color: #294c77; font-size: ${tier.company}px; line-height: 1.3; }
   .title { display: flex; justify-content: space-between; align-items: center; color: #195ba6; margin: 4px 0 3px; }
   .title h2 { margin: 0; font-size: ${tier.titleH2}px; letter-spacing: 1px; text-transform: uppercase; }
   .number { color: #a13c2f; font-size: ${tier.number}px; font-weight: 800; }
   .meta, .parties, .finance { display: grid; border: 1px solid #195ba6; }
   .meta { grid-template-columns: 100px 1fr 1fr; margin-bottom: 4px; }
-  .meta div { padding: 3px 5px; border-right: 1px solid #195ba6; }
+  .meta div { padding: 4px 6px; border-right: 1px solid #195ba6; }
   .meta div:last-child { border-right: 0; }
   .meta b { color: #3e5f84; font-size: ${tier.metaB}px; }
   .parties { grid-template-columns: 1fr 1fr; }
   .party { min-width: 0; }
   .party + .party { border-left: 1px solid #195ba6; }
   .box-title { background: #eaf2fb; color: #164f91; font-size: ${tier.boxTitle}px; text-align: center; text-transform: uppercase; font-weight: 800; padding: 1px 3px; border-bottom: 1px solid #195ba6; }
-  .field { display: grid; grid-template-columns: 58px 1fr; min-height: 13px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
+  .field { display: grid; grid-template-columns: 64px 1fr; min-height: 14px; border-bottom: 1px solid #b8cce3; padding: 1px 4px; }
   .field:last-child { border-bottom: 0; }
   .field b { color: #3e5f84; font-size: ${tier.fieldB}px; }
   .section { color: #195ba6; font-size: ${tier.section}px; font-weight: 800; text-transform: uppercase; margin: 4px 0 2px; }
   .terms { margin: 2px 0 0; padding-left: 13px; text-align: justify; font-size: ${tier.terms}px; }
-  .terms li { margin-bottom: 1px; }
+  .terms li { margin-bottom: 0.5px; }
   .authorization, .additional { border: 1px solid #8aaccf; background: #f6f9fd; padding: 3px 6px; text-align: justify; margin-top: 3px; font-size: ${tier.authAdd}px; }
   .additional { white-space: pre-wrap; }
   .authorization b { display: block; text-align: center; color: #164f91; margin-bottom: 1px; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #8aaccf; padding: 2px 4px; text-align: left; vertical-align: top; line-height: 1.2; }
+  th, td { border: 1px solid #8aaccf; padding: 3px 5px; text-align: left; vertical-align: top; line-height: 1.2; }
   tbody td { height: 13px; }
   th { background: #eaf2fb; color: #164f91; text-transform: uppercase; font-size: ${tier.th}px; }
   tr { break-inside: avoid; }
   .r { text-align: right; white-space: nowrap; }
   .c { text-align: center; }
   .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: start; }
-  .plan-table th, .plan-table td { padding: 1px 4px; }
-  .plan-table tbody td { height: auto; line-height: 1.15; }
+  .plan-table th, .plan-table td { padding: 0.5px 4px; }
+  .plan-table tbody td { height: auto; line-height: 1.1; }
   .plan-table tr.paid td { color: #6b7e94; background: #f3f7fb; }
   .plan-table tr.paid td:first-child::before { content: "✓ "; color: #2e7d32; }
   .plan-note { color: #53708f; font-size: ${tier.planNote}px; margin-top: 2px; }
@@ -366,22 +368,22 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   .finance div:nth-last-child(-n+4) { border-bottom: 0; }
   .finance span { display: block; color: #53708f; font-size: ${tier.financeSpan}px; text-transform: uppercase; }
   .finance strong { font-size: ${tier.financeStrong}px; }
-  .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; break-inside: avoid; }
+  .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 5px; break-inside: avoid; }
   .sig { text-align: center; min-width: 0; }
-  .sig-space { height: 36px; display: grid; place-items: end center; }
-  .sig img { max-width: 95%; max-height: 40px; object-fit: contain; }
+  .sig-space { height: 40px; display: grid; place-items: end center; }
+  .sig img { max-width: 95%; max-height: 38px; object-fit: contain; }
   .sig-line { border-top: 1px solid #24364c; }
   .sig b, .sig small { display: block; margin-top: 1px; font-size: ${tier.sigText}px; }
   .sig small { color: #53708f; }
-  .promissory { margin-top: 6px; border: 1px solid #195ba6; padding: 4px 8px; break-inside: avoid; }
+  .promissory { margin-top: 5px; border: 1px solid #195ba6; padding: 3px 8px; break-inside: avoid; }
   .promissory h3 { color: #195ba6; text-align: center; font-size: ${tier.promissoryH3}px; margin: 0 0 3px; text-transform: uppercase; }
   .promissory p { margin: 2px 0; text-align: justify; }
-  .line { display: inline-block; border-bottom: 1px solid #55789d; min-width: 110px; height: 10px; vertical-align: bottom; }
+  .line { display: inline-block; border-bottom: 1px solid #55789d; min-width: 110px; height: 12px; vertical-align: bottom; }
   .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #6b7e94; font-size: ${tier.footer}px; }
 </style>
 </head>
 <body>
-  <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${new Date().toISOString().slice(0, 10)}</div>
+  <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${bogotaDateValue()}</div>
   <header class="brand">
     <img class="logo" src="${CASA_IDEAL_LOGO_DATA_URI}" alt="${COMPANY.name} - ${COMPANY.tagline}" />
     <div class="company"><b>NIT ${COMPANY.nit}</b><br/>${COMPANY.owner}<br/>${COMPANY.address}<br/>Cel. ${COMPANY.phone}</div>

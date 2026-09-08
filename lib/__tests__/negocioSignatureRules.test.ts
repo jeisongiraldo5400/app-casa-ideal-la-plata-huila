@@ -1,4 +1,5 @@
 import {
+  negocioSaveBlockedBySignature,
   canRegisterCustomerSignatureLater,
   sellerSignatureRequiredError,
 } from '../negocioSignatureRules';
@@ -39,5 +40,22 @@ describe('canRegisterCustomerSignatureLater', () => {
       canRegisterCustomerSignatureLater({ status: 'activo', customer_signature_url: 'uid/n1/cliente-1.png' })
     ).toBe(false);
     expect(canRegisterCustomerSignatureLater(null)).toBe(false);
+  });
+});
+
+describe('negocioSaveBlockedBySignature', () => {
+  it('explica la acción pendiente en vez de repetir el aviso en pantalla', () => {
+    const reason = negocioSaveBlockedBySignature('', '');
+    expect(reason).toBeTruthy();
+    expect(reason).not.toBe(sellerSignatureRequiredError('', ''));
+  });
+
+  it('advierte que el borrador tampoco se guarda: la base lo exige en el INSERT', () => {
+    expect(negocioSaveBlockedBySignature('', '')).toMatch(/ni siquiera como borrador/i);
+  });
+
+  it('no bloquea cuando alguna firma existe', () => {
+    expect(negocioSaveBlockedBySignature('uid/n1/cliente.png', null)).toBeNull();
+    expect(negocioSaveBlockedBySignature(null, 'data:image/png;base64,AAA')).toBeNull();
   });
 });
