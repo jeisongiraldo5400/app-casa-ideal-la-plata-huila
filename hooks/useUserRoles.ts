@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
+import { logHandledError } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { getCachedRoles, setCachedRoles } from '@/lib/offline/security/secureKeys';
@@ -75,14 +76,10 @@ export function useUserRoles() {
         await setCachedRoles({ userId: user.id, roles: transformedRoles });
       } catch (error) {
         // Sin red se usan los roles cacheados: es el camino previsto y no un
-        // fallo. `console.error` levantaba la pantalla roja de LogBox en
-        // desarrollo y tapaba los avisos de la propia pantalla (por ejemplo el
-        // "Pago guardado sin conexión").
-        if (isNetworkError(error)) {
-          console.warn('Sin conexión al leer los roles: se usan los guardados en el dispositivo.');
-        } else {
-          console.error('Error loading user roles:', error);
-        }
+        // fallo. Con `console.error`, LogBox pintaba la pantalla roja en
+        // desarrollo y tapaba los avisos propios (el "Pago guardado sin
+        // conexión", por ejemplo).
+        logHandledError('No se pudieron leer los roles del usuario', error);
         const cached = await getCachedRoles();
         if (cached?.userId === user.id) {
           setRoles(cached.roles);

@@ -80,3 +80,33 @@ export function errorMessage(error: unknown, fallback = 'Ocurrió un error inesp
   }
   return message || fallback;
 }
+
+/**
+ * Registra en consola un error que el código ya gestionó (hay caché, se
+ * conserva la pantalla anterior, se deniega por prudencia…).
+ *
+ * Las caídas de red son el estado normal de una app que trabaja en ruta: si se
+ * escriben con `console.error`, en una compilación de desarrollo LogBox pinta
+ * la franja roja —o la pantalla completa— sobre la aplicación y llega a tapar
+ * los avisos propios. Se degradan a `warn`; lo demás sigue siendo error.
+ */
+export function logHandledError(context: string, error: unknown): void {
+  if (isNetworkErrorLike(error)) {
+    console.warn(`${context}: sin conexión con el servidor.`);
+    return;
+  }
+  console.error(`${context}:`, error);
+}
+
+/** Detección local, sin depender del módulo de sincronización. */
+function isNetworkErrorLike(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '')
+        : String(error ?? '');
+  return /network request failed|failed to fetch|networkerror|load failed|ERR_NETWORK|timeout/i.test(
+    message
+  );
+}

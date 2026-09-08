@@ -1,3 +1,4 @@
+import { logHandledError } from '@/lib/errorMessage';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
@@ -218,7 +219,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         set({ list: local, fromCache: true, error: null });
         return;
       }
-      console.error(e);
+      logHandledError('No se pudieron cargar los negocios', e);
       // Conservar la lista anterior: un fallo transitorio no debe vaciar la pantalla.
       set({ error: toUserError(e, 'No se pudieron cargar los negocios').message });
     } finally {
@@ -255,7 +256,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         set({ myList, myFromCache: true, myError: null });
         return;
       }
-      console.error(e);
+      logHandledError('No se pudieron cargar tus negocios', e);
       set({ myError: toUserError(e, 'No se pudieron cargar tus negocios').message });
     } finally {
       set({ myLoading: false });

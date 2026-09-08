@@ -1,4 +1,4 @@
-import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { logHandledError } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 
 export const UNAUTHORIZED_EXIT_MESSAGE =
@@ -26,13 +26,8 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
       .eq('delivery_order_id', orderId)
       .is('deleted_at', null);
     if (assignmentsError) {
-      // Sin red se deniega por prudencia, pero es el camino previsto:
-      // `console.error` levantaría la pantalla roja de LogBox en desarrollo.
-      if (isNetworkError(assignmentsError)) {
-        console.warn('Sin conexión al validar la autorización de la salida.');
-      } else {
-        console.error('Error loading pickup assignments:', assignmentsError);
-      }
+      // Sin red se deniega por prudencia: es el camino previsto, no una avería.
+      logHandledError('No se pudo validar la autorización de la salida', assignmentsError);
       return DENIED;
     }
 
@@ -41,13 +36,8 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
       .select('role_id')
       .eq('user_id', user.id);
     if (userRolesError) {
-      // Sin red se deniega por prudencia, pero es el camino previsto:
-      // `console.error` levantaría la pantalla roja de LogBox en desarrollo.
-      if (isNetworkError(userRolesError)) {
-        console.warn('Sin conexión al validar la autorización de la salida.');
-      } else {
-        console.error('Error loading user roles:', userRolesError);
-      }
+      // Sin red se deniega por prudencia: es el camino previsto, no una avería.
+      logHandledError('No se pudo validar la autorización de la salida', userRolesError);
       return DENIED;
     }
 
@@ -59,7 +49,7 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
         .in('id', roleIds)
         .is('deleted_at', null);
       if (rolesError) {
-        console.error('Error loading role names:', rolesError);
+        logHandledError('No se pudieron leer los nombres de los roles', rolesError);
         return DENIED;
       }
       const isDefaultAuthorized = (rolesData || []).some((role) =>
@@ -74,7 +64,7 @@ export async function checkExitAuthorization(orderId: string): Promise<ExitAutho
     const isAssignedUser = (assignments || []).some((assignment) => assignment.user_id === user.id);
     return { canRegister: isAssignedUser, message: isAssignedUser ? null : UNAUTHORIZED_EXIT_MESSAGE };
   } catch (error) {
-    console.error('Error validating exit authorization:', error);
+    logHandledError('No se pudo validar la autorización de la salida', error);
     return DENIED;
   }
 }

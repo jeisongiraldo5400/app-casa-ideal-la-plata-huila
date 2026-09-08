@@ -1,4 +1,4 @@
-import { errorMessage } from '@/lib/errorMessage';
+import { errorMessage, logHandledError } from '@/lib/errorMessage';
 
 describe('errorMessage', () => {
   it('traduce la restricción por nombre antes que el código SQL', () => {
@@ -39,5 +39,37 @@ describe('errorMessage', () => {
 
   it('conserva el mensaje de un Error corriente', () => {
     expect(errorMessage(new Error('Indique un valor mayor a 0'))).toBe('Indique un valor mayor a 0');
+  });
+});
+
+describe('logHandledError', () => {
+  let warn: jest.SpyInstance;
+  let error: jest.SpyInstance;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it('degrada la caída de red a aviso: LogBox no debe tapar la pantalla', () => {
+    logHandledError('No se pudieron cargar los negocios', new TypeError('Network request failed'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('reconoce el fallo de red venga como PostgrestError', () => {
+    logHandledError('ctx', { message: 'TypeError: Network request failed', code: '' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('lo que no es de red sigue siendo error', () => {
+    logHandledError('ctx', new Error('columna inexistente'));
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
