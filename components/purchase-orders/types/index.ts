@@ -47,6 +47,15 @@ export interface DeliveryOrder {
   assigned_to_user_email: string | null;
   order_type: string;
   delivery_address: string | null;
+  /** Ubicación estructurada de entrega (sólo órdenes de cliente). El
+   *  departamento se deduce del municipio; se resuelve al cargar para poder
+   *  filtrar por los tres niveles. */
+  municipio_id: string | null;
+  vereda_id: string | null;
+  departamento_id: string | null;
+  departamento_name: string | null;
+  municipio_name: string | null;
+  vereda_name: string | null;
   notes: string | null;
   status: string;
   total_items: number;

@@ -17,6 +17,7 @@ import {
     getStatusColor,
     getStatusLabel,
 } from '../types';
+import { formatDeliveryLocation } from '../domain/deliveryLocation';
 import { DeliveryOrderProductsModal } from './DeliveryOrderProductsModal';
 import { DeliveryOrderRecipientModal } from './DeliveryOrderRecipientModal';
 
@@ -35,6 +36,7 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
   const statusColor = getStatusColor(order.status, colors);
   const progress = calculateDeliveryProgress(order);
   const recipient = getRecipientInfo(order);
+  const locationLabel = formatDeliveryLocation(order);
 
   // Determinar el badge de progreso
   const getProgressBadge = () => {
@@ -156,13 +158,24 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
           </View>
         </View>
 
-        {/* Dirección de entrega si existe */}
-        {order.delivery_address && (
+        {/* Ubicación de entrega: departamento/municipio/vereda arriba y la
+            dirección de la vivienda debajo, cada una en su línea para que
+            ninguna de las dos se coma a la otra. */}
+        {(locationLabel || order.delivery_address) && (
           <View style={styles.addressInfo}>
             <MaterialIcons name="location-on" size={14} color={colors.text.secondary} />
-            <Text style={[styles.addressText, { color: colors.text.secondary }]} numberOfLines={1}>
-              {order.delivery_address}
-            </Text>
+            <View style={styles.addressLines}>
+              {locationLabel ? (
+                <Text style={[styles.addressText, { color: colors.text.primary }]} numberOfLines={1}>
+                  {locationLabel}
+                </Text>
+              ) : null}
+              {order.delivery_address ? (
+                <Text style={[styles.addressText, { color: colors.text.secondary }]} numberOfLines={2}>
+                  {order.delivery_address}
+                </Text>
+              ) : null}
+            </View>
           </View>
         )}
 
@@ -341,13 +354,18 @@ const styles = StyleSheet.create({
   },
   addressInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // flex-start y no center: el bloque puede tener dos líneas y el icono debe
+    // quedar a la altura de la primera.
+    alignItems: 'flex-start',
     marginBottom: 6,
     gap: 4,
   },
+  addressLines: {
+    flex: 1,
+    gap: 1,
+  },
   addressText: {
     fontSize: 12,
-    flex: 1,
   },
   creatorInfo: {
     flexDirection: 'row',

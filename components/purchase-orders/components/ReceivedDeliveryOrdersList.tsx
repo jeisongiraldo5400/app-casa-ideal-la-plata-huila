@@ -55,8 +55,12 @@ export function ReceivedDeliveryOrdersList() {
           notes,
           status,
           order_number,
+          municipio_id,
+          vereda_id,
           customer:customers(id, name, id_number),
-          assigned_to_user:profiles(id, full_name, email)
+          assigned_to_user:profiles(id, full_name, email),
+          municipio:municipios(id, nombre, departamento_id, departamento:departamentos(id, nombre)),
+          vereda:veredas(id, nombre)
         `)
         .is('deleted_at', null)
         .eq('created_by', user.id) // Solo órdenes creadas por el usuario logueado
@@ -206,6 +210,12 @@ export function ReceivedDeliveryOrdersList() {
           assigned_to_user_email: order.assigned_to_user?.email || null,
           order_type: order.order_type,
           delivery_address: order.delivery_address,
+          municipio_id: order.municipio_id ?? null,
+          vereda_id: order.vereda_id ?? null,
+          departamento_id: order.municipio?.departamento_id ?? null,
+          departamento_name: order.municipio?.departamento?.nombre ?? null,
+          municipio_name: order.municipio?.nombre ?? null,
+          vereda_name: order.vereda?.nombre ?? null,
           notes: order.notes,
           status: order.status,
           total_items: order.total_items,

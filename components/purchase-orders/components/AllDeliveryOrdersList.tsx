@@ -14,7 +14,19 @@ import {
   View,
 } from "react-native";
 import { DeliveryOrder } from "../types";
+import {
+  EMPTY_DELIVERY_LOCATION_FILTER,
+  countActiveLocationFilters,
+  matchesDeliveryLocation,
+  type DeliveryLocationFilter,
+} from "../domain/deliveryLocation";
+import {
+  EMPTY_LOCATION_MASTERS,
+  fetchLocationMasters,
+  type LocationMasters,
+} from "@/lib/locations/locationsService";
 import { DeliveryOrderCard } from "./DeliveryOrderCard";
+import { DeliveryOrderLocationFilterModal } from "./DeliveryOrderLocationFilterModal";
 
 const RECENT_PAGE_INITIAL = 200;
 const RECENT_PAGE_STEP = 100;
@@ -184,6 +196,14 @@ async function buildDeliveryOrdersFromTableRows(
     assigned_to_user_email: order.assigned_to_user?.email || null,
     order_type: order.order_type,
     delivery_address: order.delivery_address,
+    municipio_id: order.municipio_id ?? null,
+    vereda_id: order.vereda_id ?? null,
+    // El departamento no vive en la orden: se deduce del municipio, igual que
+    // en el formulario web.
+    departamento_id: order.municipio?.departamento_id ?? null,
+    departamento_name: order.municipio?.departamento?.nombre ?? null,
+    municipio_name: order.municipio?.nombre ?? null,
+    vereda_name: order.vereda?.nombre ?? null,
     notes: order.notes,
     status: order.status,
     total_items: order.total_items,
@@ -205,6 +225,23 @@ export function AllDeliveryOrdersList({
   const [error, setError] = useState<string | null>(null);
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [fetchLimit, setFetchLimit] = useState(RECENT_PAGE_INITIAL);
+  const [locationFilter, setLocationFilter] = useState<DeliveryLocationFilter>(
+    EMPTY_DELIVERY_LOCATION_FILTER,
+  );
+  const [showLocationFilter, setShowLocationFilter] = useState(false);
+  const [masters, setMasters] = useState<LocationMasters>(EMPTY_LOCATION_MASTERS);
+  const [mastersLoading, setMastersLoading] = useState(true);
+
+  // Los maestros cambian una vez cada varios meses: se piden al montar y no se
+  // vuelven a tocar. Si fallan, el filtro queda vacío pero el listado sigue.
+  useEffect(() => {
+    let active = true;
+    fetchLocationMasters()
+      .then((next) => { if (active) setMasters(next); })
+      .catch((err) => { console.error("Error loading location masters:", err); })
+      .finally(() => { if (active) setMastersLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -265,8 +302,12 @@ export function AllDeliveryOrdersList({
           notes,
           status,
           order_number,
+          municipio_id,
+          vereda_id,
           customer:customers(id, name, id_number, phone, email),
-          assigned_to_user:profiles(id, full_name, email)
+          assigned_to_user:profiles(id, full_name, email),
+          municipio:municipios(id, nombre, departamento_id, departamento:departamentos(id, nombre)),
+          vereda:veredas(id, nombre)
         `,
           )
           .in("id", ids)
@@ -304,8 +345,12 @@ export function AllDeliveryOrdersList({
           notes,
           status,
           order_number,
+          municipio_id,
+          vereda_id,
           customer:customers(id, name, id_number, phone, email),
-          assigned_to_user:profiles(id, full_name, email)
+          assigned_to_user:profiles(id, full_name, email),
+          municipio:municipios(id, nombre, departamento_id, departamento:departamentos(id, nombre)),
+          vereda:veredas(id, nombre)
         `,
         )
         .is("deleted_at", null)
@@ -344,15 +389,22 @@ export function AllDeliveryOrdersList({
     loadDeliveryOrders();
   }, [refreshTrigger, loadDeliveryOrders]);
 
+  // El filtro de ubicación se aplica siempre, tanto sobre la lista completa
+  // como sobre los resultados de búsqueda.
+  const locatedOrders = useMemo(
+    () => deliveryOrders.filter((order) => matchesDeliveryLocation(order, locationFilter)),
+    [deliveryOrders, locationFilter],
+  );
+
   const filteredOrders = useMemo(() => {
     if (!searchQuery.trim()) {
-      return deliveryOrders;
+      return locatedOrders;
     }
     const q = searchQuery.toLowerCase().trim();
     if (debouncedQuery === searchQuery.trim()) {
-      return deliveryOrders;
+      return locatedOrders;
     }
-    return deliveryOrders.filter((order) => {
+    return locatedOrders.filter((order) => {
       const fields = [
         order.order_number,
         order.customer_name,
@@ -362,6 +414,9 @@ export function AllDeliveryOrdersList({
         order.assigned_to_user_name,
         order.assigned_to_user_email,
         order.delivery_address,
+        order.departamento_name,
+        order.municipio_name,
+        order.vereda_name,
         order.status,
         order.notes,
         order.created_by_name,
@@ -371,145 +426,240 @@ export function AllDeliveryOrdersList({
         (field) => field && String(field).toLowerCase().includes(q),
       );
     });
-  }, [deliveryOrders, searchQuery, debouncedQuery]);
+  }, [locatedOrders, searchQuery, debouncedQuery]);
+
+  const activeLocationFilters = countActiveLocationFilters(locationFilter);
+
+  /** Texto del botón: los nombres elegidos, de lo general a lo específico. */
+  const locationSummary = useMemo(() => {
+    if (!activeLocationFilters) return "Filtrar por ubicación";
+    const names = [
+      masters.departamentos.find((item) => item.id === locationFilter.departamentoId)?.nombre,
+      masters.municipios.find((item) => item.id === locationFilter.municipioId)?.nombre,
+      masters.veredas.find((item) => item.id === locationFilter.veredaId)?.nombre,
+    ].filter(Boolean);
+    return names.length ? names.join(" / ") : "Filtrar por ubicación";
+  }, [activeLocationFilters, locationFilter, masters]);
 
   const isSearchDebouncing =
     searchQuery.trim() !== "" && searchQuery.trim() !== debouncedQuery;
 
-  if (loading && !isSearchDebouncing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.main} />
-        <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
-          Cargando órdenes de entrega...
-        </Text>
-      </View>
-    );
-  }
-
-  if (isSearchDebouncing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.main} />
-        <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
-          Buscando...
-        </Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons
-          name="error-outline"
-          size={48}
-          color={colors.error.main}
-        />
-        <Text style={[styles.errorText, { color: colors.error.main }]}>
-          {error}
-        </Text>
-      </View>
-    );
-  }
-
-  if (deliveryOrders.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <MaterialIcons
-          name="local-shipping"
-          size={64}
-          color={colors.text.secondary}
-        />
-        <Text style={[styles.emptyText, { color: colors.text.primary }]}>
-          {debouncedQuery
-            ? "No se encontraron resultados"
-            : "No hay órdenes de entrega registradas"}
-        </Text>
-        <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          {debouncedQuery
-            ? `No hay órdenes que coincidan con "${debouncedQuery}"`
-            : "Las órdenes de entrega aparecerán aquí"}
-        </Text>
-      </View>
-    );
-  }
-
-  if (filteredOrders.length === 0 && searchQuery.trim()) {
-    return (
-      <View style={styles.emptyContainer}>
-        <MaterialIcons
-          name="search-off"
-          size={64}
-          color={colors.text.secondary}
-        />
-        <Text style={[styles.emptyText, { color: colors.text.primary }]}>
-          No se encontraron resultados
-        </Text>
-        <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
-          No hay órdenes de entrega que coincidan con &quot;{searchQuery}&quot;
-        </Text>
-      </View>
-    );
-  }
-
-  const showLimitMessage =
-    !debouncedQuery && deliveryOrders.length >= fetchLimit;
-  const canLoadMore =
-    !debouncedQuery &&
-    deliveryOrders.length > 0 &&
-    deliveryOrders.length === fetchLimit;
-
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {showLimitMessage && (
-        <View
-          style={[
-            styles.limitMessage,
-            {
-              backgroundColor: colors.info.main + "15",
-              borderColor: colors.info.main,
-            },
-          ]}
-        >
-          <MaterialIcons
-            name="info-outline"
-            size={20}
-            color={colors.info.main}
-          />
-          <Text style={[styles.limitMessageText, { color: colors.info.main }]}>
-            Mostrando las últimas {fetchLimit} órdenes de entrega. Usa el
-            buscador para encontrar órdenes anteriores.
+  const renderBody = () => {
+    if (loading && !isSearchDebouncing) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary.main} />
+          <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
+            Cargando órdenes de entrega...
           </Text>
         </View>
-      )}
-      {filteredOrders.map((order) => (
-        <DeliveryOrderCard key={order.id} order={order} />
-      ))}
-      {canLoadMore && (
-        <TouchableOpacity
-          style={[
-            styles.loadMoreButton,
-            {
-              backgroundColor: colors.background.paper,
-              borderColor: colors.divider,
-            },
-          ]}
-          onPress={() =>
-            setFetchLimit((n) => n + RECENT_PAGE_STEP)
-          }
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.loadMoreText, { color: colors.primary.main }]}>
-            Cargar {RECENT_PAGE_STEP} más
+      );
+    }
+
+    if (isSearchDebouncing) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary.main} />
+          <Text style={[styles.loadingText, { color: colors.text.secondary }]}>
+            Buscando...
           </Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+        </View>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.errorContainer}>
+          <MaterialIcons
+            name="error-outline"
+            size={48}
+            color={colors.error.main}
+          />
+          <Text style={[styles.errorText, { color: colors.error.main }]}>
+            {error}
+          </Text>
+        </View>
+      );
+    }
+
+    if (deliveryOrders.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <MaterialIcons
+            name="local-shipping"
+            size={64}
+            color={colors.text.secondary}
+          />
+          <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+            {debouncedQuery
+              ? "No se encontraron resultados"
+              : "No hay órdenes de entrega registradas"}
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+            {debouncedQuery
+              ? `No hay órdenes que coincidan con "${debouncedQuery}"`
+              : "Las órdenes de entrega aparecerán aquí"}
+          </Text>
+        </View>
+      );
+    }
+
+    if (filteredOrders.length === 0 && searchQuery.trim()) {
+      return (
+        <View style={styles.emptyContainer}>
+          <MaterialIcons
+            name="search-off"
+            size={64}
+            color={colors.text.secondary}
+          />
+          <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+            No se encontraron resultados
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+            No hay órdenes de entrega que coincidan con &quot;{searchQuery}&quot;
+          </Text>
+        </View>
+      );
+    }
+
+    if (filteredOrders.length === 0 && activeLocationFilters > 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <MaterialIcons name="filter-alt-off" size={64} color={colors.text.secondary} />
+          <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+            Ninguna orden en esa ubicación
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+            Cambia el filtro o límpialo para ver todas las órdenes.
+          </Text>
+        </View>
+      );
+    }
+
+    const showLimitMessage =
+      !debouncedQuery && deliveryOrders.length >= fetchLimit;
+    const canLoadMore =
+      !debouncedQuery &&
+      deliveryOrders.length > 0 &&
+      deliveryOrders.length === fetchLimit;
+
+    return (
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {showLimitMessage && (
+          <View
+            style={[
+              styles.limitMessage,
+              {
+                backgroundColor: colors.info.main + "15",
+                borderColor: colors.info.main,
+              },
+            ]}
+          >
+            <MaterialIcons
+              name="info-outline"
+              size={20}
+              color={colors.info.main}
+            />
+            <Text style={[styles.limitMessageText, { color: colors.info.main }]}>
+              Mostrando las últimas {fetchLimit} órdenes de entrega. Usa el
+              buscador para encontrar órdenes anteriores.
+            </Text>
+          </View>
+        )}
+        {filteredOrders.map((order) => (
+          <DeliveryOrderCard key={order.id} order={order} />
+        ))}
+        {canLoadMore && (
+          <TouchableOpacity
+            style={[
+              styles.loadMoreButton,
+              {
+                backgroundColor: colors.background.paper,
+                borderColor: colors.divider,
+              },
+            ]}
+            onPress={() =>
+              setFetchLimit((n) => n + RECENT_PAGE_STEP)
+            }
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.loadMoreText, { color: colors.primary.main }]}>
+              Cargar {RECENT_PAGE_STEP} más
+            </Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* La barra queda fuera de renderBody a propósito: si el filtro deja la
+          lista vacía, el usuario tiene que poder abrirlo para limpiarlo. */}
+      <TouchableOpacity
+        style={[
+          styles.locationFilterButton,
+          {
+            backgroundColor: activeLocationFilters
+              ? colors.primary.main + "15"
+              : colors.background.paper,
+            borderColor: activeLocationFilters ? colors.primary.main : colors.divider,
+          },
+        ]}
+        onPress={() => setShowLocationFilter(true)}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons
+          name="place"
+          size={18}
+          color={activeLocationFilters ? colors.primary.main : colors.text.secondary}
+        />
+        <Text
+          style={[
+            styles.locationFilterText,
+            { color: activeLocationFilters ? colors.primary.main : colors.text.secondary },
+          ]}
+          numberOfLines={1}
+        >
+          {locationSummary}
+        </Text>
+        <MaterialIcons
+          name="expand-more"
+          size={18}
+          color={activeLocationFilters ? colors.primary.main : colors.text.secondary}
+        />
+      </TouchableOpacity>
+
+      {renderBody()}
+
+      <DeliveryOrderLocationFilterModal
+        visible={showLocationFilter}
+        masters={masters}
+        mastersLoading={mastersLoading}
+        value={locationFilter}
+        onChange={setLocationFilter}
+        onClose={() => setShowLocationFilter(false)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  locationFilterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  locationFilterText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+  },
   container: {
     flex: 1,
   },
