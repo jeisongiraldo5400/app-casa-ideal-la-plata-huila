@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 2,
+  version: 3,
   tables: [
     tableSchema({
       name: 'customers',
@@ -59,6 +59,8 @@ export const schema = appSchema({
         { name: 'receipt_status', type: 'string' },
         { name: 'notes', type: 'string', isOptional: true },
         { name: 'created_by_name', type: 'string', isOptional: true },
+        { name: 'payment_method_id', type: 'string', isOptional: true },
+        { name: 'payment_method_name', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string', isIndexed: true },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],
@@ -106,6 +108,10 @@ export const schema = appSchema({
         { name: 'nombre', type: 'string' },
         { name: 'is_active', type: 'boolean' },
       ],
+    }),
+    tableSchema({
+      name: 'catalog_payment_methods',
+      columns: [{ name: 'name', type: 'string' }],
     }),
     tableSchema({
       name: 'user_profile_cache',

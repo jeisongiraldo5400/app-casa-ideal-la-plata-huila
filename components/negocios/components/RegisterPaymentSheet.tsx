@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { Button, Input, ModalSheet } from '@/components/ui';
+import { Button, Input, ModalSheet, OptionPickerField } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
@@ -18,6 +18,11 @@ type Props = {
   onChangeAmount: (raw: string) => void;
   receipt: string;
   onChangeReceipt: (value: string) => void;
+  /** Métodos de pago disponibles; la selección es obligatoria. */
+  paymentMethods: { id: string; name: string }[];
+  paymentMethodId: string;
+  onChangePaymentMethod: (value: string) => void;
+  paymentMethodsLoading?: boolean;
   supportFile: PagoSupportLocalFile | null;
   onPickSupport: (source: PagoSupportSource) => void;
   onRemoveSupport: () => void;
@@ -48,6 +53,10 @@ export function RegisterPaymentSheet({
   onChangeAmount,
   receipt,
   onChangeReceipt,
+  paymentMethods,
+  paymentMethodId,
+  onChangePaymentMethod,
+  paymentMethodsLoading = false,
   supportFile,
   onPickSupport,
   onRemoveSupport,
@@ -77,7 +86,13 @@ export function RegisterPaymentSheet({
       footer={
         <>
           <Button title="Cancelar" variant="outline" onPress={onClose} disabled={saving} style={styles.footerButton} />
-          <Button title="Guardar pago" onPress={onSubmit} loading={saving} style={styles.footerButton} />
+          <Button
+            title="Guardar pago"
+            onPress={onSubmit}
+            loading={saving}
+            disabled={!paymentMethodId}
+            style={styles.footerButton}
+          />
         </>
       }>
       <Text style={[styles.balance, { color: colors.text.secondary }]}>
@@ -106,6 +121,23 @@ export function RegisterPaymentSheet({
         containerStyle={styles.field}
         accessibilityLabel="Número de recibo físico"
       />
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.text.secondary }]}>Método de pago *</Text>
+        <OptionPickerField
+          value={paymentMethodId}
+          onValueChange={onChangePaymentMethod}
+          options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))}
+          placeholder={paymentMethodsLoading ? 'Cargando métodos…' : 'Seleccione el método'}
+          modalTitle="Método de pago"
+          colors={colors}
+          disabled={saving || paymentMethodsLoading || paymentMethods.length === 0}
+        />
+        {!paymentMethodsLoading && paymentMethods.length === 0 ? (
+          <Text style={[styles.fieldHint, { color: colors.error.main }]}>
+            No hay métodos de pago configurados. Pídalos al administrador.
+          </Text>
+        ) : null}
+      </View>
       {choosingSupport ? (
         <View style={[styles.supportOptions, { borderColor: colors.divider }]}>
           <Text style={[styles.supportTitle, { color: colors.text.secondary }]}>Soporte de pago</Text>
@@ -162,6 +194,8 @@ export function RegisterPaymentSheet({
 
 const styles = StyleSheet.create({
   balance: { ...Typography.caption },
+  fieldLabel: { ...Typography.label, marginBottom: Spacing.xs },
+  fieldHint: { ...Typography.caption, marginTop: Spacing.xs },
   field: { marginBottom: 0 },
   footerButton: { flex: 1 },
   supportText: { flexShrink: 1 },

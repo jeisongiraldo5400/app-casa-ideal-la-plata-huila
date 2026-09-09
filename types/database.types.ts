@@ -2416,6 +2416,7 @@ export type Database = {
           negocio_id: string
           notes: string | null
           paid_at: string
+          payment_method_id: string | null
           receipt_number: string | null
           receipt_status: string
           support_file_name: string | null
@@ -2437,6 +2438,7 @@ export type Database = {
           negocio_id: string
           notes?: string | null
           paid_at?: string
+          payment_method_id?: string | null
           receipt_number?: string | null
           receipt_status?: string
           support_file_name?: string | null
@@ -2458,6 +2460,7 @@ export type Database = {
           negocio_id?: string
           notes?: string | null
           paid_at?: string
+          payment_method_id?: string | null
           receipt_number?: string | null
           receipt_status?: string
           support_file_name?: string | null
@@ -2488,6 +2491,13 @@ export type Database = {
             columns: ["cuota_id"]
             isOneToOne: false
             referencedRelation: "negocio_cuotas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pagos_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            isOneToOne: false
+            referencedRelation: "payment_methods"
             referencedColumns: ["id"]
           },
           {
@@ -2560,6 +2570,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      payment_methods: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       negocios: {
         Row: {
@@ -5483,6 +5517,7 @@ export type Database = {
           p_idempotency_key: string
           p_notes: string
           p_paid_at: string
+          p_payment_method_id?: string | null
           p_receipt_number: string
           p_stop_id: string
         }
@@ -5534,6 +5569,7 @@ export type Database = {
           p_negocio_id: string
           p_notes: string
           p_paid_at: string
+          p_payment_method_id?: string | null
           p_receipt_number: string
         }
         Returns: string

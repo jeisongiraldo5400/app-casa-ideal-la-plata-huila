@@ -7,6 +7,7 @@ import type { CustomerWithNegocios } from '@/lib/negocios/searchCustomerNegocios
 import { getDatabase, isDatabaseOpen } from '../database';
 import {
   CatalogMunicipio,
+  CatalogPaymentMethod,
   CollectionRouteRecord,
   CollectionRouteStopRecord,
   Customer,
@@ -320,6 +321,7 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       receiptStatus: row.receiptStatus,
       notes: row.notes,
       createdByName: row.createdByName,
+      paymentMethodName: row.paymentMethodName,
     })),
   });
 }
@@ -415,6 +417,17 @@ export async function fetchMunicipiosFromLocal(): Promise<Municipio[] | null> {
     .map((row) => ({ id: row.id, nombre: row.nombre }));
 }
 
+export type LocalPaymentMethod = { id: string; name: string };
+
+/** Métodos de pago descargados; `null` si no hay base local disponible. */
+export async function fetchPaymentMethodsFromLocal(): Promise<LocalPaymentMethod[] | null> {
+  if (!canUseLocalDb()) return null;
+  const rows = await getDatabase().get<CatalogPaymentMethod>('catalog_payment_methods').query().fetch();
+  return rows
+    .map((row) => ({ id: row.id, name: row.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * Registra un pago sin red: fila optimista + cuotas actualizadas + parada de
  * ruta (si aplica) + comando en el outbox, todo en un único batch atómico.
@@ -426,6 +439,9 @@ export async function registerPagoOffline(input: {
   amount: number;
   paidAt: string;
   receiptNumber: string | null;
+  /** Método de pago elegido en la pantalla de cobro. */
+  paymentMethodId: string;
+  paymentMethodName?: string | null;
   idempotencyKey?: string | null;
   routeStopId?: string | null;
   supportFile?: PagoSupportLocalFile | null;
@@ -477,6 +493,7 @@ export async function registerPagoOffline(input: {
   };
   const paymentPayload: RegisterPagoPayload = {
     pagoLocalId,
+    paymentMethodId: input.paymentMethodId,
     negocioId: input.negocioId,
     amount: input.amount,
     paidAt: input.paidAt,
@@ -505,6 +522,8 @@ export async function registerPagoOffline(input: {
         record.receiptStatus = 'emitido';
         record.notes = null;
         record.createdByName = input.registeredBy || null;
+        record.paymentMethodId = input.paymentMethodId;
+        record.paymentMethodName = input.paymentMethodName || null;
         record.rowSyncStatus = 'pending';
         record.serverUpdatedAt = null;
       }),

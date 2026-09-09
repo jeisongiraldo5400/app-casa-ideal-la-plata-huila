@@ -106,6 +106,7 @@ async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: st
         p_cuota_id: null,
         p_notes: payload.notes,
         p_idempotency_key: idempotencyKey,
+        p_payment_method_id: payload.paymentMethodId ?? null,
       })
     : await supabase.rpc('register_negocio_pago', {
         p_negocio_id: payload.negocioId,
@@ -115,6 +116,7 @@ async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: st
         p_cuota_id: null,
         p_notes: payload.notes,
         p_idempotency_key: idempotencyKey,
+        p_payment_method_id: payload.paymentMethodId ?? null,
       });
   if (error) throw error;
   const pagoId = String(data || '');

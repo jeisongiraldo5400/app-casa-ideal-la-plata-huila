@@ -70,6 +70,10 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
+import {
+  fetchPaymentMethods,
+  type PaymentMethodOption,
+} from '@/components/negocios/infrastructure/services/paymentMethodsService';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -121,6 +125,9 @@ function NegocioDetailScreenInner() {
 
   const [payAmount, setPayAmount] = useState('');
   const [payReceipt, setPayReceipt] = useState('');
+  const [payMethodId, setPayMethodId] = useState('');
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(false);
   const [paySupportFile, setPaySupportFile] = useState<PagoSupportLocalFile | null>(null);
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [installmentPage, setInstallmentPage] = useState(0);
@@ -246,7 +253,7 @@ function NegocioDetailScreenInner() {
           .order('due_date'),
         supabase
           .from('negocio_pagos')
-          .select('*')
+          .select('*, payment_method:payment_methods(name)')
           .eq('negocio_id', id)
           // Mismo desempate que `comparePagosOldestFirst`: con dos abonos a la
           // misma hora, ordenar solo por `paid_at` deja el orden indeterminado
@@ -287,7 +294,13 @@ function NegocioDetailScreenInner() {
 
       setItems(itemsRes.data || []);
       setCuotas(cuotasRes.data || []);
-      const pagoRows = (pagosRes.data || []) as { created_by: string | null }[];
+      const pagoRows = ((pagosRes.data || []) as {
+        created_by: string | null;
+        payment_method?: { name: string } | null;
+      }[]).map((pago) => ({
+        ...pago,
+        payment_method_name: pago.payment_method?.name ?? null,
+      }));
       // Los pagos se pintan antes de resolver los nombres: el autor es un dato
       // decorativo y su consulta (tabla `profiles`, sujeta a RLS) no puede
       // dejar la lista de pagos sin actualizar si falla.
@@ -391,6 +404,27 @@ function NegocioDetailScreenInner() {
   // pantalla está mostrando datos del dispositivo y termina una sincronización,
   // que es justo el momento en que hay algo más fresco que enseñar. No se
   // recarga en cada ciclo de sincronización para no parpadear sin motivo.
+  // El catálogo se carga al abrir la hoja: sin red cae a la copia descargada.
+  useEffect(() => {
+    if (!payModalOpen) return;
+    let cancelled = false;
+    setPaymentMethodsLoading(true);
+    fetchPaymentMethods()
+      .then((methods) => {
+        if (cancelled) return;
+        setPaymentMethods(methods);
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentMethods([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPaymentMethodsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [payModalOpen]);
+
   const pendingCount = useSyncStore((state) => state.pendingCount);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const hadPendingRef = useRef(false);
@@ -484,6 +518,7 @@ function NegocioDetailScreenInner() {
     paidAt: string;
     amount: number;
     physicalReceiptNumber: string | null;
+    paymentMethodName: string | null;
   }) => {
     if (!negocio) return false;
     return printPaymentIfReady({
@@ -496,6 +531,7 @@ function NegocioDetailScreenInner() {
       customerName,
       sellerName,
       registeredBy: registeredByName,
+      paymentMethodName: input.paymentMethodName,
       remainingBalance: Math.max(pendingBalance - input.amount, 0),
     });
   };
@@ -528,6 +564,11 @@ function NegocioDetailScreenInner() {
     if (!amount || amount <= 0) {
       return Alert.alert('Indique un valor válido');
     }
+    if (!payMethodId) {
+      return Alert.alert('Método de pago', 'Seleccione con qué método se recibió el pago.');
+    }
+    const paymentMethodLabel =
+      paymentMethods.find((method) => method.id === payMethodId)?.name || null;
     if (amount - pendingBalance > 0.009) {
       return Alert.alert(
         'Valor supera el saldo',
@@ -553,6 +594,7 @@ function NegocioDetailScreenInner() {
               p_cuota_id: null,
               p_notes: null,
               p_idempotency_key: paymentIdempotencyKey.current,
+              p_payment_method_id: payMethodId,
             })
           : await supabase.rpc('register_negocio_pago', {
               p_negocio_id: negocio.id,
@@ -562,6 +604,7 @@ function NegocioDetailScreenInner() {
               p_cuota_id: null,
               p_notes: null,
               p_idempotency_key: paymentIdempotencyKey.current,
+              p_payment_method_id: payMethodId,
             });
         if (error) throw error;
         const pagoId = String(data || '');
@@ -604,6 +647,7 @@ function NegocioDetailScreenInner() {
         const hadSupport = Boolean(paySupportFile) && !supportWarning;
         setPayAmount('');
         setPayReceipt('');
+        setPayMethodId('');
         setPaySupportFile(null);
         setPayModalOpen(false);
 
@@ -633,6 +677,7 @@ function NegocioDetailScreenInner() {
           paidAt: persistedPaidAt,
           amount,
           physicalReceiptNumber,
+          paymentMethodName: paymentMethodLabel,
         });
 
         const successBody = routeStopId
@@ -654,6 +699,8 @@ function NegocioDetailScreenInner() {
           amount,
           paidAt,
           receiptNumber: payReceipt || null,
+          paymentMethodId: payMethodId,
+          paymentMethodName: paymentMethodLabel,
           idempotencyKey: paymentIdempotencyKey.current,
           routeStopId: routeStopId || null,
           supportFile: paySupportFile,
@@ -663,6 +710,7 @@ function NegocioDetailScreenInner() {
         paymentPaidAt.current = null;
         setPayAmount('');
         setPayReceipt('');
+        setPayMethodId('');
         setPaySupportFile(null);
         setPayModalOpen(false);
 
@@ -675,6 +723,7 @@ function NegocioDetailScreenInner() {
           paidAt,
           amount,
           physicalReceiptNumber: payReceipt || null,
+          paymentMethodName: paymentMethodLabel,
         });
         notifyPagoResult(
           'Pago guardado sin conexión',
@@ -793,6 +842,7 @@ function NegocioDetailScreenInner() {
       customerName,
       sellerName,
       registeredBy: pago.created_by_name,
+      paymentMethodName: pago.payment_method_name,
       remainingBalance,
     });
     try {
@@ -820,6 +870,7 @@ function NegocioDetailScreenInner() {
       customerName,
       sellerName,
       registeredBy: pago.created_by_name,
+      paymentMethodName: pago.payment_method_name,
       remainingBalance,
     });
   };
@@ -1345,6 +1396,14 @@ function NegocioDetailScreenInner() {
           paymentPaidAt.current = null;
           setPayReceipt(value);
         }}
+        paymentMethods={paymentMethods}
+        paymentMethodId={payMethodId}
+        onChangePaymentMethod={(value) => {
+          paymentIdempotencyKey.current = null;
+          paymentPaidAt.current = null;
+          setPayMethodId(value);
+        }}
+        paymentMethodsLoading={paymentMethodsLoading}
         supportFile={paySupportFile}
         onPickSupport={choosePaySupport}
         onRemoveSupport={() => setPaySupportFile(null)}

@@ -53,6 +53,8 @@ export class NegocioPago extends Model {
   @field('receipt_status') receiptStatus!: string;
   @field('notes') notes!: string | null;
   @field('created_by_name') createdByName!: string | null;
+  @field('payment_method_id') paymentMethodId!: string | null;
+  @field('payment_method_name') paymentMethodName!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }
@@ -90,6 +92,11 @@ export class CollectionRouteStopRecord extends Model {
   @field('completed_at') completedAt!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
+}
+
+export class CatalogPaymentMethod extends Model {
+  static table = 'catalog_payment_methods';
+  @field('name') name!: string;
 }
 
 export class CatalogMunicipio extends Model {
@@ -152,6 +159,7 @@ export const modelClasses = [
   CollectionRouteRecord,
   CollectionRouteStopRecord,
   CatalogMunicipio,
+  CatalogPaymentMethod,
   UserProfileCache,
   ReportSnapshot,
   SyncOutboxItem,

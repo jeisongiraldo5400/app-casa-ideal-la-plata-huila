@@ -68,6 +68,8 @@ export type CreateCustomerPayload = OutboxPayloadBase & {
 
 export type RegisterPagoPayload = OutboxPayloadBase & {
   pagoLocalId: string;
+  /** Método de pago elegido; obligatorio en la pantalla de cobro. */
+  paymentMethodId?: string | null;
   negocioId: string;
   amount: number;
   paidAt: string;
@@ -176,6 +178,8 @@ export type PullPago = {
   receipt_status: string | null;
   notes: string | null;
   created_by_name?: string | null;
+  payment_method_id?: string | null;
+  payment_method_name?: string | null;
   created_at: string | null;
   deleted_at: string | null;
 };
@@ -214,6 +218,7 @@ export type PullStop = {
 };
 
 export type PullMunicipio = { id: string; nombre: string; is_active: boolean };
+export type PullPaymentMethod = { id: string; name: string };
 export type PullRole = { id: string; role_id: string; nombre: string };
 
 export type PullPayload = {
@@ -230,6 +235,7 @@ export type PullPayload = {
   collection_routes: CollectionChanges<PullRoute>;
   collection_route_stops: CollectionChanges<PullStop>;
   municipios: CollectionChanges<PullMunicipio>;
+  payment_methods?: CollectionChanges<PullPaymentMethod>;
 };
 
 export function assertPullIsComplete(payload: PullPayload, limit: number) {

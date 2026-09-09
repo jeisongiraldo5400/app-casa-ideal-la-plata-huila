@@ -4,6 +4,7 @@ import type { PullPayload } from './types';
 import { toEpoch } from './types';
 import {
   CatalogMunicipio,
+  CatalogPaymentMethod,
   CollectionRouteRecord,
   CollectionRouteStopRecord,
   Customer,
@@ -131,6 +132,8 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.receiptStatus = row.receipt_status || 'emitido';
         record.notes = row.notes;
         record.createdByName = row.created_by_name ?? null;
+        record.paymentMethodId = row.payment_method_id ?? null;
+        record.paymentMethodName = row.payment_method_name ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.created_at);
       })
@@ -197,6 +200,21 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.isActive = Boolean(row.is_active);
       })
     );
+  }
+
+  // El catálogo de métodos de pago viaja completo: la pantalla de cobro lo
+  // necesita disponible sin red. `payment_methods` es opcional para tolerar un
+  // servidor anterior a la migración del catálogo.
+  for (const row of payload.payment_methods?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CatalogPaymentMethod>(database, 'catalog_payment_methods', row.id, (record) => {
+        record.name = row.name;
+      })
+    );
+  }
+  for (const id of payload.payment_methods?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'catalog_payment_methods', id));
   }
 
   const rolesJson = JSON.stringify(payload.roles || []);
