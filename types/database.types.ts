@@ -1197,6 +1197,68 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_seller_history: {
+        Row: {
+          action: string
+          assigned_by: string | null
+          created_at: string
+          customer_id: string
+          id: string
+          previous_seller_id: string | null
+          reason: string | null
+          seller_id: string | null
+        }
+        Insert: {
+          action: string
+          assigned_by?: string | null
+          created_at?: string
+          customer_id: string
+          id?: string
+          previous_seller_id?: string | null
+          reason?: string | null
+          seller_id?: string | null
+        }
+        Update: {
+          action?: string
+          assigned_by?: string | null
+          created_at?: string
+          customer_id?: string
+          id?: string
+          previous_seller_id?: string | null
+          reason?: string | null
+          seller_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_seller_history_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_seller_history_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_seller_history_previous_seller_id_fkey"
+            columns: ["previous_seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_seller_history_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -1214,6 +1276,7 @@ export type Database = {
           notes: string | null
           phone: string | null
           phone_secondary: string | null
+          seller_id: string | null
           updated_at: string | null
         }
         Insert: {
@@ -1232,6 +1295,7 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
+          seller_id?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -1250,12 +1314,20 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           phone_secondary?: string | null
+          seller_id?: string | null
           updated_at?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "customers_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_seller_id_fkey"
+            columns: ["seller_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1658,12 +1730,14 @@ export type Database = {
           deleted_at: string | null
           delivery_address: string | null
           id: string
+          municipio_id: string | null
           negocio_id: string | null
           notes: string | null
           order_number: string | null
           order_type: string
           status: string
           updated_at: string | null
+          vereda_id: string | null
           zone_id: string | null
         }
         Insert: {
@@ -1674,12 +1748,14 @@ export type Database = {
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
+          municipio_id?: string | null
           negocio_id?: string | null
           notes?: string | null
           order_number?: string | null
           order_type?: string
           status?: string
           updated_at?: string | null
+          vereda_id?: string | null
           zone_id?: string | null
         }
         Update: {
@@ -1690,12 +1766,14 @@ export type Database = {
           deleted_at?: string | null
           delivery_address?: string | null
           id?: string
+          municipio_id?: string | null
           negocio_id?: string | null
           notes?: string | null
           order_number?: string | null
           order_type?: string
           status?: string
           updated_at?: string | null
+          vereda_id?: string | null
           zone_id?: string | null
         }
         Relationships: [
@@ -4288,9 +4366,12 @@ export type Database = {
           p_delivery_address: string
           p_idempotency_key: string
           p_items: Json
+          p_municipio_id?: string
           p_notes: string
           p_order_id: string
           p_order_type: string
+          p_update_customer_location?: boolean
+          p_vereda_id?: string
           p_zone_id: string
         }
         Returns: string
@@ -4398,8 +4479,12 @@ export type Database = {
           p_delivery_address?: string
           p_delivery_order_id: string
           p_items: Json
+          p_municipio_id?: string
           p_notes?: string
+          p_replace_location?: boolean
           p_status?: string
+          p_update_customer_location?: boolean
+          p_vereda_id?: string
         }
         Returns: Json
       }
@@ -4408,8 +4493,12 @@ export type Database = {
           p_delivery_address?: string
           p_delivery_order_id: string
           p_items: Json
+          p_municipio_id?: string
           p_notes?: string
+          p_replace_location?: boolean
           p_status?: string
+          p_update_customer_location?: boolean
+          p_vereda_id?: string
         }
         Returns: Json
       }
@@ -4630,8 +4719,15 @@ export type Database = {
           total_exits: number
         }[]
       }
+      get_customer_seller_info: { Args: { p_customer_id: string }; Returns: Json }
       get_customers_dashboard: {
-        Args: { page?: number; page_size?: number; search_term?: string }
+        Args: {
+          include_unassigned?: boolean
+          page?: number
+          page_size?: number
+          search_term?: string
+          seller_ids?: string[]
+        }
         Returns: {
           address: string
           created_at: string
@@ -4647,6 +4743,10 @@ export type Database = {
           name: string
           notes: string
           phone: string
+          seller_avatar_url: string
+          seller_email: string
+          seller_id: string
+          seller_name: string
           total_count: number
           total_exits: number
           vereda_id: string
@@ -4697,7 +4797,10 @@ export type Database = {
           customer_name: string
           delivered_quantity: number
           delivery_address: string
+          departamento_name: string
           id: string
+          municipio_id: string
+          municipio_name: string
           notes: string
           order_number: string
           order_type: string
@@ -4707,6 +4810,8 @@ export type Database = {
           total_count: number
           total_items: number
           total_quantity: number
+          vereda_id: string
+          vereda_name: string
           zone_id: string
           zone_name: string
         }[]
@@ -5412,6 +5517,15 @@ export type Database = {
       is_admin_or_bodeguero: { Args: never; Returns: boolean }
       is_admin_or_vendedor: { Args: never; Returns: boolean }
       is_gestor_cobro: { Args: never; Returns: boolean }
+      list_sellers: {
+        Args: { p_limit?: number; p_search?: string }
+        Returns: {
+          avatar_url: string
+          email: string
+          full_name: string
+          id: string
+        }[]
+      }
       log_search_event: {
         Args: {
           p_command?: string
