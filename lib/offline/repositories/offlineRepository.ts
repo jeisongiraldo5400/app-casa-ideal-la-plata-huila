@@ -180,6 +180,9 @@ export async function createCustomerOffline(input: {
   name: string;
   idNumber: string;
   phone: string | null;
+  address?: string | null;
+  municipioId?: string | null;
+  veredaId?: string | null;
 }) {
   const database = getDatabase();
   const existing = await database
@@ -210,6 +213,9 @@ export async function createCustomerOffline(input: {
           name: input.name,
           idNumber: input.idNumber,
           phone: input.phone,
+          address: input.address ?? null,
+          municipioId: input.municipioId ?? null,
+          veredaId: input.veredaId ?? null,
         },
         idempotencyKey
       )

@@ -63,6 +63,8 @@ interface NegociosState {
   createAndActivate: (input: {
     deal_date: string;
     municipio_id: string;
+    /** Vereda del municipio; opcional. */
+    vereda_id?: string | null;
     direccion: string;
     customer_id: string;
     codeudor_customer_id?: string | null;
@@ -135,6 +137,7 @@ function toUserError(error: unknown, fallback: string): Error {
 function createRequestFingerprint(input: {
   deal_date: string;
   municipio_id: string;
+  vereda_id?: string | null;
   direccion: string;
   customer_id: string;
   codeudor_customer_id?: string | null;
@@ -155,6 +158,7 @@ function createRequestFingerprint(input: {
   return JSON.stringify({
     deal_date: input.deal_date,
     municipio_id: input.municipio_id,
+    vereda_id: input.vereda_id || null,
     direccion: input.direccion,
     customer_id: input.customer_id,
     codeudor_customer_id: input.codeudor_customer_id || null,
@@ -402,6 +406,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       p_negocio: {
         deal_date: input.deal_date,
         municipio_id: input.municipio_id,
+        vereda_id: input.vereda_id || null,
         direccion: input.direccion.trim(),
         customer_id: input.customer_id,
         codeudor_customer_id: input.codeudor_customer_id || null,

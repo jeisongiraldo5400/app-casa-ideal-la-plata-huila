@@ -82,6 +82,7 @@ type Customer = {
 type Product = NegocioProduct;
 type Departamento = { id: string; nombre: string };
 type Municipio = { id: string; nombre: string; departamento_id: string };
+type Vereda = { id: string; nombre: string; municipio_id: string };
 
 const WIZARD_STEPS = [
   { id: 0, label: 'Cliente', icon: 'person' },
@@ -134,8 +135,10 @@ function NegocioCreateScreenInner() {
   const [codeudor, setCodeudor] = useState<Customer | null>(null);
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
+  const [veredas, setVeredas] = useState<Vereda[]>([]);
   const [departamentoId, setDepartamentoId] = useState('');
   const [municipioId, setMunicipioId] = useState('');
+  const [veredaId, setVeredaId] = useState('');
   const [direccion, setDireccion] = useState('');
   const [items, setItems] = useState<NegocioItem[]>([]);
   const [stockByProduct, setStockByProduct] = useState<
@@ -158,6 +161,10 @@ function NegocioCreateScreenInner() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerId, setNewCustomerId] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerDepartamentoId, setNewCustomerDepartamentoId] = useState('');
+  const [newCustomerMunicipioId, setNewCustomerMunicipioId] = useState('');
+  const [newCustomerVeredaId, setNewCustomerVeredaId] = useState('');
+  const [newCustomerAddress, setNewCustomerAddress] = useState('');
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
@@ -180,6 +187,7 @@ function NegocioCreateScreenInner() {
     setCodeudor(null);
     setDepartamentoId('');
     setMunicipioId('');
+    setVeredaId('');
     setDireccion('');
     setItems([]);
     setStockByProduct({});
@@ -195,6 +203,10 @@ function NegocioCreateScreenInner() {
     setNewCustomerName('');
     setNewCustomerId('');
     setNewCustomerPhone('');
+    setNewCustomerDepartamentoId('');
+    setNewCustomerMunicipioId('');
+    setNewCustomerVeredaId('');
+    setNewCustomerAddress('');
     setPickingCodeudor(false);
     setOriginType('bodega');
     setSelectedDeliveryOrder(null);
@@ -207,7 +219,7 @@ function NegocioCreateScreenInner() {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m, orders, sellers, cachedName] = await Promise.all([
+        const [, d, m, v, orders, sellers, cachedName] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -221,15 +233,23 @@ function NegocioCreateScreenInner() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .order('nombre'),
+        supabase
+          .from('veredas')
+          .select('id, nombre, municipio_id')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .order('nombre'),
         fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
         fetchSellerOptions().catch(() => [] as SellerOption[]),
         getCachedProfileName().catch(() => null),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
+        if (v.error) throw v.error;
         if (!cancelled) {
           setDepartamentos(d.data || []);
           setMunicipios(m.data || []);
+          setVeredas(v.data || []);
           setDeliveryOrders(orders || []);
           setSellerOptions(
             withCurrentUserOption(
@@ -430,6 +450,34 @@ function NegocioCreateScreenInner() {
     setItems(next);
   };
 
+  /** Opciones de vereda de un municipio; vacío si el municipio no tiene veredas. */
+  const veredasForMunicipio = useCallback(
+    (targetMunicipioId: string) =>
+      veredas
+        .filter((vereda) => vereda.municipio_id === targetMunicipioId)
+        .map((vereda) => ({ value: vereda.id, label: vereda.nombre || 'Vereda' })),
+    [veredas]
+  );
+
+  const municipiosForDepartamento = useCallback(
+    (targetDepartamentoId: string) =>
+      municipios
+        .filter((municipio) => municipio.departamento_id === targetDepartamentoId)
+        .map((municipio) => ({ value: municipio.id, label: municipio.nombre || 'Municipio' })),
+    [municipios]
+  );
+
+  const closeNewCustomerModal = useCallback(() => {
+    setShowNewCustomerModal(false);
+    setNewCustomerName('');
+    setNewCustomerId('');
+    setNewCustomerPhone('');
+    setNewCustomerDepartamentoId('');
+    setNewCustomerMunicipioId('');
+    setNewCustomerVeredaId('');
+    setNewCustomerAddress('');
+  }, []);
+
   const customerLocked =
     originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'customer';
 
@@ -449,6 +497,9 @@ function NegocioCreateScreenInner() {
         name: newCustomerName.trim(),
         idNumber: newCustomerId.trim(),
         phone: newCustomerPhone.trim() || null,
+        address: newCustomerAddress.trim() || null,
+        municipioId: newCustomerMunicipioId || null,
+        veredaId: newCustomerVeredaId || null,
       });
 
       setCustomers((prev) => [data, ...prev]);
@@ -458,10 +509,7 @@ function NegocioCreateScreenInner() {
       } else {
         setCustomer(data);
       }
-      setNewCustomerName('');
-      setNewCustomerId('');
-      setNewCustomerPhone('');
-      setShowNewCustomerModal(false);
+      closeNewCustomerModal();
       Alert.alert('¡Éxito!', `Cliente ${data.name} creado y seleccionado.`);
     } catch (e: unknown) {
       Alert.alert('Error', errorMessage(e, 'No se pudo crear el cliente'));
@@ -500,6 +548,7 @@ function NegocioCreateScreenInner() {
       const result = await createAndActivate({
         deal_date: localDateValue(),
         municipio_id: municipioId,
+        vereda_id: veredaId || null,
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
@@ -904,6 +953,7 @@ function NegocioCreateScreenInner() {
                     onValueChange={(next) => {
                       setDepartamentoId(next);
                       setMunicipioId('');
+                      setVeredaId('');
                     }}
                     options={departamentos.map((departamento) => ({
                       value: departamento.id,
@@ -920,7 +970,10 @@ function NegocioCreateScreenInner() {
                   </Text>
                   <OptionPickerField
                     value={municipioId}
-                    onValueChange={setMunicipioId}
+                    onValueChange={(next) => {
+                      setMunicipioId(next);
+                      setVeredaId('');
+                    }}
                     options={municipios
                       .filter((municipio) => municipio.departamento_id === departamentoId)
                       .map((municipio) => ({
@@ -931,6 +984,24 @@ function NegocioCreateScreenInner() {
                     modalTitle="Municipio"
                     colors={colors}
                     disabled={!departamentoId}
+                  />
+                </View>
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Vereda (opcional)
+                  </Text>
+                  <OptionPickerField
+                    value={veredaId}
+                    onValueChange={setVeredaId}
+                    options={veredasForMunicipio(municipioId)}
+                    placeholder={
+                      municipioId && veredasForMunicipio(municipioId).length === 0
+                        ? 'El municipio no tiene veredas'
+                        : 'Sin vereda'
+                    }
+                    modalTitle="Vereda"
+                    colors={colors}
+                    disabled={!municipioId || veredasForMunicipio(municipioId).length === 0}
                   />
                 </View>
                 <View style={{ gap: 6 }}>
@@ -1373,7 +1444,7 @@ function NegocioCreateScreenInner() {
         visible={showNewCustomerModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowNewCustomerModal(false)}
+        onRequestClose={closeNewCustomerModal}
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
@@ -1384,13 +1455,13 @@ function NegocioCreateScreenInner() {
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Crear cliente nuevo
               </Text>
-              <TouchableOpacity onPress={() => setShowNewCustomerModal(false)}>
+              <TouchableOpacity onPress={closeNewCustomerModal}>
                 <MaterialIcons name="close" size={24} color={colors.text.secondary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView
-              style={{ maxHeight: 350 }}
+              style={{ maxHeight: 420 }}
               contentContainerStyle={{ gap: 12 }}
               keyboardShouldPersistTaps="handled"
             >
@@ -1434,12 +1505,85 @@ function NegocioCreateScreenInner() {
                   onChangeText={setNewCustomerPhone}
                 />
               </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Departamento (opcional)
+                </Text>
+                <OptionPickerField
+                  value={newCustomerDepartamentoId}
+                  onValueChange={(next) => {
+                    setNewCustomerDepartamentoId(next);
+                    setNewCustomerMunicipioId('');
+                    setNewCustomerVeredaId('');
+                  }}
+                  options={departamentos.map((departamento) => ({
+                    value: departamento.id,
+                    label: departamento.nombre || 'Departamento',
+                  }))}
+                  placeholder="Sin departamento"
+                  modalTitle="Departamento"
+                  colors={colors}
+                />
+              </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Municipio (opcional)
+                </Text>
+                <OptionPickerField
+                  value={newCustomerMunicipioId}
+                  onValueChange={(next) => {
+                    setNewCustomerMunicipioId(next);
+                    setNewCustomerVeredaId('');
+                  }}
+                  options={municipiosForDepartamento(newCustomerDepartamentoId)}
+                  placeholder="Sin municipio"
+                  modalTitle="Municipio"
+                  colors={colors}
+                  disabled={!newCustomerDepartamentoId}
+                />
+              </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Vereda (opcional)
+                </Text>
+                <OptionPickerField
+                  value={newCustomerVeredaId}
+                  onValueChange={setNewCustomerVeredaId}
+                  options={veredasForMunicipio(newCustomerMunicipioId)}
+                  placeholder={
+                    newCustomerMunicipioId && veredasForMunicipio(newCustomerMunicipioId).length === 0
+                      ? 'El municipio no tiene veredas'
+                      : 'Sin vereda'
+                  }
+                  modalTitle="Vereda"
+                  colors={colors}
+                  disabled={
+                    !newCustomerMunicipioId || veredasForMunicipio(newCustomerMunicipioId).length === 0
+                  }
+                />
+              </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Dirección de la vivienda (opcional)
+                </Text>
+                <TextInput
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                  placeholder="Ej. Carrera 5 # 12-30, barrio San Rafael"
+                  placeholderTextColor={colors.text.secondary}
+                  value={newCustomerAddress}
+                  onChangeText={setNewCustomerAddress}
+                />
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalBtnSecondary, { borderColor: colors.divider }]}
-                onPress={() => setShowNewCustomerModal(false)}
+                onPress={closeNewCustomerModal}
               >
                 <Text style={{ color: colors.text.primary, fontWeight: '600' }}>Cancelar</Text>
               </TouchableOpacity>

@@ -1208,6 +1208,7 @@ export type Database = {
           id: string
           id_number: string
           municipio_id: string | null
+          vereda_id: string | null
           name: string
           neighborhood: string | null
           notes: string | null
@@ -1225,6 +1226,7 @@ export type Database = {
           id?: string
           id_number: string
           municipio_id?: string | null
+          vereda_id?: string | null
           name: string
           neighborhood?: string | null
           notes?: string | null
@@ -1242,6 +1244,7 @@ export type Database = {
           id?: string
           id_number?: string
           municipio_id?: string | null
+          vereda_id?: string | null
           name?: string
           neighborhood?: string | null
           notes?: string | null
@@ -1262,6 +1265,13 @@ export type Database = {
             columns: ["municipio_id"]
             isOneToOne: false
             referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_vereda_id_fkey"
+            columns: ["vereda_id"]
+            isOneToOne: false
+            referencedRelation: "veredas"
             referencedColumns: ["id"]
           },
         ]
@@ -2107,6 +2117,47 @@ export type Database = {
           },
         ]
       }
+      veredas: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          municipio_id: string
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          municipio_id: string
+          nombre: string
+          updated_at?: string | null
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          municipio_id?: string
+          nombre?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "veredas_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       negocio_cuotas: {
         Row: {
           amount: number
@@ -2537,6 +2588,7 @@ export type Database = {
           interest_amount: number
           location: string | null
           municipio_id: string | null
+          vereda_id: string | null
           notes: string | null
           numero: number
           products_subtotal: number
@@ -2575,6 +2627,7 @@ export type Database = {
           interest_amount?: number
           location?: string | null
           municipio_id?: string | null
+          vereda_id?: string | null
           notes?: string | null
           numero: number
           products_subtotal?: number
@@ -2613,6 +2666,7 @@ export type Database = {
           interest_amount?: number
           location?: string | null
           municipio_id?: string | null
+          vereda_id?: string | null
           notes?: string | null
           numero?: number
           products_subtotal?: number
@@ -2666,6 +2720,13 @@ export type Database = {
             columns: ["municipio_id"]
             isOneToOne: false
             referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_vereda_id_fkey"
+            columns: ["vereda_id"]
+            isOneToOne: false
+            referencedRelation: "veredas"
             referencedColumns: ["id"]
           },
           {
@@ -4175,11 +4236,14 @@ export type Database = {
       }
       create_customer_offline: {
         Args: {
+          p_address?: string | null
           p_customer_id: string
           p_id_number: string
           p_idempotency_key: string
+          p_municipio_id?: string | null
           p_name: string
           p_phone: string
+          p_vereda_id?: string | null
         }
         Returns: Json
       }
@@ -4539,15 +4603,20 @@ export type Database = {
           created_at: string
           created_by: string
           created_by_name: string
+          departamento_name: string
           email: string
           id: string
           id_number: string
           last_exit_date: string
+          municipio_id: string
+          municipio_name: string
           name: string
           notes: string
           phone: string
           total_count: number
           total_exits: number
+          vereda_id: string
+          vereda_name: string
         }[]
       }
       get_customers_stats: {

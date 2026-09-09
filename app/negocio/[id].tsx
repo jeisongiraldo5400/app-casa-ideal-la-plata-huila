@@ -212,7 +212,7 @@ function NegocioDetailScreenInner() {
 
       const { data: n, error } = await supabase
         .from('negocios')
-        .select('*, municipio:municipios(nombre, departamento:departamentos(nombre))')
+        .select('*, municipio:municipios(nombre, departamento:departamentos(nombre)), vereda:veredas(nombre)')
         .eq('id', id)
         .single();
       if (error) throw error;
@@ -698,6 +698,7 @@ function NegocioDetailScreenInner() {
       deal_date: negocio.deal_date,
       location: [
         negocio.direccion,
+        negocio.vereda?.nombre,
         negocio.municipio?.nombre,
         negocio.municipio?.departamento?.nombre,
       ].filter(Boolean).join(', '),
@@ -902,6 +903,7 @@ function NegocioDetailScreenInner() {
           p_negocio: {
             deal_date: negocio.deal_date,
             municipio_id: negocio.municipio_id,
+            vereda_id: negocio.vereda_id || null,
             direccion: negocio.direccion,
             customer_id: negocio.customer_id,
             codeudor_customer_id: negocio.codeudor_customer_id || null,
@@ -1093,7 +1095,9 @@ function NegocioDetailScreenInner() {
     .filter((pago) => pago.receipt_status !== 'anulado')
     .reduce((total, pago) => total + Number(pago.amount || 0), 0);
   const address =
-    [negocio.direccion, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre].filter(Boolean).join(', ') ||
+    [negocio.direccion, negocio.vereda?.nombre, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
+      .filter(Boolean)
+      .join(', ') ||
     'Dirección no registrada';
   const downPaymentSchedule = parseDownPaymentSchedule(negocio.down_payment_schedule, negocio);
   const downPaymentLabel =

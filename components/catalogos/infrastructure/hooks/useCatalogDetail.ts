@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { useCatalogAccess } from './useCatalogAccess';
 import { errorMessage } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { fetchProfileNames } from '@/lib/profileNames';
@@ -23,18 +24,24 @@ export type CatalogDetailState = {
   isNetworkFailure: boolean;
   notFound: boolean;
   isOwner: boolean;
+  /** Puede entregar enlaces de este catálogo, sea suyo o compartido. */
+  canShare: boolean;
   reload: () => Promise<void>;
   /** Actualiza el detalle en memoria (p. ej. tras guardar textos) sin refetch. */
   setDetail: (updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => void;
 };
 
 /**
- * Carga el catálogo con sus capítulos, selección y enlaces. En catálogos
- * ajenos la RLS devuelve los enlaces vacíos; `isOwner` es la única
- * condición para editar y compartir en móvil.
+ * Carga el catálogo con sus capítulos, selección y enlaces.
+ *
+ * Editar sigue siendo cosa del dueño (`isOwner`), pero compartir no: en un
+ * catálogo ajeno la RLS devuelve los enlaces que uno mismo entregó —nunca los
+ * de un compañero, porque la etiqueta es el nombre de su cliente— y el RPC
+ * acepta crear enlaces nuevos (migración 20260930120000).
  */
 export function useCatalogDetail(id: string | undefined): CatalogDetailState {
   const { user } = useAuth();
+  const access = useCatalogAccess();
   const [detail, setDetailState] = useState<PrivateCatalogDetail | null>(null);
   const [products, setProducts] = useState<ProductLookup>(new Map());
   const [ownerName, setOwnerName] = useState<string | null>(null);
@@ -87,8 +94,11 @@ export function useCatalogDetail(id: string | undefined): CatalogDetailState {
   }, []);
 
   const isOwner = useMemo(() => Boolean(detail && user && detail.ownerId === user.id), [detail, user]);
+  // Si el detalle cargó, la RLS ya confirmó que puede verlo; lo único que falta
+  // comprobar es el permiso de entregar enlaces.
+  const canShare = Boolean(detail) && access.canCreateShareLink;
 
-  return { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, reload, setDetail };
+  return { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail };
 }
 
 /** Resumen de enlaces y estado visible, con un solo `now` por render. */

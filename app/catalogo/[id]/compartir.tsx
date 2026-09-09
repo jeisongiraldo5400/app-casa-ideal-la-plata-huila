@@ -28,7 +28,7 @@ function CatalogoCompartirInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, products, loading, error, notFound, isOwner, reload } = useCatalogDetail(id);
+  const { detail, products, loading, error, notFound, isOwner, canShare, reload } = useCatalogDetail(id);
   const summary = useCatalogSummary(detail);
   const flow = useShareLinkFlow(detail, products, reload);
   const [reissueTarget, setReissueTarget] = useState<CatalogShareLink | null>(null);
@@ -58,12 +58,12 @@ function CatalogoCompartirInner() {
       </View>
     );
   }
-  if (!isOwner) {
+  if (!canShare) {
     return (
       <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
         <Stack.Screen options={screenOptions} />
         <View style={styles.centered}>
-          <ScreenState icon="lock-outline" title="Solo el autor puede compartir" description="Los enlaces de un catálogo los genera quien lo creó." />
+          <ScreenState icon="lock-outline" title="No puedes compartir este catálogo" description="Pide a quien administra los catálogos que te dé permiso para entregar enlaces." />
         </View>
       </View>
     );
@@ -115,6 +115,11 @@ function CatalogoCompartirInner() {
             reissuingId={flow.reissuingId}
             onReissue={setReissueTarget}
           />
+          {isOwner ? null : (
+            <Text style={[styles.ready, { color: colors.text.secondary }]}>
+              Solo ves los enlaces que tú entregaste.
+            </Text>
+          )}
         </View>
       </ScrollView>
 

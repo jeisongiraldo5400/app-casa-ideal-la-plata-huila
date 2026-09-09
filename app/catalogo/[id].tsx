@@ -32,7 +32,7 @@ function CatalogoDetailInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, reload, setDetail } = useCatalogDetail(id);
+  const { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail } = useCatalogDetail(id);
   const summary = useCatalogSummary(detail);
   const removeFromList = useCatalogosStore((state) => state.removeFromList);
   const [editingTexts, setEditingTexts] = useState(false);
@@ -95,31 +95,39 @@ function CatalogoDetailInner() {
         <Card variant="outlined" style={styles.metrics}>
           <Metric label="Fichas" value={publishedCount} />
           <Metric label="Capítulos" value={detail.sections.length} align="center" />
-          {isOwner && summary ? (
+          {canShare && summary ? (
             <>
-              <Metric label="Enlaces" value={summary.summary.activeLinkCount} tone={summary.summary.activeLinkCount > 0 ? 'success' : 'default'} align="center" />
+              <Metric label={isOwner ? 'Enlaces' : 'Tus enlaces'} value={summary.summary.activeLinkCount} tone={summary.summary.activeLinkCount > 0 ? 'success' : 'default'} align="center" />
               <Metric label="Vistas" value={summary.summary.totalViewCount} align="right" />
             </>
           ) : null}
         </Card>
 
-        {isOwner ? (
-          <View style={styles.section}>
+        <View style={styles.section}>
+          {canShare ? (
             <HeroActionCard
               title="Compartir con un cliente"
               subtitle={summary && summary.summary.activeLinkCount > 0 ? pluralize(summary.summary.activeLinkCount, 'enlace activo', 'enlaces activos') : 'Genera un enlace privado'}
               icon="send"
               onPress={() => router.push(`/catalogo/${detail.id}/compartir` as never)}
             />
-            <View style={styles.actionGrid}>
-              <ActionCard compact title="Productos" subtitle={pluralize(productItems.length, 'seleccionado', 'seleccionados')} icon="inventory-2" onPress={() => router.push(`/catalogo/${detail.id}/productos` as never)} style={styles.halfCard} />
-              <ActionCard compact title="Textos" subtitle="Título e introducción" icon="edit-note" onPress={() => setEditingTexts(true)} style={styles.halfCard} />
-            </View>
-            <WebOnlyNotice />
-          </View>
-        ) : (
-          <Text style={[styles.readOnly, { color: colors.text.secondary }]}>Catálogo del equipo · solo lectura. Para editarlo, usa el panel web.</Text>
-        )}
+          ) : null}
+          {isOwner ? (
+            <>
+              <View style={styles.actionGrid}>
+                <ActionCard compact title="Productos" subtitle={pluralize(productItems.length, 'seleccionado', 'seleccionados')} icon="inventory-2" onPress={() => router.push(`/catalogo/${detail.id}/productos` as never)} style={styles.halfCard} />
+                <ActionCard compact title="Textos" subtitle="Título e introducción" icon="edit-note" onPress={() => setEditingTexts(true)} style={styles.halfCard} />
+              </View>
+              <WebOnlyNotice />
+            </>
+          ) : (
+            <Text style={[styles.readOnly, { color: colors.text.secondary }]}>
+              {canShare
+                ? 'Lo armó otra persona: puedes compartirlo con tus clientes, pero su contenido se edita desde el panel web.'
+                : 'Catálogo del equipo · solo lectura. Para editarlo, usa el panel web.'}
+            </Text>
+          )}
+        </View>
 
         <View style={styles.section}>
           <SectionHeader title="Capítulos" hint={pluralize(detail.sections.length, 'capítulo', 'capítulos')} />
@@ -136,10 +144,10 @@ function CatalogoDetailInner() {
           )}
         </View>
 
-        {isOwner && summary ? (
+        {canShare && summary ? (
           <View style={styles.section}>
             <SectionHeader
-              title="Enlaces"
+              title={isOwner ? 'Enlaces' : 'Tus enlaces'}
               action={
                 detail.shareLinks.length > 0 ? (
                   <Button title="Ver todos" variant="ghost" size="sm" onPress={() => router.push(`/catalogo/${detail.id}/compartir` as never)} />

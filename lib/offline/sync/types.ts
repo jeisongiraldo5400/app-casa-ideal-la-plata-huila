@@ -60,6 +60,10 @@ export type CreateCustomerPayload = OutboxPayloadBase & {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Dirección de la vivienda; opcional, igual que el municipio y la vereda. */
+  address?: string | null;
+  municipioId?: string | null;
+  veredaId?: string | null;
 };
 
 export type RegisterPagoPayload = OutboxPayloadBase & {

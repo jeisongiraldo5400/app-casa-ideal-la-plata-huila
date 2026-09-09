@@ -12,8 +12,13 @@ export function CatalogListCard({ item, onPress }: { item: PrivateCatalogListIte
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const status = catalogDisplayStatus(item);
-  const meta = item.isOwner
+  // En un catálogo ajeno la RLS solo devuelve los enlaces que uno mismo
+  // entregó, así que tener alguno es la señal de que ya se está distribuyendo:
+  // ahí interesan más los contadores que el ámbito.
+  const showLinkMeta = item.isOwner || item.linkCount > 0;
+  const meta = showLinkMeta
     ? [
+        item.isOwner ? null : labelCatalogScope(item.scope),
         pluralize(item.activeLinkCount, 'enlace activo', 'enlaces activos'),
         pluralize(item.totalViewCount, 'vista', 'vistas'),
         item.nextExpiration ? `vence ${formatCatalogDate(item.nextExpiration)}` : null,

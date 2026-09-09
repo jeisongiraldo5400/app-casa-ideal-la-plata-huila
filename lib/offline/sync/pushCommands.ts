@@ -74,6 +74,9 @@ async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey
     p_id_number: payload.idNumber,
     p_phone: payload.phone,
     p_idempotency_key: idempotencyKey,
+    p_address: payload.address ?? null,
+    p_municipio_id: payload.municipioId ?? null,
+    p_vereda_id: payload.veredaId ?? null,
   });
   if (error) throw error;
   const result = data as { customer_id?: string; conflict?: boolean; existing?: { id: string; name: string } };

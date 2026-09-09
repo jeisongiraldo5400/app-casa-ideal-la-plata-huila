@@ -38,11 +38,20 @@ export async function searchCustomersForNegocio(query: string): Promise<Customer
   }
 }
 
-export async function createCustomer(input: {
+/** Ubicación del cliente: los tres niveles son opcionales. */
+export type CustomerLocationInput = {
+  address?: string | null;
+  municipioId?: string | null;
+  veredaId?: string | null;
+};
+
+export type CreateCustomerInput = CustomerLocationInput & {
   name: string;
   idNumber: string;
   phone: string | null;
-}): Promise<CustomerOption> {
+};
+
+export async function createCustomer(input: CreateCustomerInput): Promise<CustomerOption> {
   try {
     const { data, error } = await supabase
       .from('customers')
@@ -50,6 +59,9 @@ export async function createCustomer(input: {
         name: input.name,
         id_number: input.idNumber,
         phone: input.phone,
+        address: input.address || null,
+        municipio_id: input.municipioId || null,
+        vereda_id: input.veredaId || null,
       })
       .select('id, name, id_number')
       .single();
