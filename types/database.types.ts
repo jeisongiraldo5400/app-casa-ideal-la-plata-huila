@@ -2495,6 +2495,7 @@ export type Database = {
           notes: string | null
           paid_at: string
           payment_method_id: string | null
+          payment_site: string | null
           receipt_number: string | null
           receipt_status: string
           support_file_name: string | null
@@ -2517,6 +2518,7 @@ export type Database = {
           notes?: string | null
           paid_at?: string
           payment_method_id?: string | null
+          payment_site?: string | null
           receipt_number?: string | null
           receipt_status?: string
           support_file_name?: string | null
@@ -2539,6 +2541,7 @@ export type Database = {
           notes?: string | null
           paid_at?: string
           payment_method_id?: string | null
+          payment_site?: string | null
           receipt_number?: string | null
           receipt_status?: string
           support_file_name?: string | null
@@ -5620,6 +5623,9 @@ export type Database = {
           notes: string
           paid_at: string
           payment_id: string
+          payment_method_id: string
+          payment_method_name: string
+          payment_site: string
           receipt_number: string
           receipt_status: string
           remaining_balance: number
@@ -5639,6 +5645,7 @@ export type Database = {
           p_notes: string
           p_paid_at: string
           p_payment_method_id?: string | null
+          p_payment_site?: string | null
           p_receipt_number: string
           p_stop_id: string
         }
@@ -5691,6 +5698,7 @@ export type Database = {
           p_notes: string
           p_paid_at: string
           p_payment_method_id?: string | null
+          p_payment_site?: string | null
           p_receipt_number: string
         }
         Returns: string

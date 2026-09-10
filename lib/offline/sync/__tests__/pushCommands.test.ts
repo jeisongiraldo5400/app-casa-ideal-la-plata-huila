@@ -28,6 +28,7 @@ const basePago = {
   receiptNumber: null,
   notes: null,
   paymentMethodId: 'pm-1',
+  paymentSite: 'app_movil',
 };
 
 describe('pushOutboxItem · pagos', () => {
@@ -42,7 +43,11 @@ describe('pushOutboxItem · pagos', () => {
     expect(result.outcome).toBe('done');
     const [name, args] = mockRpc.mock.calls[0];
     expect(name).toBe('register_negocio_pago');
-    expect(args).toMatchObject({ p_payment_method_id: 'pm-1', p_negocio_id: 'neg-1' });
+    expect(args).toMatchObject({
+      p_payment_method_id: 'pm-1',
+      p_negocio_id: 'neg-1',
+      p_payment_site: 'app_movil',
+    });
   });
 
   it('envía el método de pago también en el cobro de una ruta', async () => {
@@ -53,7 +58,11 @@ describe('pushOutboxItem · pagos', () => {
     expect(result.outcome).toBe('done');
     const [name, args] = mockRpc.mock.calls[0];
     expect(name).toBe('register_collection_route_payment');
-    expect(args).toMatchObject({ p_payment_method_id: 'pm-1', p_stop_id: 'stop-1' });
+    expect(args).toMatchObject({
+      p_payment_method_id: 'pm-1',
+      p_stop_id: 'stop-1',
+      p_payment_site: 'app_movil',
+    });
   });
 
   it('manda null cuando el pago se encoló antes del catálogo de métodos', async () => {
@@ -62,5 +71,23 @@ describe('pushOutboxItem · pagos', () => {
     await pushOutboxItem(outboxItem('register_pago', legacyPago));
 
     expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_payment_method_id: null });
+  });
+
+  it('etiqueta como app móvil los pagos encolados antes del sitio de pago', async () => {
+    const { paymentSite: _omitted, ...legacyPago } = basePago;
+
+    await pushOutboxItem(outboxItem('register_pago', legacyPago));
+
+    expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_payment_site: 'app_movil' });
+  });
+
+  it('etiqueta como app móvil un cobro de ruta encolado sin sitio', async () => {
+    const { paymentSite: _omitted, ...legacyPago } = basePago;
+
+    await pushOutboxItem(outboxItem('register_route_pago', { ...legacyPago, routeStopId: 'stop-1' }));
+
+    const [name, args] = mockRpc.mock.calls[0];
+    expect(name).toBe('register_collection_route_payment');
+    expect(args).toMatchObject({ p_payment_site: 'app_movil' });
   });
 });

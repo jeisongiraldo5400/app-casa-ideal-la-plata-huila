@@ -1,5 +1,8 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
+// Misma lista de productos que "Todas las órdenes"; sólo cambia de dónde lee los
+// datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
+import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
 import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatPaymentDateTime } from '@/lib/localDate';
@@ -20,12 +23,19 @@ import {
 } from 'react-native';
 import { useMyOrders } from '../infrastructure/hooks/useMyOrders';
 import {
+  fetchAssignedDeliveryOrderItems,
   PendingDeliveryOrder,
   RegisteredDeliveryOrder,
   RegisteredDeliveryOrderItem,
 } from '../infrastructure/services/myOrdersService';
 
 type OrdersTab = 'pending' | 'history';
+
+/** Orden cuya lista de productos está abierta en el modal. */
+interface ProductsModalTarget {
+  id: string;
+  orderNumber: string;
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pendiente',
@@ -48,6 +58,7 @@ export function MyOrdersScreen() {
   const { refreshAll } = orders;
   const [activeTab, setActiveTab] = useState<OrdersTab>('pending');
   const [startingOrderId, setStartingOrderId] = useState<string | null>(null);
+  const [productsModalTarget, setProductsModalTarget] = useState<ProductsModalTarget | null>(null);
   const openingOrderRef = useRef(false);
 
   useFocusEffect(
@@ -168,6 +179,8 @@ export function MyOrdersScreen() {
           {item.total_items} {item.total_items === 1 ? 'producto' : 'productos'}
         </Text>
 
+        <ProductsButton orderId={item.id} orderNumber={item.order_number} />
+
         <View style={[styles.exitButton, { backgroundColor: colors.primary.main }]}>
           {isStarting
             ? <ActivityIndicator color={colors.primary.contrastText} />
@@ -238,6 +251,8 @@ export function MyOrdersScreen() {
             </View>
           ) : null}
         </View>
+
+        <ProductsButton orderId={item.id} orderNumber={item.order_number} />
 
         <View style={[styles.expandHint, { borderTopColor: colors.divider }]}>
           <Text style={[styles.expandHintText, { color: colors.primary.main }]}>
@@ -343,6 +358,16 @@ export function MyOrdersScreen() {
           ) : null}
         />
       )}
+
+      {productsModalTarget ? (
+        <DeliveryOrderProductsModal
+          visible
+          onClose={() => setProductsModalTarget(null)}
+          orderId={productsModalTarget.id}
+          orderNumber={productsModalTarget.orderNumber}
+          loadItems={fetchAssignedDeliveryOrderItems}
+        />
+      ) : null}
     </View>
   );
 
@@ -352,6 +377,28 @@ export function MyOrdersScreen() {
       <View style={[styles.statusBadge, { backgroundColor: statusColor + '1A' }]}>
         <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status] || status}</Text>
       </View>
+    );
+  }
+
+  /**
+   * Mismo gesto, icono y etiqueta que en "Todas las órdenes": el usuario abre la
+   * lista de productos de la orden sin aprender otra interacción. Va dentro de
+   * la tarjeta pulsable, y al ser un táctil anidado se queda con el toque en vez
+   * de disparar la acción de la tarjeta.
+   */
+  function ProductsButton({ orderId, orderNumber }: { orderId: string; orderNumber: string | null }) {
+    return (
+      <TouchableOpacity
+        testID={`view-products-${orderId}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver productos de ${orderNumber || 'la orden'}`}
+        style={[styles.productsButton, { backgroundColor: colors.primary.main + '10' }]}
+        onPress={() => setProductsModalTarget({ id: orderId, orderNumber: orderNumber || orderId.slice(0, 8) })}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons name="inventory-2" size={18} color={colors.primary.main} />
+        <Text style={[styles.productsButtonText, { color: colors.primary.main }]}>Ver productos</Text>
+      </TouchableOpacity>
     );
   }
 
@@ -468,6 +515,8 @@ const styles = StyleSheet.create({
   itemsText: { fontSize: 12, marginTop: -3 },
   exitButton: { height: 44, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 2 },
   exitButtonText: { fontSize: 14, fontWeight: '800' },
+  productsButton: { minHeight: 44, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: Spacing.md, marginTop: 2 },
+  productsButtonText: { fontSize: 13, fontWeight: '700' },
   historyBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   smallBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 5 },
   smallBadgeText: { fontSize: 11, fontWeight: '700' },

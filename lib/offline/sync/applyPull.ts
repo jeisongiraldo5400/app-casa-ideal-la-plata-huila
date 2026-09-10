@@ -135,6 +135,7 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.createdByName = row.created_by_name ?? null;
         record.paymentMethodId = row.payment_method_id ?? null;
         record.paymentMethodName = row.payment_method_name ?? null;
+        record.paymentSite = row.payment_site ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.created_at);
       })

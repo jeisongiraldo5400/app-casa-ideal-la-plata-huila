@@ -70,6 +70,8 @@ export type RegisterPagoPayload = OutboxPayloadBase & {
   pagoLocalId: string;
   /** Método de pago elegido; obligatorio en la pantalla de cobro. */
   paymentMethodId?: string | null;
+  /** Sitio de pago; siempre 'app_movil' desde esta app. Ausente en comandos encolados por versiones anteriores. */
+  paymentSite?: string | null;
   negocioId: string;
   amount: number;
   paidAt: string;
@@ -181,6 +183,7 @@ export type PullPago = {
   created_by_name?: string | null;
   payment_method_id?: string | null;
   payment_method_name?: string | null;
+  payment_site?: string | null;
   created_at: string | null;
   deleted_at: string | null;
 };

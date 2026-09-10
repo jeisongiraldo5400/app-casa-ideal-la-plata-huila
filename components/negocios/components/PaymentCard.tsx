@@ -3,6 +3,7 @@ import { IconButton, ListCard, StatusChip } from '@/components/ui';
 import { IconSize, Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatPaymentDateTime } from '@/lib/localDate';
+import { paymentSiteLabel } from '@/lib/paymentSite';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -20,6 +21,8 @@ export type PaymentRow = {
   created_by_name?: string | null;
   /** Método de pago; los pagos anteriores al catálogo no tienen. */
   payment_method_name?: string | null;
+  /** Sitio de pago crudo ('almacen' | 'app_movil'); los pagos anteriores no tienen. */
+  payment_site?: string | null;
 };
 
 type Props = {
@@ -57,6 +60,9 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing }:
           <Text style={[styles.meta, { color: colors.text.secondary }]}>Recibo físico: {pago.receipt_number || 'No registrado'}</Text>
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Método: {pago.payment_method_name || 'No registrado'}
+          </Text>
+          <Text style={[styles.meta, { color: colors.text.secondary }]}>
+            Sitio: {paymentSiteLabel(pago.payment_site)}
           </Text>
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Soporte: {pago.support_path ? pago.support_file_name || 'Adjunto' : 'Sin adjunto'}

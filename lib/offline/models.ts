@@ -56,6 +56,7 @@ export class NegocioPago extends Model {
   @field('created_by_name') createdByName!: string | null;
   @field('payment_method_id') paymentMethodId!: string | null;
   @field('payment_method_name') paymentMethodName!: string | null;
+  @field('payment_site') paymentSite!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }

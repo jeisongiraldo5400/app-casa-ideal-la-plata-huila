@@ -267,6 +267,11 @@ export async function prepareReconcileRegisteredPago(
           row.receiptStatus = local.receiptStatus;
           row.notes = local.notes;
           row.createdByName = local.createdByName;
+          // Se copian también método y sitio: el pull que los repondría puede
+          // tardar, y hasta entonces la fila quedaría mostrándolos vacíos.
+          row.paymentMethodId = local.paymentMethodId;
+          row.paymentMethodName = local.paymentMethodName;
+          row.paymentSite = local.paymentSite;
           row.rowSyncStatus = 'synced';
           row.serverUpdatedAt = null;
         })

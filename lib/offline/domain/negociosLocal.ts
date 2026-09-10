@@ -43,6 +43,7 @@ export type LocalPagoRow = {
   notes: string | null;
   createdByName?: string | null;
   paymentMethodName?: string | null;
+  paymentSite?: string | null;
 };
 
 export type LocalNegocioListItem = {
@@ -237,6 +238,7 @@ export function mapNegocioDetailFromLocal(input: {
       notes: pago.notes,
       created_by_name: pago.createdByName ?? null,
       payment_method_name: pago.paymentMethodName ?? null,
+      payment_site: pago.paymentSite ?? null,
     })),
   };
 }

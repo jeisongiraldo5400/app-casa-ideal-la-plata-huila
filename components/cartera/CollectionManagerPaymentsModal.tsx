@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
+import { paymentSiteLabel } from '@/lib/paymentSite';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
@@ -134,6 +135,7 @@ export function CollectionManagerPaymentsModal({
         negocioNumero: payment.negocio_numero,
         customerName: payment.customer_name,
         sellerName: payment.created_by_name,
+        paymentSiteName: paymentSiteLabel(payment.payment_site),
         remainingBalance: Number(payment.remaining_balance),
       });
       const { uri } = await Print.printToFileAsync({ html });
@@ -158,6 +160,7 @@ export function CollectionManagerPaymentsModal({
       negocioNumero: payment.negocio_numero,
       customerName: payment.customer_name,
       sellerName: payment.created_by_name,
+      paymentSiteName: paymentSiteLabel(payment.payment_site),
       remainingBalance: Number(payment.remaining_balance),
     });
   };

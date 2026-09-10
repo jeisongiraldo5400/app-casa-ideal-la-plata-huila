@@ -1,8 +1,7 @@
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
@@ -15,6 +14,7 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fetchDeliveryOrderItems } from '../infrastructure/services/deliveryOrderItemsService';
 import { DeliveryOrderItem } from '../types';
 
 interface DeliveryOrderProductsModalProps {
@@ -22,6 +22,12 @@ interface DeliveryOrderProductsModalProps {
     onClose: () => void;
     orderId: string;
     orderNumber: string;
+    /**
+     * Origen de los productos. Por defecto lee la tabla con RLS, que sólo
+     * responde a quien administra o creó la orden; las pantallas donde el
+     * usuario apenas tiene la orden asignada inyectan el RPC autorizado.
+     */
+    loadItems?: (orderId: string) => Promise<DeliveryOrderItem[]>;
 }
 
 export function DeliveryOrderProductsModal({
@@ -29,6 +35,7 @@ export function DeliveryOrderProductsModal({
     onClose,
     orderId,
     orderNumber,
+    loadItems = fetchDeliveryOrderItems,
 }: DeliveryOrderProductsModalProps) {
     const insets = useSafeAreaInsets();
     const { height: windowHeight } = useWindowDimensions();
@@ -43,74 +50,29 @@ export function DeliveryOrderProductsModal({
     const [searchTerm, setSearchTerm] = useState('');
     const [visibleCount, setVisibleCount] = useState(10);
 
-    useEffect(() => {
-        if (visible && orderId) {
-            loadOrderItems();
-        }
-    }, [visible, orderId]);
-
-    useEffect(() => {
-        setVisibleCount(10);
-    }, [searchTerm]);
-
-    const loadOrderItems = async () => {
+    const loadOrderItems = useCallback(async () => {
         setLoading(true);
         setError(null);
 
         try {
-            const { data: itemsData, error: itemsError } = await supabase
-                .from('delivery_order_items')
-                .select(`
-                    id,
-                    product_id,
-                    warehouse_id,
-                    quantity,
-                    delivered_quantity,
-                    deleted_at,
-                    notes,
-                    product:products!inner(id, name, sku, barcode, deleted_at),
-                    warehouse:warehouses(id, name)
-                `)
-                .eq('delivery_order_id', orderId)
-                .is('deleted_at', null)
-                .is('product.deleted_at', null);
-
-            if (itemsError) {
-                console.error('Error loading order items:', itemsError);
-                setError(itemsError.message);
-                setLoading(false);
-                return;
-            }
-
-            const transformedItems: DeliveryOrderItem[] = (itemsData || []).map((item: any) => {
-                const quantity = item.quantity || 0;
-                const delivered = item.delivered_quantity || 0;
-                const pending = Math.max(quantity - delivered, 0);
-
-                return {
-                    id: item.id,
-                    product_id: item.product_id,
-                    product_name: item.product?.name || 'Producto sin nombre',
-                    product_sku: item.product?.sku || null,
-                    product_barcode: item.product?.barcode || null,
-                    warehouse_id: item.warehouse_id,
-                    warehouse_name: item.warehouse?.name || null,
-                    quantity,
-                    delivered_quantity: delivered,
-                    pending_quantity: pending,
-                    is_complete: pending === 0,
-                    notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : null,
-                };
-            });
-
-            setItems(transformedItems);
-            setLoading(false);
-        } catch (err: any) {
+            setItems(await loadItems(orderId));
+        } catch (err) {
             console.error('Error loading order items:', err);
-            setError(err.message || 'Error al cargar los productos');
+            setError(err instanceof Error && err.message ? err.message : 'Error al cargar los productos');
+        } finally {
             setLoading(false);
         }
-    };
+    }, [loadItems, orderId]);
+
+    useEffect(() => {
+        if (visible && orderId) {
+            void loadOrderItems();
+        }
+    }, [visible, orderId, loadOrderItems]);
+
+    useEffect(() => {
+        setVisibleCount(10);
+    }, [searchTerm]);
 
     // Filtrar items por búsqueda
     const filteredItems = useMemo(() => {

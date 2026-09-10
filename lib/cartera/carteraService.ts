@@ -29,6 +29,8 @@ export type ManagerPayment = {
   installment_number: number | null; paid_at: string; amount: number;
   virtual_receipt_number: string; receipt_number: string | null;
   receipt_status: 'emitido' | 'anulado'; created_by_name: string; remaining_balance: number;
+  /** Sitio de pago crudo ('almacen' | 'app_movil'); null en los pagos anteriores. */
+  payment_site: string | null;
   currently_assigned: boolean;
   support_path: string | null;
   support_mime: string | null;

@@ -43,6 +43,10 @@ jest.mock('@/components/theme', () => ({
   useTheme: () => ({ isDark: false }),
 }));
 
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 jest.mock('@/constants/theme', () => ({
   Spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 },
   Radius: { control: 12, card: 18, panel: 24, pill: 999 },
@@ -108,6 +112,21 @@ const registeredOrder = {
   total_count: 1,
 };
 
+const authorizedItem = {
+  id: 'item-1',
+  product_id: 'product-1',
+  warehouse_id: 'warehouse-1',
+  quantity: 3,
+  delivered_quantity: 1,
+  created_at: '2026-08-21T10:00:00.000Z',
+  source_delivery_order_id: null,
+  product_name: 'Base cama prueba',
+  product_barcode: '456',
+  product_sku: 'BAS-1',
+  warehouse_name: 'Principal',
+  notes: 'Subir por escaleras',
+};
+
 const registeredItem = {
   exit_id: 'exit-1',
   product_id: 'product-1',
@@ -149,6 +168,9 @@ describe('MyOrdersScreen', () => {
       }
       if (functionName === 'get_my_registered_delivery_order_items') {
         return Promise.resolve({ data: [registeredItem], error: null });
+      }
+      if (functionName === 'get_authorized_delivery_order_items') {
+        return Promise.resolve({ data: [authorizedItem], error: null });
       }
       return Promise.resolve({ data: [], error: null });
     });
@@ -213,6 +235,38 @@ describe('MyOrdersScreen', () => {
     await screen.findByText('Colchón prueba');
     expect(screen.getByText('Cancelada: Registro duplicado')).toBeTruthy();
     expect(mockRpc).toHaveBeenCalledWith('get_my_registered_delivery_order_items', {
+      p_order_id: 'history-order-1',
+    });
+  });
+
+  it('abre los productos de una orden pendiente sin iniciar la salida', async () => {
+    const screen = render(<MyOrdersScreen />);
+    const productsButton = await screen.findByTestId('view-products-order-1');
+
+    fireEvent.press(productsButton);
+
+    await screen.findByText('Base cama prueba');
+    expect(mockRpc).toHaveBeenCalledWith('get_authorized_delivery_order_items', {
+      p_order_id: 'order-1',
+    });
+    expect(screen.getByText('Productos de la Orden')).toBeTruthy();
+    expect(screen.getByText(/Subir por escaleras/)).toBeTruthy();
+    // Ver productos no puede confundirse con registrar la salida.
+    expect(mockSelectDeliveryOrder).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('ofrece la misma acción de productos en el historial', async () => {
+    const screen = render(<MyOrdersScreen />);
+    await screen.findByTestId('assigned-order-order-1');
+
+    fireEvent.press(screen.getByText('Mis entregas'));
+    const productsButton = await screen.findByTestId('view-products-history-order-1');
+
+    fireEvent.press(productsButton);
+
+    await screen.findByText('Base cama prueba');
+    expect(mockRpc).toHaveBeenCalledWith('get_authorized_delivery_order_items', {
       p_order_id: 'history-order-1',
     });
   });

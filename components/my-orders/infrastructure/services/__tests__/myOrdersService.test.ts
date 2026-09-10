@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import {
+  fetchAssignedDeliveryOrderItems,
   fetchMyRegisteredDeliveryOrderItems,
   fetchMyRegisteredDeliveryOrders,
 } from '../myOrdersService';
@@ -80,5 +81,57 @@ describe('myOrdersService', () => {
 
     await expect(fetchMyRegisteredDeliveryOrders({ searchTerm: '', page: 1, pageSize: 20 }))
       .rejects.toThrow('RPC ausente');
+  });
+
+  it('lee los productos de la orden asignada por el RPC autorizado', async () => {
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          id: 'item-1',
+          product_id: 'product-1',
+          warehouse_id: 'warehouse-1',
+          quantity: 5,
+          delivered_quantity: 2,
+          created_at: '2026-08-21T10:00:00Z',
+          source_delivery_order_id: null,
+          product_name: 'Colchón',
+          product_barcode: '123',
+          product_sku: 'COL-1',
+          warehouse_name: 'Principal',
+          notes: 'Entregar con base',
+        },
+      ],
+      error: null,
+    });
+
+    await expect(fetchAssignedDeliveryOrderItems('order-1')).resolves.toEqual([
+      {
+        id: 'item-1',
+        product_id: 'product-1',
+        product_name: 'Colchón',
+        product_sku: 'COL-1',
+        product_barcode: '123',
+        warehouse_id: 'warehouse-1',
+        warehouse_name: 'Principal',
+        quantity: 5,
+        delivered_quantity: 2,
+        pending_quantity: 3,
+        is_complete: false,
+        notes: 'Entregar con base',
+      },
+    ]);
+    expect(supabase.rpc).toHaveBeenCalledWith('get_authorized_delivery_order_items', {
+      p_order_id: 'order-1',
+    });
+  });
+
+  it('explica en castellano que la orden ya no está asignada', async () => {
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'Not authorized for this delivery order' },
+    });
+
+    await expect(fetchAssignedDeliveryOrderItems('order-1'))
+      .rejects.toThrow('Ya no tienes esta orden asignada, así que no puedes ver sus productos.');
   });
 });

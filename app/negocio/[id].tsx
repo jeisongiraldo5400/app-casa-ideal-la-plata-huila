@@ -31,6 +31,7 @@ import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
@@ -532,6 +533,8 @@ function NegocioDetailScreenInner() {
       sellerName,
       registeredBy: registeredByName,
       paymentMethodName: input.paymentMethodName,
+      // Este recibo se emite justo después de cobrar desde la app.
+      paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
       remainingBalance: Math.max(pendingBalance - input.amount, 0),
     });
   };
@@ -595,6 +598,7 @@ function NegocioDetailScreenInner() {
               p_notes: null,
               p_idempotency_key: paymentIdempotencyKey.current,
               p_payment_method_id: payMethodId,
+              p_payment_site: MOBILE_PAYMENT_SITE,
             })
           : await supabase.rpc('register_negocio_pago', {
               p_negocio_id: negocio.id,
@@ -604,7 +608,8 @@ function NegocioDetailScreenInner() {
               p_cuota_id: null,
               p_notes: null,
               p_idempotency_key: paymentIdempotencyKey.current,
-              p_payment_method_id: payMethodId,
+              // Todo cobro hecho desde esta app se registra como Aplicación Móvil.
+              p_payment_site: MOBILE_PAYMENT_SITE,
             });
         if (error) throw error;
         const pagoId = String(data || '');
@@ -843,6 +848,7 @@ function NegocioDetailScreenInner() {
       sellerName,
       registeredBy: pago.created_by_name,
       paymentMethodName: pago.payment_method_name,
+      paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
     });
     try {
@@ -871,6 +877,7 @@ function NegocioDetailScreenInner() {
       sellerName,
       registeredBy: pago.created_by_name,
       paymentMethodName: pago.payment_method_name,
+      paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
     });
   };

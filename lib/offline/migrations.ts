@@ -7,6 +7,15 @@ import {
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 5,
+      steps: [
+        addColumns({
+          table: 'negocio_pagos',
+          columns: [{ name: 'payment_site', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
+    {
       toVersion: 4,
       steps: [
         addColumns({

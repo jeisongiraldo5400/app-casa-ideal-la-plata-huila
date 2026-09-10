@@ -8,7 +8,10 @@ function emptyChanges() {
 describe('applyPullPayload', () => {
   it('aplica upserts y deletes en un lote atómico', async () => {
     const operations: unknown[] = [];
-    const records = new Map<string, { destroyed?: boolean; name?: string; sellerId?: string | null }>();
+    const records = new Map<
+      string,
+      { destroyed?: boolean; name?: string; sellerId?: string | null; paymentSite?: string | null }
+    >();
 
     const fakeRecord = (id: string) => ({
       id,
@@ -37,6 +40,7 @@ describe('applyPullPayload', () => {
           records.set(id, {
             name: String(record.name || ''),
             sellerId: (record.sellerId as string | null | undefined) ?? null,
+            paymentSite: (record.paymentSite as string | null | undefined) ?? null,
           });
           return { id, op: 'create' };
         },
@@ -61,7 +65,25 @@ describe('applyPullPayload', () => {
       },
       negocios: emptyChanges(),
       negocio_cuotas: emptyChanges(),
-      negocio_pagos: emptyChanges(),
+      negocio_pagos: {
+        upserts: [
+          {
+            id: 'p1',
+            negocio_id: 'n1',
+            cuota_id: null,
+            amount: 50000,
+            paid_at: '2026-09-09T10:00:00Z',
+            receipt_number: null,
+            virtual_receipt_number: 'RV-2026-0000001',
+            receipt_status: 'emitido',
+            notes: null,
+            payment_site: 'almacen',
+            created_at: '2026-09-09T10:00:00Z',
+            deleted_at: null,
+          },
+        ],
+        deleted: [],
+      },
       collection_routes: emptyChanges(),
       collection_route_stops: emptyChanges(),
       municipios: emptyChanges(),
@@ -73,6 +95,9 @@ describe('applyPullPayload', () => {
     // El vendedor del cliente viaja en el pull: sin él "Mis clientes" no
     // podría filtrarse sin conexión.
     expect(records.get('customers:c1')?.sellerId).toBe('seller-1');
+    // El sitio de pago baja del servidor: sin él, un cobro hecho en el almacén
+    // se vería como "No registrado" en la app hasta el siguiente pull completo.
+    expect(records.get('negocio_pagos:p1')?.paymentSite).toBe('almacen');
   });
 
   it('no pisa una fila local con cambios pendientes de enviar', async () => {

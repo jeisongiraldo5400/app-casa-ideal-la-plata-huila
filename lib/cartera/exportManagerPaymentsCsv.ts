@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
+import { paymentSiteLabel } from '@/lib/paymentSite';
 import {
   fetchManagerPayments,
   type CollectionManager,
@@ -102,6 +103,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
     'Estado recibo',
     'Valor',
     'Saldo pendiente negocio',
+    'Sitio de pago',
     'Registrado por',
     'Asignación actual',
     'Tiene soporte',
@@ -120,6 +122,7 @@ export async function exportAndShareManagerPaymentsCsv(options: {
       receiptStatusLabel(payment.receipt_status),
       Number(payment.amount),
       Number(payment.remaining_balance),
+      paymentSiteLabel(payment.payment_site),
       payment.created_by_name,
       payment.currently_assigned ? 'Sí' : 'No',
       payment.support_path ? 'Sí' : 'No',

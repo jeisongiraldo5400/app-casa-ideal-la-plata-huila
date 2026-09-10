@@ -1,6 +1,7 @@
 import { Q } from '@nozbe/watermelondb';
 import type { Model } from '@nozbe/watermelondb';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { MOBILE_PAYMENT_SITE } from '@/lib/paymentSite';
 import type { Municipio } from '@/lib/cartera/carteraService';
 import type { CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
@@ -378,6 +379,7 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       notes: row.notes,
       createdByName: row.createdByName,
       paymentMethodName: row.paymentMethodName,
+      paymentSite: row.paymentSite,
     })),
   });
 }
@@ -564,6 +566,7 @@ export async function registerPagoOffline(input: {
   const paymentPayload: RegisterPagoPayload = {
     pagoLocalId,
     paymentMethodId: input.paymentMethodId,
+    paymentSite: MOBILE_PAYMENT_SITE,
     negocioId: input.negocioId,
     amount: input.amount,
     paidAt: input.paidAt,
@@ -594,6 +597,7 @@ export async function registerPagoOffline(input: {
         record.createdByName = input.registeredBy || null;
         record.paymentMethodId = input.paymentMethodId;
         record.paymentMethodName = input.paymentMethodName || null;
+        record.paymentSite = MOBILE_PAYMENT_SITE;
         record.rowSyncStatus = 'pending';
         record.serverUpdatedAt = null;
       }),

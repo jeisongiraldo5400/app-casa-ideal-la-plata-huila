@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { uploadAndAttachPagoSupport } from '@/lib/uploadPagoSupport';
+import { MOBILE_PAYMENT_SITE } from '@/lib/paymentSite';
 import { getDatabase } from '../database';
 import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
@@ -107,6 +108,7 @@ async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: st
         p_notes: payload.notes,
         p_idempotency_key: idempotencyKey,
         p_payment_method_id: payload.paymentMethodId ?? null,
+        p_payment_site: payload.paymentSite ?? MOBILE_PAYMENT_SITE,
       })
     : await supabase.rpc('register_negocio_pago', {
         p_negocio_id: payload.negocioId,
@@ -117,6 +119,9 @@ async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: st
         p_notes: payload.notes,
         p_idempotency_key: idempotencyKey,
         p_payment_method_id: payload.paymentMethodId ?? null,
+        // Los comandos encolados antes de esta versión no traen sitio: son
+        // igualmente cobros hechos desde la app, así que se etiquetan aquí.
+        p_payment_site: payload.paymentSite ?? MOBILE_PAYMENT_SITE,
       });
   if (error) throw error;
   const pagoId = String(data || '');
