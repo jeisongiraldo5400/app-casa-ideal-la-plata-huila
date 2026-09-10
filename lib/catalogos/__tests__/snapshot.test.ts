@@ -80,7 +80,7 @@ describe('matchListingItems y collectSelectedSlugs', () => {
     expect(matchListingItems(index, 'category', 'cat-sala')).toHaveLength(1);
   });
 
-  it('un slug repetido en varios capítulos se resuelve una sola vez', () => {
+  it('un slug repetido en varias categorías se resuelve una sola vez', () => {
     const slugs = collectSelectedSlugs(
       [section('s-1', 'Sala', [productItem('p-1')]), section('s-2', 'Alcoba', [productItem('p-1')])],
       index
@@ -93,11 +93,11 @@ describe('buildMagazineSnapshot', () => {
   const index = buildListingIndex([listingItem], [['cat-sala', [listingItem]]]);
   const detailBySlug = new Map([['sofa-lino', productDetail]]);
 
-  it('devuelve un snapshot renderizable de una edición sin capítulos, en vez de lanzar', () => {
+  it('devuelve un snapshot renderizable de una edición sin categorías, en vez de lanzar', () => {
     const result = buildMagazineSnapshot({ catalog, sections: [], index, detailBySlug, publishedAt: PUBLISHED_AT });
     expect(result.snapshot.sections).toEqual([]);
     expect(result.snapshot.catalog.publicTitle).toBe('Público');
-    expect(result.blockers).toEqual(['La edición no tiene capítulos todavía.']);
+    expect(result.blockers).toEqual(['La edición no tiene categorías todavía.']);
   });
 
   it('omite los productos sin ficha publicada y lo reporta como bloqueo', () => {

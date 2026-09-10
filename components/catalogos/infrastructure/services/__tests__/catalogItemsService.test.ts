@@ -21,7 +21,7 @@ function makeBuilder(result: { data: unknown; error: unknown }): Builder {
 function section(id: string, itemCount: number): CatalogSection {
   return {
     id,
-    title: 'Selección',
+    title: 'Productos seleccionados',
     kicker: null,
     body: null,
     imageUrl: null,
@@ -43,23 +43,23 @@ beforeEach(() => {
 });
 
 describe('toggleCatalogProduct', () => {
-  it('crea el capítulo «Selección» la primera vez y añade el producto', async () => {
+  it('crea la categoría inicial la primera vez y añade el producto', async () => {
     await toggleCatalogProduct('cat-1', 'p-1', true, []);
     expect(builders.catalog_sections.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ catalog_id: 'cat-1', title: 'Selección', sort_order: 0 })
+      expect.objectContaining({ catalog_id: 'cat-1', title: 'Productos seleccionados', sort_order: 0 })
     );
     expect(builders.catalog_items.insert).toHaveBeenCalledWith(
       expect.objectContaining({ catalog_id: 'cat-1', section_id: 's-nueva', item_type: 'product', reference_id: 'p-1', sort_order: 0 })
     );
   });
 
-  it('reutiliza el primer capítulo existente y continúa el orden', async () => {
+  it('reutiliza la primera categoría existente y continúa el orden', async () => {
     await toggleCatalogProduct('cat-1', 'p-9', true, [section('s-1', 3)]);
     expect(builders.catalog_sections.insert).not.toHaveBeenCalled();
     expect(builders.catalog_items.insert).toHaveBeenCalledWith(expect.objectContaining({ section_id: 's-1', sort_order: 3 }));
   });
 
-  it('ignora el error de duplicado (la ficha ya estaba en el capítulo)', async () => {
+  it('ignora el error de duplicado (la ficha ya estaba en la categoría)', async () => {
     builders.catalog_items = makeBuilder({ data: null, error: { message: 'duplicate key value violates unique constraint' } });
     await expect(toggleCatalogProduct('cat-1', 'p-1', true, [section('s-1', 0)])).resolves.toBeUndefined();
   });

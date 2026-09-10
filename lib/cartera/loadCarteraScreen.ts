@@ -17,6 +17,8 @@ export async function loadCarteraScreen(params: {
   sellerId?: string;
   customerSellerId?: string;
   paymentMethodId?: string;
+  dueFrom?: string;
+  dueTo?: string;
   includeDashboard: boolean;
 }): Promise<{
   rows: Awaited<ReturnType<typeof fetchCarteraPage>>['rows'];

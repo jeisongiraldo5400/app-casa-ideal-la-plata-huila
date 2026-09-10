@@ -7,14 +7,14 @@
 export const DEFAULT_CATALOG_ACCENT = '#1e3a8a';
 export const DEFAULT_CATALOG_TEMPLATE = 'editorial' as const;
 
-/** Título del capítulo que se crea solo la primera vez que se añade un producto. */
-export const DEFAULT_SECTION_TITLE = 'Selección';
+/** Nombre de la categoría inicial que se crea al añadir el primer producto. */
+export const DEFAULT_SECTION_TITLE = 'Productos seleccionados';
 
 /** Fichas por página en el selector de productos (decisión del usuario, por rendimiento). */
 export const PICKER_PAGE_SIZE = 5;
 
 /**
- * Solo para expandir capítulos de tipo «categoría» al construir el snapshot:
+ * Solo para expandir selecciones de tipo «categoría» al construir el snapshot:
  * es el tope que impone el RPC `get_public_catalog_listing`, no se muestra.
  */
 export const CATEGORY_PAGE_SIZE = 100;
@@ -25,5 +25,5 @@ export const DETAIL_CONCURRENCY = 4;
 /** Categorías que se recorren en paralelo al armar el snapshot. */
 export const CATEGORY_CONCURRENCY = 2;
 
-/** Miniaturas por capítulo en el detalle antes de resumir con «+N». */
+/** Miniaturas por categoría en el detalle antes de resumir con «+N». */
 export const SECTION_THUMB_LIMIT = 8;

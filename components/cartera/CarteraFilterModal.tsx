@@ -4,6 +4,7 @@ import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import type { CarteraFilter, Municipio } from '@/lib/cartera/carteraService';
 import type { SellerOption } from '@/lib/users/sellersService';
 import type { PaymentMethodOption } from '@/components/negocios/infrastructure/services/paymentMethodsService';
+import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -21,6 +22,9 @@ export type CarteraFilterValues = {
   searchCustomerSeller: string;
   /** Cuotas con al menos un abono vigente de ese método. */
   paymentMethodId: string;
+  /** Rango sobre la fecha de vencimiento de la cuota. */
+  dueFrom: string;
+  dueTo: string;
 };
 
 type Props = {
@@ -38,6 +42,7 @@ const FILTERS: { id: CarteraFilter; label: string }[] = [
   { id: 'por_vencer', label: 'Por vencer' },
   { id: 'vencidas', label: 'Vencidas' },
   { id: 'mora', label: 'En mora' },
+  { id: 'pagadas', label: 'Pagadas' },
 ];
 
 const DAYS = [7, 15, 30].map((days) => ({ value: String(days), label: `${days} días` }));
@@ -53,6 +58,8 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   customerSellerId: '',
   searchCustomerSeller: '',
   paymentMethodId: '',
+  dueFrom: '',
+  dueTo: '',
 };
 
 /** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, vendedor, días). */
@@ -164,6 +171,30 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
             {!available.length ? (
               <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>Sin municipios para “{searchMunicipio}”</Text>
             ) : null}
+          </View>
+        </View>
+
+        <View style={styles.group}>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vencimiento</Text>
+          <View style={styles.dates}>
+            <View style={styles.date}>
+              <NegocioDatePicker
+                value={values.dueFrom}
+                onChange={(value) => patch({ dueFrom: value })}
+                colors={colors}
+                label="Desde"
+                accessibilityLabel="Vence desde"
+              />
+            </View>
+            <View style={styles.date}>
+              <NegocioDatePicker
+                value={values.dueTo}
+                onChange={(value) => patch({ dueTo: value })}
+                colors={colors}
+                label="Hasta"
+                accessibilityLabel="Vence hasta"
+              />
+            </View>
           </View>
         </View>
 
@@ -289,6 +320,8 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
 
 const styles = StyleSheet.create({
   content: { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxl },
+  dates: { flexDirection: 'row', gap: Spacing.sm },
+  date: { flex: 1 },
   group: { gap: Spacing.sm },
   label: { ...Typography.label },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },

@@ -14,10 +14,9 @@ interface CatalogTextsSheetProps {
   onSaved: (values: { internalTitle: string; publicTitle: string; introduction: string | null }) => void;
 }
 
-/** Formulario de nombre interno, título público e introducción. */
+/** Formulario simple para cambiar el nombre del catálogo y su bienvenida. */
 export function CatalogTextsSheet({ visible, catalog, onClose, onSaved }: CatalogTextsSheetProps) {
   const [internalTitle, setInternalTitle] = useState(catalog.internalTitle);
-  const [publicTitle, setPublicTitle] = useState(catalog.publicTitle);
   const [introduction, setIntroduction] = useState(catalog.introduction ?? '');
   const [errors, setErrors] = useState<CoverTextErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -26,14 +25,13 @@ export function CatalogTextsSheet({ visible, catalog, onClose, onSaved }: Catalo
   useEffect(() => {
     if (!visible) return;
     setInternalTitle(catalog.internalTitle);
-    setPublicTitle(catalog.publicTitle);
     setIntroduction(catalog.introduction ?? '');
     setErrors({});
     setSubmitError(null);
   }, [visible, catalog]);
 
   const save = async () => {
-    const validation = validateCoverText({ internalTitle, publicTitle, introduction });
+    const validation = validateCoverText({ internalTitle, publicTitle: internalTitle, introduction });
     setErrors(validation);
     if (hasErrors(validation)) return;
     setSaving(true);
@@ -41,7 +39,7 @@ export function CatalogTextsSheet({ visible, catalog, onClose, onSaved }: Catalo
     try {
       const values = {
         internalTitle: internalTitle.trim(),
-        publicTitle: publicTitle.trim(),
+        publicTitle: internalTitle.trim(),
         introduction: normalizeOptionalText(introduction, INTRODUCTION_MAX).value,
       };
       await updateCatalogCoverText(catalog.id, values);
@@ -58,7 +56,7 @@ export function CatalogTextsSheet({ visible, catalog, onClose, onSaved }: Catalo
     <FullScreenModal
       visible={visible}
       onClose={onClose}
-      title="Textos del catálogo"
+      title="Nombre y bienvenida"
       subtitle="Lo que verá el cliente en la portada"
       dismissable={!saving}
       footer={
@@ -69,19 +67,11 @@ export function CatalogTextsSheet({ visible, catalog, onClose, onSaved }: Catalo
       }>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Input
-          label="Nombre interno"
+          label="Nombre del catálogo"
           value={internalTitle}
           onChangeText={setInternalTitle}
           error={errors.internalTitle}
-          placeholder="Solo lo ves tú (p. ej. Familia Pérez)"
-          maxLength={120}
-        />
-        <Input
-          label="Título público"
-          value={publicTitle}
-          onChangeText={setPublicTitle}
-          error={errors.publicTitle}
-          placeholder="Título de la portada"
+          placeholder="P. ej. Apartamentos septiembre"
           maxLength={120}
         />
         <Input

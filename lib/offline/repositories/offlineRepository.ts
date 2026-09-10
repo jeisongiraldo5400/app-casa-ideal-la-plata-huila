@@ -405,6 +405,8 @@ export async function fetchCarteraFromLocal(params: {
   municipioId: string;
   sellerId?: string;
   customerSellerId?: string;
+  dueFrom?: string;
+  dueTo?: string;
 }): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();

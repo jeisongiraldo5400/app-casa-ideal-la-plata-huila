@@ -67,10 +67,10 @@ beforeEach(() => {
 });
 
 describe('analyzeCatalogSnapshot', () => {
-  it('devuelve un snapshot renderizable de una edición sin capítulos, en vez de lanzar', async () => {
+  it('devuelve un snapshot renderizable de una edición sin categorías, en vez de lanzar', async () => {
     const result = await analyzeCatalogSnapshot(detail([]));
     expect(result.snapshot.sections).toEqual([]);
-    expect(result.blockers).toEqual(['La edición no tiene capítulos todavía.']);
+    expect(result.blockers).toEqual(['La edición no tiene categorías todavía.']);
   });
 
   it('resuelve cada ficha una sola vez aunque aparezca en varios capítulos', async () => {
@@ -83,7 +83,7 @@ describe('analyzeCatalogSnapshot', () => {
     expect(result.blockers).toEqual([]);
   });
 
-  it('expande un capítulo de tipo categoría', async () => {
+  it('expande una categoría seleccionada', async () => {
     const result = await analyzeCatalogSnapshot(
       detail([section('s-1', 'Sala', [{ id: 'item-cat', itemType: 'category', referenceId: 'cat-sala', isFeatured: false, sortOrder: 0 }])])
     );
@@ -108,7 +108,7 @@ describe('analyzeCatalogSnapshot', () => {
 
 describe('buildCatalogSnapshot', () => {
   it('lanza con los motivos cuando la edición no se puede publicar', async () => {
-    await expect(buildCatalogSnapshot(detail([]))).rejects.toThrow('La edición no tiene capítulos todavía.');
+    await expect(buildCatalogSnapshot(detail([]))).rejects.toThrow('La edición no tiene categorías todavía.');
   });
 
   it('devuelve el snapshot cuando está lista', async () => {

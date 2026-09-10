@@ -38,7 +38,7 @@ export function buildListingIndex(
   };
 }
 
-/** Expande un elemento de capítulo (producto suelto o categoría completa) a fichas publicadas. */
+/** Expande un elemento de categoría (producto suelto o categoría completa) a fichas publicadas. */
 export function matchListingItems(index: ListingIndex, itemType: CatalogItemType, referenceId: string): PublicCatalogListingItem[] {
   if (itemType === 'product') {
     const product = index.byProductId.get(referenceId);
@@ -47,7 +47,7 @@ export function matchListingItems(index: ListingIndex, itemType: CatalogItemType
   return index.byCategoryId.get(referenceId) ?? [];
 }
 
-/** Slugs distintos a resolver: una ficha en varios capítulos se pide una sola vez. */
+/** Slugs distintos a resolver: una ficha en varias categorías se pide una sola vez. */
 export function collectSelectedSlugs(sections: readonly CatalogSection[], index: ListingIndex): string[] {
   const slugs = new Set<string>();
   for (const section of sections) {

@@ -57,8 +57,8 @@ export async function getPrivateCatalog(id: string): Promise<PrivateCatalogDetai
   ]);
   if (catalog.error) throw new Error(`No fue posible cargar el catálogo: ${catalog.error.message}`);
   if (!catalog.data) return null;
-  if (sections.error) throw new Error(`No fue posible cargar los capítulos: ${sections.error.message}`);
-  if (items.error) throw new Error(`No fue posible cargar la selección: ${items.error.message}`);
+  if (sections.error) throw new Error(`No fue posible cargar las categorías: ${sections.error.message}`);
+  if (items.error) throw new Error(`No fue posible cargar los productos seleccionados: ${items.error.message}`);
   if (links.error) throw new Error(`No fue posible cargar los enlaces: ${links.error.message}`);
   if (versions.error) throw new Error(`No fue posible cargar las versiones: ${versions.error.message}`);
 

@@ -94,7 +94,7 @@ function CatalogoDetailInner() {
 
         <Card variant="outlined" style={styles.metrics}>
           <Metric label="Fichas" value={publishedCount} />
-          <Metric label="Capítulos" value={detail.sections.length} align="center" />
+          <Metric label="Categorías" value={detail.sections.length} align="center" />
           {canShare && summary ? (
             <>
               <Metric label={isOwner ? 'Enlaces' : 'Tus enlaces'} value={summary.summary.activeLinkCount} tone={summary.summary.activeLinkCount > 0 ? 'success' : 'default'} align="center" />
@@ -130,12 +130,12 @@ function CatalogoDetailInner() {
         </View>
 
         <View style={styles.section}>
-          <SectionHeader title="Capítulos" hint={pluralize(detail.sections.length, 'capítulo', 'capítulos')} />
+          <SectionHeader title="Categorías" hint={pluralize(detail.sections.length, 'categoría', 'categorías')} />
           {detail.sections.length === 0 ? (
             <ScreenState
               icon="inventory-2"
               title="Sin productos todavía"
-              description={isOwner ? 'Elige las fichas que quieres mostrar; el primer capítulo se crea solo.' : 'Este catálogo aún no tiene contenido.'}
+              description={isOwner ? 'Elige las fichas que quieres mostrar; la categoría de productos se crea automáticamente.' : 'Este catálogo aún no tiene contenido.'}
               actionLabel={isOwner ? 'Elegir productos' : undefined}
               onAction={isOwner ? () => router.push(`/catalogo/${detail.id}/productos` as never) : undefined}
             />

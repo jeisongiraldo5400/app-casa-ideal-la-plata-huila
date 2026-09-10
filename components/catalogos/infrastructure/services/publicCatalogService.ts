@@ -54,7 +54,7 @@ export async function listPublicCatalogProductsByIds(productIds: readonly string
 /**
  * Todas las fichas publicadas de una categoría. El RPC acota `page_size` a
  * 100, así que se recorre por páginas con un tope duro. Solo lo usa el
- * snapshot para expandir capítulos de tipo «categoría».
+ * snapshot para expandir selecciones de tipo «categoría».
  */
 export async function listAllPublicCatalogProductsInCategory(categoryId: string): Promise<PublicCatalogListingItem[]> {
   const items: PublicCatalogListingItem[] = [];

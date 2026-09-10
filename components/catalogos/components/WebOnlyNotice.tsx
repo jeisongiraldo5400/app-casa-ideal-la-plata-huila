@@ -13,7 +13,7 @@ export function WebOnlyNotice() {
     <Card variant="muted" style={styles.card}>
       <MaterialIcons name="desktop-windows" size={IconSize.md} color={colors.info.main} />
       <Text style={[styles.text, { color: colors.text.secondary }]}>
-        Portada, fotos, videos, capítulos y diseño se editan desde el panel web de catálogos.
+        Portada, fotos, videos y diseño se editan desde el panel web de catálogos.
       </Text>
     </Card>
   );

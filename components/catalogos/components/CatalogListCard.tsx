@@ -36,9 +36,6 @@ export function CatalogListCard({ item, onPress }: { item: PrivateCatalogListIte
             </Text>
             <StatusChip label={labelCatalogStatus(status)} tone={catalogStatusTone(status)} />
           </View>
-          <Text style={[styles.subtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-            {item.publicTitle}
-          </Text>
           <Text style={[styles.meta, { color: colors.text.tertiary }]} numberOfLines={1}>
             {meta.filter(Boolean).join(' · ')}
           </Text>
@@ -53,6 +50,5 @@ const styles = StyleSheet.create({
   copy: { flex: 1, gap: 2 },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   title: { ...Typography.bodyStrong, fontWeight: '800', flex: 1 },
-  subtitle: { ...Typography.bodySmall },
   meta: { ...Typography.caption },
 });

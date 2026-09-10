@@ -21,17 +21,17 @@ export function evaluateCatalogReadiness(sections: readonly CatalogSectionSummar
   const productCount = sections.reduce((total, section) => total + section.productCount, 0);
 
   if (sections.length === 0) {
-    blockers.push('La edición no tiene capítulos todavía.');
+    blockers.push('La edición no tiene categorías todavía.');
   } else if (productCount === 0) {
     blockers.push(
-      'Ningún capítulo contiene fichas de producto publicadas. Publica las fichas en «Productos» o añade otras selecciones.'
+      'Ninguna categoría contiene fichas de producto publicadas. Publica las fichas en «Productos».'
     );
   } else {
     const empty = sections.filter((section) => section.productCount === 0).map((section) => section.title);
     if (empty.length === 1) {
-      warnings.push(`El capítulo «${empty[0]}» no tiene fichas publicadas y saldrá vacío.`);
+      warnings.push(`La categoría «${empty[0]}» no tiene fichas publicadas y saldrá vacía.`);
     } else if (empty.length > 1) {
-      warnings.push(`${empty.length} capítulos no tienen fichas publicadas y saldrán vacíos: ${empty.join(', ')}.`);
+      warnings.push(`${empty.length} categorías no tienen fichas publicadas y saldrán vacías: ${empty.join(', ')}.`);
     }
   }
 

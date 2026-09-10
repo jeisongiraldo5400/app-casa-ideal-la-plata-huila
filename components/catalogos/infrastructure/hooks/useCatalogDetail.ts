@@ -10,7 +10,7 @@ import { catalogDisplayStatus, summarizeShareLinks } from '@/lib/catalogos/share
 import type { PublicCatalogListingItem } from '@/lib/catalogos/publicCatalogTypes';
 import type { PrivateCatalogDetail } from '@/lib/catalogos/types';
 import { getPrivateCatalog } from '../services/catalogsService';
-import { listPublicCatalogProductsByIds } from '../services/publicCatalogService';
+import { listAllPublicCatalogProductsInCategory, listPublicCatalogProductsByIds } from '../services/publicCatalogService';
 
 export type ProductLookup = ReadonlyMap<string, PublicCatalogListingItem>;
 
@@ -32,7 +32,7 @@ export type CatalogDetailState = {
 };
 
 /**
- * Carga el catálogo con sus capítulos, selección y enlaces.
+ * Carga el catálogo con sus categorías, productos y enlaces.
  *
  * Editar sigue siendo cosa del dueño (`isOwner`), pero compartir no: en un
  * catálogo ajeno la RLS devuelve los enlaces que uno mismo entregó —nunca los
@@ -68,12 +68,14 @@ export function useCatalogDetail(id: string | undefined): CatalogDetailState {
       setNotFound(false);
       setDetailState(loaded);
 
-      const { productIds } = collectSelectionIds(loaded.sections);
-      const [listing, names] = await Promise.all([
+      const { productIds, categoryIds } = collectSelectionIds(loaded.sections);
+      const [listing, categoryListings, names] = await Promise.all([
         listPublicCatalogProductsByIds(productIds),
+        Promise.all(categoryIds.map((categoryId) => listAllPublicCatalogProductsInCategory(categoryId))),
         loaded.ownerId !== user?.id ? fetchProfileNames([loaded.ownerId]) : Promise.resolve(null),
       ]);
-      setProducts(new Map(listing.map((item) => [item.productId, item])));
+      const allProducts = [...listing, ...categoryListings.flat()];
+      setProducts(new Map(allProducts.map((item) => [item.productId, item])));
       setOwnerName(names ? (names.get(loaded.ownerId) ?? null) : null);
     } catch (caught) {
       setError(errorMessage(caught, 'No se pudo cargar el catálogo'));

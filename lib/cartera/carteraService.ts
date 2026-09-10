@@ -8,7 +8,7 @@ import {
   saveReportSnapshot,
 } from '@/lib/offline/repositories/offlineRepository';
 
-export type CarteraFilter = 'todas' | 'por_vencer' | 'vencidas' | 'mora';
+export type CarteraFilter = 'todas' | 'por_vencer' | 'vencidas' | 'mora' | 'pagadas';
 
 export type CarteraRow = {
   cuota_id: string;
@@ -62,7 +62,7 @@ export type CarteraDashboard = {
 };
 
 export async function fetchCarteraPage(params: {
-  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string; paymentMethodId?: string;
+  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string; paymentMethodId?: string; dueFrom?: string; dueTo?: string;
 }) {
   try {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
@@ -76,6 +76,8 @@ export async function fetchCarteraPage(params: {
       p_seller_id: params.sellerId || null,
       p_customer_seller_id: params.customerSellerId || null,
       p_payment_method_id: params.paymentMethodId || null,
+      p_due_from: params.dueFrom || null,
+      p_due_to: params.dueTo || null,
     });
     if (error) throw new Error(error.message || 'No fue posible cargar la cartera');
     const rows = ((data || []) as CarteraRow[]).map((row) => ({

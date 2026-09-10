@@ -61,12 +61,14 @@ export function filterCarteraCuotas<
 >(
   rows: T[],
   params: {
-    filter: 'todas' | 'por_vencer' | 'vencidas' | 'mora';
+    filter: 'todas' | 'por_vencer' | 'vencidas' | 'mora' | 'pagadas';
     search: string;
     days: number;
     municipioId: string;
     sellerId?: string;
     customerSellerId?: string;
+    dueFrom?: string;
+    dueTo?: string;
     today?: string;
   }
 ) {
@@ -77,10 +79,19 @@ export function filterCarteraCuotas<
   const horizonDate = horizon.toISOString().slice(0, 10);
 
   return rows.filter((row) => {
-    if (row.status === 'pagada' || row.status === 'anulada') return false;
+    // «Pagadas» consulta lo ya cobrado; el resto de filtros mira cuotas abiertas.
+    if (row.status === 'anulada') return false;
+    if (params.filter === 'pagadas') {
+      if (row.status !== 'pagada') return false;
+    } else if (row.status === 'pagada') {
+      return false;
+    }
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
     if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
     if (params.customerSellerId && (row.customerSellerId ?? null) !== params.customerSellerId) return false;
+    // Las fechas son ISO (aaaa-mm-dd), así que comparar como texto ordena bien.
+    if (params.dueFrom && row.dueDate < params.dueFrom) return false;
+    if (params.dueTo && row.dueDate > params.dueTo) return false;
     if (search) {
       const haystack = `${row.customerName} ${row.customerIdNumber || ''} ${row.negocioNumero}`.toLowerCase();
       if (!haystack.includes(search)) return false;

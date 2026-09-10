@@ -23,7 +23,6 @@ function CatalogoCreateInner() {
   const colors = getColors(isDark);
   const access = useCatalogAccess();
   const [internalTitle, setInternalTitle] = useState('');
-  const [publicTitle, setPublicTitle] = useState('');
   const [errors, setErrors] = useState<CreateCatalogErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,13 +36,13 @@ function CatalogoCreateInner() {
   }
 
   const submit = async () => {
-    const validation = validateCreateCatalog({ internalTitle, publicTitle });
+    const validation = validateCreateCatalog({ internalTitle, publicTitle: '' });
     setErrors(validation);
     if (hasErrors(validation)) return;
     setSaving(true);
     setSubmitError(null);
     try {
-      const { id } = await createPrivateCatalog({ internalTitle, publicTitle: publicTitle.trim() || null });
+      const { id } = await createPrivateCatalog({ internalTitle });
       router.replace(`/catalogo/${id}` as never);
     } catch (caught) {
       setSubmitError(errorMessage(caught, 'No fue posible crear el catálogo.'));
@@ -58,33 +57,23 @@ function CatalogoCreateInner() {
         <Card style={styles.card}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Empieza con un nombre</Text>
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Después eliges los productos y generas el enlace para el cliente. La portada y el diseño se ajustan desde el panel web.
+            Después eliges las categorías, agregas productos y generas el enlace para el cliente. La apariencia se ajusta después si la necesitas.
           </Text>
           <Input
-            label="Nombre interno"
+            label="¿Cómo quieres llamar este catálogo?"
             value={internalTitle}
             onChangeText={setInternalTitle}
             error={errors.internalTitle}
-            placeholder="Solo lo ves tú (p. ej. Familia Pérez)"
+            placeholder="P. ej. Apartamentos septiembre"
             maxLength={120}
             autoFocus
             returnKeyType="next"
-          />
-          <Input
-            label="Título público (opcional)"
-            value={publicTitle}
-            onChangeText={setPublicTitle}
-            error={errors.publicTitle}
-            placeholder="Igual al nombre interno si lo dejas vacío"
-            maxLength={120}
-            returnKeyType="done"
-            onSubmitEditing={() => void submit()}
           />
           {submitError ? <Text style={[styles.error, { color: colors.error.main }]}>{submitError}</Text> : null}
         </Card>
       </ScrollView>
       <ActionBar>
-        <Button title="Crear catálogo" icon="auto-stories" onPress={() => void submit()} loading={saving} style={styles.primary} />
+        <Button title="Empezar catálogo" icon="auto-stories" onPress={() => void submit()} loading={saving} style={styles.primary} />
       </ActionBar>
     </View>
   );

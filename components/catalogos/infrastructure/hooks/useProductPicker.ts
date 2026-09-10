@@ -124,13 +124,13 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
 
       try {
         // Las escrituras se encadenan: si dos productos se tocan casi a la vez
-        // y el catálogo aún no tiene capítulos, sin esta cola cada uno crearía
-        // su propio capítulo «Selección».
+        // y el catálogo aún no tiene categorías, sin esta cola cada uno crearía
+        // su propia categoría inicial.
         const run = async () => {
           const hadSections = sectionsRef.current.length > 0;
           await toggleCatalogProduct(catalogId, productId, shouldAdd, sectionsRef.current);
           if (shouldAdd && !hadSections) {
-            // El primer capítulo se creó en la base: hay que conocer su id real
+            // La primera categoría se creó en la base: hay que conocer su id real
             // antes del siguiente toggle.
             const refreshed = await getPrivateCatalog(catalogId);
             if (refreshed) sectionsRef.current = refreshed.sections;

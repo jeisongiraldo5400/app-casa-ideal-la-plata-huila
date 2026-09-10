@@ -60,6 +60,23 @@ describe('filterCarteraCuotas', () => {
     ).toEqual(['c1']);
   });
 
+  it('acota por rango de vencimiento sin conexión', () => {
+    const base = { filter: 'todas' as const, search: '', days: 15, municipioId: '', today: '2026-08-12' };
+    // rows[0] vence 2026-08-20 y rows[1] el 2026-07-01.
+    expect(filterCarteraCuotas(rows, { ...base, dueFrom: '2026-08-01' }).map((r) => r.id)).toEqual(['c1']);
+    expect(filterCarteraCuotas(rows, { ...base, dueTo: '2026-07-31' }).map((r) => r.id)).toEqual(['c2']);
+    expect(filterCarteraCuotas(rows, { ...base, dueFrom: '2026-07-01', dueTo: '2026-08-31' })).toHaveLength(2);
+    expect(filterCarteraCuotas(rows, { ...base, dueFrom: '2027-01-01' })).toHaveLength(0);
+  });
+
+  it('«pagadas» invierte el conjunto de estados', () => {
+    const conPagada = [...rows, { ...rows[0], id: 'c9', status: 'pagada' }];
+    const base = { search: '', days: 15, municipioId: '', today: '2026-08-12' };
+    // Las abiertas nunca incluyen la pagada, y «pagadas» solo la trae a ella.
+    expect(filterCarteraCuotas(conPagada, { ...base, filter: 'todas' }).map((r) => r.id)).not.toContain('c9');
+    expect(filterCarteraCuotas(conPagada, { ...base, filter: 'pagadas' }).map((r) => r.id)).toEqual(['c9']);
+  });
+
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);

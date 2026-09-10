@@ -16,14 +16,14 @@ async function ensureFirstSection(catalogId: string, sections: readonly CatalogS
     .insert({ catalog_id: catalogId, title: DEFAULT_SECTION_TITLE, kicker: null, body: null, image_url: null, sort_order: 0 })
     .select('id')
     .single();
-  if (error) throw new Error(`No fue posible crear el capítulo: ${error.message}`);
+  if (error) throw new Error(`No fue posible crear la categoría: ${error.message}`);
   return { id: (data as Pick<SectionRow, 'id'>).id, itemCount: 0 };
 }
 
 /**
  * Añade o quita un producto de la edición. Réplica de
- * `toggleCatalogProductAction` del web: el primer capítulo se crea solo, y
- * un duplicado (misma ficha ya en el capítulo) no es un error.
+ * `toggleCatalogProductAction` del web: la categoría inicial se crea sola, y
+ * un duplicado (misma ficha ya en la categoría) no es un error.
  */
 export async function toggleCatalogProduct(
   catalogId: string,

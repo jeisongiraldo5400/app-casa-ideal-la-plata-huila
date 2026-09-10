@@ -10,7 +10,7 @@ export const SHARE_LINK_DURATIONS = [
   { hours: 720, label: '30 días' },
 ] as const;
 
-export const DEFAULT_SHARE_LINK_HOURS = 24;
+export const DEFAULT_SHARE_LINK_HOURS = 168;
 export const MIN_SHARE_LINK_HOURS = 1;
 export const MAX_SHARE_LINK_HOURS = 720;
 

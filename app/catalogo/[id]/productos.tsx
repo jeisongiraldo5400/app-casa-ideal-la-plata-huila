@@ -15,7 +15,7 @@ export default function CatalogoProductosScreen() {
   );
 }
 
-/** Espera el detalle (para conocer la selección y los capítulos) antes de montar el selector. */
+/** Espera el detalle para conocer las categorías y productos antes de montar el selector. */
 function CatalogoProductosGate() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isDark } = useTheme();
