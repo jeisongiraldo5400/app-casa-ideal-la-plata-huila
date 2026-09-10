@@ -3,6 +3,7 @@ import { Button, FullScreenModal, SearchField, SegmentedControl } from '@/compon
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import type { CarteraFilter, Municipio } from '@/lib/cartera/carteraService';
 import type { SellerOption } from '@/lib/users/sellersService';
+import type { PaymentMethodOption } from '@/components/negocios/infrastructure/services/paymentMethodsService';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,12 +19,15 @@ export type CarteraFilterValues = {
   /** Vendedor al que pertenece el CLIENTE; independiente de `sellerId`. */
   customerSellerId: string;
   searchCustomerSeller: string;
+  /** Cuotas con al menos un abono vigente de ese método. */
+  paymentMethodId: string;
 };
 
 type Props = {
   visible: boolean;
   municipios: Municipio[];
   sellers?: SellerOption[];
+  paymentMethods?: PaymentMethodOption[];
   values: CarteraFilterValues;
   onChange: (next: CarteraFilterValues) => void;
   onClose: () => void;
@@ -48,10 +52,11 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   searchSeller: '',
   customerSellerId: '',
   searchCustomerSeller: '',
+  paymentMethodId: '',
 };
 
 /** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, vendedor, días). */
-export function CarteraFilterModal({ visible, municipios, sellers = [], values, onChange, onClose }: Props) {
+export function CarteraFilterModal({ visible, municipios, sellers = [], paymentMethods = [], values, onChange, onClose }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const selectedMunicipio = municipios.find((item) => item.id === values.municipioId);
@@ -240,6 +245,42 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], values, 
               </Text>
             ) : null}
           </View>
+        </View>
+
+        <View style={styles.group}>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Método de pago</Text>
+          <View style={[styles.options, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: !values.paymentMethodId }}
+              onPress={() => patch({ paymentMethodId: '' })}
+              style={[styles.option, { borderBottomColor: colors.divider }]}>
+              <Text style={[styles.optionText, { color: colors.primary.main, fontWeight: '700' }]}>Todos los métodos</Text>
+              {!values.paymentMethodId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+            </Pressable>
+            {paymentMethods.map((method, index) => {
+              const selected = values.paymentMethodId === method.id;
+              return (
+                <Pressable
+                  key={method.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => patch({ paymentMethodId: method.id })}
+                  style={[styles.option, index === paymentMethods.length - 1 && styles.lastOption, { borderBottomColor: colors.divider }]}>
+                  <Text style={[styles.optionText, { color: colors.text.primary }]}>{method.name}</Text>
+                  {selected ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+                </Pressable>
+              );
+            })}
+            {!paymentMethods.length ? (
+              <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>Sin métodos de pago disponibles</Text>
+            ) : null}
+          </View>
+          {values.paymentMethodId ? (
+            <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
+              Solo se muestran cuotas que recibieron abonos con ese método.
+            </Text>
+          ) : null}
         </View>
       </ScrollView>
     </FullScreenModal>

@@ -4595,6 +4595,7 @@ export type Database = {
           p_municipio_id?: string
           p_page?: number
           p_page_size?: number
+          p_payment_method_id?: string
           p_search?: string
           p_seller_id?: string
         }

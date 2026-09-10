@@ -62,7 +62,7 @@ export type CarteraDashboard = {
 };
 
 export async function fetchCarteraPage(params: {
-  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string;
+  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string; paymentMethodId?: string;
 }) {
   try {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
@@ -75,6 +75,7 @@ export async function fetchCarteraPage(params: {
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
       p_seller_id: params.sellerId || null,
       p_customer_seller_id: params.customerSellerId || null,
+      p_payment_method_id: params.paymentMethodId || null,
     });
     if (error) throw new Error(error.message || 'No fue posible cargar la cartera');
     const rows = ((data || []) as CarteraRow[]).map((row) => ({
