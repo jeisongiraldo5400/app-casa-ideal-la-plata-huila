@@ -1,4 +1,8 @@
 import { localDateValue } from '@/lib/localDate';
+// Solo tipos, y desde un módulo sin dependencias (`lib/cartera/types`): así el
+// dominio comparte el vocabulario de filtros con el servicio remoto sin
+// importar la capa de I/O ni invertir la dirección de dependencias.
+import type { CarteraQuery } from '@/lib/cartera/types';
 
 export type LocalCuota = {
   id: string;
@@ -56,21 +60,18 @@ export function filterCarteraCuotas<
     sellerId?: string | null;
     /** Vendedor del CLIENTE, distinto del vendedor del negocio. */
     customerSellerId?: string | null;
+    /**
+     * Métodos de pago con abonos vigentes en el negocio de la cuota. El RPC
+     * resuelve este filtro por negocio (los abonos son FIFO y no quedan atados
+     * a una cuota), así que offline se compara contra el mismo conjunto.
+     */
+    negocioPaymentMethodIds?: string[];
     negocioNumero: number;
   },
 >(
   rows: T[],
-  params: {
-    filter: 'todas' | 'por_vencer' | 'vencidas' | 'mora' | 'pagadas';
-    search: string;
-    days: number;
-    municipioId: string;
-    sellerId?: string;
-    customerSellerId?: string;
-    dueFrom?: string;
-    dueTo?: string;
-    today?: string;
-  }
+  /** `today` se inyecta en los tests; el resto es la consulta compartida con el RPC. */
+  params: CarteraQuery & { today?: string }
 ) {
   const today = params.today || localDateValue();
   const search = params.search.trim().toLowerCase();
@@ -89,6 +90,12 @@ export function filterCarteraCuotas<
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
     if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
     if (params.customerSellerId && (row.customerSellerId ?? null) !== params.customerSellerId) return false;
+    if (
+      params.paymentMethodId &&
+      !(row.negocioPaymentMethodIds ?? []).includes(params.paymentMethodId)
+    ) {
+      return false;
+    }
     // Las fechas son ISO (aaaa-mm-dd), así que comparar como texto ordena bien.
     if (params.dueFrom && row.dueDate < params.dueFrom) return false;
     if (params.dueTo && row.dueDate > params.dueTo) return false;
@@ -187,6 +194,21 @@ export function summarizeCarteraFromCuotas(
   }
 
   return summary;
+}
+
+/**
+ * Mismo orden que el `ORDER BY` del RPC (vencimiento, negocio, cuota). Sin él
+ * la paginación offline recorre el orden crudo de la base local y «Cargar más»
+ * puede repetir u omitir filas.
+ */
+export function sortCarteraCuotas<
+  T extends { dueDate: string; negocioNumero: number; installmentNumber: number },
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    if (a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
+    if (a.negocioNumero !== b.negocioNumero) return a.negocioNumero - b.negocioNumero;
+    return a.installmentNumber - b.installmentNumber;
+  });
 }
 
 export function searchCustomersLocal<T extends { name: string; idNumber: string | null }>(

@@ -4,21 +4,10 @@ import {
   fetchCarteraDashboard,
   fetchCarteraPage,
   type CarteraDashboard,
-  type CarteraFilter,
 } from './carteraService';
+import type { CarteraPageQuery } from './types';
 
-export async function loadCarteraScreen(params: {
-  filter: CarteraFilter;
-  search: string;
-  page: number;
-  pageSize: number;
-  days: number;
-  municipioId: string;
-  sellerId?: string;
-  customerSellerId?: string;
-  paymentMethodId?: string;
-  dueFrom?: string;
-  dueTo?: string;
+export async function loadCarteraScreen(params: CarteraPageQuery & {
   includeDashboard: boolean;
 }): Promise<{
   rows: Awaited<ReturnType<typeof fetchCarteraPage>>['rows'];

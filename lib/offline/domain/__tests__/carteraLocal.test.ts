@@ -1,6 +1,7 @@
 import {
   applyPagoToCuotas,
   filterCarteraCuotas,
+  sortCarteraCuotas,
   searchCustomersLocal,
   summarizeCarteraFromCuotas,
 } from '../carteraLocal';
@@ -77,6 +78,20 @@ describe('filterCarteraCuotas', () => {
     expect(filterCarteraCuotas(conPagada, { ...base, filter: 'pagadas' }).map((r) => r.id)).toEqual(['c9']);
   });
 
+  it('el método de pago se resuelve por negocio, igual que el RPC', () => {
+    const conMetodos = [
+      { ...rows[0], negocioPaymentMethodIds: ['efectivo'] },
+      { ...rows[1], id: 'c8', negocioPaymentMethodIds: ['consignacion'] },
+      { ...rows[1], id: 'c9', negocioPaymentMethodIds: [] },
+    ];
+    const base = { filter: 'todas' as const, search: '', days: 15, municipioId: '', today: '2026-08-12' };
+
+    expect(filterCarteraCuotas(conMetodos, { ...base, paymentMethodId: 'efectivo' }).map((r) => r.id)).toEqual(['c1']);
+    // Un negocio sin abonos con ese método queda fuera, no se cuela por defecto.
+    expect(filterCarteraCuotas(conMetodos, { ...base, paymentMethodId: 'nequi' })).toHaveLength(0);
+    expect(filterCarteraCuotas(conMetodos, base)).toHaveLength(3);
+  });
+
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
@@ -116,5 +131,33 @@ describe('summarizeCarteraFromCuotas', () => {
     expect(summary.total_balance).toBe(140);
     expect(summary.overdue_balance).toBe(60);
     expect(summary.upcoming_15).toBe(80);
+  });
+});
+
+describe('sortCarteraCuotas', () => {
+  it('ordena por vencimiento, negocio y cuota, como el RPC', () => {
+    const desordenadas = [
+      { dueDate: '2026-09-01', negocioNumero: 12, installmentNumber: 2 },
+      { dueDate: '2026-08-01', negocioNumero: 30, installmentNumber: 1 },
+      { dueDate: '2026-09-01', negocioNumero: 12, installmentNumber: 1 },
+      { dueDate: '2026-09-01', negocioNumero: 5, installmentNumber: 9 },
+    ];
+
+    expect(sortCarteraCuotas(desordenadas)).toEqual([
+      { dueDate: '2026-08-01', negocioNumero: 30, installmentNumber: 1 },
+      { dueDate: '2026-09-01', negocioNumero: 5, installmentNumber: 9 },
+      { dueDate: '2026-09-01', negocioNumero: 12, installmentNumber: 1 },
+      { dueDate: '2026-09-01', negocioNumero: 12, installmentNumber: 2 },
+    ]);
+  });
+
+  it('no muta el arreglo recibido', () => {
+    const original = [
+      { dueDate: '2026-09-01', negocioNumero: 2, installmentNumber: 1 },
+      { dueDate: '2026-08-01', negocioNumero: 1, installmentNumber: 1 },
+    ];
+    const copia = [...original];
+    sortCarteraCuotas(original);
+    expect(original).toEqual(copia);
   });
 });

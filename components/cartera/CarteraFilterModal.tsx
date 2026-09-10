@@ -1,7 +1,8 @@
 import { useTheme } from '@/components/theme';
 import { Button, FullScreenModal, SearchField, SegmentedControl } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
-import type { CarteraFilter, Municipio } from '@/lib/cartera/carteraService';
+import type { Municipio } from '@/lib/cartera/carteraService';
+import type { CarteraFilter, CarteraQuery } from '@/lib/cartera/types';
 import type { SellerOption } from '@/lib/users/sellersService';
 import type { PaymentMethodOption } from '@/components/negocios/infrastructure/services/paymentMethodsService';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
@@ -9,22 +10,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-export type CarteraFilterValues = {
-  filter: CarteraFilter;
-  search: string;
-  municipioId: string;
-  days: number;
+/**
+ * La consulta que viaja al listado (`CarteraQuery`) más el texto de los
+ * buscadores, que solo existe mientras el modal está abierto. `Required` porque
+ * el formulario siempre mantiene un valor ('' = sin filtro).
+ */
+export type CarteraFilterValues = Required<CarteraQuery> & {
   searchMunicipio: string;
-  sellerId: string;
   searchSeller: string;
-  /** Vendedor al que pertenece el CLIENTE; independiente de `sellerId`. */
-  customerSellerId: string;
   searchCustomerSeller: string;
-  /** Cuotas con al menos un abono vigente de ese método. */
-  paymentMethodId: string;
-  /** Rango sobre la fecha de vencimiento de la cuota. */
-  dueFrom: string;
-  dueTo: string;
 };
 
 type Props = {

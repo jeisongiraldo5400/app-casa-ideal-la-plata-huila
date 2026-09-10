@@ -1,7 +1,8 @@
 import { Q } from '@nozbe/watermelondb';
 import type { Model } from '@nozbe/watermelondb';
 import { createIdempotencyKey } from '@/lib/idempotency';
-import type { CarteraFilter, CarteraRow, Municipio } from '@/lib/cartera/carteraService';
+import type { Municipio } from '@/lib/cartera/carteraService';
+import type { CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
 import type { CustomerWithNegocios } from '@/lib/customers/customerNegocios';
 import {
@@ -29,6 +30,7 @@ import {
   emptyCarteraDashboard,
   filterCarteraCuotas,
   searchCustomersLocal,
+  sortCarteraCuotas,
   summarizeCarteraFromCuotas,
 } from '../domain/carteraLocal';
 import {
@@ -396,27 +398,33 @@ export async function fetchCarteraDashboardFromLocal() {
   return emptyCarteraDashboard(summary);
 }
 
-export async function fetchCarteraFromLocal(params: {
-  filter: CarteraFilter;
-  search: string;
-  page: number;
-  pageSize: number;
-  days: number;
-  municipioId: string;
-  sellerId?: string;
-  customerSellerId?: string;
-  dueFrom?: string;
-  dueTo?: string;
-}): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
+/** Espejo local del RPC `get_cartera_cuotas`, con los mismos filtros y orden. */
+export async function fetchCarteraFromLocal(
+  params: CarteraPageQuery
+): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
-  const [cuotas, negocios, customers] = await Promise.all([
+  const [cuotas, negocios, customers, pagos] = await Promise.all([
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     database.get<Negocio>('negocios').query().fetch(),
     database.get<Customer>('customers').query().fetch(),
+    database.get<NegocioPago>('negocio_pagos').query().fetch(),
   ]);
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
+  // Métodos de pago con abonos vigentes por negocio: el RPC resuelve así el
+  // filtro porque los abonos son FIFO y no quedan atados a una cuota.
+  const methodsByNegocio = new Map<string, string[]>();
+  for (const pago of pagos) {
+    if (!pago.paymentMethodId) continue;
+    if ((pago.receiptStatus || 'emitido') === 'anulado') continue;
+    const current = methodsByNegocio.get(pago.negocioId);
+    if (current) {
+      if (!current.includes(pago.paymentMethodId)) current.push(pago.paymentMethodId);
+    } else {
+      methodsByNegocio.set(pago.negocioId, [pago.paymentMethodId]);
+    }
+  }
   const mapped = cuotas.map((cuota) => {
     const negocio = negocioById.get(cuota.negocioId);
     const customer = negocio ? customerById.get(negocio.customerId) : undefined;
@@ -433,6 +441,8 @@ export async function fetchCarteraFromLocal(params: {
       municipioId: negocio?.municipioId || null,
       sellerId: negocio?.sellerId || null,
       customerSellerId: customer?.sellerId || null,
+      negocioPaymentMethodIds: methodsByNegocio.get(cuota.negocioId) || [],
+      installmentNumber: cuota.installmentNumber,
       negocioNumero: negocio?.numero || 0,
       row: {
         cuota_id: cuota.id,
@@ -458,7 +468,7 @@ export async function fetchCarteraFromLocal(params: {
       } satisfies CarteraRow,
     };
   });
-  const filtered = filterCarteraCuotas(mapped, params);
+  const filtered = sortCarteraCuotas(filterCarteraCuotas(mapped, params));
   const totalCount = filtered.length;
   const start = (params.page - 1) * params.pageSize;
   const rows = filtered.slice(start, start + params.pageSize).map((item) => ({

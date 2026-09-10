@@ -1,3 +1,4 @@
+import type { CarteraPageQuery, CarteraRow } from './types';
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
@@ -8,30 +9,14 @@ import {
   saveReportSnapshot,
 } from '@/lib/offline/repositories/offlineRepository';
 
-export type CarteraFilter = 'todas' | 'por_vencer' | 'vencidas' | 'mora' | 'pagadas';
-
-export type CarteraRow = {
-  cuota_id: string;
-  negocio_id: string;
-  negocio_numero: number;
-  customer_name: string | null;
-  customer_id_number: string | null;
-  customer_phone: string | null;
-  municipio_id: string | null;
-  municipio_name: string | null;
-  seller_id: string | null;
-  seller_name: string | null;
-  customer_seller_id: string | null;
-  customer_seller_name: string | null;
-  installment_number: number;
-  due_date: string;
-  amount: number;
-  paid_amount: number;
-  late_fee_amount: number;
-  saldo: number;
-  status: string;
-  total_count: number;
-};
+// Los tipos del listado viven en `./types` (módulo sin dependencias) para que el
+// dominio offline pueda compartirlos sin importar esta capa de I/O.
+export type {
+  CarteraFilter,
+  CarteraPageQuery,
+  CarteraQuery,
+  CarteraRow,
+} from './types';
 
 export type Municipio = { id: string; nombre: string };
 export type CollectionManager = { id: string; full_name: string };
@@ -61,9 +46,7 @@ export type CarteraDashboard = {
   customer_concentration: { customer_id: string; customer_name: string; balance: number }[];
 };
 
-export async function fetchCarteraPage(params: {
-  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string; paymentMethodId?: string; dueFrom?: string; dueTo?: string;
-}) {
+export async function fetchCarteraPage(params: CarteraPageQuery) {
   try {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
       p_negocio_id: null,
