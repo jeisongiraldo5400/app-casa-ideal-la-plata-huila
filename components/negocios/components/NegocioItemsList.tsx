@@ -40,11 +40,14 @@ function EditableMoneyInput({
   colors: ThemeColors;
   onChange: (value: number) => void;
 }) {
-  const [draft, setDraft] = useState(() => formatNegocioMoneyInput(value));
+  // Un valor unitario 0 (producto sin precio de contado) se muestra vacío
+  // para que el usuario lo escriba, igual que en la web.
+  const toDraft = (amount: number) => (amount > 0 ? formatNegocioMoneyInput(amount) : '');
+  const [draft, setDraft] = useState(() => toDraft(value));
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (!focused) setDraft(formatNegocioMoneyInput(value));
+    if (!focused) setDraft(toDraft(value));
   }, [focused, value]);
 
   const handleChange = (text: string) => {

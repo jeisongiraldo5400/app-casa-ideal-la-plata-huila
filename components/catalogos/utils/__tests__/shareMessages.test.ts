@@ -11,6 +11,16 @@ describe('buildShareMessage', () => {
     expect(message).toContain('Lavadoras Casa Ideal');
     expect(message).toContain('Disponible hasta el');
   });
+
+  it('saluda al destinatario solo cuando se proporciona', () => {
+    const message = buildShareMessage({
+      publicTitle: 'Sala moderna',
+      url: 'https://catalogo.test/c/abc123',
+      expiresAt: '2026-09-08T12:00:00.000Z',
+      label: 'Carlos',
+    });
+    expect(message).toContain('Hola Carlos.');
+  });
 });
 
 describe('buildWhatsAppUrl', () => {

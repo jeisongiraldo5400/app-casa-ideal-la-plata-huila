@@ -33,7 +33,7 @@ export function ShareLinkRow({ link, now, publicTitle, compact, reissuing, onRei
   const share = () => {
     if (!link.token) return;
     const url = buildMagazineUrl(link.token);
-    void shareLinkMessage(buildShareMessage({ publicTitle, url, expiresAt: link.expiresAt }), publicTitle);
+    void shareLinkMessage(buildShareMessage({ publicTitle, url, expiresAt: link.expiresAt, label: link.label }), publicTitle);
   };
   const copy = () => {
     if (!link.token) return;
@@ -44,7 +44,7 @@ export function ShareLinkRow({ link, now, publicTitle, compact, reissuing, onRei
     <ListCard>
       <View style={styles.top}>
         <Text style={[styles.label, { color: colors.text.primary }]} numberOfLines={1}>
-          {link.label}
+          {link.label || 'Enlace sin destinatario'}
         </Text>
         <StatusChip label={labelShareLinkStatus(status)} tone={shareLinkStatusTone(status)} />
       </View>

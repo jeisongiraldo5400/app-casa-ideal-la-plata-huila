@@ -59,7 +59,7 @@ export type ShareLinkErrors = Partial<Record<keyof ShareLinkInput, string>>;
 export function validateShareLinkInput(input: ShareLinkInput): ShareLinkErrors {
   const errors: ShareLinkErrors = {};
   const label = input.label.trim();
-  if (label.length < LABEL_MIN) errors.label = 'Escribe un nombre para identificar el enlace.';
+  if (label.length > 0 && label.length < LABEL_MIN) errors.label = `Escribe al menos ${LABEL_MIN} caracteres o deja el campo vacío.`;
   else if (label.length > LABEL_MAX) errors.label = 'Máximo 120 caracteres.';
   if (!Number.isInteger(input.hours)) errors.hours = 'La vigencia debe ser un número de horas.';
   else if (input.hours < MIN_SHARE_LINK_HOURS) errors.hours = 'La vigencia mínima es de 1 hora.';

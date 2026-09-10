@@ -27,14 +27,14 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
   }, [copied]);
 
   if (!result) return null;
-  const message = buildShareMessage({ publicTitle, url: result.url, expiresAt: result.expiresAt });
+  const message = buildShareMessage({ publicTitle, url: result.url, expiresAt: result.expiresAt, label: result.label });
 
   return (
     <ModalSheet
       visible
       onClose={onClose}
       title={result.reissued ? 'Enlace reemitido' : 'Enlace listo'}
-      subtitle={`Para ${result.label} · vence el ${formatCatalogDateTime(result.expiresAt)}`}
+      subtitle={`${result.label ? `Para ${result.label} · ` : ''}Vence el ${formatCatalogDateTime(result.expiresAt)}`}
       footer={<Button title="Listo" variant="outline" onPress={onClose} style={styles.done} />}>
       <View style={[styles.urlBox, { backgroundColor: colors.surface.sunken }]}>
         <Text selectable style={[styles.url, { color: colors.text.primary }]}>

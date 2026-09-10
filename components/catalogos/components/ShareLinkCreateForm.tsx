@@ -40,14 +40,14 @@ export function ShareLinkCreateForm({ disabled, creating, progress, errors, subm
     <Card style={styles.card}>
       <Text style={[styles.title, { color: colors.text.primary }]}>Nuevo enlace</Text>
       <Text style={[styles.hint, { color: colors.text.secondary }]}>
-        Cada enlace congela la edición tal como está hoy. Nómbralo por el cliente que lo recibe.
+        Cada enlace congela la edición tal como está hoy. Puedes escribir para quién es o dejarlo vacío.
       </Text>
       <Input
-        label="Para quién es"
+        label="Para quién es (opcional)"
         value={label}
         onChangeText={setLabel}
         error={errors.label}
-        placeholder="Familia Pérez"
+        placeholder="Ej. Familia Pérez"
         maxLength={120}
         editable={!creating}
       />

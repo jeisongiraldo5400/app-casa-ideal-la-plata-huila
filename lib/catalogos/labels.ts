@@ -49,7 +49,7 @@ export function shareLinkStatusTone(status: CatalogShareLinkStatus): StatusTone 
 
 const SCOPE_LABEL: Record<CatalogScope, string> = {
   own: 'Tuyo',
-  organization: 'Del equipo',
+  organization: 'Catálogo global',
   shared: 'Compartido contigo',
 };
 

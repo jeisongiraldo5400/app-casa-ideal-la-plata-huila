@@ -47,8 +47,8 @@ describe('validateShareLinkInput', () => {
     expect(validateShareLinkInput({ label: 'Familia Pérez', hours: 24 })).toEqual({});
   });
 
-  it('exige nombrar al destinatario', () => {
-    expect(validateShareLinkInput({ label: ' ', hours: 24 }).label).toBe('Escribe un nombre para identificar el enlace.');
+  it('permite dejar vacío el nombre del destinatario', () => {
+    expect(validateShareLinkInput({ label: ' ', hours: 24 })).toEqual({});
   });
 
   it('acota la vigencia entre 1 hora y 30 días', () => {
