@@ -21,6 +21,8 @@ export type CarteraRow = {
   municipio_name: string | null;
   seller_id: string | null;
   seller_name: string | null;
+  customer_seller_id: string | null;
+  customer_seller_name: string | null;
   installment_number: number;
   due_date: string;
   amount: number;
@@ -60,7 +62,7 @@ export type CarteraDashboard = {
 };
 
 export async function fetchCarteraPage(params: {
-  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string;
+  filter: CarteraFilter; search: string; page: number; pageSize: number; days: number; municipioId: string; sellerId?: string; customerSellerId?: string;
 }) {
   try {
     const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
@@ -72,10 +74,12 @@ export async function fetchCarteraPage(params: {
       p_filter: params.filter, p_days: params.days, p_search: params.search,
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
       p_seller_id: params.sellerId || null,
+      p_customer_seller_id: params.customerSellerId || null,
     });
     if (error) throw new Error(error.message || 'No fue posible cargar la cartera');
     const rows = ((data || []) as CarteraRow[]).map((row) => ({
       ...row, seller_id: row.seller_id ?? null, seller_name: row.seller_name ?? null,
+      customer_seller_id: row.customer_seller_id ?? null, customer_seller_name: row.customer_seller_name ?? null,
       amount: Number(row.amount), paid_amount: Number(row.paid_amount),
       late_fee_amount: Number(row.late_fee_amount || 0), saldo: Number(row.saldo), total_count: Number(row.total_count || 0),
     }));

@@ -34,6 +34,17 @@ describe('loadCarteraScreen', () => {
     mockedLocalDashboard.mockReset();
   });
 
+  it('traslada el filtro por vendedor del cliente al servicio', async () => {
+    mockedPage.mockResolvedValue({ rows: [], totalCount: 0, fromCache: false });
+    mockedDashboard.mockResolvedValue(null as never);
+
+    await loadCarteraScreen({ ...params, customerSellerId: 'seller-9', includeDashboard: false });
+
+    expect(mockedPage).toHaveBeenCalledWith(
+      expect.objectContaining({ customerSellerId: 'seller-9' })
+    );
+  });
+
   it('devuelve filas locales aunque el dashboard falle', async () => {
     mockedPage.mockResolvedValue({
       rows: [
@@ -55,6 +66,8 @@ describe('loadCarteraScreen', () => {
           status: 'pendiente',
           seller_id: null,
           seller_name: null,
+          customer_seller_id: null,
+          customer_seller_name: null,
           total_count: 1,
         },
       ],

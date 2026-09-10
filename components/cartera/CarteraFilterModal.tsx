@@ -15,6 +15,9 @@ export type CarteraFilterValues = {
   searchMunicipio: string;
   sellerId: string;
   searchSeller: string;
+  /** Vendedor al que pertenece el CLIENTE; independiente de `sellerId`. */
+  customerSellerId: string;
+  searchCustomerSeller: string;
 };
 
 type Props = {
@@ -43,6 +46,8 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   searchMunicipio: '',
   sellerId: '',
   searchSeller: '',
+  customerSellerId: '',
+  searchCustomerSeller: '',
 };
 
 /** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, vendedor, días). */
@@ -55,6 +60,11 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], values, 
   const searchSeller = values.searchSeller || '';
   const availableSellers = sellers
     .filter((item) => item.full_name.toLowerCase().includes(searchSeller.toLowerCase()))
+    .slice(0, 30);
+  const selectedCustomerSeller = sellers.find((item) => item.id === values.customerSellerId);
+  const searchCustomerSeller = values.searchCustomerSeller || '';
+  const availableCustomerSellers = sellers
+    .filter((item) => item.full_name.toLowerCase().includes(searchCustomerSeller.toLowerCase()))
     .slice(0, 30);
   const available = municipios
     .filter((item) => item.nombre.toLowerCase().includes(searchMunicipio.toLowerCase()))
@@ -153,7 +163,7 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], values, 
         </View>
 
         <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor</Text>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor del negocio</Text>
           <SearchField
             value={searchSeller}
             onChangeText={(value) => patch({ searchSeller: value })}
@@ -187,6 +197,46 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], values, 
             {!availableSellers.length ? (
               <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
                 {sellers.length ? `Sin vendedores para “${searchSeller}”` : 'Sin conexión: la lista de vendedores no está disponible'}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.group}>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor del cliente</Text>
+          <SearchField
+            value={searchCustomerSeller}
+            onChangeText={(value) => patch({ searchCustomerSeller: value })}
+            placeholder={selectedCustomerSeller?.full_name || 'Todos los clientes'}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <View style={[styles.options, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: !values.customerSellerId }}
+              onPress={() => patch({ customerSellerId: '', searchCustomerSeller: '' })}
+              style={[styles.option, { borderBottomColor: colors.divider }]}>
+              <Text style={[styles.optionText, { color: colors.primary.main, fontWeight: '700' }]}>Todos los clientes</Text>
+              {!values.customerSellerId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+            </Pressable>
+            {availableCustomerSellers.map((seller, index) => {
+              const selected = values.customerSellerId === seller.id;
+              return (
+                <Pressable
+                  key={seller.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => patch({ customerSellerId: seller.id, searchCustomerSeller: seller.full_name })}
+                  style={[styles.option, index === availableCustomerSellers.length - 1 && styles.lastOption, { borderBottomColor: colors.divider }]}>
+                  <Text style={[styles.optionText, { color: colors.text.primary }]}>{seller.full_name}</Text>
+                  {selected ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+                </Pressable>
+              );
+            })}
+            {!availableCustomerSellers.length ? (
+              <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
+                {sellers.length ? `Sin vendedores para “${searchCustomerSeller}”` : 'Sin conexión: la lista de vendedores no está disponible'}
               </Text>
             ) : null}
           </View>

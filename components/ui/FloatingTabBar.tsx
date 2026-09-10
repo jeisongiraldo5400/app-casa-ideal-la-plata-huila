@@ -21,6 +21,7 @@ const TAB_CONFIG: Record<string, { label: string; icon: IconName; central?: bool
 const SECONDARY_ROUTE_CONTEXT: Record<string, keyof typeof TAB_CONFIG> = {
   cartera: 'index',
   negocios: 'index',
+  clientes: 'index',
 };
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {

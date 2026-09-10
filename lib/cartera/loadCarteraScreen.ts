@@ -15,6 +15,7 @@ export async function loadCarteraScreen(params: {
   days: number;
   municipioId: string;
   sellerId?: string;
+  customerSellerId?: string;
   includeDashboard: boolean;
 }): Promise<{
   rows: Awaited<ReturnType<typeof fetchCarteraPage>>['rows'];

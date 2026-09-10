@@ -3,7 +3,13 @@ import type { Model } from '@nozbe/watermelondb';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import type { CarteraFilter, CarteraRow, Municipio } from '@/lib/cartera/carteraService';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
-import type { CustomerWithNegocios } from '@/lib/negocios/searchCustomerNegocios';
+import type { CustomerWithNegocios } from '@/lib/customers/customerNegocios';
+import {
+  countLocalCustomersBySeller,
+  filterLocalCustomers,
+  type LocalCustomerQuery,
+  type LocalCustomerRow,
+} from '@/lib/offline/domain/customersLocal';
 import { getDatabase, isDatabaseOpen } from '../database';
 import {
   CatalogMunicipio,
@@ -106,16 +112,60 @@ export async function searchCustomersFromLocal(term: string, limit = 20) {
       name: row.name,
       idNumber: row.idNumber,
       phone: row.phone,
+      sellerId: row.sellerId ?? null,
     })),
     term,
     limit
   );
 }
 
+/** Filas del directorio local, para el módulo de clientes sin conexión. */
+async function readLocalCustomerRows(): Promise<LocalCustomerRow[]> {
+  const customers = await getDatabase().get<Customer>('customers').query().fetch();
+  return customers.map((row) => ({
+    id: row.id,
+    name: row.name,
+    idNumber: row.idNumber,
+    phone: row.phone,
+    sellerId: row.sellerId ?? null,
+  }));
+}
+
+export async function fetchCustomersPageFromLocal(params: LocalCustomerQuery) {
+  if (!canUseLocalDb()) return { items: [], totalCount: 0 };
+  return filterLocalCustomers(await readLocalCustomerRows(), params);
+}
+
+export async function countMyCustomersLocal(sellerId: string | null) {
+  if (!canUseLocalDb() || !sellerId) return 0;
+  return countLocalCustomersBySeller(await readLocalCustomerRows(), sellerId);
+}
+
+export async function fetchCustomerFromLocal(customerId: string): Promise<LocalCustomerRow | null> {
+  if (!canUseLocalDb()) return null;
+  const rows = await readLocalCustomerRows();
+  return rows.find((row) => row.id === customerId) ?? null;
+}
+
+/** Negocios locales de un cliente concreto, para la ficha sin conexión. */
+export async function fetchCustomerNegociosFromLocal(customerId: string): Promise<CustomerWithNegocios | null> {
+  if (!canUseLocalDb()) return null;
+  const customer = await fetchCustomerFromLocal(customerId);
+  if (!customer) return null;
+  const [result] = await buildCustomerNegocios([customer]);
+  return result ?? null;
+}
+
 export async function searchCustomerNegociosFromLocal(term: string, limit = 20): Promise<CustomerWithNegocios[]> {
   if (!canUseLocalDb()) return [];
   const matched = await searchCustomersFromLocal(term, limit);
   if (!matched.length) return [];
+  return buildCustomerNegocios(matched);
+}
+
+async function buildCustomerNegocios(
+  matched: { id: string; name: string; idNumber: string | null; phone: string | null }[]
+): Promise<CustomerWithNegocios[]> {
   const database = getDatabase();
   const negocios = await database.get<Negocio>('negocios').query().fetch();
   const cuotas = await database.get<NegocioCuota>('negocio_cuotas').query().fetch();
@@ -184,6 +234,9 @@ export async function createCustomerOffline(input: {
   address?: string | null;
   municipioId?: string | null;
   veredaId?: string | null;
+  /** Vendedor que crea el cliente. El servidor lo asigna igual por trigger al
+   * sincronizar; aquí se adelanta para que aparezca ya en «Mis clientes». */
+  sellerId?: string | null;
 }) {
   const database = getDatabase();
   const existing = await database
@@ -202,6 +255,7 @@ export async function createCustomerOffline(input: {
         record.name = input.name;
         record.idNumber = input.idNumber;
         record.phone = input.phone;
+        record.sellerId = input.sellerId ?? null;
         record.rowSyncStatus = 'pending';
         record.localUpdatedAt = Date.now();
         record.serverUpdatedAt = null;
@@ -350,6 +404,7 @@ export async function fetchCarteraFromLocal(params: {
   days: number;
   municipioId: string;
   sellerId?: string;
+  customerSellerId?: string;
 }): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
@@ -375,6 +430,7 @@ export async function fetchCarteraFromLocal(params: {
       customerIdNumber: customer?.idNumber || null,
       municipioId: negocio?.municipioId || null,
       sellerId: negocio?.sellerId || null,
+      customerSellerId: customer?.sellerId || null,
       negocioNumero: negocio?.numero || 0,
       row: {
         cuota_id: cuota.id,
@@ -387,6 +443,8 @@ export async function fetchCarteraFromLocal(params: {
         municipio_name: negocio?.municipioName || null,
         seller_id: negocio?.sellerId || null,
         seller_name: null,
+        customer_seller_id: customer?.sellerId || null,
+        customer_seller_name: null,
         installment_number: cuota.installmentNumber,
         due_date: cuota.dueDate,
         amount: cuota.amount,

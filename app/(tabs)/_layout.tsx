@@ -16,9 +16,9 @@ function ProfileHeaderButton() {
   return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => router.navigate('/(tabs)/profile')} />;
 }
 
-function SearchCustomerHeaderButton() {
+function CustomersHeaderButton() {
   const router = useRouter();
-  return <HeaderIconButton icon="person-search" label="Buscar cliente" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} />;
+  return <HeaderIconButton icon="person-search" label="Clientes" onPress={() => router.navigate('/(tabs)/clientes' as never)} />;
 }
 
 export default function TabLayout() {
@@ -69,7 +69,7 @@ export default function TabLayout() {
           tabBarLabel: 'Negocios',
           href: null,
           headerLeft: () => <BackButton />,
-          headerRight: () => <SearchCustomerHeaderButton />,
+          headerRight: () => <CustomersHeaderButton />,
         }}
       />
 
@@ -159,10 +159,10 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="buscar-cliente"
+        name="clientes"
         options={{
           href: null,
-          title: 'Buscar por cliente',
+          title: 'Clientes',
           headerLeft: () => <BackButton />,
           headerRight: () => <ProfileHeaderButton />,
         }}

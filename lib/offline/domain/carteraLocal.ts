@@ -54,6 +54,8 @@ export function filterCarteraCuotas<
     customerIdNumber: string | null;
     municipioId: string | null;
     sellerId?: string | null;
+    /** Vendedor del CLIENTE, distinto del vendedor del negocio. */
+    customerSellerId?: string | null;
     negocioNumero: number;
   },
 >(
@@ -64,6 +66,7 @@ export function filterCarteraCuotas<
     days: number;
     municipioId: string;
     sellerId?: string;
+    customerSellerId?: string;
     today?: string;
   }
 ) {
@@ -77,6 +80,7 @@ export function filterCarteraCuotas<
     if (row.status === 'pagada' || row.status === 'anulada') return false;
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
     if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
+    if (params.customerSellerId && (row.customerSellerId ?? null) !== params.customerSellerId) return false;
     if (search) {
       const haystack = `${row.customerName} ${row.customerIdNumber || ''} ${row.negocioNumero}`.toLowerCase();
       if (!haystack.includes(search)) return false;

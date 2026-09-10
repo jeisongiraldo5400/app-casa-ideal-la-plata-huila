@@ -8,7 +8,7 @@ function emptyChanges() {
 describe('applyPullPayload', () => {
   it('aplica upserts y deletes en un lote atómico', async () => {
     const operations: unknown[] = [];
-    const records = new Map<string, { destroyed?: boolean; name?: string }>();
+    const records = new Map<string, { destroyed?: boolean; name?: string; sellerId?: string | null }>();
 
     const fakeRecord = (id: string) => ({
       id,
@@ -34,7 +34,10 @@ describe('applyPullPayload', () => {
           const record: Record<string, unknown> = { _raw: { id: '' } };
           fn(record);
           const id = `${table}:${String(record._raw && (record._raw as { id?: string }).id || 'new')}`;
-          records.set(id, { name: String(record.name || '') });
+          records.set(id, {
+            name: String(record.name || ''),
+            sellerId: (record.sellerId as string | null | undefined) ?? null,
+          });
           return { id, op: 'create' };
         },
         query: () => ({
@@ -53,7 +56,7 @@ describe('applyPullPayload', () => {
       truncated: false,
       roles: [],
       customers: {
-        upserts: [{ id: 'c1', name: 'Ana', id_number: '1', phone: null, updated_at: null, deleted_at: null }],
+        upserts: [{ id: 'c1', name: 'Ana', id_number: '1', phone: null, seller_id: 'seller-1', updated_at: null, deleted_at: null }],
         deleted: ['gone'],
       },
       negocios: emptyChanges(),
@@ -67,6 +70,9 @@ describe('applyPullPayload', () => {
     await applyPullPayload(database as never, payload, 'user-1');
     expect(operations.length).toBeGreaterThan(0);
     expect(records.get('customers:c1')?.name).toBe('Ana');
+    // El vendedor del cliente viaja en el pull: sin él "Mis clientes" no
+    // podría filtrarse sin conexión.
+    expect(records.get('customers:c1')?.sellerId).toBe('seller-1');
   });
 
   it('no pisa una fila local con cambios pendientes de enviar', async () => {

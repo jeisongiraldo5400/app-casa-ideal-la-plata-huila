@@ -64,6 +64,7 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.name = row.name;
         record.idNumber = row.id_number;
         record.phone = row.phone;
+        record.sellerId = row.seller_id ?? null;
         record.rowSyncStatus = 'synced';
         record.localUpdatedAt = Date.now();
         record.serverUpdatedAt = toEpoch(row.updated_at);

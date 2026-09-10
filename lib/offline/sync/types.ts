@@ -132,6 +132,7 @@ export type PullCustomer = {
   name: string;
   id_number: string;
   phone: string | null;
+  seller_id: string | null;
   updated_at: string | null;
   deleted_at: string | null;
 };

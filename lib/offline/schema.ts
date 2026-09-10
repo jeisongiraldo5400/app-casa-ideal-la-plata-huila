@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 3,
+  version: 4,
   tables: [
     tableSchema({
       name: 'customers',
@@ -9,6 +9,8 @@ export const schema = appSchema({
         { name: 'name', type: 'string' },
         { name: 'id_number', type: 'string', isIndexed: true },
         { name: 'phone', type: 'string', isOptional: true },
+        // Vendedor al que pertenece el cliente; alimenta la pestaña "Mis clientes" sin conexión.
+        { name: 'seller_id', type: 'string', isOptional: true, isIndexed: true },
         { name: 'sync_status', type: 'string', isIndexed: true },
         { name: 'local_updated_at', type: 'number' },
         { name: 'server_updated_at', type: 'number', isOptional: true },

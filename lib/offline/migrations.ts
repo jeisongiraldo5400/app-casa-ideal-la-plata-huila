@@ -7,6 +7,15 @@ import {
 export const migrations = schemaMigrations({
   migrations: [
     {
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'customers',
+          columns: [{ name: 'seller_id', type: 'string', isOptional: true, isIndexed: true }],
+        }),
+      ],
+    },
+    {
       toVersion: 3,
       steps: [
         addColumns({

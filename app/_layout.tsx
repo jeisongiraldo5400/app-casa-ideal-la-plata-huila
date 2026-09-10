@@ -132,6 +132,7 @@ function RootLayoutNav() {
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="negocio/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="cliente/[id]" options={detailScreenOptions} />
         <Stack.Screen name="catalogo/[id]" options={detailScreenOptions} />
         <Stack.Screen name="catalogo/[id]/productos" options={detailScreenOptions} />
         <Stack.Screen name="catalogo/[id]/compartir" options={detailScreenOptions} />

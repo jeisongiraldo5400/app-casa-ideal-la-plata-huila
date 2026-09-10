@@ -44,6 +44,22 @@ describe('filterCarteraCuotas', () => {
     expect(filterCarteraCuotas(withSeller, base)).toHaveLength(3);
   });
 
+  it('el vendedor del cliente filtra aparte del vendedor del negocio', () => {
+    // Un negocio de Ana (vendedora s1) cuyo cliente pertenece a s2: cada filtro
+    // mira una columna distinta y se combinan con Y.
+    const mixed = [
+      { ...rows[0], sellerId: 's1', customerSellerId: 's2' },
+      { ...rows[1], id: 'c9', sellerId: 's2', customerSellerId: 's2' },
+    ];
+    const base = { filter: 'todas' as const, search: '', days: 15, municipioId: '', today: '2026-08-12' };
+
+    expect(filterCarteraCuotas(mixed, { ...base, customerSellerId: 's2' })).toHaveLength(2);
+    expect(filterCarteraCuotas(mixed, { ...base, customerSellerId: 's1' })).toHaveLength(0);
+    expect(
+      filterCarteraCuotas(mixed, { ...base, sellerId: 's1', customerSellerId: 's2' }).map((row) => row.id)
+    ).toEqual(['c1']);
+  });
+
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);

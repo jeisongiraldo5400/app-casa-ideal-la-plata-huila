@@ -6,6 +6,7 @@ export class Customer extends Model {
   @field('name') name!: string;
   @field('id_number') idNumber!: string;
   @field('phone') phone!: string | null;
+  @field('seller_id') sellerId!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('local_updated_at') localUpdatedAt!: number;
   @field('server_updated_at') serverUpdatedAt!: number | null;

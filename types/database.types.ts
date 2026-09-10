@@ -4588,6 +4588,7 @@ export type Database = {
       }
       get_cartera_cuotas: {
         Args: {
+          p_customer_seller_id?: string
           p_days?: number
           p_filter?: string
           p_gestor_id?: string
@@ -4604,6 +4605,8 @@ export type Database = {
           customer_id_number: string
           customer_name: string
           customer_phone: string
+          customer_seller_id: string
+          customer_seller_name: string
           departamento_name: string
           due_date: string
           installment_number: number
@@ -4720,6 +4723,7 @@ export type Database = {
         }[]
       }
       get_customer_seller_info: { Args: { p_customer_id: string }; Returns: Json }
+      get_customer_summary: { Args: { p_customer_id: string }; Returns: Json }
       get_customers_dashboard: {
         Args: {
           include_unassigned?: boolean

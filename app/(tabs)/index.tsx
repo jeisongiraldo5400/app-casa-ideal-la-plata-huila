@@ -90,7 +90,7 @@ function HomeScreenInner() {
               {isVendedor() ? (
                 <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => router.navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
               ) : null}
-              <ActionCard compact title="Buscar cliente" subtitle="Historial y créditos" icon="person-search" onPress={() => router.navigate('/(tabs)/buscar-cliente' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
+              <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => router.navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
             </View>
             {isGestorCobro() ? (
               <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} />
