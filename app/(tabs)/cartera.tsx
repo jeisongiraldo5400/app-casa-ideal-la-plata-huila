@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
@@ -15,6 +15,7 @@ import { CollectionManagerPaymentsModal } from '@/components/cartera/CollectionM
 import { DownloadDataButton } from '@/components/offline';
 import { fetchMunicipios, type CarteraDashboard, type CarteraRow, type CollectionManager, type Municipio } from '@/lib/cartera/carteraService';
 import { loadCarteraScreen } from '@/lib/cartera/loadCarteraScreen';
+import { parseCarteraDueParam } from '@/lib/cartera/carteraDeepLink';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -60,6 +61,10 @@ function CarteraScreenInner() {
     }finally{setLoading(false);setLoadingMore(false);setRefreshing(false);}
   },[filters]);
   useFocusEffect(useCallback(()=>{void load(1,true);},[load]));
+  // Un recordatorio de cobro abre Cartera con `?due=YYYY-MM-DD&n=<aviso>`. Es un efecto y no el estado
+  // inicial porque la pestaña conserva su estado: si ya estaba abierta, solo cambian los parámetros.
+  const params=useLocalSearchParams<{due?:string;n?:string}>();
+  useEffect(()=>{const due=parseCarteraDueParam(params.due);if(!due)return;const next:Filters={...INITIAL_FILTERS,dueFrom:due,dueTo:due};setFilters(next);setDraftFilters(next);},[params.due,params.n]);
   useEffect(()=>{fetchMunicipios().then(setMunicipios).catch((e)=>console.warn(e.message));},[]);
   useEffect(()=>{fetchSellerOptions().then(setSellers).catch((e)=>console.warn(e.message));},[]);
   useEffect(()=>{fetchPaymentMethods().then(setPaymentMethods).catch((e)=>console.warn(e.message));},[]);

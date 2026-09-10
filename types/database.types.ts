@@ -1207,6 +1207,24 @@ export type Database = {
         }
         Relationships: []
       }
+      cuota_reminder_runs: {
+        Row: {
+          business_date: string
+          events_created: number
+          ran_at: string
+        }
+        Insert: {
+          business_date: string
+          events_created?: number
+          ran_at?: string
+        }
+        Update: {
+          business_date?: string
+          events_created?: number
+          ran_at?: string
+        }
+        Relationships: []
+      }
       customer_seller_history: {
         Row: {
           action: string
@@ -2839,6 +2857,7 @@ export type Database = {
           entity_id: string
           event_type: string
           exclude_user_ids: string[]
+          expires_at: string | null
           id: string
           last_error: string | null
           sent_at: string | null
@@ -2857,6 +2876,7 @@ export type Database = {
           entity_id: string
           event_type: string
           exclude_user_ids?: string[]
+          expires_at?: string | null
           id?: string
           last_error?: string | null
           sent_at?: string | null
@@ -2875,6 +2895,7 @@ export type Database = {
           entity_id?: string
           event_type?: string
           exclude_user_ids?: string[]
+          expires_at?: string | null
           id?: string
           last_error?: string | null
           sent_at?: string | null
@@ -4549,6 +4570,10 @@ export type Database = {
           p_supplier_id?: string
         }
         Returns: Json
+      }
+      enqueue_cuota_due_reminders: {
+        Args: { p_force?: boolean }
+        Returns: number
       }
       enqueue_notification_event: {
         Args: {

@@ -34,6 +34,33 @@ describe('buildPushDeepLink', () => {
     expect(buildPushDeepLink({ kind: 'negocio', id: '   ' })).toBeNull();
   });
 
+  it('un recordatorio de varios negocios abre Cartera filtrada por la fecha', () => {
+    expect(
+      buildPushDeepLink({ kind: 'cartera_vencimientos', due_date: '2026-09-11' })
+    ).toBe('/(tabs)/cartera?due=2026-09-11');
+  });
+
+  it('el identificador del aviso viaja en la ruta para reaplicar el filtro', () => {
+    expect(
+      buildPushDeepLink(
+        { kind: 'cartera_vencimientos', due_date: '2026-09-11' },
+        { nonce: 'abc 1' }
+      )
+    ).toBe('/(tabs)/cartera?due=2026-09-11&n=abc%201');
+  });
+
+  it('un recordatorio sin fecha válida no navega', () => {
+    expect(buildPushDeepLink({ kind: 'cartera_vencimientos' })).toBeNull();
+    expect(buildPushDeepLink({ kind: 'cartera_vencimientos', due_date: '2026-02-30' })).toBeNull();
+    expect(buildPushDeepLink({ kind: 'cartera_vencimientos', due_date: 'mañana' })).toBeNull();
+  });
+
+  it('un recordatorio de un solo negocio abre su detalle', () => {
+    expect(
+      buildPushDeepLink({ kind: 'negocio', id: 'n-9', due_date: '2026-09-11' })
+    ).toBe('/negocio/n-9');
+  });
+
   it('un payload desconocido o corrupto devuelve null sin lanzar', () => {
     expect(buildPushDeepLink({ kind: 'otra_cosa', id: 'x' })).toBeNull();
     expect(buildPushDeepLink({})).toBeNull();

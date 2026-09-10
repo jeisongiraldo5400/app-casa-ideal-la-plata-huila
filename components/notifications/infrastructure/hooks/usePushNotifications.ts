@@ -87,7 +87,9 @@ export function usePushNotifications() {
   useEffect(() => {
     const remember = (response: Notifications.NotificationResponse | null) => {
       const data = response?.notification?.request?.content?.data;
-      const route = buildPushDeepLink(data as Record<string, unknown> | null);
+      const route = buildPushDeepLink(data as Record<string, unknown> | null, {
+        nonce: response?.notification?.request?.identifier,
+      });
       if (route) setPendingRoute(route);
     };
 
