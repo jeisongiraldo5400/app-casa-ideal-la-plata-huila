@@ -278,7 +278,7 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
           </View>
           {values.paymentMethodId ? (
             <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
-              Solo se muestran cuotas que recibieron abonos con ese método.
+              Solo negocios que registran abonos con ese método.
             </Text>
           ) : null}
         </View>

@@ -4590,6 +4590,8 @@ export type Database = {
         Args: {
           p_customer_seller_id?: string
           p_days?: number
+          p_due_from?: string
+          p_due_to?: string
           p_filter?: string
           p_gestor_id?: string
           p_municipio_id?: string
