@@ -5724,6 +5724,14 @@ export type Database = {
         }
         Returns: string
       }
+      check_exit_serial: {
+        Args: {
+          p_delivery_order_id: string
+          p_product_id: string
+          p_serial: string
+        }
+        Returns: Json
+      }
       register_inventory_entries_batch: {
         Args: {
           p_entry_type: string

@@ -107,6 +107,7 @@ const originalActions = {
   scanBarcode: useExitsStore.getState().scanBarcode,
   addProductToExit: useExitsStore.getState().addProductToExit,
   finalizeExit: useExitsStore.getState().finalizeExit,
+  addCurrentSerial: useExitsStore.getState().addCurrentSerial,
 };
 
 describe('ExitScanningWorkspace', () => {
@@ -130,6 +131,8 @@ describe('ExitScanningWorkspace', () => {
       currentAvailableStock: 0,
       warehouseId: null,
       targetOrderItemId: null,
+      currentSerials: [],
+      serialChecking: false,
       loading: false,
       error: null,
       ...originalActions,
@@ -208,6 +211,32 @@ describe('ExitScanningWorkspace', () => {
     expect(useExitsStore.getState().exitItems).toHaveLength(1);
     expect(screen.getByText('Volver a Mis órdenes')).toBeTruthy();
     expect(screen.getByText('Registrar otra salida')).toBeTruthy();
+  });
+
+  it('captura un serial opcional en la ficha del producto', async () => {
+    const addCurrentSerial = jest.fn(async () => {
+      useExitsStore.setState({ currentSerials: [{ serial: 'AB123', normalized: 'AB123', method: 'manual' as const }] });
+      return { ok: true as const, error: null };
+    });
+    useExitsStore.setState({
+      currentProduct: product,
+      currentScannedBarcode: '770123',
+      currentQuantity: 1,
+      currentAvailableStock: 3,
+      currentPhysicalStock: 5,
+      warehouseId: 'warehouse-1',
+      targetOrderItemId: 'item-1',
+      addCurrentSerial,
+    });
+
+    const screen = render(<ExitScanningWorkspace />);
+    expect(screen.getByText('Seriales (opcional)')).toBeTruthy();
+    fireEvent.changeText(screen.getByPlaceholderText('Serial del aparato'), 'AB123');
+    fireEvent.press(screen.getByText('Agregar'));
+
+    await waitFor(() => expect(addCurrentSerial).toHaveBeenCalledWith('AB123', 'manual'));
+    expect(await screen.findByText('AB123')).toBeTruthy();
+    expect(screen.getByText('1 de 1')).toBeTruthy();
   });
 
   it('renderiza el espacio operativo con el tema oscuro', () => {

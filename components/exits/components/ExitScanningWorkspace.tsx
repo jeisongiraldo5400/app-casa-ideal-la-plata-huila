@@ -1,4 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { ExitSerialsField } from '@/components/exits/components/ExitSerialsField';
+import type { ExitSerialCaptureMethod } from '@/components/exits/infrastructure/services/exitSerials';
 import {
   type ExitItem,
   type FinalizeExitSummary,
@@ -57,6 +59,8 @@ export function ExitScanningWorkspace() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [successSummary, setSuccessSummary] = useState<FinalizeExitSummary | null>(null);
   const [undo, setUndo] = useState<{ item: ExitItem; index: number } | null>(null);
+  const [serialScannerOpen, setSerialScannerOpen] = useState(false);
+  const [serialError, setSerialError] = useState<string | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanGuardRef = useRef(false);
   const finalizeGuardRef = useRef(false);
@@ -131,6 +135,7 @@ export function ExitScanningWorkspace() {
       return;
     }
     setReviewError(null);
+    setSerialError(null);
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     if (scanNext) {
@@ -143,9 +148,34 @@ export function ExitScanningWorkspace() {
 
   const cancelProductReview = () => {
     unmountScanner();
+    setSerialScannerOpen(false);
     store.resetCurrentScan();
     store.clearError();
     setReviewError(null);
+    setSerialError(null);
+  };
+
+  const addSerial = async (raw: string, method: ExitSerialCaptureMethod) => {
+    const result = await useExitsStore.getState().addCurrentSerial(raw, method);
+    setSerialError(result.ok ? null : result.error);
+    if (result.ok) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    }
+    return result.ok;
+  };
+
+  // La ficha se oculta mientras el lector de seriales está abierto (evita un modal sobre otro).
+  const openSerialScanner = () => {
+    unmountScanner();
+    setSerialError(null);
+    setSerialScannerOpen(true);
+  };
+
+  const handleSerialScan = async (code: string) => {
+    setSerialScannerOpen(false);
+    await addSerial(code, 'scan');
   };
 
   const returnToSetup = () => {
@@ -208,7 +238,17 @@ export function ExitScanningWorkspace() {
   const alreadyInSession = store.exitItems.find((item) => item.product.id === store.currentProduct?.id && item.warehouseId === store.warehouseId)?.quantity || 0;
   const reviewMax = store.currentPhysicalStock === null ? store.currentAvailableStock : Math.min(store.currentAvailableStock, store.currentPhysicalStock);
   const reviewOutOfStock = Boolean(store.warehouseId) && !store.loading && store.currentPhysicalStock === 0;
-  const reviewValid = Boolean(store.warehouseId) && !store.loading && !reviewOutOfStock && store.currentQuantity > 0 && store.currentQuantity <= reviewMax;
+  const reviewValid =
+    Boolean(store.warehouseId) &&
+    !store.loading &&
+    !reviewOutOfStock &&
+    store.currentQuantity > 0 &&
+    store.currentQuantity <= reviewMax &&
+    store.currentSerials.length <= store.currentQuantity &&
+    !store.serialChecking;
+  const reviewSerialsMismatch = store.currentSerials.length > store.currentQuantity
+    ? `Tienes ${store.currentSerials.length} seriales para ${store.currentQuantity} unidades. Quita seriales o aumenta la cantidad.`
+    : null;
 
   if (stage === 'success' && successSummary) {
     return (
@@ -241,7 +281,7 @@ export function ExitScanningWorkspace() {
         items={store.exitItems.map((item, index) => ({
           key: `${item.product.id}-${item.warehouseId || index}`,
           name: item.product.name,
-          meta: `SKU: ${item.product.sku || '—'} · ${warehouseNames.get(item.warehouseId || '') || 'Bodega de la orden'}`,
+          meta: `SKU: ${item.product.sku || '—'} · ${warehouseNames.get(item.warehouseId || '') || 'Bodega de la orden'}${serialsMeta(item)}`,
           quantity: item.quantity,
         }))}
         observation={{ value: store.deliveryObservations, placeholder: 'Observación opcional', onChange: store.setDeliveryObservations }}
@@ -265,7 +305,7 @@ export function ExitScanningWorkspace() {
           renderItem={({ item }) => item.kind === 'session' ? (
             <SessionItemCard
               name={item.item.product.name}
-              meta={`SKU: ${item.item.product.sku || '—'} · ${warehouseNames.get(item.item.warehouseId || '') || 'Bodega de la orden'}`}
+              meta={`SKU: ${item.item.product.sku || '—'} · ${warehouseNames.get(item.item.warehouseId || '') || 'Bodega de la orden'}${serialsMeta(item.item)}`}
               quantity={item.item.quantity}
               quantityCaption="Cantidad de esta salida"
               canDecrease={item.item.quantity > 1}
@@ -368,7 +408,7 @@ export function ExitScanningWorkspace() {
 
       {store.currentProduct ? (
         <ProductReviewSheet
-          visible={reviewing}
+          visible={reviewing && !serialScannerOpen}
           product={{ name: store.currentProduct.name, sku: store.currentProduct.sku || null, barcode: store.currentScannedBarcode || store.currentProduct.barcode || '' }}
           subtitle={store.warehouseCandidates.length > 1 && !store.warehouseId ? 'Elige la bodega y confirma la cantidad' : 'Confirma la cantidad antes de agregar'}
           showQuantity={Boolean(store.warehouseId) && !reviewOutOfStock}
@@ -377,7 +417,7 @@ export function ExitScanningWorkspace() {
           maxQuantity={reviewMax}
           busy={store.loading}
           valid={reviewValid}
-          error={reviewError || store.error}
+          error={reviewError || reviewSerialsMismatch || store.error}
           addLabel="Agregar y volver al resumen"
           onQuantityChange={store.setQuantity}
           onCancel={cancelProductReview}
@@ -394,6 +434,17 @@ export function ExitScanningWorkspace() {
             alreadyInSession={alreadyInSession}
             onSelectWarehouse={(warehouseId) => { setReviewError(null); void store.selectScanWarehouse(warehouseId); }}
           />
+          {store.warehouseId && !reviewOutOfStock ? (
+            <ExitSerialsField
+              serials={store.currentSerials}
+              quantity={store.currentQuantity}
+              checking={store.serialChecking}
+              error={serialError}
+              onAdd={addSerial}
+              onRemove={(index) => { setSerialError(null); store.removeCurrentSerial(index); }}
+              onScanPress={openSerialScanner}
+            />
+          ) : null}
         </ProductReviewSheet>
       ) : null}
 
@@ -420,8 +471,25 @@ export function ExitScanningWorkspace() {
           ) : null}
         </View>
       ) : null}
+
+      {serialScannerOpen ? (
+        <View style={styles.scannerOverlay}>
+          <BarcodeScanner
+            onScan={(code) => void handleSerialScan(code)}
+            onClose={() => setSerialScannerOpen(false)}
+            title="Escanear serial"
+            contextLabel={store.currentProduct?.name}
+            instruction="Apunta al código del serial en la placa o la caja del aparato"
+            logModule="exits"
+          />
+        </View>
+      ) : null}
     </View>
   );
+}
+
+function serialsMeta(item: ExitItem): string {
+  return item.serials?.length ? ` · Seriales: ${item.serials.map((serial) => serial.serial).join(', ')}` : '';
 }
 
 function ExitReviewDetails({ candidates, selectedWarehouseId, warehouseName, pending, physicalStock, stockLoading, alreadyInSession, onSelectWarehouse }: {

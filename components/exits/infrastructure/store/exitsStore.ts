@@ -27,6 +27,14 @@ import {
   fetchWarehouseStock,
   searchCustomersByTerm,
 } from '@/components/exits/infrastructure/services/exitsService';
+import {
+  MAX_SERIAL_LENGTH,
+  checkExitSerialAvailability,
+  normalizeSerial,
+  type ExitSerial,
+  type ExitSerialCaptureMethod,
+  type SerialAvailability,
+} from '@/components/exits/infrastructure/services/exitSerials';
 import { errorMessage } from '@/lib/errorMessage';
 import { logOperationError } from '@/lib/operationLogger';
 import { createIdempotencyKey } from '@/lib/idempotency';
@@ -86,6 +94,8 @@ export interface ExitItem {
   warehouseId?: string; // Para órdenes de entrega con múltiples bodegas
   /** Stock físico en la bodega al escanear; null si no se pudo consultar. */
   physicalStock?: number | null;
+  /** Seriales de fábrica de las unidades de esta línea (opcionales, máx. uno por unidad). */
+  serials?: ExitSerial[];
 }
 
 /** Bodega candidata cuando el producto escaneado tiene pendientes en más de una bodega. */
@@ -180,6 +190,10 @@ export interface ExitsState {
   targetOrderItemId: string | null;
   /** Bodegas con pendientes para el producto escaneado; >1 exige elección del operario. */
   warehouseCandidates: ScanWarehouseCandidate[];
+  /** Seriales capturados para el producto en revisión (opcionales, máx. uno por unidad). */
+  currentSerials: ExitSerial[];
+  /** true mientras se verifica un serial contra el servidor. */
+  serialChecking: boolean;
 
   // Estado de UI
   loading: boolean;
@@ -264,6 +278,9 @@ export interface ExitsState {
   restoreExitItem: (item: ExitItem, index: number) => ExitActionResult;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
+  /** Agrega un serial al producto en revisión tras verificar que no esté en otra salida activa. */
+  addCurrentSerial: (raw: string, method: ExitSerialCaptureMethod) => Promise<ExitActionResult>;
+  removeCurrentSerial: (index: number) => void;
 
   // Actions - Finalize
   finalizeExit: () => Promise<FinalizeExitResult>;
@@ -332,6 +349,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   currentPhysicalStock: null,
   targetOrderItemId: null,
   warehouseCandidates: [],
+  currentSerials: [],
+  serialChecking: false,
 
   // UI
   loading: false,
@@ -875,7 +894,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       error: null,
       currentScannedBarcode: barcode,
       warehouseCandidates: [],
-      currentPhysicalStock: null
+      currentPhysicalStock: null,
+      currentSerials: [],
+      serialChecking: false
     });
 
     const failScan = (error: string) =>
@@ -1106,7 +1127,9 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       registeredExitsCache,
       targetOrderItemId,
       currentPhysicalStock,
-      warehouseCandidates
+      warehouseCandidates,
+      currentProduct,
+      currentSerials
     } = get();
 
     if (!warehouseId) {
@@ -1120,6 +1143,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       const error = 'La cantidad debe ser un número mayor que cero';
+      set({ error });
+      return { ok: false, error };
+    }
+
+    // Los seriales capturados en la ficha pertenecen al producto en revisión.
+    const serials = currentProduct?.id === product.id ? currentSerials : [];
+    if (serials.length > quantity) {
+      const error = `Tienes ${serials.length} seriales para ${quantity} unidades. Quita seriales o aumenta la cantidad.`;
       set({ error });
       return { ok: false, error };
     }
@@ -1174,10 +1205,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const updatedItems = existingItem
       ? exitItems.map((item) =>
           item.product.id === product.id && item.warehouseId === warehouseId
-            ? { ...item, quantity: item.quantity + quantity, availableStock, physicalStock }
+            ? { ...item, quantity: item.quantity + quantity, availableStock, physicalStock, serials: [...(item.serials ?? []), ...serials] }
             : item
         )
-      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock }];
+      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock, serials }];
 
     set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
     get().resetCurrentScan();
@@ -1264,6 +1295,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const item = exitItems[index];
     if (!item) return;
 
+    const serialCount = item.serials?.length ?? 0;
+    if (quantity < serialCount) {
+      set({
+        error: `Esta línea tiene ${serialCount} seriales. Quita el producto y vuelve a escanearlo para cambiar los seriales.`
+      });
+      return;
+    }
+
     if (!selectedDeliveryOrderId || !selectedDeliveryOrder || !item.warehouseId) {
       set({ error: 'Debe seleccionar una orden de entrega válida' });
       return;
@@ -1307,6 +1346,66 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   setQuantity: (quantity: number) => {
     set({ currentQuantity: quantity });
+  },
+
+  addCurrentSerial: async (raw, method) => {
+    const generation = sessionGeneration;
+    const { currentProduct, currentSerials, currentQuantity, exitItems, selectedDeliveryOrderId } = get();
+    if (!currentProduct || !selectedDeliveryOrderId) {
+      return { ok: false, error: 'No hay un producto escaneado' };
+    }
+
+    const serial = raw.trim();
+    const normalized = normalizeSerial(serial);
+    if (!normalized) {
+      return { ok: false, error: 'Escribe o escanea un serial válido' };
+    }
+    if (serial.length > MAX_SERIAL_LENGTH) {
+      return { ok: false, error: `El serial no puede superar ${MAX_SERIAL_LENGTH} caracteres` };
+    }
+    if (currentSerials.length >= currentQuantity) {
+      return { ok: false, error: 'Ya hay un serial por cada unidad. Aumenta la cantidad para agregar otro.' };
+    }
+    const isInSession = (serials: ExitSerial[]) =>
+      serials.some((existing) => existing.normalized === normalized) ||
+      exitItems.some(
+        (item) =>
+          item.product.id === currentProduct.id &&
+          (item.serials ?? []).some((existing) => existing.normalized === normalized)
+      );
+    if (isInSession(currentSerials)) {
+      return { ok: false, error: 'Este serial ya está en esta salida' };
+    }
+
+    set({ serialChecking: true });
+    let availability: SerialAvailability;
+    try {
+      availability = await checkExitSerialAvailability(selectedDeliveryOrderId, currentProduct.id, serial);
+    } catch (checkError: unknown) {
+      // Sin verificación previa seguimos: register_inventory_exits_batch vuelve a validar el serial.
+      console.error('Error checking exit serial:', checkError);
+      availability = { available: true };
+    }
+    if (generation !== sessionGeneration || get().currentProduct?.id !== currentProduct.id) {
+      return { ok: false, error: 'La lectura cambió mientras se verificaba el serial' };
+    }
+    if (!availability.available) {
+      set({ serialChecking: false });
+      return { ok: false, error: availability.message };
+    }
+
+    // Revalidar tras el await: un doble toque pudo agregar el mismo serial.
+    const latest = get().currentSerials;
+    if (isInSession(latest)) {
+      set({ serialChecking: false });
+      return { ok: false, error: 'Este serial ya está en esta salida' };
+    }
+    set({ currentSerials: [...latest, { serial, normalized, method }], serialChecking: false });
+    return { ok: true, error: null };
+  },
+
+  removeCurrentSerial: (index) => {
+    set({ currentSerials: get().currentSerials.filter((_, i) => i !== index) });
   },
 
   // Finalize exit
@@ -1418,7 +1517,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           productId: item.product.id,
           warehouseId: item.warehouseId,
           quantity: item.quantity,
-          barcode: item.barcode
+          barcode: item.barcode,
+          serials: (item.serials ?? []).map((serial) => serial.normalized)
         }))
       });
       let idempotencyKey = pendingExitRequests.get(requestFingerprint);
@@ -1440,7 +1540,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             product_id: item.product.id,
             warehouse_id: item.warehouseId,
             quantity: item.quantity,
-            barcode_scanned: item.barcode
+            barcode_scanned: item.barcode,
+            serials: (item.serials ?? []).map((serial) => ({ serial: serial.serial, method: serial.method }))
           })) as unknown as Json,
           p_idempotency_key: idempotencyKey
         }
@@ -1576,6 +1677,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       exitItems: [],
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       currentPhysicalStock: null,
@@ -1610,6 +1713,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       exitItems: [],
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       currentPhysicalStock: null,
@@ -1633,6 +1738,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       exitItems: [],
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       currentPhysicalStock: null,
@@ -1669,6 +1776,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       warehouseId: null,
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       targetOrderItemId: null
@@ -1684,6 +1793,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       deliveryObservations: '',
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       currentPhysicalStock: null,
@@ -1704,6 +1815,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       step: 'setup',
       currentProduct: null,
       currentScannedBarcode: null,
+      currentSerials: [],
+      serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
       currentPhysicalStock: null,
