@@ -23,6 +23,14 @@ import {
   fetchPurchaseOrderDetail,
 } from "../services/entriesQueries";
 import { errorMessage } from "@/lib/errorMessage";
+import { checkEntrySerialAvailability } from "../services/entrySerials";
+import {
+  MAX_SERIAL_LENGTH,
+  validateSerialInput,
+  type CapturedSerial,
+  type SerialAvailability,
+  type SerialCaptureMethod,
+} from "@/components/inventory-flow/serials";
 
 // types
 import { Database, type Json } from "@/types/database.types";
@@ -67,6 +75,8 @@ export interface EntryItem {
   product: Product;
   quantity: number;
   barcode: string;
+  /** Seriales de fábrica de las unidades de esta línea (opcionales, máx. uno por unidad). */
+  serials?: CapturedSerial[];
 }
 
 export interface NewProductData {
@@ -169,6 +179,10 @@ export interface EntriesState {
   currentProduct: Product | null;
   currentScannedBarcode: string | null;
   currentQuantity: number;
+  /** Seriales capturados para el producto en revisión (opcionales, máx. uno por unidad). */
+  currentSerials: CapturedSerial[];
+  /** true mientras se verifica un serial contra el servidor. */
+  serialChecking: boolean;
 
   // Estado de UI
   loading: boolean;
@@ -254,6 +268,9 @@ export interface EntriesState {
   restoreEntryItem: (item: EntryItem, index: number) => EntryActionResult;
   updateProductQuantity: (index: number, quantity: number) => void;
   setQuantity: (quantity: number) => void;
+  /** Agrega un serial al producto en revisión tras verificar que no esté ya en una bodega. */
+  addCurrentSerial: (raw: string, method: SerialCaptureMethod) => Promise<EntryActionResult>;
+  removeCurrentSerial: (index: number) => void;
 
   // Actions - Product Creation
   createProduct: (
@@ -288,6 +305,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   currentProduct: null,
   currentScannedBarcode: null,
   currentQuantity: 1,
+  currentSerials: [],
+  serialChecking: false,
   loading: false,
   finalizing: false,
   loadingMessage: null,
@@ -792,6 +811,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       error: null,
       currentScannedBarcode: barcode,
       currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
     });
     try {
       const product = await get().searchProductByBarcode(barcode);
@@ -889,10 +910,24 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       purchaseOrderId,
       entryType,
       scannedItemsProgress,
+      currentProduct,
+      currentSerials,
+      serialChecking,
     } = get();
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       const error = "La cantidad debe ser un número mayor que cero";
+      set({ error });
+      return { ok: false, error };
+    }
+
+    if (serialChecking) {
+      return { ok: false, error: "Espera a que termine la verificación del serial" };
+    }
+    // Los seriales capturados en la ficha pertenecen al producto en revisión.
+    const serials = currentProduct?.id === product.id ? currentSerials : [];
+    if (serials.length > quantity) {
+      const error = `Tienes ${serials.length} seriales para ${quantity} unidades. Quita seriales o aumenta la cantidad.`;
       set({ error });
       return { ok: false, error };
     }
@@ -931,14 +966,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     if (existingIndex >= 0) {
       const updatedItems = entryItems.map((item, index) =>
         index === existingIndex
-          ? { ...item, quantity: item.quantity + quantity }
+          ? { ...item, quantity: item.quantity + quantity, serials: [...(item.serials ?? []), ...serials] }
           : item
       );
       set({ entryItems: updatedItems, error: null });
     } else {
       // Si no existe, agregarlo
       set({
-        entryItems: [...entryItems, { product, quantity, barcode }],
+        entryItems: [...entryItems, { product, quantity, barcode, serials }],
         error: null,
       });
     }
@@ -1026,6 +1061,14 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return;
     }
 
+    const serialCount = item.serials?.length ?? 0;
+    if (quantity < serialCount) {
+      set({
+        error: `Esta línea tiene ${serialCount} seriales. Quita el producto y vuelve a escanearlo para cambiar los seriales.`,
+      });
+      return;
+    }
+
     let delta = quantity - item.quantity;
 
     // Si hay orden de compra y la cantidad aumenta, validar contra la orden.
@@ -1064,6 +1107,64 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   setQuantity: (quantity) => {
     set({ currentQuantity: quantity >= 0 ? quantity : 0 });
+  },
+
+  addCurrentSerial: async (raw, method) => {
+    const capturedGeneration = resetGeneration;
+    const { currentProduct, currentSerials, currentQuantity, entryItems } = get();
+    if (!currentProduct) {
+      return { ok: false, error: "No hay un producto escaneado" };
+    }
+
+    const input = validateSerialInput(raw, currentSerials, currentQuantity);
+    if (!input.ok) return input;
+    const { serial, normalized } = input;
+
+    const isInSession = (serials: CapturedSerial[]) =>
+      serials.some((existing) => existing.normalized === normalized) ||
+      entryItems.some(
+        (item) =>
+          item.product.id === currentProduct.id &&
+          (item.serials ?? []).some((existing) => existing.normalized === normalized)
+      );
+    if (isInSession(currentSerials)) {
+      return { ok: false, error: "Este serial ya está en esta entrada" };
+    }
+
+    set({ serialChecking: true });
+    let availability: SerialAvailability;
+    try {
+      availability = await checkEntrySerialAvailability(currentProduct.id, serial);
+    } catch (checkError: unknown) {
+      // Sin verificación previa seguimos: register_inventory_entries_batch vuelve a validar el serial.
+      console.error("Error checking entry serial:", checkError);
+      availability = { available: true };
+    }
+    if (resetGeneration !== capturedGeneration || get().currentProduct?.id !== currentProduct.id) {
+      set({ serialChecking: false });
+      return { ok: false, error: "La lectura cambió mientras se verificaba el serial" };
+    }
+    if (!availability.available) {
+      set({ serialChecking: false });
+      return { ok: false, error: availability.message };
+    }
+
+    // Revalidar tras el await: un doble toque pudo agregar el mismo serial.
+    const latest = get().currentSerials;
+    if (isInSession(latest)) {
+      set({ serialChecking: false });
+      return { ok: false, error: "Este serial ya está en esta entrada" };
+    }
+    if (latest.length >= get().currentQuantity) {
+      set({ serialChecking: false });
+      return { ok: false, error: "Ya hay un serial por cada unidad. Aumenta la cantidad para agregar otro." };
+    }
+    set({ currentSerials: [...latest, { serial, normalized, method }], serialChecking: false });
+    return { ok: true, error: null };
+  },
+
+  removeCurrentSerial: (index) => {
+    set({ currentSerials: get().currentSerials.filter((_, i) => i !== index) });
   },
 
   // Product creation
@@ -1207,6 +1308,20 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             valid: false,
             message: `Las cantidades no pueden exceder ${MAX_QTY} unidades por producto.`,
           };
+        }
+
+        const serials = item.serials ?? [];
+        if (serials.length > item.quantity) {
+          return {
+            valid: false,
+            message: `${item.product.name} tiene ${serials.length} seriales para ${item.quantity} unidades. Quita seriales o aumenta la cantidad.`,
+          };
+        }
+        if (serials.some((serial) => !serial.normalized || serial.serial.length > MAX_SERIAL_LENGTH)) {
+          return { valid: false, message: `Hay un serial inválido en ${item.product.name}. Quita el producto y vuelve a escanearlo.` };
+        }
+        if (new Set(serials.map((serial) => serial.normalized)).size !== serials.length) {
+          return { valid: false, message: `Hay seriales repetidos en ${item.product.name}.` };
         }
 
         // Validar formato básico de código de barras (si existe)
@@ -1360,6 +1475,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           productId: item.product.id,
           quantity: item.quantity,
           barcode: item.barcode,
+          serials: (item.serials ?? []).map((serial) => `${serial.normalized}:${serial.method}`),
         })),
       });
       const idempotencyKey = await getOrCreatePersistentIdempotencyKey(
@@ -1378,6 +1494,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
             product_id: item.product.id,
             quantity: item.quantity,
             barcode_scanned: item.barcode,
+            serials: (item.serials ?? []).map((serial) => ({ serial: serial.serial, method: serial.method })),
           })) as unknown as Json,
           p_idempotency_key: idempotencyKey,
         }
@@ -1515,6 +1632,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
       error: null,
       loading: false,
       finalizing: false,
@@ -1542,6 +1661,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
       scannedItemsProgress: new Map(),
       error: null,
       loading: false,
@@ -1580,6 +1701,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       scannedItemsProgress: new Map(),
       registeredEntriesCache: {},
       catalogError: null,
+      currentSerials: [],
+      serialChecking: false,
     });
   },
 
@@ -1588,6 +1711,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
       step: "scanning",
       uiStage: "idle",
     });
@@ -1607,6 +1732,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       currentProduct: null,
       currentScannedBarcode: null,
       currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
       error: null,
       // No limpiar scannedItemsProgress para mantener el progreso visible
     });

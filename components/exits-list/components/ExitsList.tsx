@@ -1,3 +1,4 @@
+import { ExitSerialChips } from '@/components/exit-serials/components/ExitSerialChips';
 import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
@@ -76,6 +77,7 @@ export function ExitsList() {
                 {item.product_barcode && (
                   <Text style={styles.productBarcode}>Código: {item.product_barcode}</Text>
                 )}
+                <ExitSerialChips serials={item.serials} highlightQuery={searchQuery} />
               </View>
               <View style={styles.quantityContainer}>
                 <Text style={styles.quantityLabel}>Cantidad</Text>

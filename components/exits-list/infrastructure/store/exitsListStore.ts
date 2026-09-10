@@ -1,3 +1,7 @@
+import {
+  ExitSerialRecord,
+  fetchExitSerialsByExitId,
+} from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
 import { create } from 'zustand';
@@ -22,6 +26,8 @@ export interface ExitListItem {
   cancellation_id: string | null;
   cancellation_observations: string | null;
   cancellation_created_at: string | null;
+  /** Seriales de fábrica de la salida; llegan en una segunda consulta (vacío si no hay o si falló). */
+  serials: ExitSerialRecord[];
 }
 
 interface ExitsListState {
@@ -42,6 +48,9 @@ interface ExitsListState {
   clearError: () => void;
 }
 
+// Descarta respuestas de cargas anteriores (búsqueda escrita rápido, paginación).
+let latestLoadId = 0;
+
 export const useExitsListStore = create<ExitsListState>((set, get) => ({
   exits: [],
   loading: false,
@@ -54,16 +63,20 @@ export const useExitsListStore = create<ExitsListState>((set, get) => ({
 
   loadExits: async () => {
     const { searchQuery, currentPage, pageSize } = get();
+    const loadId = ++latestLoadId;
 
     set({ loading: true, error: null });
 
     try {
-      // OPTIMIZADO: Usar RPC get_inventory_exits_dashboard con paginación y búsqueda del lado del servidor
+      // OPTIMIZADO: Usar RPC get_inventory_exits_dashboard con paginación y búsqueda del lado del servidor.
+      // El servidor también busca por serial de fábrica (normalize_serial).
       const { data, error } = await supabase.rpc('get_inventory_exits_dashboard', {
         page: currentPage,
         page_size: pageSize,
         search_term: searchQuery || null,
       });
+
+      if (loadId !== latestLoadId) return;
 
       if (error) {
         console.error('Error loading exits:', error);
@@ -97,17 +110,27 @@ export const useExitsListStore = create<ExitsListState>((set, get) => ({
         cancellation_id: item.cancellation_id,
         cancellation_observations: item.cancellation_observations,
         cancellation_created_at: item.cancellation_created_at,
+        serials: [],
       }));
 
       const hasMore = totalCount > currentPage * pageSize;
 
+      // La lista se muestra de inmediato; los seriales se agregan cuando lleguen.
       set({
         exits: exitItems,
         loading: false,
         totalCount,
         hasMore,
       });
+
+      // Nunca lanza: si falla (sin red, migración pendiente) el historial queda sin seriales.
+      const serialsByExitId = await fetchExitSerialsByExitId(exitItems.map((item) => item.id));
+      if (loadId !== latestLoadId || Object.keys(serialsByExitId).length === 0) return;
+      set((state) => ({
+        exits: state.exits.map((item) => ({ ...item, serials: serialsByExitId[item.id] ?? item.serials })),
+      }));
     } catch (error: any) {
+      if (loadId !== latestLoadId) return;
       console.error('Error loading exits (catch):', error);
       set({ exits: [], loading: false, error: error.message || 'Error al cargar las salidas' });
     }

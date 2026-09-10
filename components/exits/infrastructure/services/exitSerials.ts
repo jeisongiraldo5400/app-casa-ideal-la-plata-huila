@@ -1,53 +1,59 @@
 import { supabase } from '@/lib/supabase';
+import {
+  SERIALS_NOT_ENABLED_MESSAGE,
+  type CapturedSerial,
+  type SerialAvailability,
+  type SerialCaptureMethod,
+} from '@/components/inventory-flow/serials';
 
-export type ExitSerialCaptureMethod = 'scan' | 'manual';
+export { MAX_SERIAL_LENGTH, normalizeSerial, type SerialAvailability } from '@/components/inventory-flow/serials';
+
+export type ExitSerialCaptureMethod = SerialCaptureMethod;
 
 /** Serial de fábrica capturado (opcionalmente) para una unidad de la salida. */
-export interface ExitSerial {
-  /** Tal como se escaneó o escribió, sin espacios al inicio/fin. */
-  serial: string;
-  /** Clave de comparación; misma regla que public.normalize_serial en BD. */
-  normalized: string;
-  method: ExitSerialCaptureMethod;
-}
+export type ExitSerial = CapturedSerial;
 
-export const MAX_SERIAL_LENGTH = 100;
-
-/** Solo letras y números, en mayúsculas: "ab-123 45" y "AB12345" son el mismo serial. */
-export function normalizeSerial(raw: string): string {
-  return raw.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase();
-}
-
-export type SerialAvailability =
-  | { available: true }
-  | { available: false; message: string };
+type CheckResult = { available?: boolean; message?: string; verified?: boolean } | null;
 
 /**
- * Pregunta al servidor si el serial ya está en otra salida activa de la misma referencia.
+ * Pregunta al servidor si el serial se puede despachar desde la bodega de la línea:
+ * no está en otra salida activa ni registrado (en stock) en otra bodega. Además informa
+ * si queda verificado (entró a esa bodega y sigue en stock).
  * Lanza si la consulta falla por red/servidor; el RPC de registro vuelve a validar al final.
  */
 export async function checkExitSerialAvailability(
   deliveryOrderId: string,
   productId: string,
-  serial: string
+  serial: string,
+  warehouseId: string
 ): Promise<SerialAvailability> {
-  const { data, error } = await supabase.rpc('check_exit_serial', {
+  let { data, error } = await supabase.rpc('check_exit_serial', {
     p_delivery_order_id: deliveryOrderId,
     p_product_id: productId,
     p_serial: serial,
+    p_warehouse_id: warehouseId,
   });
+
+  // Servidor con seriales en salidas pero aún sin verificación por bodega: versión sin bodega.
+  if (error?.code === 'PGRST202') {
+    ({ data, error } = await supabase.rpc('check_exit_serial', {
+      p_delivery_order_id: deliveryOrderId,
+      p_product_id: productId,
+      p_serial: serial,
+    }));
+  }
 
   if (error) {
     // Sin la migración el RPC de registro ignoraría los seriales: mejor no capturarlos.
     if (error.code === 'PGRST202') {
-      return { available: false, message: 'El registro de seriales aún no está habilitado en el servidor.' };
+      return { available: false, message: SERIALS_NOT_ENABLED_MESSAGE };
     }
     throw error;
   }
 
-  const result = data as { available?: boolean; message?: string } | null;
+  const result = data as CheckResult;
   if (result?.available === false) {
     return { available: false, message: result.message || 'Este serial ya salió en otra salida.' };
   }
-  return { available: true };
+  return { available: true, verified: typeof result?.verified === 'boolean' ? result.verified : undefined };
 }

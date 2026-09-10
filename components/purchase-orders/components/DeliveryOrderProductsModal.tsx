@@ -14,8 +14,17 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DeliveryOrderSerialsButton } from '@/components/exit-serials/components/DeliveryOrderSerialsButton';
+import {
+    DeliveryOrderSerialRecord,
+    deliveryOrderSerialKey,
+    fetchDeliveryOrderSerials,
+    serialMatchesQuery,
+} from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import { fetchDeliveryOrderItems } from '../infrastructure/services/deliveryOrderItemsService';
 import { DeliveryOrderItem } from '../types';
+
+type SerialsByLine = Record<string, DeliveryOrderSerialRecord[]>;
 
 interface DeliveryOrderProductsModalProps {
     visible: boolean;
@@ -28,6 +37,11 @@ interface DeliveryOrderProductsModalProps {
      * usuario apenas tiene la orden asignada inyectan el RPC autorizado.
      */
     loadItems?: (orderId: string) => Promise<DeliveryOrderItem[]>;
+    /**
+     * Seriales entregados por línea (producto + bodega). El RPC por defecto
+     * aplica la misma visibilidad de la orden para cualquier rol y nunca lanza.
+     */
+    loadSerials?: (orderId: string) => Promise<SerialsByLine>;
 }
 
 export function DeliveryOrderProductsModal({
@@ -36,6 +50,7 @@ export function DeliveryOrderProductsModal({
     orderId,
     orderNumber,
     loadItems = fetchDeliveryOrderItems,
+    loadSerials = fetchDeliveryOrderSerials,
 }: DeliveryOrderProductsModalProps) {
     const insets = useSafeAreaInsets();
     const { height: windowHeight } = useWindowDimensions();
@@ -49,10 +64,17 @@ export function DeliveryOrderProductsModal({
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [visibleCount, setVisibleCount] = useState(10);
+    const [serialsByLine, setSerialsByLine] = useState<SerialsByLine>({});
 
     const loadOrderItems = useCallback(async () => {
         setLoading(true);
         setError(null);
+
+        // Los seriales son complementarios: se cargan en paralelo y, si fallan,
+        // la lista de productos se ve igual, sin el botón de seriales.
+        loadSerials(orderId)
+            .then(setSerialsByLine)
+            .catch(() => setSerialsByLine({}));
 
         try {
             setItems(await loadItems(orderId));
@@ -62,7 +84,12 @@ export function DeliveryOrderProductsModal({
         } finally {
             setLoading(false);
         }
-    }, [loadItems, orderId]);
+    }, [loadItems, loadSerials, orderId]);
+
+    const serialsOf = useCallback(
+        (item: DeliveryOrderItem) => serialsByLine[deliveryOrderSerialKey(item.product_id, item.warehouse_id)] ?? [],
+        [serialsByLine],
+    );
 
     useEffect(() => {
         if (visible && orderId) {
@@ -81,9 +108,10 @@ export function DeliveryOrderProductsModal({
         return items.filter(item =>
             item.product_name.toLowerCase().includes(term) ||
             (item.product_sku?.toLowerCase().includes(term)) ||
-            (item.product_barcode?.toLowerCase().includes(term))
+            (item.product_barcode?.toLowerCase().includes(term)) ||
+            serialsOf(item).some((serial) => serialMatchesQuery(serial, searchTerm))
         );
-    }, [items, searchTerm]);
+    }, [items, searchTerm, serialsOf]);
 
     // Paginar items
     const visibleItems = filteredItems.slice(0, visibleCount);
@@ -224,7 +252,7 @@ export function DeliveryOrderProductsModal({
                                 <MaterialIcons name="search" size={20} color={colors.text.secondary} />
                                 <TextInput
                                     style={[styles.searchInput, { color: colors.text.primary }]}
-                                    placeholder="Buscar por nombre, SKU o código..."
+                                    placeholder="Buscar por nombre, SKU, código o serial..."
                                     placeholderTextColor={colors.text.secondary}
                                     value={searchTerm}
                                     onChangeText={setSearchTerm}
@@ -327,6 +355,8 @@ export function DeliveryOrderProductsModal({
                                                 </Text>
                                             </View>
                                         </View>
+
+                                        <DeliveryOrderSerialsButton serials={serialsOf(item)} />
                                     </View>
                                 ))}
 

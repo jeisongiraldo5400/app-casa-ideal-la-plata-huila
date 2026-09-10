@@ -4839,6 +4839,31 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_delivery_order_serials: {
+        Args: { p_delivery_order_id: string }
+        Returns: {
+          capture_method: string
+          exit_created_at: string
+          inventory_exit_id: string
+          product_id: string
+          released_reason: string | null
+          serial_number: string
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
+      get_exit_serials: {
+        Args: { p_exit_ids: string[] }
+        Returns: {
+          capture_method: string
+          created_at: string
+          inventory_exit_id: string
+          product_id: string
+          released_at: string | null
+          released_reason: string | null
+          serial_number: string
+        }[]
+      }
       get_delivery_orders_admin_list: {
         Args: {
           end_ts?: string
@@ -5724,9 +5749,26 @@ export type Database = {
         }
         Returns: string
       }
-      check_exit_serial: {
+      check_exit_serial:
+        | {
+            Args: {
+              p_delivery_order_id: string
+              p_product_id: string
+              p_serial: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_delivery_order_id: string
+              p_product_id: string
+              p_serial: string
+              p_warehouse_id: string
+            }
+            Returns: Json
+          }
+      check_entry_serial: {
         Args: {
-          p_delivery_order_id: string
           p_product_id: string
           p_serial: string
         }

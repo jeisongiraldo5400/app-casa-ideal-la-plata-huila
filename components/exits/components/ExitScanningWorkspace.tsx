@@ -1,6 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { ExitSerialsField } from '@/components/exits/components/ExitSerialsField';
 import type { ExitSerialCaptureMethod } from '@/components/exits/infrastructure/services/exitSerials';
+import { serialsSummary } from '@/components/inventory-flow/serials';
 import {
   type ExitItem,
   type FinalizeExitSummary,
@@ -14,6 +14,7 @@ import {
   PendingItemCard,
   ProductReviewSheet,
   ScanSessionBar,
+  SerialsField,
   SessionItemCard,
   SessionProgressHeader,
   SessionReviewScreen,
@@ -435,11 +436,13 @@ export function ExitScanningWorkspace() {
             onSelectWarehouse={(warehouseId) => { setReviewError(null); void store.selectScanWarehouse(warehouseId); }}
           />
           {store.warehouseId && !reviewOutOfStock ? (
-            <ExitSerialsField
+            <SerialsField
               serials={store.currentSerials}
               quantity={store.currentQuantity}
               checking={store.serialChecking}
               error={serialError}
+              hint="Escanea o escribe el serial de cada aparato. Si entró por esta bodega queda verificado; un serial que ya salió no se puede volver a despachar."
+              showVerification
               onAdd={addSerial}
               onRemove={(index) => { setSerialError(null); store.removeCurrentSerial(index); }}
               onScanPress={openSerialScanner}
@@ -489,7 +492,7 @@ export function ExitScanningWorkspace() {
 }
 
 function serialsMeta(item: ExitItem): string {
-  return item.serials?.length ? ` · Seriales: ${item.serials.map((serial) => serial.serial).join(', ')}` : '';
+  return serialsSummary(item.serials, true);
 }
 
 function ExitReviewDetails({ candidates, selectedWarehouseId, warehouseName, pending, physicalStock, stockLoading, alreadyInSession, onSelectWarehouse }: {

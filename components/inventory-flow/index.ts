@@ -10,6 +10,7 @@ export { ProductReviewSheet } from './ProductReviewSheet';
 export { ScanSessionBar } from './ScanSessionBar';
 export { SessionItemCard } from './SessionItemCard';
 export { SessionProgressHeader } from './SessionProgressHeader';
+export { SerialsField } from './SerialsField';
 export { SessionReviewScreen, type ReviewItem } from './SessionReviewScreen';
 export { SuccessScreen } from './SuccessScreen';
 export { UndoToast } from './UndoToast';

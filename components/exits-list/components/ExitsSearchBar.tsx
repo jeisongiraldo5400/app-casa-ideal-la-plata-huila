@@ -8,7 +8,7 @@ export function ExitsSearchBar() {
     <SearchField
       value={searchQuery}
       onChangeText={setSearchQuery}
-      placeholder="Buscar producto, SKU o código"
+      placeholder="Buscar producto, SKU, código o serial"
       returnKeyType="search"
       autoCapitalize="none"
     />

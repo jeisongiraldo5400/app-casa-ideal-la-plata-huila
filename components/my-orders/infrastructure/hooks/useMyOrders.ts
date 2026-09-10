@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ExitSerialRecord,
+  fetchExitSerialsByExitId,
+} from '@/components/exit-serials/infrastructure/services/exitSerialsService';
+import {
   fetchMyRegisteredDeliveryOrderItems,
   fetchMyRegisteredDeliveryOrders,
   fetchPendingDeliveryOrders,
@@ -13,6 +17,8 @@ const SEARCH_DEBOUNCE_MS = 350;
 
 interface OrderDetailState {
   items: RegisteredDeliveryOrderItem[];
+  /** Seriales de fábrica por salida; se completan después de los productos. */
+  serialsByExitId: Record<string, ExitSerialRecord[]>;
   loading: boolean;
   error: string | null;
 }
@@ -187,21 +193,31 @@ export function useMyOrders() {
     const requestId = ++detailRequestId.current;
     setDetailsByOrderId((current) => ({
       ...current,
-      [orderId]: { items: [], loading: true, error: null },
+      [orderId]: { items: [], serialsByExitId: {}, loading: true, error: null },
     }));
     try {
       const items = await fetchMyRegisteredDeliveryOrderItems(orderId);
       if (requestId !== detailRequestId.current) return;
       setDetailsByOrderId((current) => ({
         ...current,
-        [orderId]: { items, loading: false, error: null },
+        [orderId]: { items, serialsByExitId: {}, loading: false, error: null },
       }));
+
+      // Complementarios: nunca lanza; si falla, el detalle queda sin seriales.
+      const serialsByExitId = await fetchExitSerialsByExitId(items.map((item) => item.exit_id));
+      if (Object.keys(serialsByExitId).length === 0) return;
+      setDetailsByOrderId((current) => (
+        current[orderId]?.items === items
+          ? { ...current, [orderId]: { ...current[orderId], serialsByExitId } }
+          : current
+      ));
     } catch (error) {
       if (requestId !== detailRequestId.current) return;
       setDetailsByOrderId((current) => ({
         ...current,
         [orderId]: {
           items: [],
+          serialsByExitId: {},
           loading: false,
           error: errorMessage(error, 'No fue posible cargar los productos registrados.'),
         },

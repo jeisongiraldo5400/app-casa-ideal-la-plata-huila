@@ -98,9 +98,84 @@ describe('seriales opcionales en salidas', () => {
       p_delivery_order_id: 'order-1',
       p_product_id: 'product-1',
       p_serial: 'ab-12 3',
+      p_warehouse_id: 'warehouse-1',
     });
     expect(useExitsStore.getState().currentSerials).toEqual([{ serial: 'ab-12 3', normalized: 'AB123', method: 'manual' }]);
     expect(useExitsStore.getState().serialChecking).toBe(false);
+  });
+
+  it('marca el serial como verificado cuando el servidor lo encuentra en las entradas de la bodega', async () => {
+    seedReview();
+    mockRpc.mockResolvedValue({ data: { available: true, verified: true, serial_normalized: 'AB123' }, error: null });
+
+    await useExitsStore.getState().addCurrentSerial('AB123', 'scan');
+
+    expect(useExitsStore.getState().currentSerials).toEqual([
+      { serial: 'AB123', normalized: 'AB123', method: 'scan', verified: true },
+    ]);
+  });
+
+  it('marca el serial como no registrado en entradas cuando el servidor lo permite sin verificar', async () => {
+    seedReview();
+    mockRpc.mockResolvedValue({ data: { available: true, verified: false, serial_normalized: 'AB123' }, error: null });
+
+    await useExitsStore.getState().addCurrentSerial('AB123', 'manual');
+
+    expect(useExitsStore.getState().currentSerials[0].verified).toBe(false);
+  });
+
+  it('rechaza un serial registrado en otra bodega con el mensaje del servidor', async () => {
+    seedReview();
+    const message = 'El serial AB123 está registrado en la bodega Norte. Despáchalo desde esa bodega o revisa el serial.';
+    mockRpc.mockResolvedValue({ data: { available: false, verified: false, message }, error: null });
+
+    const result = await useExitsStore.getState().addCurrentSerial('AB123', 'scan');
+
+    expect(result).toEqual({ ok: false, error: message });
+    expect(useExitsStore.getState().currentSerials).toEqual([]);
+  });
+
+  it('si el servidor aún no tiene la verificación por bodega usa la versión sin bodega', async () => {
+    seedReview();
+    mockRpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'Could not find the function', code: 'PGRST202' } })
+      .mockResolvedValueOnce(available);
+
+    const result = await useExitsStore.getState().addCurrentSerial('AB123', 'scan');
+
+    expect(result.ok).toBe(true);
+    expect(mockRpc).toHaveBeenNthCalledWith(2, 'check_exit_serial', {
+      p_delivery_order_id: 'order-1',
+      p_product_id: 'product-1',
+      p_serial: 'AB123',
+    });
+    expect(useExitsStore.getState().currentSerials[0].verified).toBeUndefined();
+  });
+
+  it('pide elegir la bodega antes de capturar seriales', async () => {
+    seedReview();
+    useExitsStore.setState({ warehouseId: null });
+
+    const result = await useExitsStore.getState().addCurrentSerial('AB123', 'scan');
+
+    expect(result.ok).toBe(false);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('al cambiar de bodega descarta los seriales capturados (su verificación depende de la bodega)', async () => {
+    seedReview();
+    useExitsStore.setState({
+      currentSerials: [{ serial: 'AB123', normalized: 'AB123', method: 'scan', verified: true }],
+      warehouseCandidates: [
+        { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 5 },
+        { warehouseId: 'warehouse-2', warehouseName: 'Bodega norte', pending: 5 },
+      ] as unknown as ReturnType<typeof useExitsStore.getState>['warehouseCandidates'],
+    });
+
+    await useExitsStore.getState().selectScanWarehouse('warehouse-2');
+
+    expect(useExitsStore.getState().warehouseId).toBe('warehouse-2');
+    expect(useExitsStore.getState().currentSerials).toEqual([]);
   });
 
   it('rechaza un serial repetido en la salida sin consultar otra vez al servidor', async () => {
@@ -172,6 +247,8 @@ describe('seriales opcionales en salidas', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain('aún no está habilitado');
+    // Primero con bodega; al no existir, intenta la versión sin bodega.
+    expect(mockRpc).toHaveBeenCalledTimes(2);
   });
 
   it('al agregar el producto lleva los seriales a la línea y limpia la ficha', async () => {

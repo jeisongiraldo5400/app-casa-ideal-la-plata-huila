@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { fetchExitSerialsByExitId } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import {
   fetchMyRegisteredDeliveryOrderItems,
   fetchMyRegisteredDeliveryOrders,
@@ -12,6 +13,12 @@ jest.mock('../../services/myOrdersService', () => ({
   fetchMyRegisteredDeliveryOrders: jest.fn(),
   fetchMyRegisteredDeliveryOrderItems: jest.fn(),
 }));
+
+jest.mock('@/components/exit-serials/infrastructure/services/exitSerialsService', () => ({
+  fetchExitSerialsByExitId: jest.fn(),
+}));
+
+const mockedSerials = fetchExitSerialsByExitId as jest.MockedFunction<typeof fetchExitSerialsByExitId>;
 
 const mockedPending = fetchPendingDeliveryOrders as jest.MockedFunction<typeof fetchPendingDeliveryOrders>;
 const mockedHistory = fetchMyRegisteredDeliveryOrders as jest.MockedFunction<typeof fetchMyRegisteredDeliveryOrders>;
@@ -48,6 +55,38 @@ describe('useMyOrders', () => {
     jest.clearAllMocks();
     mockedPending.mockResolvedValue([]);
     mockedDetail.mockResolvedValue([]);
+    mockedSerials.mockResolvedValue({});
+  });
+
+  it('completa el detalle con los seriales de mis salidas', async () => {
+    mockedHistory.mockResolvedValue({ orders: [historyOrder('1')], totalCount: 1, hasMore: false });
+    mockedDetail.mockResolvedValue([{
+      exit_id: 'exit-1',
+      product_id: 'product-1',
+      product_name: 'Producto',
+      product_sku: 'SKU-001',
+      product_barcode: '7701234567890',
+      warehouse_id: 'warehouse-1',
+      warehouse_name: 'Principal',
+      quantity: 1,
+      created_at: '2026-08-21T10:00:00Z',
+      delivery_observations: null,
+      is_cancelled: false,
+      cancellation_observations: null,
+    }]);
+    const serial = {
+      inventoryExitId: 'exit-1', productId: 'product-1', serial: 'AB123', normalized: 'AB123',
+      method: 'scan' as const, releasedReason: null,
+    };
+    mockedSerials.mockResolvedValue({ 'exit-1': [serial] });
+    const { result } = renderHook(() => useMyOrders());
+
+    await act(async () => { await result.current.refreshAll(); });
+    await act(async () => { result.current.toggleHistoryOrder('1'); });
+
+    await waitFor(() => expect(result.current.detailsByOrderId['1']?.serialsByExitId['exit-1']).toEqual([serial]));
+    expect(mockedSerials).toHaveBeenCalledWith(['exit-1']);
+    expect(result.current.detailsByOrderId['1']?.error).toBeNull();
   });
 
   it('agrega la página siguiente sin reemplazar ni duplicar órdenes', async () => {

@@ -1060,6 +1060,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       targetOrderItemId: targetLine?.id ?? null,
       currentAvailableStock: candidate.pending,
       currentPhysicalStock: null,
+      // La verificación de un serial depende de la bodega: al cambiarla se capturan de nuevo.
+      ...(get().warehouseId !== warehouseId ? { currentSerials: [], serialChecking: false } : {}),
       error: null
     });
 
@@ -1350,9 +1352,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
   addCurrentSerial: async (raw, method) => {
     const generation = sessionGeneration;
-    const { currentProduct, currentSerials, currentQuantity, exitItems, selectedDeliveryOrderId } = get();
+    const { currentProduct, currentSerials, currentQuantity, exitItems, selectedDeliveryOrderId, warehouseId } = get();
     if (!currentProduct || !selectedDeliveryOrderId) {
       return { ok: false, error: 'No hay un producto escaneado' };
+    }
+    if (!warehouseId) {
+      return { ok: false, error: 'Elige la bodega antes de agregar seriales' };
     }
 
     const serial = raw.trim();
@@ -1380,13 +1385,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({ serialChecking: true });
     let availability: SerialAvailability;
     try {
-      availability = await checkExitSerialAvailability(selectedDeliveryOrderId, currentProduct.id, serial);
+      availability = await checkExitSerialAvailability(selectedDeliveryOrderId, currentProduct.id, serial, warehouseId);
     } catch (checkError: unknown) {
-      // Sin verificación previa seguimos: register_inventory_exits_batch vuelve a validar el serial.
+      // Sin verificación previa seguimos: register_inventory_exits_batch vuelve a validar el serial
+      // (y decide si queda verificado). Aquí queda como "sin consultar" (verified undefined).
       console.error('Error checking exit serial:', checkError);
       availability = { available: true };
     }
-    if (generation !== sessionGeneration || get().currentProduct?.id !== currentProduct.id) {
+    if (
+      generation !== sessionGeneration ||
+      get().currentProduct?.id !== currentProduct.id ||
+      get().warehouseId !== warehouseId
+    ) {
       return { ok: false, error: 'La lectura cambió mientras se verificaba el serial' };
     }
     if (!availability.available) {
@@ -1400,7 +1410,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ serialChecking: false });
       return { ok: false, error: 'Este serial ya está en esta salida' };
     }
-    set({ currentSerials: [...latest, { serial, normalized, method }], serialChecking: false });
+    const captured: ExitSerial = availability.verified === undefined
+      ? { serial, normalized, method }
+      : { serial, normalized, method, verified: availability.verified };
+    set({ currentSerials: [...latest, captured], serialChecking: false });
     return { ok: true, error: null };
   },
 

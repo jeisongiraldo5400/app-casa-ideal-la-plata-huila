@@ -1,4 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { ExitSerialChips } from '@/components/exit-serials/components/ExitSerialChips';
+import { ExitSerialRecord } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store/exitsStore';
 // Misma lista de productos que "Todas las órdenes"; sólo cambia de dónde lee los
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
@@ -437,7 +439,7 @@ export function MyOrdersScreen() {
     );
   }
 
-  function HistoryDetail({ orderId, detail }: { orderId: string; detail: { items: RegisteredDeliveryOrderItem[]; loading: boolean; error: string | null } | undefined }) {
+  function HistoryDetail({ orderId, detail }: { orderId: string; detail: { items: RegisteredDeliveryOrderItem[]; serialsByExitId?: Record<string, ExitSerialRecord[]>; loading: boolean; error: string | null } | undefined }) {
     if (!detail || detail.loading) return <View style={styles.detailLoading}><ActivityIndicator color={colors.primary.main} /></View>;
     if (detail.error) {
       return (
@@ -460,6 +462,7 @@ export function MyOrdersScreen() {
               <Text style={[styles.historyItemQuantity, { color: item.is_cancelled ? colors.error.main : colors.primary.main }]}>{formatQuantity(item.quantity)}</Text>
             </View>
             <Text style={[styles.historyItemMeta, { color: colors.text.secondary }]}>{formatPaymentDateTime(item.created_at)}</Text>
+            <ExitSerialChips serials={detail.serialsByExitId?.[item.exit_id]} />
             {item.is_cancelled ? (
               <View style={[styles.cancelledNotice, { backgroundColor: colors.error.main + '12' }]}>
                 <MaterialIcons name="cancel" size={14} color={colors.error.main} />

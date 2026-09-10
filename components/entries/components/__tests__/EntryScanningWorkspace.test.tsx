@@ -36,6 +36,7 @@ const product = { id: 'product-1', name: 'Mesa auxiliar', sku: 'MES-1', barcode:
 const productTwo = { id: 'product-2', name: 'Silla plegable', sku: 'SIL-2', barcode: '770456' } as EntryItem['product'];
 const item: EntryItem = { product, quantity: 2, barcode: '770123' };
 const itemTwo: EntryItem = { product: productTwo, quantity: 1, barcode: '770456' };
+const originalAddCurrentSerial = useEntriesStore.getState().addCurrentSerial;
 const originalActions = {
   scanBarcode: useEntriesStore.getState().scanBarcode,
   addProductToEntry: useEntriesStore.getState().addProductToEntry,
@@ -205,6 +206,34 @@ describe('EntryScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Agregar y escanear siguiente'));
     await waitFor(() => expect(screen.getByTestId('barcode-scanner')).toBeTruthy());
     expect(screen.getByText('Emitir lectura')).toBeTruthy();
+  });
+
+  it('captura un serial opcional en la ficha del producto y lo muestra en la línea', async () => {
+    const addCurrentSerial = jest.fn(async () => {
+      useEntriesStore.setState({ currentSerials: [{ serial: 'AB123', normalized: 'AB123', method: 'manual' as const }] });
+      return { ok: true as const, error: null };
+    });
+    useEntriesStore.setState({
+      currentProduct: product,
+      currentScannedBarcode: '770123',
+      currentQuantity: 1,
+      currentSerials: [],
+      serialChecking: false,
+      uiStage: 'product_review',
+      addCurrentSerial,
+    });
+
+    const screen = render(<EntryScanningWorkspace />);
+    expect(screen.getByText('Seriales (opcional)')).toBeTruthy();
+    fireEvent.changeText(screen.getByPlaceholderText('Serial del aparato'), 'AB123');
+    fireEvent.press(screen.getByText('Agregar'));
+
+    await waitFor(() => expect(addCurrentSerial).toHaveBeenCalledWith('AB123', 'manual'));
+    expect(await screen.findByText('AB123')).toBeTruthy();
+    expect(screen.getByText('1 de 1')).toBeTruthy();
+    // En entradas no se muestra el estado de verificación (eso es de salidas).
+    expect(screen.queryByText('No registrado en entradas')).toBeNull();
+    act(() => useEntriesStore.setState({ addCurrentSerial: originalAddCurrentSerial, currentSerials: [] }));
   });
 
   it('renders the operational workspace in dark mode', () => {

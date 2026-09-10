@@ -6,12 +6,14 @@ import {
   PendingItemCard,
   ProductReviewSheet,
   ScanSessionBar,
+  SerialsField,
   SessionItemCard,
   SessionProgressHeader,
   SessionReviewScreen,
   SuccessScreen,
   UndoToast,
 } from '@/components/inventory-flow';
+import { serialsSummary, type SerialCaptureMethod } from '@/components/inventory-flow/serials';
 import { BarcodeScanner } from '@/components/scanning';
 import { useTheme } from '@/components/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -54,6 +56,8 @@ export function EntryScanningWorkspace() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [serialScannerOpen, setSerialScannerOpen] = useState(false);
+  const [serialError, setSerialError] = useState<string | null>(null);
   const [successSummary, setSuccessSummary] = useState<FinalizeEntrySummary | null>(null);
   const [undo, setUndo] = useState<{ item: EntryItem; index: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +81,9 @@ export function EntryScanningWorkspace() {
   const orderTitle = store.selectedPurchaseOrder ? `OC #${store.selectedPurchaseOrder.order_number || store.selectedPurchaseOrder.id.slice(0, 8)}` : typeLabel;
   const reviewing = store.uiStage === 'product_review' && Boolean(store.currentProduct);
   const alreadyAdded = store.entryItems.find((item) => item.product.id === store.currentProduct?.id)?.quantity || 0;
+  const reviewSerialsMismatch = store.currentSerials.length > store.currentQuantity
+    ? `Tienes ${store.currentSerials.length} seriales para ${store.currentQuantity} unidades. Quita seriales o aumenta la cantidad.`
+    : null;
 
   const sessionRows = useMemo<Row[]>(() => store.entryItems.map((item, index) => ({ kind: 'session', key: item.product.id, item, index })), [store.entryItems]);
   const pendingRows = useMemo<Row[]>(() => pendingItems.slice(0, visibleCount).map((item) => ({ kind: 'pending', key: item.item.id, progress: item })), [pendingItems, visibleCount]);
@@ -122,6 +129,7 @@ export function EntryScanningWorkspace() {
       return;
     }
     setReviewError(null);
+    setSerialError(null);
     setActiveTab('session');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     if (scanNext) {
@@ -134,8 +142,33 @@ export function EntryScanningWorkspace() {
 
   const cancelReview = () => {
     unmountScanner();
+    setSerialScannerOpen(false);
     setReviewError(null);
+    setSerialError(null);
     store.resetCurrentScan();
+  };
+
+  const addSerial = async (raw: string, method: SerialCaptureMethod) => {
+    const result = await useEntriesStore.getState().addCurrentSerial(raw, method);
+    setSerialError(result.ok ? null : result.error);
+    if (result.ok) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    }
+    return result.ok;
+  };
+
+  // La ficha se oculta mientras el lector de seriales está abierto (evita un modal sobre otro).
+  const openSerialScanner = () => {
+    unmountScanner();
+    setSerialError(null);
+    setSerialScannerOpen(true);
+  };
+
+  const handleSerialScan = async (code: string) => {
+    setSerialScannerOpen(false);
+    await addSerial(code, 'scan');
   };
 
   const returnToConfiguration = () => {
@@ -225,7 +258,7 @@ export function EntryScanningWorkspace() {
         summaryMeta={`${supplier ? `${supplier} · ` : ''}${warehouseName}`}
         statusText={store.selectedPurchaseOrder ? (remaining !== null && remaining > 0 ? 'La orden conservará cantidades pendientes' : 'Esta entrada completa la orden') : null}
         statusTone={remaining !== null && remaining > 0 ? 'warning' : 'success'}
-        items={store.entryItems.map((item) => ({ key: item.product.id, name: item.product.name, meta: `SKU: ${item.product.sku || '—'}`, quantity: item.quantity }))}
+        items={store.entryItems.map((item) => ({ key: item.product.id, name: item.product.name, meta: `SKU: ${item.product.sku || '—'}${serialsSummary(item.serials)}`, quantity: item.quantity }))}
         error={reviewError}
         notice={online ? null : 'Sin conexión: el registro se habilitará al recuperar la red.'}
         loading={store.finalizing}
@@ -246,7 +279,7 @@ export function EntryScanningWorkspace() {
           renderItem={({ item }) => item.kind === 'session' ? (
             <SessionItemCard
               name={item.item.product.name}
-              meta={`SKU: ${item.item.product.sku || '—'}`}
+              meta={`SKU: ${item.item.product.sku || '—'}${serialsSummary(item.item.serials)}`}
               quantity={item.item.quantity}
               quantityCaption="Cantidad recibida"
               canDecrease={item.item.quantity > 1}
@@ -332,13 +365,18 @@ export function EntryScanningWorkspace() {
 
       {store.currentProduct ? (
         <ProductReviewSheet
-          visible={reviewing}
+          visible={reviewing && !serialScannerOpen}
           product={{ name: store.currentProduct.name, sku: store.currentProduct.sku || null, barcode: store.currentScannedBarcode || store.currentProduct.barcode || '' }}
           quantityLabel="Cantidad para recibir"
           quantity={store.currentQuantity}
           maxQuantity={maxCurrentQuantity}
-          valid={store.currentQuantity > 0 && store.currentQuantity <= maxCurrentQuantity}
-          error={reviewError || store.error}
+          valid={
+            store.currentQuantity > 0 &&
+            store.currentQuantity <= maxCurrentQuantity &&
+            store.currentSerials.length <= store.currentQuantity &&
+            !store.serialChecking
+          }
+          error={reviewError || reviewSerialsMismatch || store.error}
           addLabel="Agregar y volver al resumen"
           onQuantityChange={store.setQuantity}
           onCancel={cancelReview}
@@ -359,7 +397,30 @@ export function EntryScanningWorkspace() {
           {alreadyAdded > 0 ? (
             <Text style={[styles.sessionNote, { color: colors.warning.main }]}>Ya tienes {alreadyAdded} de este producto en esta entrada; la cantidad se sumará.</Text>
           ) : null}
+          <SerialsField
+            serials={store.currentSerials}
+            quantity={store.currentQuantity}
+            checking={store.serialChecking}
+            error={serialError}
+            hint="Escanea o escribe el serial de cada aparato. Así las salidas podrán verificarlo; un serial que ya está en una bodega no se puede volver a ingresar."
+            onAdd={addSerial}
+            onRemove={(index) => { setSerialError(null); store.removeCurrentSerial(index); }}
+            onScanPress={openSerialScanner}
+          />
         </ProductReviewSheet>
+      ) : null}
+
+      {serialScannerOpen ? (
+        <View style={styles.scannerOverlay}>
+          <BarcodeScanner
+            onScan={(code) => void handleSerialScan(code)}
+            onClose={() => setSerialScannerOpen(false)}
+            title="Escanear serial"
+            contextLabel={store.currentProduct?.name}
+            instruction="Apunta al código del serial en la placa o la caja del aparato"
+            logModule="entries"
+          />
+        </View>
       ) : null}
 
       {scannerMounted ? (
