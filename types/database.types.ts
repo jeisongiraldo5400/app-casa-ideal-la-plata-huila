@@ -562,6 +562,7 @@ export type Database = {
           image_url: string | null
           kicker: string | null
           sort_order: number
+          source_category_id: string | null
           title: string
           updated_at: string
         }
@@ -573,6 +574,7 @@ export type Database = {
           image_url?: string | null
           kicker?: string | null
           sort_order?: number
+          source_category_id?: string | null
           title: string
           updated_at?: string
         }
@@ -584,6 +586,7 @@ export type Database = {
           image_url?: string | null
           kicker?: string | null
           sort_order?: number
+          source_category_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -593,6 +596,13 @@ export type Database = {
             columns: ["catalog_id"]
             isOneToOne: false
             referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_sections_source_category_id_fkey"
+            columns: ["source_category_id"]
+            isOneToOne: false
+            referencedRelation: "category"
             referencedColumns: ["id"]
           },
         ]
@@ -1270,7 +1280,6 @@ export type Database = {
           id: string
           id_number: string
           municipio_id: string | null
-          vereda_id: string | null
           name: string
           neighborhood: string | null
           notes: string | null
@@ -1278,6 +1287,7 @@ export type Database = {
           phone_secondary: string | null
           seller_id: string | null
           updated_at: string | null
+          vereda_id: string | null
         }
         Insert: {
           address?: string | null
@@ -1289,7 +1299,6 @@ export type Database = {
           id?: string
           id_number: string
           municipio_id?: string | null
-          vereda_id?: string | null
           name: string
           neighborhood?: string | null
           notes?: string | null
@@ -1297,6 +1306,7 @@ export type Database = {
           phone_secondary?: string | null
           seller_id?: string | null
           updated_at?: string | null
+          vereda_id?: string | null
         }
         Update: {
           address?: string | null
@@ -1308,7 +1318,6 @@ export type Database = {
           id?: string
           id_number?: string
           municipio_id?: string | null
-          vereda_id?: string | null
           name?: string
           neighborhood?: string | null
           notes?: string | null
@@ -1316,6 +1325,7 @@ export type Database = {
           phone_secondary?: string | null
           seller_id?: string | null
           updated_at?: string | null
+          vereda_id?: string | null
         }
         Relationships: [
           {
@@ -1326,17 +1336,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "customers_seller_id_fkey"
-            columns: ["seller_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "customers_municipio_id_fkey"
             columns: ["municipio_id"]
             isOneToOne: false
             referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1778,10 +1788,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "delivery_orders_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "delivery_orders_negocio_id_fkey"
             columns: ["negocio_id"]
             isOneToOne: false
             referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_orders_vereda_id_fkey"
+            columns: ["vereda_id"]
+            isOneToOne: false
+            referencedRelation: "veredas"
             referencedColumns: ["id"]
           },
           {
@@ -2195,47 +2219,6 @@ export type Database = {
           },
         ]
       }
-      veredas: {
-        Row: {
-          codigo: string | null
-          created_at: string
-          deleted_at: string | null
-          id: string
-          is_active: boolean
-          municipio_id: string
-          nombre: string
-          updated_at: string | null
-        }
-        Insert: {
-          codigo?: string | null
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          is_active?: boolean
-          municipio_id: string
-          nombre: string
-          updated_at?: string | null
-        }
-        Update: {
-          codigo?: string | null
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          is_active?: boolean
-          municipio_id?: string
-          nombre?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "veredas_municipio_id_fkey"
-            columns: ["municipio_id"]
-            isOneToOne: false
-            referencedRelation: "municipios"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       negocio_cuotas: {
         Row: {
           amount: number
@@ -2575,17 +2558,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "negocio_pagos_payment_method_id_fkey"
-            columns: ["payment_method_id"]
-            isOneToOne: false
-            referencedRelation: "payment_methods"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "negocio_pagos_negocio_id_fkey"
             columns: ["negocio_id"]
             isOneToOne: false
             referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocio_pagos_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            isOneToOne: false
+            referencedRelation: "payment_methods"
             referencedColumns: ["id"]
           },
         ]
@@ -2652,30 +2635,6 @@ export type Database = {
           },
         ]
       }
-      payment_methods: {
-        Row: {
-          created_at: string
-          deleted_at: string | null
-          id: string
-          name: string
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          name: string
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          name?: string
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
       negocios: {
         Row: {
           codeudor_customer_id: string | null
@@ -2703,7 +2662,6 @@ export type Database = {
           interest_amount: number
           location: string | null
           municipio_id: string | null
-          vereda_id: string | null
           notes: string | null
           numero: number
           products_subtotal: number
@@ -2715,6 +2673,7 @@ export type Database = {
           status: string
           total_credit: number
           updated_at: string
+          vereda_id: string | null
         }
         Insert: {
           codeudor_customer_id?: string | null
@@ -2742,7 +2701,6 @@ export type Database = {
           interest_amount?: number
           location?: string | null
           municipio_id?: string | null
-          vereda_id?: string | null
           notes?: string | null
           numero: number
           products_subtotal?: number
@@ -2754,6 +2712,7 @@ export type Database = {
           status?: string
           total_credit?: number
           updated_at?: string
+          vereda_id?: string | null
         }
         Update: {
           codeudor_customer_id?: string | null
@@ -2781,7 +2740,6 @@ export type Database = {
           interest_amount?: number
           location?: string | null
           municipio_id?: string | null
-          vereda_id?: string | null
           notes?: string | null
           numero?: number
           products_subtotal?: number
@@ -2793,6 +2751,7 @@ export type Database = {
           status?: string
           total_credit?: number
           updated_at?: string
+          vereda_id?: string | null
         }
         Relationships: [
           {
@@ -2838,13 +2797,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "negocios_vereda_id_fkey"
-            columns: ["vereda_id"]
-            isOneToOne: false
-            referencedRelation: "veredas"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "negocios_remission_id_fkey"
             columns: ["remission_id"]
             isOneToOne: false
@@ -2863,6 +2815,13 @@ export type Database = {
             columns: ["source_delivery_order_id"]
             isOneToOne: false
             referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_vereda_id_fkey"
+            columns: ["vereda_id"]
+            isOneToOne: false
+            referencedRelation: "veredas"
             referencedColumns: ["id"]
           },
         ]
@@ -2966,6 +2925,30 @@ export type Database = {
           operation?: string
           severity?: string
           step?: string | null
+        }
+        Relationships: []
+      }
+      payment_methods: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -3886,6 +3869,47 @@ export type Database = {
           },
         ]
       }
+      veredas: {
+        Row: {
+          codigo: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          municipio_id: string
+          nombre: string
+          updated_at: string | null
+        }
+        Insert: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          municipio_id: string
+          nombre: string
+          updated_at?: string | null
+        }
+        Update: {
+          codigo?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          municipio_id?: string
+          nombre?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "veredas_municipio_id_fkey"
+            columns: ["municipio_id"]
+            isOneToOne: false
+            referencedRelation: "municipios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       warehouse_stock: {
         Row: {
           id: string
@@ -4252,6 +4276,7 @@ export type Database = {
         Returns: boolean
       }
       can_read_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
+      can_share_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       can_write_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       cancel_delivery_order_with_items: {
         Args: { p_cancelled_at?: string; p_order_id: string }
@@ -4351,14 +4376,14 @@ export type Database = {
       }
       create_customer_offline: {
         Args: {
-          p_address?: string | null
+          p_address?: string
           p_customer_id: string
           p_id_number: string
           p_idempotency_key: string
-          p_municipio_id?: string | null
+          p_municipio_id?: string
           p_name: string
           p_phone: string
-          p_vereda_id?: string | null
+          p_vereda_id?: string
         }
         Returns: Json
       }
@@ -4714,6 +4739,11 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_customer_seller_info: {
+        Args: { p_customer_id: string }
+        Returns: Json
+      }
+      get_customer_summary: { Args: { p_customer_id: string }; Returns: Json }
       get_customers: {
         Args: { page?: number; page_size?: number; search_term?: string }
         Returns: {
@@ -4728,8 +4758,6 @@ export type Database = {
           total_exits: number
         }[]
       }
-      get_customer_seller_info: { Args: { p_customer_id: string }; Returns: Json }
-      get_customer_summary: { Args: { p_customer_id: string }; Returns: Json }
       get_customers_dashboard: {
         Args: {
           include_unassigned?: boolean
@@ -5527,6 +5555,14 @@ export type Database = {
       is_admin_or_bodeguero: { Args: never; Returns: boolean }
       is_admin_or_vendedor: { Args: never; Returns: boolean }
       is_gestor_cobro: { Args: never; Returns: boolean }
+      list_catalog_collaborator_candidates: {
+        Args: never
+        Returns: {
+          email: string
+          full_name: string
+          id: string
+        }[]
+      }
       list_sellers: {
         Args: { p_limit?: number; p_search?: string }
         Returns: {
@@ -5577,6 +5613,7 @@ export type Database = {
         Returns: Json
       }
       normalize_negocio_paid_at: { Args: { p_value: string }; Returns: string }
+      own_share_link_version_ids: { Args: never; Returns: string[] }
       pago_support_object_negocio_id: {
         Args: { object_name: string }
         Returns: string
@@ -5644,8 +5681,8 @@ export type Database = {
           p_idempotency_key: string
           p_notes: string
           p_paid_at: string
-          p_payment_method_id?: string | null
-          p_payment_site?: string | null
+          p_payment_method_id?: string
+          p_payment_site?: string
           p_receipt_number: string
           p_stop_id: string
         }
@@ -5697,8 +5734,8 @@ export type Database = {
           p_negocio_id: string
           p_notes: string
           p_paid_at: string
-          p_payment_method_id?: string | null
-          p_payment_site?: string | null
+          p_payment_method_id?: string
+          p_payment_site?: string
           p_receipt_number: string
         }
         Returns: string
