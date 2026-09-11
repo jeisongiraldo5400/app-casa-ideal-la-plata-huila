@@ -31,6 +31,10 @@ export type ManagerPayment = {
   receipt_status: 'emitido' | 'anulado'; created_by_name: string; remaining_balance: number;
   /** Sitio de pago crudo ('almacen' | 'app_movil'); null en los pagos anteriores. */
   payment_site: string | null;
+  /** Método de pago (catálogo `payment_methods`); null en los pagos anteriores. */
+  payment_method_id?: string | null;
+  /** Nombre del método ya resuelto por el RPC (LEFT JOIN a `payment_methods`). */
+  payment_method_name?: string | null;
   currently_assigned: boolean;
   support_path: string | null;
   support_mime: string | null;

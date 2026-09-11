@@ -27,7 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
-import { buildNegocioContractHtml } from '@/lib/negocioContractHtml';
+import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE } from '@/lib/negocioContractHtml';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
@@ -812,7 +812,8 @@ function NegocioDetailScreenInner() {
 
       if (Print?.printToFileAsync && Sharing?.shareAsync) {
         // Tamaño oficio: 216 x 330 mm = 612 x 935 puntos a 72 ppp (legal sería 612 x 1008).
-        const { uri } = await Print.printToFileAsync({ html, width: 612, height: 935 });
+        // La web imprime con este mismo tamaño (ver NEGOCIO_CONTRACT_PDF_SIZE).
+        const { uri } = await Print.printToFileAsync({ html, ...NEGOCIO_CONTRACT_PDF_SIZE });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType: 'application/pdf',

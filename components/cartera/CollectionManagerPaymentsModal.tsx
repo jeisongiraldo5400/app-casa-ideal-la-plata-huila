@@ -30,7 +30,7 @@ import {
   type ManagerBusiness,
   type ManagerPayment,
 } from '@/lib/cartera/carteraService';
-import { exportAndShareManagerPaymentsCsv } from '@/lib/cartera/exportManagerPaymentsCsv';
+import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { openPagoSupport } from '@/lib/uploadPagoSupport';
 import { useBluetoothPrinter } from '@/components/printing';
 
@@ -165,7 +165,7 @@ export function CollectionManagerPaymentsModal({
     });
   };
 
-  const exportCsv = async () => {
+  const exportExcel = async () => {
     if (!manager) return;
     if (dateFrom && dateTo && dateFrom > dateTo) {
       Alert.alert('Error', 'Corrige el rango de fechas antes de exportar');
@@ -173,7 +173,7 @@ export function CollectionManagerPaymentsModal({
     }
     setExporting(true);
     try {
-      const { rowCount, fileName } = await exportAndShareManagerPaymentsCsv({
+      const { rowCount, fileName } = await exportAndShareManagerPaymentsExcel({
         manager,
         filters: {
           scope,
@@ -245,11 +245,11 @@ export function CollectionManagerPaymentsModal({
             </Text>
           </View>
           <Pressable
-            onPress={() => void exportCsv()}
+            onPress={() => void exportExcel()}
             disabled={!manager || exporting || loading}
             hitSlop={12}
             style={styles.closeButton}
-            accessibilityLabel="Descargar reporte Excel CSV"
+            accessibilityLabel="Descargar reporte en Excel"
           >
             {exporting ? (
               <ActivityIndicator size="small" color={colors.primary.main} />
@@ -323,7 +323,7 @@ export function CollectionManagerPaymentsModal({
               : 'Pagos de negocios asignados actualmente, aunque los haya registrado otro usuario.'}
           </Text>
           <Pressable
-            onPress={() => void exportCsv()}
+            onPress={() => void exportExcel()}
             disabled={!manager || exporting || loading}
             style={[
               styles.exportButton,
@@ -343,7 +343,7 @@ export function CollectionManagerPaymentsModal({
               />
             )}
             <Text style={{ color: colors.primary.contrastText, fontWeight: '700' }}>
-              {exporting ? 'Generando reporte...' : 'Descargar Excel (CSV)'}
+              {exporting ? 'Generando reporte...' : 'Descargar Excel'}
             </Text>
           </Pressable>
           <View style={styles.metrics}>

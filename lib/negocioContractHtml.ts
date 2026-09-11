@@ -236,6 +236,14 @@ function itemRowTarget(tier: ContractSizeTier, planRowCount: number, legalText: 
   return Math.min(MAX_ITEM_ROWS, Math.max(MIN_ITEM_ROWS, rows));
 }
 
+/**
+ * Tamaño de página (puntos, 72 ppp) con el que app/negocio/[id].tsx genera
+ * el PDF del contrato: oficio 216 x 330 mm (legal sería 612 x 1008). La web
+ * imprime con exactamente este tamaño (NEGOCIO_CONTRACT_PAGE_PT en
+ * frontend/src/lib/negocioContractHtml.ts); un test de la web lo verifica.
+ */
+export const NEGOCIO_CONTRACT_PDF_SIZE = { width: 612, height: 935 } as const;
+
 export function buildNegocioContractHtml(data: NegocioContractData): string {
   const itemsRows = data.items
     .map(
