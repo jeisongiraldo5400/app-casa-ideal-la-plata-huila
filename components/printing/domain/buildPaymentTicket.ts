@@ -25,6 +25,9 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...textLines(`Cliente: ${data.customerName}`),
     ...textLines(`Fecha y hora: ${formatPaymentDateTime(data.paidAt)}`),
     ...textLines(`Recibo fisico: ${data.physicalReceiptNumber || 'No aplica'}`),
+    // Mismos campos y textos por defecto que el recibo PDF (negocioReceiptHtml).
+    ...textLines(`Metodo de pago: ${data.paymentMethodName || 'No registrado'}`),
+    ...textLines(`Sitio de pago: ${data.paymentSiteName || 'No registrado'}`),
     ...textLines(`Registrado por: ${receiptRegisteredBy(data)}`),
     { type: 'separator' },
     { type: 'text', text: padRow('Valor recibido', formatTicketMoney(data.amount)), bold: true },

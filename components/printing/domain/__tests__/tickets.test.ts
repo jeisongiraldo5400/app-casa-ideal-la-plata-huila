@@ -90,6 +90,29 @@ describe('buildPaymentTicket', () => {
     expect(texts).not.toContain('RECIBO ANULADO');
   });
 
+  it('imprime el método y el sitio de pago como el recibo PDF', () => {
+    const texts = buildPaymentTicket({
+      ...receipt,
+      paymentMethodName: 'Nequi',
+      paymentSiteName: 'Aplicación Móvil',
+    })
+      .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+      .map((line) => line.text)
+      .join('\n');
+
+    expect(texts).toContain('Metodo de pago: Nequi');
+    expect(texts).toContain('Sitio de pago: Aplicación Móvil');
+  });
+
+  it('dice «No registrado» en pagos sin método ni sitio (anteriores al catálogo)', () => {
+    const texts = buildPaymentTicket(receipt)
+      .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+      .map((line) => line.text);
+
+    expect(texts).toContain('Metodo de pago: No registrado');
+    expect(texts).toContain('Sitio de pago: No registrado');
+  });
+
   it('marca recibos anulados', () => {
     const texts = buildPaymentTicket({ ...receipt, status: 'anulado' })
       .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')

@@ -134,7 +134,8 @@ export function CollectionManagerPaymentsModal({
         physicalReceiptNumber: payment.receipt_number,
         negocioNumero: payment.negocio_numero,
         customerName: payment.customer_name,
-        sellerName: payment.created_by_name,
+        registeredBy: payment.created_by_name,
+        paymentMethodName: payment.payment_method_name,
         paymentSiteName: paymentSiteLabel(payment.payment_site),
         remainingBalance: Number(payment.remaining_balance),
       });
@@ -159,7 +160,8 @@ export function CollectionManagerPaymentsModal({
       physicalReceiptNumber: payment.receipt_number,
       negocioNumero: payment.negocio_numero,
       customerName: payment.customer_name,
-      sellerName: payment.created_by_name,
+      registeredBy: payment.created_by_name,
+      paymentMethodName: payment.payment_method_name,
       paymentSiteName: paymentSiteLabel(payment.payment_site),
       remainingBalance: Number(payment.remaining_balance),
     });
