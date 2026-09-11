@@ -49,26 +49,50 @@ export type CreateCustomerInput = CustomerLocationInput & {
   name: string;
   idNumber: string;
   phone: string | null;
+  /**
+   * Vendedor que el trigger `enforce_customer_seller` asignará (ver
+   * `expectedSellerIdOnCreate`). Nunca se envía al servidor: solo sirve para el
+   * reflejo local del alta sin conexión.
+   */
+  expectedSellerId?: string | null;
 };
 
-export async function createCustomer(input: CreateCustomerInput): Promise<CustomerOption> {
+export type CreatedCustomer = CustomerOption & {
+  /** Vendedor con el que quedó el cliente: el real si hubo red, el previsto si no. */
+  seller_id: string | null;
+  /** El alta quedó en la cola sin conexión. */
+  saved_offline: boolean;
+};
+
+export async function createCustomer(input: CreateCustomerInput): Promise<CreatedCustomer> {
+  const { expectedSellerId, ...customer } = input;
   try {
+    // No se envía `seller_id`: lo decide el trigger según los roles de quien crea.
     const { data, error } = await supabase
       .from('customers')
       .insert({
-        name: input.name,
-        id_number: input.idNumber,
-        phone: input.phone,
-        address: input.address || null,
-        municipio_id: input.municipioId || null,
-        vereda_id: input.veredaId || null,
+        name: customer.name,
+        id_number: customer.idNumber,
+        phone: customer.phone,
+        address: customer.address || null,
+        municipio_id: customer.municipioId || null,
+        vereda_id: customer.veredaId || null,
       })
-      .select('id, name, id_number')
+      .select('id, name, id_number, seller_id')
       .single();
     if (error) throw error;
-    return data as CustomerOption;
+    const row = data as CustomerOption & { seller_id?: string | null };
+    return {
+      id: row.id,
+      name: row.name,
+      id_number: row.id_number,
+      seller_id: row.seller_id ?? null,
+      saved_offline: false,
+    };
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;
-    return createCustomerOffline(input);
+    const sellerId = expectedSellerId ?? null;
+    const created = await createCustomerOffline({ ...customer, sellerId });
+    return { ...created, seller_id: sellerId, saved_offline: true };
   }
 }

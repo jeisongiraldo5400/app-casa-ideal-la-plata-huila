@@ -1,6 +1,8 @@
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { Button, FullScreenModal, Input, OptionPickerField } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { errorMessage } from '@/lib/errorMessage';
 import {
   EMPTY_LOCATION_MASTERS,
@@ -11,6 +13,13 @@ import { useFormik } from 'formik';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import * as Yup from 'yup';
+import {
+  autoAssignsCreatorAsSeller,
+  customerCreateSubtitle,
+  describeCreatedCustomer,
+  expectedSellerIdOnCreate,
+  roleNamesOf,
+} from '../domain/customerCreationAssignment';
 import { createCustomer } from '../infrastructure/services/customersService';
 
 const schema = Yup.object({
@@ -31,12 +40,16 @@ interface CustomerCreateSheetProps {
 
 /**
  * Alta de cliente desde el módulo. No envía `seller_id`: el trigger
- * `enforce_customer_seller` asigna al vendedor que crea, también cuando el
- * alta se sincroniza desde la cola sin conexión.
+ * `enforce_customer_seller` asigna al creador solo si es vendedor y no admin,
+ * también cuando el alta se sincroniza desde la cola sin conexión. El mensaje
+ * final se basa en el `seller_id` que devuelve el servidor, no en suposiciones.
  */
 export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCreateSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { user } = useAuth();
+  const { roles } = useUserRoles();
+  const roleNames = useMemo(() => roleNamesOf(roles), [roles]);
   const [masters, setMasters] = useState<LocationMasters>(EMPTY_LOCATION_MASTERS);
 
   useEffect(() => {
@@ -58,10 +71,19 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
           address: values.address.trim() || null,
           municipioId: values.municipioId || null,
           veredaId: values.veredaId || null,
+          expectedSellerId: expectedSellerIdOnCreate(user?.id, roleNames),
         });
         resetForm();
         onCreated();
-        Alert.alert('Cliente creado', `${created.name} quedó registrado y asignado a ti.`);
+        Alert.alert(
+          'Cliente creado',
+          describeCreatedCustomer({
+            name: created.name,
+            sellerId: created.seller_id,
+            currentUserId: user?.id,
+            savedOffline: created.saved_offline,
+          })
+        );
       } catch (error) {
         Alert.alert('Error', errorMessage(error, 'No se pudo crear el cliente'));
       }
@@ -94,7 +116,7 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
       visible={visible}
       onClose={close}
       title="Nuevo cliente"
-      subtitle="Quedará asignado a ti"
+      subtitle={customerCreateSubtitle(autoAssignsCreatorAsSeller(roleNames))}
       dismissable={!formik.isSubmitting}
       footer={
         <View style={styles.footer}>

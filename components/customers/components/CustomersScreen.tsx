@@ -115,7 +115,7 @@ export function CustomersScreen() {
       {canCreate ? (
         <HeroActionCard
           title="Nuevo cliente"
-          subtitle="Queda asignado a ti"
+          subtitle={isVendedor() && !isAdmin() ? 'Queda asignado a ti' : 'Queda sin vendedor asignado'}
           icon="person-add"
           onPress={() => setCreateOpen(true)}
         />

@@ -68,6 +68,8 @@ import {
   type DeliveryOrderOption,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
+import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import {
   searchProductsForNegocio,
   type NegocioProduct,
@@ -116,6 +118,7 @@ function NegocioCreateScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
+  const { roles: userRoles } = useUserRoles();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -500,6 +503,7 @@ function NegocioCreateScreenInner() {
         address: newCustomerAddress.trim() || null,
         municipioId: newCustomerMunicipioId || null,
         veredaId: newCustomerVeredaId || null,
+        expectedSellerId: expectedSellerIdOnCreate(user?.id, roleNamesOf(userRoles)),
       });
 
       setCustomers((prev) => [data, ...prev]);

@@ -8,7 +8,7 @@ import { claimCustomer, fetchCustomerSummary } from '../services/customersDirect
 /** Ficha de un cliente: resumen, negocios y la acción de reclamarlo. */
 export function useCustomerDetail(customerId: string | null) {
   const { user } = useAuth();
-  const { isVendedor, isAdmin } = useUserRoles();
+  const { isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
 
   const [summary, setSummary] = useState<CustomerSummary | null>(null);
@@ -42,12 +42,13 @@ export function useCustomerDetail(customerId: string | null) {
     void load();
   }, [load]);
 
-  // Solo quien tiene rol de vendedor o de admin puede escribir en `customers`
-  // (política `is_admin_or_vendedor`). Un usuario puede acumular varios roles,
-  // así que se pregunta por presencia, nunca por ausencia de otro rol.
+  // Reclamar = quedar como vendedor del cliente, y el trigger
+  // `enforce_customer_seller` exige que ese usuario tenga rol de vendedor: un
+  // admin sin ese rol vería el botón y el servidor lo rechazaría. Un usuario
+  // puede acumular roles, así que se pregunta por presencia (admin+vendedor sí).
   const canClaim =
     Boolean(user?.id) &&
-    (isVendedor() || isAdmin()) &&
+    isVendedor() &&
     Boolean(summary?.customer) &&
     !summary?.customer?.seller_id;
 
