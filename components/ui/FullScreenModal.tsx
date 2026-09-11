@@ -1,7 +1,7 @@
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import React from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActionBar } from './ActionBar';
 import { IconButton } from './IconButton';
@@ -25,6 +25,10 @@ interface FullScreenModalProps {
  * contenido se dibuja bajo la barra de estado, así que el padding superior
  * sale de `useSafeAreaInsets`. No usar `presentationStyle="pageSheet"`:
  * Android lo ignora y pinta el modal desde y = 0.
+ *
+ * El teclado no encoge un Modal (iOS nunca; Android tampoco con barras
+ * translúcidas, `adjustResize` no aplica), así que el `KeyboardAvoidingView`
+ * sube el contenido y el pie para que los campos y botones queden visibles.
  */
 export function FullScreenModal({
   visible,
@@ -51,6 +55,10 @@ export function FullScreenModal({
       statusBarTranslucent
       navigationBarTranslucent
       onRequestClose={requestClose}>
+      <KeyboardAvoidingView
+        testID="fullscreen-modal-keyboard"
+        style={styles.keyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View
         testID="fullscreen-modal-root"
         style={[
@@ -78,11 +86,13 @@ export function FullScreenModal({
         <View style={styles.body}>{children}</View>
         {footer ? <ActionBar>{footer}</ActionBar> : null}
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboard: { flex: 1 },
   root: { flex: 1 },
   header: {
     minHeight: 56,

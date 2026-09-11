@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
+import { LETTER_PDF_SIZE, pdfPrintOptions } from '@/lib/pdfPrintOptions';
 import { paymentSiteLabel } from '@/lib/paymentSite';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
@@ -139,7 +140,7 @@ export function CollectionManagerPaymentsModal({
         paymentSiteName: paymentSiteLabel(payment.payment_site),
         remainingBalance: Number(payment.remaining_balance),
       });
-      const { uri } = await Print.printToFileAsync({ html });
+      const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',

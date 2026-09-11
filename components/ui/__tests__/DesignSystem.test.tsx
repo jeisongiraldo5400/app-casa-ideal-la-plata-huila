@@ -1,6 +1,6 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
-import { Text } from 'react-native';
+import { KeyboardAvoidingView, Text } from 'react-native';
 import { ActionBar } from '../ActionBar';
 import { Button } from '../Button';
 import { FullScreenModal } from '../FullScreenModal';
@@ -212,5 +212,19 @@ describe('Casa Ideal design system', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Cerrar' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByText('pie')).toBeTruthy();
+  });
+
+  it('sube el contenido y el pie del modal a pantalla completa cuando aparece el teclado', () => {
+    const screen = render(
+      <FullScreenModal visible title="Nuevo cliente" onClose={jest.fn()} footer={<Text>Crear cliente</Text>}>
+        <Text>Dirección</Text>
+      </FullScreenModal>,
+    );
+    // En jest Platform.OS es 'ios'.
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe('padding');
+    // El formulario y los botones del pie quedan dentro del área que se ajusta al teclado.
+    const keyboard = screen.getByTestId('fullscreen-modal-keyboard');
+    expect(keyboard).toContainElement(screen.getByTestId('fullscreen-modal-root'));
+    expect(keyboard).toContainElement(screen.getByText('Crear cliente'));
   });
 });

@@ -83,7 +83,7 @@ const CREDIT_TERMS = [
 const RISK_AUTHORIZATION =
   'Autorizo de manera previa, expresa e informada a Casa Ideal de La Plata, NIT 12.279.584-1, o a quien represente sus derechos, para consultar, reportar, conservar, suministrar, solicitar o divulgar ante operadores de información y centrales de riesgo los datos relacionados con mi comportamiento comercial, financiero y crediticio, positivo o negativo, de acuerdo con la legislación vigente. Declaro que conozco mis derechos de consulta, actualización, rectificación y reclamo. Todo reporte negativo estará sujeto a la comunicación previa y demás requisitos legales.';
 
-const COMPANY = {
+export const COMPANY = {
   name: 'Casa Ideal de La Plata',
   tagline: 'Muebles y Electrodomésticos',
   owner: 'Rubén Darío Serrato Molina',
