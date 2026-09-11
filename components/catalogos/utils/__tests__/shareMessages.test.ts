@@ -1,4 +1,4 @@
-import { buildShareMessage, buildWhatsAppUrl } from '../shareMessages';
+import { buildShareMessage, buildWhatsAppUrl, shareLinkRecipient } from '../shareMessages';
 
 describe('buildShareMessage', () => {
   it('incluye la URL dentro del mensaje (Android ignora el campo `url` de Share)', () => {
@@ -20,6 +20,29 @@ describe('buildShareMessage', () => {
       label: 'Carlos',
     });
     expect(message).toContain('Hola Carlos.');
+  });
+
+  it('no saluda a nadie cuando el nombre está vacío o son solo espacios', () => {
+    for (const label of ['', '   ', null, undefined]) {
+      const message = buildShareMessage({
+        publicTitle: 'Sala moderna',
+        url: 'https://catalogo.test/c/abc123',
+        expiresAt: '2026-09-08T12:00:00.000Z',
+        label,
+      });
+      expect(message.startsWith('Te comparto el catálogo')).toBe(true);
+      expect(message).not.toContain('Hola');
+    }
+  });
+});
+
+describe('shareLinkRecipient', () => {
+  it('devuelve el nombre recortado o null si el enlace no tiene destinatario', () => {
+    expect(shareLinkRecipient('  Familia Pérez ')).toBe('Familia Pérez');
+    expect(shareLinkRecipient('')).toBeNull();
+    expect(shareLinkRecipient('   ')).toBeNull();
+    expect(shareLinkRecipient(null)).toBeNull();
+    expect(shareLinkRecipient(undefined)).toBeNull();
   });
 });
 

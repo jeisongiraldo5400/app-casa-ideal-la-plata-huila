@@ -18,6 +18,15 @@ jest.mock('@/components/scanning', () => {
   };
 });
 
+// El Icon real carga la fuente de forma asíncrona y hace setState fuera de act(...).
+jest.mock('@expo/vector-icons', () => {
+  const ReactModule = jest.requireActual<typeof import('react')>('react');
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    MaterialIcons: ({ name }: { name: string }) => ReactModule.createElement(Text, null, name),
+  };
+});
+
 jest.mock('../../infrastructure/services/negociosProductsService', () => ({
   findActiveProductByBarcode: jest.fn(),
 }));

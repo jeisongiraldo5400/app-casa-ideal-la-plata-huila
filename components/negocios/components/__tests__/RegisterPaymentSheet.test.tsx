@@ -3,6 +3,15 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RegisterPaymentSheet } from '../RegisterPaymentSheet';
 
+// El Icon real carga la fuente de forma asíncrona y hace setState fuera de act(...).
+jest.mock('@expo/vector-icons', () => {
+  const ReactModule = jest.requireActual<typeof import('react')>('react');
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    MaterialIcons: ({ name }: { name: string }) => ReactModule.createElement(Text, null, name),
+  };
+});
+
 /** El selector de método usa `useSafeAreaInsets`, que exige el proveedor. */
 const SAFE_AREA_METRICS = {
   frame: { x: 0, y: 0, width: 390, height: 844 },

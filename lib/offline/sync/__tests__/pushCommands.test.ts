@@ -90,4 +90,56 @@ describe('pushOutboxItem · pagos', () => {
     expect(name).toBe('register_collection_route_payment');
     expect(args).toMatchObject({ p_payment_site: 'app_movil' });
   });
+
+  it('manda la clave de idempotencia del outbox y deja la imputación FIFO al servidor', async () => {
+    const result = await pushOutboxItem(outboxItem('register_pago', basePago));
+
+    expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_idempotency_key: 'idem-1', p_cuota_id: null });
+    expect(result).toEqual({ outcome: 'done', result: { pagoId: 'pago-server-1' } });
+  });
+});
+
+describe('pushOutboxItem · clasificación de errores del cobro', () => {
+  beforeEach(() => mockRpc.mockReset());
+
+  it('una regla de negocio (saldo) es terminal: el servidor nunca lo aceptará', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'El valor supera el saldo pendiente' } });
+
+    await expect(pushOutboxItem(outboxItem('register_pago', basePago))).resolves.toEqual({
+      outcome: 'fail',
+      message: 'El valor supera el saldo pendiente',
+    });
+  });
+
+  it('sin red se reintenta sin consumir intentos', async () => {
+    mockRpc.mockRejectedValue(new TypeError('Network request failed'));
+
+    await expect(pushOutboxItem(outboxItem('register_pago', basePago))).resolves.toMatchObject({ outcome: 'network' });
+  });
+
+  it('la misma clave con datos distintos es conflicto (requiere revisión)', async () => {
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'La clave de idempotencia ya fue usada con datos diferentes' },
+    });
+
+    await expect(pushOutboxItem(outboxItem('register_pago', basePago))).resolves.toMatchObject({ outcome: 'conflict' });
+  });
+
+  it('si el servidor no devuelve el id del pago se reintenta', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    await expect(pushOutboxItem(outboxItem('register_pago', basePago))).resolves.toEqual({
+      outcome: 'retry',
+      message: 'El servidor no devolvió el id del pago',
+    });
+  });
+
+  it('un comando desconocido falla sin llamar al servidor', async () => {
+    await expect(pushOutboxItem(outboxItem('borrar_todo', {}))).resolves.toEqual({
+      outcome: 'fail',
+      message: 'Comando desconocido: borrar_todo',
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
 });

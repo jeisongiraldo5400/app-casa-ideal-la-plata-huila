@@ -239,16 +239,23 @@ describe('ExitScanningWorkspace', () => {
     expect(screen.getByText('1 de 1')).toBeTruthy();
   });
 
-  it('renderiza el espacio operativo con el tema oscuro', () => {
-    mockIsDark = true;
+  /** useNetworkStatus resuelve NetInfo.fetch() tras el montaje; se espera dentro de act. */
+  async function renderSettled() {
     const screen = render(<ExitScanningWorkspace />);
+    await act(async () => {});
+    return screen;
+  }
+
+  it('renderiza el espacio operativo con el tema oscuro', async () => {
+    mockIsDark = true;
+    const screen = await renderSettled();
 
     expect(screen.getByText('Orden #OE-101')).toBeTruthy();
     expect(screen.getByText('Aún no has agregado productos')).toBeTruthy();
   });
 
-  it('permite abrir directamente el listado real de productos pendientes', () => {
-    const screen = render(<ExitScanningWorkspace />);
+  it('permite abrir directamente el listado real de productos pendientes', async () => {
+    const screen = await renderSettled();
 
     fireEvent.press(screen.getByText('Ver pendientes (1)'));
 

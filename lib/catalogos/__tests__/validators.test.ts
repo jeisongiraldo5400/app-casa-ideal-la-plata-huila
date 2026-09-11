@@ -51,6 +51,11 @@ describe('validateShareLinkInput', () => {
     expect(validateShareLinkInput({ label: ' ', hours: 24 })).toEqual({});
   });
 
+  it('rechaza un nombre de un solo carácter y uno de más de 120 (igual que el CHECK)', () => {
+    expect(validateShareLinkInput({ label: ' A ', hours: 24 }).label).toBe('Escribe al menos 2 caracteres o deja el campo vacío.');
+    expect(validateShareLinkInput({ label: 'a'.repeat(121), hours: 24 }).label).toBe('Máximo 120 caracteres.');
+  });
+
   it('acota la vigencia entre 1 hora y 30 días', () => {
     expect(validateShareLinkInput({ label: 'Cliente', hours: 0 }).hours).toBe('La vigencia mínima es de 1 hora.');
     expect(validateShareLinkInput({ label: 'Cliente', hours: 721 }).hours).toBe('La vigencia máxima es de 30 días.');

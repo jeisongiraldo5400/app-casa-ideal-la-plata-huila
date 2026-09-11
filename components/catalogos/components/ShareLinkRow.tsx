@@ -7,7 +7,7 @@ import { formatCatalogDateTime, labelShareLinkStatus, pluralize, shareLinkStatus
 import { buildMagazineUrl, catalogShareLinkStatus, isShareLinkShareable } from '@/lib/catalogos/shareLinks';
 import type { CatalogShareLink } from '@/lib/catalogos/types';
 import { copyLinkToClipboard, shareLinkMessage } from '../utils/shareActions';
-import { buildShareMessage } from '../utils/shareMessages';
+import { buildShareMessage, shareLinkRecipient } from '../utils/shareMessages';
 
 interface ShareLinkRowProps {
   link: CatalogShareLink;
@@ -44,7 +44,7 @@ export function ShareLinkRow({ link, now, publicTitle, compact, reissuing, onRei
     <ListCard>
       <View style={styles.top}>
         <Text style={[styles.label, { color: colors.text.primary }]} numberOfLines={1}>
-          {link.label || 'Enlace sin destinatario'}
+          {shareLinkRecipient(link.label) ?? 'Enlace sin destinatario'}
         </Text>
         <StatusChip label={labelShareLinkStatus(status)} tone={shareLinkStatusTone(status)} />
       </View>

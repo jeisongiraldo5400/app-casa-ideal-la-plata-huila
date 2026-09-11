@@ -2,7 +2,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '@/lib/supabase';
 import { registerPushDevice, unregisterPushDevice } from '../pushDeviceService';
-import { SECURE_KEYS, getSecureJson } from '@/lib/offline/security/secureKeys';
+import { SECURE_KEYS, deleteSecureKey, getSecureJson } from '@/lib/offline/security/secureKeys';
 
 jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: jest.fn(async () => ({ data: 'device-1', error: null })) },
@@ -107,8 +107,12 @@ describe('registerPushDevice', () => {
 });
 
 describe('unregisterPushDevice', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    // El almacén en memoria y Device.isDevice sobreviven entre tests: sin esto,
+    // el resultado dependía del orden (token de un registro previo, o emulador).
+    mockedDevice.isDevice = true;
+    await deleteSecureKey(SECURE_KEYS.pushToken);
     mockedRpc.mockResolvedValue({ data: null, error: null });
   });
 

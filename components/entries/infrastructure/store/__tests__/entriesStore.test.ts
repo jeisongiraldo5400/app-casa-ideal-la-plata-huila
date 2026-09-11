@@ -11,8 +11,11 @@ jest.mock('@/lib/supabase', () => ({
 
 describe('entriesStore', () => {
   beforeEach(() => {
-    // Resetear el store antes de cada test
+    // Resetear el store antes de cada test. reset() conserva a propósito
+    // registeredEntriesCache (se recarga del servidor al elegir la orden), así
+    // que se limpia aparte para que los tests no dependan del orden.
     useEntriesStore.getState().reset();
+    useEntriesStore.setState({ registeredEntriesCache: {} });
     jest.clearAllMocks();
   });
 
@@ -79,17 +82,27 @@ describe('entriesStore', () => {
 
   describe('startEntry', () => {
     it('should not go to scanning without purchase order when PO_ENTRY', () => {
-      const { setEntryType, setSupplier, setWarehouse, startEntry } =
-        useEntriesStore.getState();
+      // setSupplier dispara loadPurchaseOrders sin await; con el mock vacío de supabase
+      // quedaba una promesa rechazada viva al terminar el test.
+      const originalLoadPurchaseOrders = useEntriesStore.getState().loadPurchaseOrders;
+      const loadPurchaseOrders = jest.fn(async () => undefined);
+      useEntriesStore.setState({ loadPurchaseOrders });
+      try {
+        const { setEntryType, setSupplier, setWarehouse, startEntry } =
+          useEntriesStore.getState();
 
-      setEntryType('PO_ENTRY');
-      setSupplier('supplier-1');
-      setWarehouse('warehouse-1');
-      startEntry();
+        setEntryType('PO_ENTRY');
+        setSupplier('supplier-1');
+        setWarehouse('warehouse-1');
+        startEntry();
 
-      const state = useEntriesStore.getState();
-      expect(state.step).toBe('setup');
-      expect(state.error).toMatch(/orden de compra/i);
+        const state = useEntriesStore.getState();
+        expect(loadPurchaseOrders).toHaveBeenCalledWith('supplier-1');
+        expect(state.step).toBe('setup');
+        expect(state.error).toMatch(/orden de compra/i);
+      } finally {
+        useEntriesStore.setState({ loadPurchaseOrders: originalLoadPurchaseOrders });
+      }
     });
 
     it('validates the setup and goes straight to scanning (no intermediate confirmation screen)', () => {

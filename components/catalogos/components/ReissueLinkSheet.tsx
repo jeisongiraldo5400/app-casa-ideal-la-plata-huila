@@ -5,6 +5,7 @@ import { Button, ModalSheet, OptionPickerField } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { DEFAULT_SHARE_LINK_HOURS, SHARE_LINK_DURATIONS } from '@/lib/catalogos/shareLinks';
 import type { CatalogShareLink } from '@/lib/catalogos/types';
+import { shareLinkRecipient } from '../utils/shareMessages';
 
 interface ReissueLinkSheetProps {
   link: CatalogShareLink | null;
@@ -21,13 +22,14 @@ export function ReissueLinkSheet({ link, busy, onClose, onConfirm }: ReissueLink
   const colors = getColors(isDark);
   const [hours, setHours] = useState(String(DEFAULT_SHARE_LINK_HOURS));
   if (!link) return null;
+  const recipient = shareLinkRecipient(link.label);
 
   return (
     <ModalSheet
       visible
       onClose={onClose}
       title="Reemitir enlace"
-      subtitle={`Para ${link.label}`}
+      subtitle={recipient ? `Para ${recipient}` : 'Enlace sin destinatario'}
       dismissable={!busy}
       footer={
         <>
