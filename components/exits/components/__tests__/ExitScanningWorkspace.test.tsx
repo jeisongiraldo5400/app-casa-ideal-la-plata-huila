@@ -85,7 +85,38 @@ const order: DeliveryOrder = {
     pending_quantity: 3,
     db_delivered_quantity: 1,
     created_at: '2026-08-21T10:00:00.000Z',
+    source_delivery_order_id: null,
+    group_key: 'own',
   }],
+};
+
+/** Remisión mixta: un producto propio y la copia de una OE de cliente anidada. */
+const mixedRemission: DeliveryOrder = {
+  ...order,
+  id: 'remission-1',
+  order_number: 'REM-7',
+  order_type: 'remission',
+  customer_name: '',
+  assigned_to_user_name: 'Carlos Rutas',
+  items: [
+    { ...order.items[0], id: 'own-1' },
+    {
+      ...order.items[0],
+      id: 'copy-1',
+      product_id: 'product-2',
+      product_name: 'Nevera 300L',
+      product_barcode: '770999',
+      product_sku: 'NEV-300',
+      quantity: 2,
+      delivered_quantity: 0,
+      pending_quantity: 2,
+      db_delivered_quantity: 0,
+      source_delivery_order_id: 'child-1',
+      source_order_number: 'OE-0012',
+      source_customer_name: 'Cliente Norte',
+      group_key: 'child-1',
+    },
+  ],
 };
 
 const product = {
@@ -108,6 +139,7 @@ const originalActions = {
   addProductToExit: useExitsStore.getState().addProductToExit,
   finalizeExit: useExitsStore.getState().finalizeExit,
   addCurrentSerial: useExitsStore.getState().addCurrentSerial,
+  selectScanWarehouse: useExitsStore.getState().selectScanWarehouse,
 };
 
 describe('ExitScanningWorkspace', () => {
@@ -133,6 +165,8 @@ describe('ExitScanningWorkspace', () => {
       targetOrderItemId: null,
       currentSerials: [],
       serialChecking: false,
+      currentGroupKey: null,
+      warehouseCandidates: [],
       loading: false,
       error: null,
       ...originalActions,
@@ -158,7 +192,7 @@ describe('ExitScanningWorkspace', () => {
     const addProductToExit = jest.fn(async () => {
       useExitsStore.setState({
         exitItems: [{ ...exitItem, quantity: 1, availableStock: 2 }],
-        scannedItemsProgress: new Map([['product-1-warehouse-1', 1]]),
+        scannedItemsProgress: new Map([['product-1-warehouse-1::own', 1]]),
         currentProduct: null,
         currentScannedBarcode: null,
       });
@@ -194,7 +228,7 @@ describe('ExitScanningWorkspace', () => {
     }));
     useExitsStore.setState({
       exitItems: [exitItem],
-      scannedItemsProgress: new Map([['product-1-warehouse-1', 2]]),
+      scannedItemsProgress: new Map([['product-1-warehouse-1::own', 2]]),
       finalizeExit,
     });
 
@@ -264,5 +298,67 @@ describe('ExitScanningWorkspace', () => {
     fireEvent.press(screen.getByText('Silla comedor'));
     expect(screen.getAllByText('Esta salida')).toHaveLength(2);
     expect(screen.getByText('Entregado')).toBeTruthy();
+    expect(screen.queryByText('Productos de la orden')).toBeNull();
+  });
+
+  describe('remisión mixta (propios + OE de cliente)', () => {
+    beforeEach(() => {
+      useExitsStore.setState({
+        selectedDeliveryOrderId: mixedRemission.id,
+        selectedDeliveryOrder: mixedRemission,
+        exitMode: 'direct_user',
+        selectedUserId: 'user-2',
+        selectedCustomerId: null,
+        registeredExitsCache: { [mixedRemission.id]: { 'product-1-warehouse-1': 1 } },
+      });
+    });
+
+    it('la lista de pendientes lleva un encabezado por grupo', async () => {
+      const screen = await renderSettled();
+
+      fireEvent.press(screen.getByText('Ver pendientes (2)'));
+
+      expect(screen.getByText('Productos de la remisión')).toBeTruthy();
+      expect(screen.getByText('OE-0012 · Cliente Norte')).toBeTruthy();
+      expect(screen.getByText('Silla comedor')).toBeTruthy();
+      expect(screen.getByText('Nevera 300L')).toBeTruthy();
+    });
+
+    it('la sesión agrupa los productos por su orden objetivo', async () => {
+      useExitsStore.setState({
+        exitItems: [
+          { ...exitItem, product: { id: 'product-2', name: 'Nevera 300L', sku: 'NEV-300', barcode: '770999' } as ExitItem['product'], quantity: 1, groupKey: 'child-1', targetOrderId: 'child-1' },
+          { ...exitItem, quantity: 1, groupKey: 'own', targetOrderId: 'remission-1' },
+        ],
+      });
+      const screen = await renderSettled();
+
+      expect(screen.getByText('Productos de la remisión')).toBeTruthy();
+      expect(screen.getByText('OE-0012 · Cliente Norte')).toBeTruthy();
+      expect(screen.getByText('Silla comedor')).toBeTruthy();
+      expect(screen.getByText('Nevera 300L')).toBeTruthy();
+    });
+
+    it('con candidatas en dos grupos la ficha pide bodega y orden', async () => {
+      useExitsStore.setState({
+        currentProduct: product,
+        currentScannedBarcode: '770123',
+        warehouseId: null,
+        currentGroupKey: null,
+        warehouseCandidates: [
+          { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 3, groupKey: 'own', groupLabel: 'Productos de la remisión', targetOrderId: 'remission-1' },
+          { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 2, groupKey: 'child-1', groupLabel: 'OE-0012 · Cliente Norte', targetOrderId: 'child-1' },
+        ],
+      });
+      const selectScanWarehouse = jest.fn(async () => undefined);
+      useExitsStore.setState({ selectScanWarehouse });
+      const screen = await renderSettled();
+
+      expect(screen.getByText('¿De qué bodega y orden sale?')).toBeTruthy();
+      fireEvent.press(screen.getByText('OE-0012 · Cliente Norte'));
+
+      expect(selectScanWarehouse).toHaveBeenCalledWith('warehouse-1', 'child-1');
+      act(() => useExitsStore.setState({ selectScanWarehouse: originalActions.selectScanWarehouse }));
+    });
   });
 });

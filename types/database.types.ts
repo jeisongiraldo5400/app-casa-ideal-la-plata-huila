@@ -2689,6 +2689,7 @@ export type Database = {
           signed_at: string | null
           source_delivery_order_id: string | null
           status: string
+          target_remission_id: string | null
           total_credit: number
           updated_at: string
           vereda_id: string | null
@@ -2728,6 +2729,7 @@ export type Database = {
           signed_at?: string | null
           source_delivery_order_id?: string | null
           status?: string
+          target_remission_id?: string | null
           total_credit?: number
           updated_at?: string
           vereda_id?: string | null
@@ -2767,6 +2769,7 @@ export type Database = {
           signed_at?: string | null
           source_delivery_order_id?: string | null
           status?: string
+          target_remission_id?: string | null
           total_credit?: number
           updated_at?: string
           vereda_id?: string | null
@@ -2831,6 +2834,13 @@ export type Database = {
           {
             foreignKeyName: "negocios_source_delivery_order_id_fkey"
             columns: ["source_delivery_order_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_target_remission_id_fkey"
+            columns: ["target_remission_id"]
             isOneToOne: false
             referencedRelation: "delivery_orders"
             referencedColumns: ["id"]
@@ -4223,6 +4233,16 @@ export type Database = {
         Args: { p_negocio_id: string; p_only_manageable: boolean }
         Returns: number
       }
+      approve_delivery_order_items: {
+        Args: {
+          p_delivered_by_user_id: string
+          p_delivery_order_id: string
+          p_idempotency_key: string
+          p_item_ids: string[]
+          p_observations: string
+        }
+        Returns: Json
+      }
       approve_delivery_order_with_returns: {
         Args: {
           p_delivery_order_id: string
@@ -4634,7 +4654,10 @@ export type Database = {
           product_name: string
           product_sku: string
           quantity: number
+          source_customer_name: string | null
           source_delivery_order_id: string
+          source_order_number: string | null
+          source_order_status: string | null
           warehouse_id: string
           warehouse_name: string
         }[]
@@ -5432,6 +5455,24 @@ export type Database = {
         Returns: Json
       }
       get_recaudo_pending_collectors: { Args: never; Returns: Json }
+      get_remission_origin_products: {
+        Args: { p_remission_id: string }
+        Returns: {
+          available_quantity: number
+          group_kind: string
+          product_id: string
+          product_name: string
+          quantity: number
+          sale_price: number
+          source_customer_id: string
+          source_customer_name: string
+          source_delivery_order_id: string
+          source_has_negocio: boolean
+          source_order_number: string
+          warehouse_id: string
+          warehouse_name: string
+        }[]
+      }
       get_reports_stats_today: {
         Args: never
         Returns: {
@@ -5611,6 +5652,18 @@ export type Database = {
           email: string
           full_name: string
           id: string
+        }[]
+      }
+      list_pending_remissions: {
+        Args: never
+        Returns: {
+          assigned_to_user_id: string
+          assigned_user_name: string
+          created_at: string
+          id: string
+          notes: string
+          order_number: string
+          zone_name: string
         }[]
       }
       list_sellers: {
@@ -5823,6 +5876,15 @@ export type Database = {
           p_platform: string
         }
         Returns: string
+      }
+      register_remission_exits_batch: {
+        Args: {
+          p_delivery_observations: string
+          p_groups: Json
+          p_idempotency_key: string
+          p_remission_id: string
+        }
+        Returns: Json
       }
       reissue_private_catalog_share_link: {
         Args: {

@@ -1,5 +1,5 @@
-import { computeKeyAllowance } from '../orderAllowance';
-import { compositeKey } from '../compositeKey';
+import { buildGroupedRegisteredTotals, computeKeyAllowance } from '../orderAllowance';
+import { compositeKey, groupedKey } from '../compositeKey';
 import type { DeliveryOrder, DeliveryOrderItem } from '../../store/exitsStore';
 
 function line(overrides: Partial<DeliveryOrderItem>): DeliveryOrderItem {
@@ -16,8 +16,15 @@ function line(overrides: Partial<DeliveryOrderItem>): DeliveryOrderItem {
     pending_quantity: 1,
     db_delivered_quantity: 0,
     created_at: '2026-09-10T10:00:00.000Z',
+    source_delivery_order_id: null,
+    group_key: 'own',
     ...overrides,
   };
+}
+
+/** Copia de una OE hija dentro de la remisión. */
+function childLine(childId: string, overrides: Partial<DeliveryOrderItem>): DeliveryOrderItem {
+  return line({ source_delivery_order_id: childId, group_key: childId, source_order_number: 'OE-12', source_customer_name: 'Cliente Norte', ...overrides });
 }
 
 function order(items: DeliveryOrderItem[]): DeliveryOrder {
@@ -95,5 +102,50 @@ describe('computeKeyAllowance', () => {
     const allowance = computeKeyAllowance(order([line({})]), {}, 'product-9', 'warehouse-1');
 
     expect(allowance).toEqual({ lines: [], totalRequired: 0, totalDelivered: 0, maxCart: 0 });
+  });
+
+  it('el mismo producto+bodega en propios y en una OE hija tiene cupos independientes', () => {
+    const deliveryOrder = order([
+      line({ id: 'own', quantity: 3, db_delivered_quantity: 2 }),
+      childLine('child-1', { id: 'copy', quantity: 5, db_delivered_quantity: 0 }),
+    ]);
+
+    const own = computeKeyAllowance(deliveryOrder, {}, 'product-1', 'warehouse-1');
+    const child = computeKeyAllowance(deliveryOrder, {}, 'product-1', 'warehouse-1', 'child-1');
+
+    expect(own.lines.map((item) => item.id)).toEqual(['own']);
+    expect(own.maxCart).toBe(1);
+    expect(child.lines.map((item) => item.id)).toEqual(['copy']);
+    expect(child.maxCart).toBe(5);
+  });
+
+  it('el caché de la OE hija no descuenta cupo de los propios (cada grupo lee su slot)', () => {
+    const deliveryOrder = order([
+      line({ id: 'own', quantity: 3 }),
+      childLine('child-1', { id: 'copy', quantity: 3 }),
+    ]);
+    const childSlice = { [compositeKey('product-1', 'warehouse-1')]: 3 };
+
+    expect(computeKeyAllowance(deliveryOrder, childSlice, 'product-1', 'warehouse-1', 'child-1').maxCart).toBe(0);
+    expect(computeKeyAllowance(deliveryOrder, {}, 'product-1', 'warehouse-1').maxCart).toBe(3);
+  });
+});
+
+describe('buildGroupedRegisteredTotals', () => {
+  it('lee el slot de la orden objetivo de cada grupo y lo indexa por clave agrupada', () => {
+    const deliveryOrder = order([
+      line({ id: 'own', quantity: 3 }),
+      childLine('child-1', { id: 'copy', quantity: 5 }),
+      childLine('child-2', { id: 'copy-2', product_id: 'product-2', quantity: 1 }),
+    ]);
+    const cache = {
+      'order-1': { [compositeKey('product-1', 'warehouse-1')]: 2 },
+      'child-1': { [compositeKey('product-1', 'warehouse-1')]: 4 },
+    };
+
+    expect(buildGroupedRegisteredTotals(deliveryOrder, cache)).toEqual({
+      [groupedKey('product-1', 'warehouse-1')]: 2,
+      [groupedKey('product-1', 'warehouse-1', 'child-1')]: 4,
+    });
   });
 });

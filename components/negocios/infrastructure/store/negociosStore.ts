@@ -70,6 +70,11 @@ interface NegociosState {
     codeudor_customer_id?: string | null;
     remission_id?: string | null;
     source_delivery_order_id?: string | null;
+    /**
+     * Remisión `pending` en la que se anida la OE creada al activar (solo con
+     * origen bodega: excluyente con `remission_id` / `source_delivery_order_id`).
+     */
+    target_remission_id?: string | null;
     items: NegocioItem[];
     /** Vendedor del negocio; por defecto el usuario autenticado. */
     seller_id?: string | null;
@@ -87,6 +92,8 @@ interface NegociosState {
     activate: boolean;
   }) => Promise<{ numero: number; id: string } | null>;
 }
+
+export type CreateNegocioInput = Parameters<NegociosState['createAndActivate']>[0];
 
 interface PendingCreateRequest {
   draftId: string;
@@ -134,27 +141,7 @@ function toUserError(error: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
-function createRequestFingerprint(input: {
-  deal_date: string;
-  municipio_id: string;
-  vereda_id?: string | null;
-  direccion: string;
-  customer_id: string;
-  codeudor_customer_id?: string | null;
-  remission_id?: string | null;
-  source_delivery_order_id?: string | null;
-  items: NegocioItem[];
-  seller_id?: string | null;
-  down_payment_schedule: DownPaymentEntry[];
-  installments_count: number;
-  frequency: CreditFrequency;
-  first_due_date?: string | null;
-  notes?: string;
-  customer_signature_data_url: string;
-  guarantor_signature_data_url?: string;
-  seller_signature_data_url?: string;
-  activate: boolean;
-}): string {
+function createRequestFingerprint(input: CreateNegocioInput): string {
   return JSON.stringify({
     deal_date: input.deal_date,
     municipio_id: input.municipio_id,
@@ -165,6 +152,7 @@ function createRequestFingerprint(input: {
     seller_id: input.seller_id || null,
     remission_id: input.remission_id || null,
     source_delivery_order_id: input.source_delivery_order_id || null,
+    target_remission_id: input.target_remission_id || null,
     items: input.items,
     down_payment_schedule: sortDownPaymentSchedule(input.down_payment_schedule),
     installments_count: input.installments_count,
@@ -324,6 +312,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!input.municipio_id) throw new Error('Seleccione un municipio');
     if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
     if (!isValidDateValue(input.deal_date)) throw new Error('Fecha del negocio inválida');
+    if (input.target_remission_id && negocioSkipsWarehouseStock(input)) {
+      throw new Error('Enviar en remisión solo aplica a negocios con origen en bodega central');
+    }
     validateNegocioItemsInput(input.items);
     const signatureError = sellerSignatureRequiredError(
       input.customer_signature_data_url,
@@ -413,6 +404,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         seller_id: input.seller_id || user.id,
         remission_id: input.remission_id || null,
         source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
+        target_remission_id: input.target_remission_id || null,
         products_subtotal: calc.productsSubtotal,
         interest_amount: calc.interestAmount,
         total_credit: calc.totalCredit,

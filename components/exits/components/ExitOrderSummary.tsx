@@ -56,6 +56,13 @@ export function ExitOrderSummary() {
   const recipient = selectedDeliveryOrder.customer_name || selectedDeliveryOrder.assigned_to_user_name || 'Destinatario no especificado';
   const productCount = progress ? progress.items.filter((item) => !item.isComplete).length : selectedDeliveryOrder.items.length;
   const isComplete = Boolean(progress?.items.length && progress.items.every((item) => item.isComplete));
+  // Remisión mixta: productos propios y OE de cliente anidadas viajan juntos pero se registran por separado.
+  const sections = progress?.sections ?? [];
+  const ownProducts = sections.find((section) => section.groupKey === 'own')?.items.length ?? 0;
+  const childOrders = sections.filter((section) => section.groupKey !== 'own').length;
+  const contentSummary = childOrders > 0
+    ? `${ownProducts} ${ownProducts === 1 ? 'producto propio' : 'productos propios'} · ${childOrders} ${childOrders === 1 ? 'orden de cliente' : 'órdenes de cliente'}`
+    : null;
   const statusLabel = isComplete ? 'Completa' : deliveryOrderStatusLabel(selectedDeliveryOrder.status);
   const statusTone = isComplete ? 'success' : deliveryOrderStatusTone(selectedDeliveryOrder.status);
 
@@ -74,6 +81,9 @@ export function ExitOrderSummary() {
         <SummaryRow icon="person-outline" label="Destinatario" value={recipient} colors={colors} />
         {selectedDeliveryOrder.delivery_address ? (
           <SummaryRow icon="place" label="Dirección" value={selectedDeliveryOrder.delivery_address} colors={colors} />
+        ) : null}
+        {contentSummary ? (
+          <SummaryRow icon="account-tree" label="Contenido de la remisión" value={contentSummary} colors={colors} />
         ) : null}
         <SummaryRow
           icon="inventory-2"

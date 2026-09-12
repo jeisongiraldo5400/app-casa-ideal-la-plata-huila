@@ -1,4 +1,4 @@
-import { compositeKey } from '../compositeKey';
+import { compositeKey, groupedKey } from '../compositeKey';
 import {
   aggregateRegisteredTotalForGroup,
   buildRegisteredTotalsByKey,
@@ -43,7 +43,7 @@ describe('fifoDeliveryAllocation', () => {
       line({ id: 'old', quantity: 3, created_at: '2026-01-01T00:00:00.000Z' }),
       line({ id: 'new', quantity: 3, created_at: '2026-01-02T00:00:00.000Z' }),
     ];
-    const key = compositeKey('p1', 'w1');
+    const key = groupedKey('p1', 'w1');
     const progress = computeFifoProgressByItemId(
       items,
       { [key]: 4 },
@@ -60,6 +60,21 @@ describe('fifoDeliveryAllocation', () => {
       sessionScanned: 1,
       pending: 1,
     });
+  });
+
+  it('computeFifoProgressByItemId separa por grupo el mismo producto+bodega (propios vs OE hija)', () => {
+    const items = [
+      line({ id: 'own', quantity: 3 }),
+      line({ id: 'copy', quantity: 2, group_key: 'child-1' }),
+    ];
+    const progress = computeFifoProgressByItemId(
+      items,
+      { [groupedKey('p1', 'w1')]: 3 },
+      new Map([[groupedKey('p1', 'w1', 'child-1'), 1]])
+    );
+
+    expect(progress.get('own')).toEqual({ registered: 3, sessionScanned: 0, pending: 0 });
+    expect(progress.get('copy')).toEqual({ registered: 0, sessionScanned: 1, pending: 1 });
   });
 
   it('buildRegisteredTotalsByKey groups by product+warehouse', () => {

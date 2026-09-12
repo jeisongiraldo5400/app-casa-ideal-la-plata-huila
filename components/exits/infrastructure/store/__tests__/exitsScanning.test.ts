@@ -42,9 +42,18 @@ function line(partial: Partial<DeliveryOrderItem> & Pick<DeliveryOrderItem, 'id'
     pending_quantity: partial.quantity,
     db_delivered_quantity: 0,
     created_at: '2026-08-21T10:00:00.000Z',
+    source_delivery_order_id: null,
+    group_key: 'own',
     ...partial,
   };
 }
+
+/** Copia de una OE hija anidada en la remisión. */
+function childLine(childId: string, number: string, customer: string, partial: Parameters<typeof line>[0]): DeliveryOrderItem {
+  return line({ source_delivery_order_id: childId, group_key: childId, source_order_number: number, source_customer_name: customer, ...partial });
+}
+
+const OWN_CANDIDATE = { groupKey: 'own', groupLabel: 'Productos de la orden', targetOrderId: 'order-1' };
 
 const product = { id: 'product-1', name: 'Silla comedor', sku: 'SIL-1', barcode: '770123' } as ExitItem['product'];
 
@@ -73,6 +82,18 @@ const singleWarehouseOrder = makeOrder([
   line({ id: 'item-1', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 3, created_at: '2026-08-21T10:00:00.000Z' }),
   line({ id: 'item-3', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 3, created_at: '2026-08-21T12:00:00.000Z' }),
 ]);
+
+/** Remisión mixta: el mismo producto+bodega en propios y en la copia de una OE hija, más otra hija. */
+const mixedRemission: DeliveryOrder = {
+  ...makeOrder([
+    childLine('child-b', 'OE-0020', 'Cliente Sur', { id: 'copy-b', product_id: 'product-2', warehouse_id: 'warehouse-1', quantity: 1 }),
+    line({ id: 'own-1', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 3 }),
+    childLine('child-a', 'OE-0012', 'Cliente Norte', { id: 'copy-a', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 2 }),
+  ]),
+  order_type: 'remission',
+  customer_name: '',
+  assigned_to_user_name: 'Carlos Rutas',
+};
 
 const originalActions = {
   searchProductByBarcode: useExitsStore.getState().searchProductByBarcode,
@@ -114,10 +135,94 @@ describe('scanBarcode: resolución de bodega y stock físico', () => {
     expect(state.targetOrderItemId).toBeNull();
     expect(state.loading).toBe(false);
     expect(state.warehouseCandidates).toEqual([
-      { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 6 },
-      { warehouseId: 'warehouse-2', warehouseName: 'Bodega norte', pending: 2 },
+      { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 6, ...OWN_CANDIDATE },
+      { warehouseId: 'warehouse-2', warehouseName: 'Bodega norte', pending: 2, ...OWN_CANDIDATE },
     ]);
     expect(mockFetchWarehouseStock).not.toHaveBeenCalled();
+  });
+
+  it('remisión mixta: el mismo producto en propios y en una OE hija da dos candidatas (grupo + bodega)', async () => {
+    seed(mixedRemission);
+
+    await useExitsStore.getState().scanBarcode('770123');
+
+    const state = useExitsStore.getState();
+    expect(state.warehouseId).toBeNull();
+    expect(state.currentGroupKey).toBeNull();
+    expect(state.warehouseCandidates).toEqual([
+      { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 3, groupKey: 'own', groupLabel: 'Productos de la remisión', targetOrderId: 'order-1' },
+      { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 2, groupKey: 'child-a', groupLabel: 'OE-0012 · Cliente Norte', targetOrderId: 'child-a' },
+    ]);
+    expect(mockFetchWarehouseStock).not.toHaveBeenCalled();
+  });
+
+  it('elegir la OE hija fija su línea, su pendiente y registra el producto contra la hija', async () => {
+    seed(mixedRemission);
+    await useExitsStore.getState().scanBarcode('770123');
+
+    await useExitsStore.getState().selectScanWarehouse('warehouse-1', 'child-a');
+
+    const state = useExitsStore.getState();
+    expect(state.currentGroupKey).toBe('child-a');
+    expect(state.targetOrderItemId).toBe('copy-a');
+    expect(state.currentAvailableStock).toBe(2);
+
+    const result = await useExitsStore.getState().addProductToExit(product, 2, '770123');
+    expect(result).toEqual({ ok: true, error: null });
+    expect(useExitsStore.getState().exitItems[0]).toEqual(
+      expect.objectContaining({ quantity: 2, warehouseId: 'warehouse-1', groupKey: 'child-a', targetOrderId: 'child-a' })
+    );
+    expect(useExitsStore.getState().scannedItemsProgress.get('product-1-warehouse-1::child-a')).toBe(2);
+    expect(useExitsStore.getState().scannedItemsProgress.get('product-1-warehouse-1::own')).toBeUndefined();
+
+    // Los propios siguen con sus 3 pendientes: al volver a escanear solo queda esa candidata.
+    await useExitsStore.getState().scanBarcode('770123');
+    expect(useExitsStore.getState().warehouseCandidates).toEqual([
+      expect.objectContaining({ groupKey: 'own', pending: 3 }),
+    ]);
+  });
+
+  it('sin indicar grupo, una bodega con candidatas en dos grupos exige elegir la orden', async () => {
+    seed(mixedRemission);
+    await useExitsStore.getState().scanBarcode('770123');
+
+    await useExitsStore.getState().selectScanWarehouse('warehouse-1');
+
+    expect(useExitsStore.getState().warehouseId).toBeNull();
+    expect(useExitsStore.getState().error).toMatch(/Elige la orden/);
+  });
+
+  it('lo registrado en la OE hija (su propio slot de caché) descuenta solo a la hija', async () => {
+    seed(mixedRemission);
+    useExitsStore.setState({ registeredExitsCache: { 'order-1': {}, 'child-a': { 'product-1-warehouse-1': 2 } } });
+
+    await useExitsStore.getState().scanBarcode('770123');
+
+    const state = useExitsStore.getState();
+    expect(state.warehouseCandidates).toEqual([expect.objectContaining({ groupKey: 'own', pending: 3 })]);
+    expect(state.currentGroupKey).toBe('own');
+    expect(state.warehouseId).toBe('warehouse-1');
+  });
+
+  it('el progreso se divide en secciones: propios primero y luego las hijas por número', () => {
+    seed(mixedRemission);
+    useExitsStore.setState({
+      exitItems: [{ product, quantity: 1, barcode: '770123', warehouseId: 'warehouse-1', groupKey: 'child-a', targetOrderId: 'child-a' }],
+      scannedItemsProgress: new Map([['product-1-warehouse-1::child-a', 1]]),
+      registeredExitsCache: { 'order-1': { 'product-1-warehouse-1': 1 } },
+    });
+
+    const progress = useExitsStore.getState().getSelectedDeliveryOrderProgress();
+
+    expect(progress?.sections.map((section) => [section.groupKey, section.label, section.targetOrderId])).toEqual([
+      ['own', 'Productos de la remisión', 'order-1'],
+      ['child-a', 'OE-0012 · Cliente Norte', 'child-a'],
+      ['child-b', 'OE-0020 · Cliente Sur', 'child-b'],
+    ]);
+    expect(progress?.sections[0]).toEqual(expect.objectContaining({ totalRequired: 3, totalRegistered: 1, totalScanned: 0 }));
+    expect(progress?.sections[1]).toEqual(expect.objectContaining({ totalRequired: 2, totalRegistered: 0, totalScanned: 1 }));
+    expect(progress?.items.map((item) => item.item.id)).toEqual(['own-1', 'copy-a', 'copy-b']);
+    expect(progress?.totalRequired).toBe(6);
   });
 
   it('selectScanWarehouse fija la bodega elegida, la línea FIFO de esa bodega y consulta su stock', async () => {
@@ -207,7 +312,7 @@ describe('scanBarcode: resolución de bodega y stock físico', () => {
     seed(singleWarehouseOrder);
     useExitsStore.setState({
       exitItems: [{ product, quantity: 6, barcode: '770123', warehouseId: 'warehouse-1' }],
-      scannedItemsProgress: new Map([['product-1-warehouse-1', 6]]),
+      scannedItemsProgress: new Map([['product-1-warehouse-1::own', 6]]),
     });
 
     await useExitsStore.getState().scanBarcode('770123');
@@ -271,6 +376,39 @@ describe('selectDeliveryOrder: cambio de destinatario durante la carga', () => {
     expect(state.selectedDeliveryOrderId).toBeNull();
     expect(state.selectedDeliveryOrder).toBeNull();
     expect(state.loading).toBe(false);
+  });
+
+  it('una remisión mixta carga las salidas de la remisión y de cada OE hija en slots separados', async () => {
+    seed(singleWarehouseOrder);
+    useExitsStore.setState({ selectedDeliveryOrderId: null, selectedDeliveryOrder: null, step: 'setup', registeredExitsCache: {} });
+    const exitsChain = chain({
+      data: [
+        { id: 'exit-own', delivery_order_id: 'order-1', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 1 },
+        { id: 'exit-child', delivery_order_id: 'child-a', product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 2 },
+      ],
+      error: null,
+    });
+    mockFrom.mockImplementation((table: string) => (table === 'inventory_exits' ? exitsChain : chain()));
+    const rpcRow = (id: string, source: string | null) => ({
+      id, product_id: 'product-1', warehouse_id: 'warehouse-1', quantity: 3, delivered_quantity: 0,
+      created_at: '2026-08-21T10:00:00.000Z', source_delivery_order_id: source,
+      source_order_number: source ? 'OE-0012' : null, source_customer_name: source ? 'Cliente Norte' : null, source_order_status: null,
+      product_name: 'Silla', product_barcode: '770123', product_sku: 'SIL', warehouse_name: 'Bodega principal',
+    });
+    mockRpc.mockResolvedValue({ data: [rpcRow('own-1', null), rpcRow('copy-a', 'child-a')], error: null });
+
+    await useExitsStore.getState().selectDeliveryOrder('order-1', { id: 'order-1', order_type: 'remission', assigned_to_user_name: 'Carlos' });
+
+    const state = useExitsStore.getState();
+    expect(exitsChain.in).toHaveBeenCalledWith('delivery_order_id', ['order-1', 'child-a']);
+    expect(state.registeredExitsCache).toEqual({
+      'order-1': { 'product-1-warehouse-1': 1 },
+      'child-a': { 'product-1-warehouse-1': 2 },
+    });
+    expect(state.selectedDeliveryOrder?.items.map((item) => [item.id, item.group_key, item.delivered_quantity])).toEqual([
+      ['own-1', 'own', 1],
+      ['copy-a', 'child-a', 2],
+    ]);
   });
 });
 

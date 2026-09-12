@@ -1,13 +1,21 @@
 import {
-  buildRegisteredTotalsByKey,
   computeFifoProgressByItemId,
   sortLinesFifo
 } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
-import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
-import { computeKeyAllowance } from '@/components/exits/infrastructure/utils/orderAllowance';
+import { OWN_GROUP_KEY, compositeKey, groupedKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import {
+  groupKeyOf,
+  groupLabelFor,
+  orderedGroupKeys,
+  targetOrderIdForGroup,
+} from '@/components/exits/infrastructure/utils/deliveryGroups';
+import {
+  buildGroupedRegisteredTotals,
+  computeKeyAllowance,
+} from '@/components/exits/infrastructure/utils/orderAllowance';
 import {
   EPOCH_ISO,
-  aggregateExitsByKey,
+  buildRegisteredTotalsByOrder,
   fetchDeliveredTotalsByOrder,
   fetchInventoryExitsForOrders,
   fetchPendingCustomerOrders,
@@ -15,7 +23,8 @@ import {
   fetchUserOrdersExpanded,
   getActiveCancelledExitIds,
   groupExitsByOrder,
-  loadOrderRegisteredTotals,
+  loadRegisteredTotalsForSelectedOrder,
+  targetOrderIdsOf,
 } from '@/components/exits/infrastructure/services/deliveryOrderQueries';
 import {
   UNAUTHORIZED_EXIT_MESSAGE,
@@ -96,13 +105,23 @@ export interface ExitItem {
   physicalStock?: number | null;
   /** Seriales de fábrica de las unidades de esta línea (opcionales, máx. uno por unidad). */
   serials?: ExitSerial[];
+  /** Grupo de la línea de orden: `'own'` (propios) o id de la OE hija. Ausente equivale a `'own'`. */
+  groupKey?: string;
+  /** Orden real contra la que se registra la salida (la OE hija para las copias). */
+  targetOrderId?: string;
 }
 
-/** Bodega candidata cuando el producto escaneado tiene pendientes en más de una bodega. */
+/**
+ * Candidata cuando el producto escaneado tiene pendientes en más de una bodega o grupo
+ * (propios de la remisión vs. copias de una OE hija).
+ */
 export interface ScanWarehouseCandidate {
   warehouseId: string;
   warehouseName: string;
   pending: number;
+  groupKey: string;
+  groupLabel: string;
+  targetOrderId: string;
 }
 
 export interface DeliveryOrderItem {
@@ -122,6 +141,12 @@ export interface DeliveryOrderItem {
   created_at: string;
   /** Nota por producto capturada en la web al crear/editar la orden. */
   notes?: string | null;
+  /** OE hija de la que esta línea es copia (remisiones mixtas); null en líneas propias. */
+  source_delivery_order_id: string | null;
+  source_order_number?: string | null;
+  source_customer_name?: string | null;
+  /** `source_delivery_order_id ?? 'own'`. */
+  group_key: string;
 }
 
 export interface DeliveryOrder {
@@ -157,8 +182,21 @@ export interface SelectedDeliveryOrderProgressItem {
   isComplete: boolean;
 }
 
+/** Grupo de la orden seleccionada: propios primero y luego cada OE hija. */
+export interface SelectedDeliveryOrderProgressSection {
+  groupKey: string;
+  targetOrderId: string;
+  label: string;
+  items: SelectedDeliveryOrderProgressItem[];
+  totalRequired: number;
+  totalRegistered: number;
+  totalScanned: number;
+  isComplete: boolean;
+}
+
 export interface SelectedDeliveryOrderProgress {
   items: SelectedDeliveryOrderProgressItem[];
+  sections: SelectedDeliveryOrderProgressSection[];
   totalRequired: number;
   totalRegistered: number;
   totalScanned: number;
@@ -188,7 +226,9 @@ export interface ExitsState {
   currentPhysicalStock: number | null;
   /** Línea de orden objetivo al escanear (p. ej. segunda fila mismo SKU). */
   targetOrderItemId: string | null;
-  /** Bodegas con pendientes para el producto escaneado; >1 exige elección del operario. */
+  /** Grupo (propios u OE hija) elegido para el producto en revisión. */
+  currentGroupKey: string | null;
+  /** Bodegas/grupos con pendientes para el producto escaneado; >1 exige elección del operario. */
   warehouseCandidates: ScanWarehouseCandidate[];
   /** Seriales capturados para el producto en revisión (opcionales, máx. uno por unidad). */
   currentSerials: ExitSerial[];
@@ -221,14 +261,15 @@ export interface ExitsState {
   // Datos de orden de entrega
   deliveryOrders: DeliveryOrder[];
   selectedDeliveryOrder: DeliveryOrder | null;
-  scannedItemsProgress: Map<string, number>; // compositeKey(product_id, warehouse_id) -> cantidad escaneada
+  scannedItemsProgress: Map<string, number>; // groupedKey(product_id, warehouse_id, group) -> cantidad escaneada
   canRegisterExit: boolean;
   authorizationMessage: string | null;
   /** Orden cuya autorización ya se verificó en esta sesión (evita repetir 4 consultas al finalizar). */
   authorizationCheckedOrderId: string | null;
 
-  // Cache de salidas registradas por orden y producto+bodega (para evitar consultas redundantes)
-  registeredExitsCache: Record<string, Record<string, number>>; // orderId -> compositeKey(product_id, warehouse_id) -> quantity
+  // Cache de salidas registradas por orden objetivo y producto+bodega. Una remisión mixta tiene
+  // un slot para sus propios y otro por cada OE hija (sus salidas llevan delivery_order_id = hija).
+  registeredExitsCache: Record<string, Record<string, number>>; // targetOrderId -> compositeKey(product_id, warehouse_id) -> quantity
 
   // Actions - Setup
   setExitMode: (mode: ExitMode | null) => void;
@@ -254,7 +295,8 @@ export interface ExitsState {
     productId: string,
     warehouseId: string,
     quantity: number,
-    targetOrderItemId?: string | null
+    targetOrderItemId?: string | null,
+    groupKey?: string
   ) => {
     valid: boolean;
     error?: string;
@@ -264,8 +306,11 @@ export interface ExitsState {
 
   // Actions - Scanning
   scanBarcode: (barcode: string) => Promise<void>;
-  /** Fija la bodega del producto escaneado (cuando hay varias candidatas) y consulta su stock físico. */
-  selectScanWarehouse: (warehouseId: string) => Promise<void>;
+  /**
+   * Fija la bodega (y el grupo) del producto escaneado cuando hay varias candidatas y consulta
+   * su stock físico. Sin `groupKey` se usa la única candidata de esa bodega.
+   */
+  selectScanWarehouse: (warehouseId: string, groupKey?: string) => Promise<void>;
   /** Lanza si la consulta falla (red/servidor); devuelve null solo si el código no existe. */
   searchProductByBarcode: (barcode: string) => Promise<Product | null>;
   addProductToExit: (
@@ -348,6 +393,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   currentAvailableStock: 0,
   currentPhysicalStock: null,
   targetOrderItemId: null,
+  currentGroupKey: null,
   warehouseCandidates: [],
   currentSerials: [],
   serialChecking: false,
@@ -649,22 +695,33 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      const exits = await fetchInventoryExitsForOrders([orderId]);
+      const activeItems = orderItems.filter((item) => !item.deleted_at && item.product && !item.product.deleted_at);
+
+      // Las copias de OE hijas registran sus salidas contra la hija: se cargan las salidas de
+      // la orden seleccionada y de cada hija, y la caché lleva un slot por orden objetivo.
+      const exits = await fetchInventoryExitsForOrders(targetOrderIdsOf(orderId, activeItems));
       const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
       if (isStale()) return;
-      const registeredByProduct = aggregateExitsByKey(exits, cancelledExitIds);
+      const registeredTotalsByOrder = buildRegisteredTotalsByOrder(
+        orderId,
+        activeItems,
+        groupExitsByOrder(exits, cancelledExitIds)
+      );
 
-      const activeItems = orderItems.filter((item) => !item.deleted_at && item.product && !item.product.deleted_at);
       const fifoInputs = activeItems.map((item) => ({
         id: item.id,
         product_id: item.product_id,
         warehouse_id: item.warehouse_id,
         quantity: Number(item.quantity) || 0,
         db_delivered_quantity: Number(item.delivered_quantity) || 0,
-        created_at: item.created_at || EPOCH_ISO
+        created_at: item.created_at || EPOCH_ISO,
+        group_key: groupKeyOf(item.source_delivery_order_id)
       }));
-      const registeredTotalsForOrder = buildRegisteredTotalsByKey(fifoInputs, registeredByProduct);
-      const fifoAllocated = computeFifoProgressByItemId(fifoInputs, registeredTotalsForOrder, new Map());
+      const fifoAllocated = computeFifoProgressByItemId(
+        fifoInputs,
+        buildGroupedRegisteredTotals({ id: orderId, items: fifoInputs }, registeredTotalsByOrder),
+        new Map()
+      );
 
       const deliveryOrder: DeliveryOrder = {
         id: orderHeader.id,
@@ -696,6 +753,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             db_delivered_quantity: Number(item.delivered_quantity) || 0,
             created_at: item.created_at || EPOCH_ISO,
             notes: item.notes?.trim() || null,
+            source_delivery_order_id: item.source_delivery_order_id ?? null,
+            source_order_number: item.source_order_number ?? null,
+            source_customer_name: item.source_customer_name ?? null,
+            group_key: groupKeyOf(item.source_delivery_order_id),
           };
         })
       };
@@ -703,10 +764,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       const authorizationResult = await get().validateCurrentUserAuthorizationForOrder(orderId);
       if (isStale()) return;
 
-      const updatedCache = { ...get().registeredExitsCache, [orderId]: { ...registeredTotalsForOrder } };
-      Object.keys(updatedCache[orderId]).forEach((k) => {
-        if (updatedCache[orderId][k] <= 0) delete updatedCache[orderId][k];
-      });
+      const updatedCache = { ...get().registeredExitsCache, ...registeredTotalsByOrder };
 
       set({
         selectedDeliveryOrder: deliveryOrder,
@@ -740,7 +798,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     productId: string,
     warehouseId: string,
     quantity: number,
-    targetOrderItemId?: string | null
+    targetOrderItemId?: string | null,
+    groupKey: string = OWN_GROUP_KEY
   ) => {
     const {
       selectedDeliveryOrder,
@@ -754,12 +813,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { valid: false, error: 'No hay orden de entrega seleccionada' };
     }
 
-    const cacheSlice = registeredExitsCache[selectedDeliveryOrderId] || {};
+    const cacheSlice = registeredExitsCache[targetOrderIdForGroup(selectedDeliveryOrderId, groupKey)] || {};
     const { lines, totalRequired, totalDelivered } = computeKeyAllowance(
       selectedDeliveryOrder,
       cacheSlice,
       productId,
-      warehouseId
+      warehouseId,
+      groupKey
     );
 
     if (lines.length === 0) {
@@ -770,7 +830,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
 
     const sessionTotal = exitItems
-      .filter((item) => item.product.id === productId && item.warehouseId === warehouseId)
+      .filter(
+        (item) =>
+          item.product.id === productId &&
+          item.warehouseId === warehouseId &&
+          (item.groupKey ?? OWN_GROUP_KEY) === groupKey
+      )
       .reduce((sum, item) => sum + item.quantity, 0);
 
     if (totalDelivered + sessionTotal + quantity > totalRequired) {
@@ -783,7 +848,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     const fifoProgress = computeFifoProgressByItemId(
       selectedDeliveryOrder.items,
-      cacheSlice,
+      buildGroupedRegisteredTotals(selectedDeliveryOrder, registeredExitsCache),
       scannedItemsProgress
     );
 
@@ -809,44 +874,51 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       const items = selectedDeliveryOrder.items || [];
-      const cacheSlice =
-        registeredExitsCache[selectedDeliveryOrderId] || {};
       const fifoProgress = computeFifoProgressByItemId(
         items,
-        cacheSlice,
+        buildGroupedRegisteredTotals(selectedDeliveryOrder, registeredExitsCache),
         scannedItemsProgress
       );
 
-      const normalizedItems: SelectedDeliveryOrderProgressItem[] = items.map(
-        (item) => {
-          const fp = fifoProgress.get(item.id) ?? {
-            registered: 0,
-            sessionScanned: 0,
-            pending: item.quantity
-          };
-          return {
-            item,
-            orderQuantity: item.quantity,
-            registered: fp.registered,
-            sessionScanned: fp.sessionScanned,
-            pending: fp.pending,
-            isComplete: fp.pending === 0
-          };
-        }
-      );
+      const toProgressItem = (item: DeliveryOrderItem): SelectedDeliveryOrderProgressItem => {
+        const fp = fifoProgress.get(item.id) ?? {
+          registered: 0,
+          sessionScanned: 0,
+          pending: item.quantity
+        };
+        return {
+          item,
+          orderQuantity: item.quantity,
+          registered: fp.registered,
+          sessionScanned: fp.sessionScanned,
+          pending: fp.pending,
+          isComplete: fp.pending === 0
+        };
+      };
+      const sumOf = (list: SelectedDeliveryOrderProgressItem[], pick: (x: SelectedDeliveryOrderProgressItem) => number) =>
+        list.reduce((sum, x) => sum + pick(x), 0);
 
-      const totalRequired = normalizedItems.reduce(
-        (sum, x) => sum + x.orderQuantity,
-        0
-      );
-      const totalRegistered = normalizedItems.reduce(
-        (sum, x) => sum + x.registered,
-        0
-      );
-      const totalScanned = normalizedItems.reduce(
-        (sum, x) => sum + x.sessionScanned,
-        0
-      );
+      // Propios primero y luego cada OE hija; `items` conserva ese mismo orden.
+      const sections: SelectedDeliveryOrderProgressSection[] = orderedGroupKeys(items).map((groupKey) => {
+        const sectionItems = items
+          .filter((item) => (item.group_key ?? OWN_GROUP_KEY) === groupKey)
+          .map(toProgressItem);
+        return {
+          groupKey,
+          targetOrderId: targetOrderIdForGroup(selectedDeliveryOrderId, groupKey),
+          label: groupLabelFor(selectedDeliveryOrder, groupKey),
+          items: sectionItems,
+          totalRequired: sumOf(sectionItems, (x) => x.orderQuantity),
+          totalRegistered: sumOf(sectionItems, (x) => x.registered),
+          totalScanned: sumOf(sectionItems, (x) => x.sessionScanned),
+          isComplete: sectionItems.every((x) => x.isComplete)
+        };
+      });
+      const normalizedItems = sections.flatMap((section) => section.items);
+
+      const totalRequired = sumOf(normalizedItems, (x) => x.orderQuantity);
+      const totalRegistered = sumOf(normalizedItems, (x) => x.registered);
+      const totalScanned = sumOf(normalizedItems, (x) => x.sessionScanned);
       const totalCompleted = Math.min(
         totalRegistered + totalScanned,
         totalRequired
@@ -854,6 +926,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
       return {
         items: normalizedItems,
+        sections,
         totalRequired,
         totalRegistered,
         totalScanned,
@@ -907,6 +980,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         currentProduct: null,
         currentScannedBarcode: null,
         targetOrderItemId: null,
+        currentGroupKey: null,
         warehouseCandidates: [],
         currentPhysicalStock: null
       });
@@ -941,32 +1015,39 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         return;
       }
 
-      // Líneas de la orden con pendiente para este producto, agrupadas por bodega.
-      // El operario debe elegir la bodega cuando hay más de una: escoger por FIFO
-      // descontaría stock de una bodega distinta a la que realmente despacha.
-      const cacheSlice = registeredExitsCache[selectedDeliveryOrderId] || {};
+      // Líneas de la orden con pendiente para este producto, agrupadas por (grupo, bodega).
+      // El operario debe elegir cuando hay más de una: escoger por FIFO descontaría stock
+      // de una bodega distinta a la que despacha, o registraría contra otra orden (OE hija).
       const fifoMap = computeFifoProgressByItemId(
         selectedDeliveryOrder.items,
-        cacheSlice,
+        buildGroupedRegisteredTotals(selectedDeliveryOrder, registeredExitsCache),
         scannedItemsProgress
       );
-      const pendingByWarehouse = new Map<string, ScanWarehouseCandidate>();
+      const pendingByGroupWarehouse = new Map<string, ScanWarehouseCandidate>();
+      const groupOrder = orderedGroupKeys(selectedDeliveryOrder.items);
       selectedDeliveryOrder.items.forEach((item) => {
         if (item.product_id !== product.id) return;
         const pending = fifoMap.get(item.id)?.pending ?? 0;
         if (pending <= 0) return;
-        const current = pendingByWarehouse.get(item.warehouse_id);
+        const groupKey = item.group_key ?? OWN_GROUP_KEY;
+        const candidateKey = `${groupKey}::${item.warehouse_id}`;
+        const current = pendingByGroupWarehouse.get(candidateKey);
         if (current) {
           current.pending += pending;
         } else {
-          pendingByWarehouse.set(item.warehouse_id, {
+          pendingByGroupWarehouse.set(candidateKey, {
             warehouseId: item.warehouse_id,
             warehouseName: item.warehouse_name,
-            pending
+            pending,
+            groupKey,
+            groupLabel: groupLabelFor(selectedDeliveryOrder, groupKey),
+            targetOrderId: targetOrderIdForGroup(selectedDeliveryOrderId, groupKey)
           });
         }
       });
-      const candidates = [...pendingByWarehouse.values()];
+      const candidates = [...pendingByGroupWarehouse.values()].sort(
+        (a, b) => groupOrder.indexOf(a.groupKey) - groupOrder.indexOf(b.groupKey)
+      );
 
       if (candidates.length === 0) {
         const existsInOrder = selectedDeliveryOrder.items.some(
@@ -991,13 +1072,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         warehouseCandidates: candidates,
         warehouseId: null,
         targetOrderItemId: null,
+        currentGroupKey: null,
         currentAvailableStock: 0,
         currentPhysicalStock: null,
         error: null
       });
 
       if (candidates.length === 1) {
-        await get().selectScanWarehouse(candidates[0].warehouseId);
+        await get().selectScanWarehouse(candidates[0].warehouseId, candidates[0].groupKey);
         return;
       }
 
@@ -1013,7 +1095,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
   },
 
-  selectScanWarehouse: async (warehouseId: string) => {
+  selectScanWarehouse: async (warehouseId: string, groupKey?: string) => {
     const generation = sessionGeneration;
     const {
       currentProduct,
@@ -1029,7 +1111,18 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    const candidate = warehouseCandidates.find((c) => c.warehouseId === warehouseId);
+    const matching = warehouseCandidates.filter(
+      (c) => c.warehouseId === warehouseId && (groupKey === undefined || c.groupKey === groupKey)
+    );
+    if (matching.length > 1) {
+      set({
+        loading: false,
+        loadingMessage: null,
+        error: 'Elige la orden a la que pertenece el producto en esta bodega'
+      });
+      return;
+    }
+    const candidate = matching[0];
     if (!candidate) {
       set({
         loading: false,
@@ -1041,7 +1134,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     const fifoMap = computeFifoProgressByItemId(
       selectedDeliveryOrder.items,
-      registeredExitsCache[selectedDeliveryOrderId] || {},
+      buildGroupedRegisteredTotals(selectedDeliveryOrder, registeredExitsCache),
       scannedItemsProgress
     );
     const targetLine = sortLinesFifo(
@@ -1049,19 +1142,24 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         (item) =>
           item.product_id === currentProduct.id &&
           item.warehouse_id === warehouseId &&
+          (item.group_key ?? OWN_GROUP_KEY) === candidate.groupKey &&
           (fifoMap.get(item.id)?.pending ?? 0) > 0
       )
     )[0];
 
+    const selectionChanged =
+      get().warehouseId !== warehouseId || get().currentGroupKey !== candidate.groupKey;
     set({
       loading: true,
       loadingMessage: 'Consultando stock en bodega...',
       warehouseId,
+      currentGroupKey: candidate.groupKey,
       targetOrderItemId: targetLine?.id ?? null,
       currentAvailableStock: candidate.pending,
       currentPhysicalStock: null,
-      // La verificación de un serial depende de la bodega: al cambiarla se capturan de nuevo.
-      ...(get().warehouseId !== warehouseId ? { currentSerials: [], serialChecking: false } : {}),
+      // La verificación de un serial depende de la bodega (y el grupo fija la orden objetivo):
+      // al cambiar cualquiera de los dos se capturan de nuevo.
+      ...(selectionChanged ? { currentSerials: [], serialChecking: false } : {}),
       error: null
     });
 
@@ -1131,7 +1229,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentPhysicalStock,
       warehouseCandidates,
       currentProduct,
-      currentSerials
+      currentSerials,
+      currentGroupKey
     } = get();
 
     if (!warehouseId) {
@@ -1142,6 +1241,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       set({ error });
       return { ok: false, error };
     }
+    const groupKey = currentGroupKey ?? OWN_GROUP_KEY;
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       const error = 'La cantidad debe ser un número mayor que cero';
@@ -1167,7 +1267,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       product.id,
       warehouseId,
       quantity,
-      targetOrderItemId
+      targetOrderItemId,
+      groupKey
     );
     if (!validation.valid) {
       const error = validation.error || 'El producto no es válido para esta orden';
@@ -1175,9 +1276,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return { ok: false, error };
     }
 
-    const existingItem = exitItems.find(
-      (item) => item.product.id === product.id && item.warehouseId === warehouseId
-    );
+    const targetOrderId = targetOrderIdForGroup(selectedDeliveryOrderId, groupKey);
+    const sameLine = (item: ExitItem) =>
+      item.product.id === product.id &&
+      item.warehouseId === warehouseId &&
+      (item.groupKey ?? OWN_GROUP_KEY) === groupKey;
+    const existingItem = exitItems.find(sameLine);
     const totalQuantityInExit = (existingItem?.quantity || 0) + quantity;
 
     // Stock físico: conocido desde el escaneo; si no se pudo consultar, el RPC valida al registrar.
@@ -1193,24 +1297,25 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     const { maxCart } = computeKeyAllowance(
       selectedDeliveryOrder,
-      registeredExitsCache[selectedDeliveryOrderId] || {},
+      registeredExitsCache[targetOrderId] || {},
       product.id,
-      warehouseId
+      warehouseId,
+      groupKey
     );
     const cap = physicalStock !== null ? Math.min(maxCart, physicalStock) : maxCart;
     const availableStock = Math.max(cap - totalQuantityInExit, 0);
 
-    const key = compositeKey(product.id, warehouseId);
+    const key = groupedKey(product.id, warehouseId, groupKey);
     const newProgress = new Map(scannedItemsProgress);
     newProgress.set(key, (scannedItemsProgress.get(key) || 0) + quantity);
 
     const updatedItems = existingItem
       ? exitItems.map((item) =>
-          item.product.id === product.id && item.warehouseId === warehouseId
+          sameLine(item)
             ? { ...item, quantity: item.quantity + quantity, availableStock, physicalStock, serials: [...(item.serials ?? []), ...serials] }
             : item
         )
-      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock, serials }];
+      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock, serials, groupKey, targetOrderId }];
 
     set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
     get().resetCurrentScan();
@@ -1225,15 +1330,16 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
 
     const updatedItems = exitItems.filter((_, i) => i !== index);
 
-    // Si hay una orden de entrega seleccionada, actualizar progreso con clave compuesta
+    // Si hay una orden de entrega seleccionada, actualizar progreso con clave agrupada
     if (
       selectedDeliveryOrderId &&
       itemToRemove.product.id &&
       itemToRemove.warehouseId
     ) {
-      const key = compositeKey(
+      const key = groupedKey(
         itemToRemove.product.id,
-        itemToRemove.warehouseId
+        itemToRemove.warehouseId,
+        itemToRemove.groupKey ?? OWN_GROUP_KEY
       );
       const currentProgress = scannedItemsProgress.get(key) || 0;
       const newProgress = new Map(scannedItemsProgress);
@@ -1256,21 +1362,30 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     if (!selectedDeliveryOrder || !selectedDeliveryOrderId || !item.warehouseId) {
       return { ok: false, error: 'No fue posible restaurar el producto' };
     }
-    if (exitItems.some((existing) => existing.product.id === item.product.id && existing.warehouseId === item.warehouseId)) {
+    const groupKey = item.groupKey ?? OWN_GROUP_KEY;
+    if (
+      exitItems.some(
+        (existing) =>
+          existing.product.id === item.product.id &&
+          existing.warehouseId === item.warehouseId &&
+          (existing.groupKey ?? OWN_GROUP_KEY) === groupKey
+      )
+    ) {
       return { ok: false, error: 'El producto ya está de nuevo en la salida' };
     }
-    const validation = get().validateProductAgainstOrder(item.product.id, item.warehouseId, item.quantity);
+    const validation = get().validateProductAgainstOrder(item.product.id, item.warehouseId, item.quantity, null, groupKey);
     if (!validation.valid) {
       return { ok: false, error: validation.error || 'La orden ya no permite esta cantidad' };
     }
     const { maxCart } = computeKeyAllowance(
       selectedDeliveryOrder,
-      registeredExitsCache[selectedDeliveryOrderId] || {},
+      registeredExitsCache[targetOrderIdForGroup(selectedDeliveryOrderId, groupKey)] || {},
       item.product.id,
-      item.warehouseId
+      item.warehouseId,
+      groupKey
     );
     const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
-    const key = compositeKey(item.product.id, item.warehouseId);
+    const key = groupedKey(item.product.id, item.warehouseId, groupKey);
     const newProgress = new Map(scannedItemsProgress);
     newProgress.set(key, (scannedItemsProgress.get(key) || 0) + item.quantity);
     const restored = { ...item, availableStock: Math.max(cap - item.quantity, 0) };
@@ -1310,11 +1425,13 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
+    const groupKey = item.groupKey ?? OWN_GROUP_KEY;
     const { maxCart } = computeKeyAllowance(
       selectedDeliveryOrder,
-      registeredExitsCache[selectedDeliveryOrderId] || {},
+      registeredExitsCache[targetOrderIdForGroup(selectedDeliveryOrderId, groupKey)] || {},
       item.product.id,
-      item.warehouseId
+      item.warehouseId,
+      groupKey
     );
 
     if (quantity > maxCart) {
@@ -1328,7 +1445,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     }
 
     const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
-    const key = compositeKey(item.product.id, item.warehouseId);
+    const key = groupedKey(item.product.id, item.warehouseId, groupKey);
     const newProgress = new Map(scannedItemsProgress);
     const newValue = Math.max(0, (scannedItemsProgress.get(key) || 0) + (quantity - item.quantity));
     if (newValue > 0) {
@@ -1520,6 +1637,25 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         });
       }
 
+      // Cada grupo registra contra su propia orden: propios → la orden seleccionada,
+      // copias de OE hija → la hija. Un solo grupo (la orden seleccionada) usa el RPC clásico.
+      const targetOrderOf = (item: ExitItem) => item.targetOrderId ?? selectedDeliveryOrderId;
+      const itemsByTarget = new Map<string, ExitItem[]>();
+      exitItems.forEach((item) => {
+        const target = targetOrderOf(item);
+        itemsByTarget.set(target, [...(itemsByTarget.get(target) ?? []), item]);
+      });
+      const targetOrderIds = [...itemsByTarget.keys()];
+      const usesRemissionBatch = !(targetOrderIds.length === 1 && targetOrderIds[0] === selectedDeliveryOrderId);
+      const toRpcItems = (items: ExitItem[]) =>
+        items.map((item) => ({
+          product_id: item.product.id,
+          warehouse_id: item.warehouseId,
+          quantity: item.quantity,
+          barcode_scanned: item.barcode,
+          serials: (item.serials ?? []).map((serial) => ({ serial: serial.serial, method: serial.method }))
+        }));
+
       const requestFingerprint = JSON.stringify({
         exitMode,
         selectedUserId,
@@ -1529,6 +1665,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         exitItems: exitItems.map((item) => ({
           productId: item.product.id,
           warehouseId: item.warehouseId,
+          targetOrderId: targetOrderOf(item),
           quantity: item.quantity,
           barcode: item.barcode,
           serials: (item.serials ?? []).map((serial) => serial.normalized)
@@ -1541,24 +1678,25 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
 
       set({ loadingMessage: 'Guardando productos en el inventario...' });
-      const { data: exitResult, error: exitsError } = await supabase.rpc(
-        'register_inventory_exits_batch',
-        {
-          p_exit_mode: exitMode,
-          p_delivered_to_user_id: exitMode === 'direct_user' ? selectedUserId : null,
-          p_delivered_to_customer_id: exitMode === 'direct_customer' ? selectedCustomerId : null,
-          p_delivery_order_id: selectedDeliveryOrderId,
-          p_delivery_observations: deliveryObservations.trim() || null,
-          p_items: exitItems.map((item) => ({
-            product_id: item.product.id,
-            warehouse_id: item.warehouseId,
-            quantity: item.quantity,
-            barcode_scanned: item.barcode,
-            serials: (item.serials ?? []).map((serial) => ({ serial: serial.serial, method: serial.method }))
-          })) as unknown as Json,
-          p_idempotency_key: idempotencyKey
-        }
-      );
+      const { data: exitResult, error: exitsError } = usesRemissionBatch
+        ? await supabase.rpc('register_remission_exits_batch', {
+            p_remission_id: selectedDeliveryOrderId,
+            p_groups: targetOrderIds.map((target) => ({
+              delivery_order_id: target,
+              items: toRpcItems(itemsByTarget.get(target) ?? [])
+            })) as unknown as Json,
+            p_delivery_observations: deliveryObservations.trim() || null,
+            p_idempotency_key: idempotencyKey
+          })
+        : await supabase.rpc('register_inventory_exits_batch', {
+            p_exit_mode: exitMode,
+            p_delivered_to_user_id: exitMode === 'direct_user' ? selectedUserId : null,
+            p_delivered_to_customer_id: exitMode === 'direct_customer' ? selectedCustomerId : null,
+            p_delivery_order_id: selectedDeliveryOrderId,
+            p_delivery_observations: deliveryObservations.trim() || null,
+            p_items: toRpcItems(exitItems) as unknown as Json,
+            p_idempotency_key: idempotencyKey
+          });
 
       if (exitsError) {
         const backendDeniedMessage =
@@ -1580,6 +1718,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             productIds: exitItems.map((i) => i.product.id),
             quantities: exitItems.map((i) => i.quantity),
             warehouseIds: exitItems.map((i) => i.warehouseId),
+            targetOrderIds,
+            rpc: usesRemissionBatch ? 'register_remission_exits_batch' : 'register_inventory_exits_batch',
             exitMode,
             deliveryOrderId: selectedDeliveryOrderId
           }
@@ -1602,7 +1742,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         });
       }
 
-      const insertedExitIds = (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
+      const insertedExitIds = usesRemissionBatch
+        ? ((exitResult as { groups?: { delivery_order_id?: string; exit_ids?: string[] }[] } | null)?.groups || [])
+            .flatMap((group) => group.exit_ids || [])
+        : (exitResult as { exit_ids?: string[] } | null)?.exit_ids || [];
       if (insertedExitIds.length === 0) {
         console.error('No se insertaron las salidas correctamente');
         if (!isStale()) set({ loading: false, finalizing: false, loadingMessage: null });
@@ -1623,18 +1766,19 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       pendingExitRequests.delete(requestFingerprint);
 
       // delivered_quantity y estado de la orden los actualiza un trigger en BD;
-      // refrescar la caché local para que la siguiente salida sobre la misma orden valide bien.
+      // refrescar la caché local (un slot por orden objetivo) para que la siguiente salida
+      // sobre la misma orden valide bien. `completed` considera propios y OE hijas.
       let orderCompleted = false;
       if (!isStale()) set({ loadingMessage: 'Sincronizando orden...' });
       try {
-        const refreshed = await loadOrderRegisteredTotals(selectedDeliveryOrderId);
+        const refreshed = await loadRegisteredTotalsForSelectedOrder(selectedDeliveryOrderId);
         if (refreshed) {
           orderCompleted = refreshed.completed;
           if (!isStale()) {
             set({
               registeredExitsCache: {
                 ...get().registeredExitsCache,
-                [selectedDeliveryOrderId]: refreshed.totals
+                ...refreshed.totalsByOrder
               }
             });
           }
@@ -1650,7 +1794,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           severity: 'warning',
           entity_type: 'delivery_order',
           entity_id: selectedDeliveryOrderId,
-          context: { exitMode, deliveryOrderId: selectedDeliveryOrderId }
+          context: { exitMode, deliveryOrderId: selectedDeliveryOrderId, targetOrderIds }
         });
       }
 
@@ -1696,6 +1840,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       currentPhysicalStock: null,
       targetOrderItemId: null,
+      currentGroupKey: null,
       warehouseCandidates: [],
       step: 'setup',
       error: null,
@@ -1732,6 +1877,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       currentPhysicalStock: null,
       targetOrderItemId: null,
+      currentGroupKey: null,
       warehouseCandidates: [],
       scannedItemsProgress: new Map(),
       deliveryObservations: '',
@@ -1757,6 +1903,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       currentPhysicalStock: null,
       targetOrderItemId: null,
+      currentGroupKey: null,
       warehouseCandidates: [],
       step: 'setup',
       error: null,
@@ -1793,7 +1940,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      targetOrderItemId: null
+      targetOrderItemId: null,
+      currentGroupKey: null
     });
   },
 
@@ -1812,6 +1960,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       currentPhysicalStock: null,
       targetOrderItemId: null,
+      currentGroupKey: null,
       warehouseCandidates: [],
       exitItems: [],
       scannedItemsProgress: new Map(),
@@ -1834,6 +1983,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       currentAvailableStock: 0,
       currentPhysicalStock: null,
       targetOrderItemId: null,
+      currentGroupKey: null,
       warehouseCandidates: [],
       error: null,
       exitItems: [], // Limpiar items de salida

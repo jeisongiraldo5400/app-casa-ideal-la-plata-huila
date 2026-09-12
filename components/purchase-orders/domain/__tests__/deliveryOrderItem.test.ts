@@ -14,6 +14,21 @@ const baseSource = {
 };
 
 describe('toDeliveryOrderItem', () => {
+  it('etiqueta el grupo de las copias de una OE de cliente anidada en una remisión', () => {
+    const copy = toDeliveryOrderItem({
+      id: 'copy-1', product_id: 'p1', product_name: 'Nevera', product_sku: null, product_barcode: null,
+      warehouse_id: 'w1', warehouse_name: 'Principal', quantity: 2, delivered_quantity: 0,
+      source_delivery_order_id: 'child-1', source_order_number: 'OE-0012', source_customer_name: 'Cliente Norte',
+    });
+    const own = toDeliveryOrderItem({
+      id: 'own-1', product_id: 'p1', product_name: 'Nevera', product_sku: null, product_barcode: null,
+      warehouse_id: 'w1', warehouse_name: 'Principal', quantity: 2, delivered_quantity: 0,
+    });
+
+    expect(copy.group_label).toBe('OE-0012 · Cliente Norte');
+    expect(own.group_label).toBeNull();
+  });
+
   it('deriva pendiente y completado a partir de lo entregado', () => {
     const item = toDeliveryOrderItem(baseSource);
 

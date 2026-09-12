@@ -14,6 +14,8 @@ export interface DeliveryOrderItem {
   is_complete: boolean;
   /** Nota por producto capturada en la web. */
   notes?: string | null;
+  /** OE de cliente a la que pertenece la línea dentro de una remisión («OE-0012 · Cliente»); null si es propia. */
+  group_label?: string | null;
 }
 
 export interface DeliveryOrderRecipient {

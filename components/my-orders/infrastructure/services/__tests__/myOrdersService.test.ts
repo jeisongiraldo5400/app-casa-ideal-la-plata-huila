@@ -118,6 +118,7 @@ describe('myOrdersService', () => {
         pending_quantity: 3,
         is_complete: false,
         notes: 'Entregar con base',
+        group_label: null,
       },
     ]);
     expect(supabase.rpc).toHaveBeenCalledWith('get_authorized_delivery_order_items', {

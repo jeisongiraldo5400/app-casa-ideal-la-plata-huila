@@ -55,6 +55,8 @@ const order: DeliveryOrder = {
     pending_quantity: 5,
     db_delivered_quantity: 0,
     created_at: '2026-09-10T10:00:00.000Z',
+    source_delivery_order_id: null,
+    group_key: 'own',
   }],
 };
 
@@ -167,9 +169,9 @@ describe('seriales opcionales en salidas', () => {
     useExitsStore.setState({
       currentSerials: [{ serial: 'AB123', normalized: 'AB123', method: 'scan', verified: true }],
       warehouseCandidates: [
-        { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 5 },
-        { warehouseId: 'warehouse-2', warehouseName: 'Bodega norte', pending: 5 },
-      ] as unknown as ReturnType<typeof useExitsStore.getState>['warehouseCandidates'],
+        { warehouseId: 'warehouse-1', warehouseName: 'Bodega principal', pending: 5, groupKey: 'own', groupLabel: 'Productos de la orden', targetOrderId: 'order-1' },
+        { warehouseId: 'warehouse-2', warehouseName: 'Bodega norte', pending: 5, groupKey: 'own', groupLabel: 'Productos de la orden', targetOrderId: 'order-1' },
+      ],
     });
 
     await useExitsStore.getState().selectScanWarehouse('warehouse-2');

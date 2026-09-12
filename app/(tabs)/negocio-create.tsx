@@ -63,10 +63,20 @@ import {
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 import {
   fetchAvailableDeliveryOrders,
+  fetchPendingRemissions,
+  fetchRemissionOriginProducts,
   formatDeliveryOrderOptionLabel,
   stockMapFromDeliveryOrder,
+  type DeliveryOrderItemOption,
   type DeliveryOrderOption,
+  type PendingRemissionOption,
+  type RemissionOriginGroup,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
+import {
+  NegocioDeliveryModeSection,
+  type NegocioDeliveryMode,
+} from '@/components/negocios/components/NegocioDeliveryModeSection';
+import { NegocioOriginGroupsSection } from '@/components/negocios/components/NegocioOriginGroupsSection';
 import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -174,6 +184,14 @@ function NegocioCreateScreenInner() {
   const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderOption[]>([]);
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
+  /** Origen bodega: retiro directo o la OE viaja en una remisión pendiente. */
+  const [deliveryMode, setDeliveryMode] = useState<NegocioDeliveryMode>('directo');
+  const [pendingRemissions, setPendingRemissions] = useState<PendingRemissionOption[]>([]);
+  const [targetRemission, setTargetRemission] = useState<PendingRemissionOption | null>(null);
+  /** Origen remisión: grupo elegido (propios o una OE hija). */
+  const [originGroups, setOriginGroups] = useState<RemissionOriginGroup[]>([]);
+  const [originGroupsLoading, setOriginGroupsLoading] = useState(false);
+  const [selectedOriginGroup, setSelectedOriginGroup] = useState<RemissionOriginGroup | null>(null);
 
   /**
    * La pantalla vive en Tabs (href: null) y no se desmonta al navegar: sin
@@ -213,6 +231,9 @@ function NegocioCreateScreenInner() {
     setPickingCodeudor(false);
     setOriginType('bodega');
     setSelectedDeliveryOrder(null);
+    setDeliveryMode('directo');
+    setTargetRemission(null);
+    setSelectedOriginGroup(null);
     // Las OE disponibles cambian tras vincular una: se recargan.
     setLoadingInitialData(true);
     setInitialDataReload((value) => value + 1);
@@ -222,7 +243,7 @@ function NegocioCreateScreenInner() {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m, v, orders, sellers, cachedName] = await Promise.all([
+        const [, d, m, v, orders, sellers, cachedName, pending] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -245,6 +266,7 @@ function NegocioCreateScreenInner() {
         fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
         fetchSellerOptions().catch(() => [] as SellerOption[]),
         getCachedProfileName().catch(() => null),
+        fetchPendingRemissions().catch(() => [] as PendingRemissionOption[]),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
@@ -254,6 +276,7 @@ function NegocioCreateScreenInner() {
           setMunicipios(m.data || []);
           setVeredas(v.data || []);
           setDeliveryOrders(orders || []);
+          setPendingRemissions(pending || []);
           setSellerOptions(
             withCurrentUserOption(
               sellers || [],
@@ -316,10 +339,48 @@ function NegocioCreateScreenInner() {
 
   const stockProductIdsKey = [...new Set(items.map((i) => i.product_id))].sort().join(',');
 
+  const originIsRemission =
+    originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'remission';
+  const selectedRemissionId = originIsRemission ? selectedDeliveryOrder?.id ?? null : null;
+
+  // Con una remisión como origen, los productos y el stock aparente vienen del
+  // grupo elegido (propios o una OE hija), no de la remisión completa.
+  const originItems: DeliveryOrderItemOption[] = originIsRemission
+    ? selectedOriginGroup?.items ?? []
+    : selectedDeliveryOrder?.items ?? [];
+
+  useEffect(() => {
+    if (!selectedRemissionId) {
+      setOriginGroups([]);
+      setOriginGroupsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOriginGroupsLoading(true);
+    fetchRemissionOriginProducts(selectedRemissionId)
+      .then((groups) => {
+        if (!cancelled) setOriginGroups(groups);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setOriginGroups([]);
+          Alert.alert('Error', errorMessage(error, 'No se pudieron cargar los productos de la remisión'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setOriginGroupsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRemissionId]);
+
   useEffect(() => {
     if (originType === 'orden_entrega') {
       try {
-        setStockByProduct(stockMapFromDeliveryOrder(selectedDeliveryOrder));
+        setStockByProduct(
+          stockMapFromDeliveryOrder(originIsRemission ? selectedOriginGroup : selectedDeliveryOrder)
+        );
       } catch (error: unknown) {
         setStockByProduct({});
         Alert.alert('Error', errorMessage(error, 'No se pudieron cargar los productos de la orden'));
@@ -347,7 +408,7 @@ function NegocioCreateScreenInner() {
     return () => {
       cancelled = true;
     };
-  }, [stockProductIdsKey, originType, selectedDeliveryOrder]);
+  }, [stockProductIdsKey, originType, selectedDeliveryOrder, originIsRemission, selectedOriginGroup]);
 
   const handleStockLoaded = useCallback(
     (productId: string, stock: ProductWarehouseStock[]) => {
@@ -482,7 +543,67 @@ function NegocioCreateScreenInner() {
   }, []);
 
   const customerLocked =
-    originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'customer';
+    (originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'customer') ||
+    (originIsRemission && selectedOriginGroup?.kind === 'child');
+
+  /** Paso 1: falta algo del origen/destino elegido (además del cliente y la ubicación). */
+  const originStepError = (): string | null => {
+    if (originType === 'orden_entrega' && !selectedDeliveryOrder) {
+      return 'Seleccione una orden de entrega.';
+    }
+    if (originIsRemission && (!selectedOriginGroup || selectedOriginGroup.hasNegocio)) {
+      return 'Seleccione qué productos de la remisión toma el negocio.';
+    }
+    if (originType === 'bodega' && deliveryMode === 'remision' && !targetRemission) {
+      return 'Seleccione la remisión en la que se enviará el negocio.';
+    }
+    return null;
+  };
+
+  const handleSelectOriginGroup = (group: RemissionOriginGroup) => {
+    if (group.hasNegocio) return;
+    setSelectedOriginGroup(group);
+    setItems([]);
+    if (group.kind === 'child' && group.customerId) {
+      setCustomer({
+        id: group.customerId,
+        name: group.customerName || 'Cliente',
+        id_number: '',
+      });
+    }
+  };
+
+  /**
+   * Origen del negocio según lo elegido en el paso 1:
+   * - bodega: sin origen; `target_remission_id` solo si la OE viaja en remisión.
+   * - OE cliente suelta: `source_delivery_order_id` = OE.
+   * - remisión, grupo propio (CASO 1): `remission_id` = `source` = remisión.
+   * - remisión, OE hija (CASO 3): `source_delivery_order_id` = hija, sin `remission_id`.
+   */
+  const buildOriginPayload = () => {
+    if (originType === 'bodega') {
+      return {
+        remission_id: null,
+        source_delivery_order_id: null,
+        target_remission_id: deliveryMode === 'remision' ? targetRemission?.id ?? null : null,
+      };
+    }
+    if (originIsRemission) {
+      const own = selectedOriginGroup?.kind === 'own';
+      return {
+        remission_id: own ? selectedDeliveryOrder?.id ?? null : null,
+        source_delivery_order_id: own
+          ? selectedDeliveryOrder?.id ?? null
+          : selectedOriginGroup?.sourceOrderId ?? null,
+        target_remission_id: null,
+      };
+    }
+    return {
+      remission_id: null,
+      source_delivery_order_id: selectedDeliveryOrder?.id ?? null,
+      target_remission_id: null,
+    };
+  };
 
   const canAdvanceProductsStep = () => {
     if (!items.length) return false;
@@ -544,11 +665,14 @@ function NegocioCreateScreenInner() {
     if (planError) return Alert.alert('Plan de cuotas', planError);
     const signatureError = sellerSignatureRequiredError(signature, sellerSignature);
     if (signatureError) return Alert.alert('Firma requerida', signatureError);
+    const originError = originStepError();
+    if (originError) return Alert.alert('Origen del negocio', originError);
 
     try {
       savingRef.current = true;
       setSaving(true);
       const numeroLabel = (numero: number | null | undefined) => formatNegocioCodigo(numero);
+      const originPayload = buildOriginPayload();
       const result = await createAndActivate({
         deal_date: localDateValue(),
         municipio_id: municipioId,
@@ -557,12 +681,7 @@ function NegocioCreateScreenInner() {
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
         seller_id: effectiveSellerId || null,
-        source_delivery_order_id:
-          originType === 'orden_entrega' ? selectedDeliveryOrder?.id || null : null,
-        remission_id:
-          originType === 'orden_entrega' && selectedDeliveryOrder?.order_type === 'remission'
-            ? selectedDeliveryOrder.id
-            : null,
+        ...originPayload,
         items,
         down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
         installments_count: effectiveInstallmentsCount,
@@ -574,12 +693,16 @@ function NegocioCreateScreenInner() {
         activate,
       });
       const fromDeliveryOrder = originType === 'orden_entrega';
+      const sentByRemission = Boolean(originPayload.target_remission_id);
+      const remissionLabel = targetRemission?.order_number || 'la remisión';
       resetForm();
       Alert.alert(
         '¡Éxito!',
         activate
           ? fromDeliveryOrder
             ? `Negocio ${numeroLabel(result?.numero)} activado. Se vinculó la orden de entrega existente.`
+            : sentByRemission
+            ? `Negocio ${numeroLabel(result?.numero)} activado. Se creó la orden de entrega y se anidó en ${remissionLabel}.`
             : `Negocio ${numeroLabel(result?.numero)} activado. Se creó la orden de entrega.`
           : `Negocio ${numeroLabel(result?.numero)} guardado como borrador.`,
         [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
@@ -687,6 +810,9 @@ function NegocioCreateScreenInner() {
                   onPress={() => {
                     setOriginType(option.id);
                     setSelectedDeliveryOrder(null);
+                    setSelectedOriginGroup(null);
+                    setDeliveryMode('directo');
+                    setTargetRemission(null);
                     setItems([]);
                     if (option.id === 'bodega') {
                       setStockByProduct({});
@@ -722,6 +848,19 @@ function NegocioCreateScreenInner() {
                 ? 'Se genera una orden de entrega nueva y se reserva stock.'
                 : 'Se usan productos ya salidos o reservados. No se vuelve a descontar stock.'}
             </Text>
+            {originType === 'bodega' && (
+              <NegocioDeliveryModeSection
+                mode={deliveryMode}
+                onModeChange={(mode) => {
+                  setDeliveryMode(mode);
+                  if (mode === 'directo') setTargetRemission(null);
+                }}
+                remissions={pendingRemissions}
+                selectedRemission={targetRemission}
+                onSelectRemission={setTargetRemission}
+                colors={colors}
+              />
+            )}
             {originType === 'orden_entrega' && (
               <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
@@ -739,6 +878,7 @@ function NegocioCreateScreenInner() {
                         key={order.id}
                         onPress={() => {
                           setSelectedDeliveryOrder(order);
+                          setSelectedOriginGroup(null);
                           setItems([]);
                           if (order.order_type === 'customer' && order.customer_id) {
                             setCustomer({
@@ -777,6 +917,15 @@ function NegocioCreateScreenInner() {
                 )}
               </View>
             )}
+            {originIsRemission && (
+              <NegocioOriginGroupsSection
+                groups={originGroups}
+                loading={originGroupsLoading}
+                selectedGroup={selectedOriginGroup}
+                onSelectGroup={handleSelectOriginGroup}
+                colors={colors}
+              />
+            )}
 
             {/* SECCIÓN CLIENTE */}
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
@@ -804,7 +953,7 @@ function NegocioCreateScreenInner() {
                   disabled={customerLocked}
                 >
                   <Text style={{ color: colors.primary.main, fontSize: 12, fontWeight: '700' }}>
-                    {customerLocked ? 'Fijado por la OE' : 'Cambiar'}
+                    {customerLocked ? (originIsRemission ? 'Fijado por la OE hija' : 'Fijado por la OE') : 'Cambiar'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1033,11 +1182,15 @@ function NegocioCreateScreenInner() {
             {originType === 'orden_entrega' ? (
               <View style={{ gap: 8 }}>
                 <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
-                  {selectedDeliveryOrder
-                    ? `Productos de la orden #${selectedDeliveryOrder.order_number}`
-                    : 'Regrese y seleccione una orden de entrega.'}
+                  {!selectedDeliveryOrder
+                    ? 'Regrese y seleccione una orden de entrega.'
+                    : originIsRemission
+                    ? selectedOriginGroup
+                      ? `Orden #${selectedDeliveryOrder.order_number} · ${selectedOriginGroup.label}`
+                      : 'Regrese y elija qué productos de la remisión toma el negocio.'
+                    : `Productos de la orden #${selectedDeliveryOrder.order_number}`}
                 </Text>
-                {(selectedDeliveryOrder?.items || []).map((remItem) => {
+                {originItems.map((remItem) => {
                   const alreadyAdded = items.find(
                     (i) =>
                       i.product_id === remItem.product_id &&
@@ -1346,7 +1499,7 @@ function NegocioCreateScreenInner() {
                 opacity:
                   loadingInitialData || initialDataError
                     ? 0.5
-                    : step === 0 && (originType === 'orden_entrega' && !selectedDeliveryOrder || !customer || !departamentoId || !municipioId || !direccion.trim())
+                    : step === 0 && (Boolean(originStepError()) || !customer || !departamentoId || !municipioId || !direccion.trim())
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
@@ -1358,8 +1511,9 @@ function NegocioCreateScreenInner() {
             disabled={loadingInitialData || Boolean(initialDataError)}
             onPress={() => {
               if (step === 0) {
-                if (originType === 'orden_entrega' && !selectedDeliveryOrder) {
-                  return Alert.alert('Selección requerida', 'Seleccione una orden de entrega.');
+                const originError = originStepError();
+                if (originError) {
+                  return Alert.alert('Selección requerida', originError);
                 }
                 if (!customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
                 if (!departamentoId) return Alert.alert('Campo requerido', 'Seleccione un departamento.');

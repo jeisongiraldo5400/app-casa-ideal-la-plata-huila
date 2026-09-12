@@ -1,4 +1,4 @@
-import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import { compositeKey, groupedKey } from '@/components/exits/infrastructure/utils/compositeKey';
 
 export type FifoAllocatableLine = {
   id: string;
@@ -7,6 +7,8 @@ export type FifoAllocatableLine = {
   quantity: number;
   db_delivered_quantity: number;
   created_at: string;
+  /** Grupo de la línea (`'own'` u OE hija). Ausente equivale a `'own'`. */
+  group_key?: string;
 };
 
 export type FifoLineProgress = {
@@ -40,7 +42,8 @@ export function aggregateRegisteredTotalForGroup(
 
 /**
  * Per-line FIFO allocation of registered total and session scans (oldest line first).
- * `registeredTotalByKey` must already reconcile DB vs inventory_exits (e.g. from registeredExitsCache).
+ * Lines are grouped by `groupedKey(product, warehouse, group_key)`: both maps must be
+ * indexed by that key (see `buildGroupedRegisteredTotals` for the registered side).
  */
 export function computeFifoProgressByItemId<T extends FifoAllocatableLine>(
   items: T[],
@@ -51,7 +54,7 @@ export function computeFifoProgressByItemId<T extends FifoAllocatableLine>(
 
   const byKey = new Map<string, T[]>();
   for (const item of items) {
-    const k = compositeKey(item.product_id, item.warehouse_id);
+    const k = groupedKey(item.product_id, item.warehouse_id, item.group_key);
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k)!.push(item);
   }
@@ -96,6 +99,8 @@ export function computeFifoProgressByItemId<T extends FifoAllocatableLine>(
 
 /**
  * Build registeredExitsCache entry values: composite key -> aggregate delivered total for that key.
+ * The cache slot belongs to ONE target order, so pass only the lines of that group
+ * (own lines of the remission, or the copies of one child order): the key ignores `group_key`.
  */
 export function buildRegisteredTotalsByKey<T extends FifoAllocatableLine>(
   items: T[],

@@ -37,8 +37,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type Stage = 'idle' | 'exit_review' | 'success';
 type DashboardTab = 'session' | 'pending';
 type DashboardRow =
-  | { kind: 'session'; key: string; item: ExitItem; index: number }
-  | { kind: 'pending'; key: string; progress: SelectedDeliveryOrderProgressItem };
+  | { kind: 'header'; key: string; title: string }
+  | { kind: 'session'; key: string; item: ExitItem; index: number; groupLabel: string | null }
+  | { kind: 'pending'; key: string; progress: SelectedDeliveryOrderProgressItem; groupLabel: string | null };
+
+const OWN_GROUP = 'own';
 
 const PENDING_PAGE_SIZE = 10;
 const UNDO_WINDOW_MS = 6000;
@@ -86,15 +89,43 @@ export function ExitScanningWorkspace() {
     () => new Map((order?.items || []).map((item) => [item.warehouse_id, item.warehouse_name])),
     [order?.items],
   );
-  const sessionRows = useMemo<DashboardRow[]>(
-    () => store.exitItems.map((item, index) => ({ kind: 'session', key: `${item.product.id}-${item.warehouseId || index}`, item, index })),
-    [store.exitItems],
-  );
+  // Remisión mixta: propios y cada OE de cliente se muestran en secciones separadas.
+  const sections = progress?.sections ?? [];
+  const hasSections = sections.length > 1;
+  const groupLabels = useMemo(() => new Map(sections.map((section) => [section.groupKey, section.label])), [sections]);
+  const groupLabelOf = (groupKey: string | undefined) => (hasSections ? groupLabels.get(groupKey || OWN_GROUP) || null : null);
+  const sessionRows = useMemo<DashboardRow[]>(() => {
+    const groupOrder = sections.map((section) => section.groupKey);
+    const indexed = store.exitItems.map((item, index) => ({ item, index, groupKey: item.groupKey || OWN_GROUP }));
+    const sorted = [...indexed].sort((a, b) => {
+      const byGroup = groupOrder.indexOf(a.groupKey) - groupOrder.indexOf(b.groupKey);
+      return byGroup !== 0 ? byGroup : a.index - b.index;
+    });
+    const rows: DashboardRow[] = [];
+    let lastGroup: string | null = null;
+    sorted.forEach(({ item, index, groupKey }) => {
+      if (hasSections && groupKey !== lastGroup) {
+        rows.push({ kind: 'header', key: `header-session-${groupKey}`, title: groupLabels.get(groupKey) || groupKey });
+        lastGroup = groupKey;
+      }
+      rows.push({ kind: 'session', key: `${item.product.id}-${item.warehouseId || index}-${groupKey}`, item, index, groupLabel: hasSections ? groupLabels.get(groupKey) || null : null });
+    });
+    return rows;
+  }, [store.exitItems, sections, hasSections, groupLabels]);
   const pendingItems = useMemo(() => (progress?.items || []).filter((item) => item.pending > 0), [progress?.items]);
-  const pendingRows = useMemo<DashboardRow[]>(
-    () => pendingItems.slice(0, visiblePendingCount).map((item) => ({ kind: 'pending', key: item.item.id, progress: item })),
-    [pendingItems, visiblePendingCount],
-  );
+  const pendingRows = useMemo<DashboardRow[]>(() => {
+    const rows: DashboardRow[] = [];
+    let lastGroup: string | null = null;
+    pendingItems.slice(0, visiblePendingCount).forEach((item) => {
+      const groupKey = item.item.group_key || OWN_GROUP;
+      if (hasSections && groupKey !== lastGroup) {
+        rows.push({ kind: 'header', key: `header-pending-${groupKey}`, title: groupLabels.get(groupKey) || groupKey });
+        lastGroup = groupKey;
+      }
+      rows.push({ kind: 'pending', key: item.item.id, progress: item, groupLabel: hasSections ? groupLabels.get(groupKey) || null : null });
+    });
+    return rows;
+  }, [pendingItems, visiblePendingCount, hasSections, groupLabels]);
   const rows = activeTab === 'session' ? sessionRows : pendingRows;
 
   const openScanner = () => {
@@ -234,9 +265,17 @@ export function ExitScanningWorkspace() {
   };
 
   const scannerContext = order ? `Orden #${orderNumber} · ${remainingUnits} unidades pendientes` : undefined;
-  const selectedCandidate = store.warehouseCandidates.find((candidate) => candidate.warehouseId === store.warehouseId);
+  const selectedCandidate = store.warehouseCandidates.find(
+    (candidate) => candidate.warehouseId === store.warehouseId && candidate.groupKey === (store.currentGroupKey || OWN_GROUP),
+  );
   const reviewWarehouseName = selectedCandidate?.warehouseName || warehouseNames.get(store.warehouseId || '') || 'Bodega de la orden';
-  const alreadyInSession = store.exitItems.find((item) => item.product.id === store.currentProduct?.id && item.warehouseId === store.warehouseId)?.quantity || 0;
+  const reviewGroupLabel = selectedCandidate?.groupLabel || groupLabelOf(store.currentGroupKey || undefined);
+  const alreadyInSession = store.exitItems.find(
+    (item) =>
+      item.product.id === store.currentProduct?.id &&
+      item.warehouseId === store.warehouseId &&
+      (item.groupKey || OWN_GROUP) === (store.currentGroupKey || OWN_GROUP),
+  )?.quantity || 0;
   const reviewMax = store.currentPhysicalStock === null ? store.currentAvailableStock : Math.min(store.currentAvailableStock, store.currentPhysicalStock);
   const reviewOutOfStock = Boolean(store.warehouseId) && !store.loading && store.currentPhysicalStock === 0;
   const reviewValid =
@@ -279,12 +318,12 @@ export function ExitScanningWorkspace() {
         summaryMeta={recipient}
         statusText={remainingUnits > 0 ? 'Esta salida dejará cantidades pendientes' : 'Esta salida completa la orden'}
         statusTone={remainingUnits > 0 ? 'warning' : 'success'}
-        items={store.exitItems.map((item, index) => ({
-          key: `${item.product.id}-${item.warehouseId || index}`,
-          name: item.product.name,
-          meta: `SKU: ${item.product.sku || '—'} · ${warehouseNames.get(item.warehouseId || '') || 'Bodega de la orden'}${serialsMeta(item)}`,
-          quantity: item.quantity,
-        }))}
+        items={sessionRows.flatMap((row) => (row.kind === 'session' ? [{
+          key: row.key,
+          name: row.item.product.name,
+          meta: `SKU: ${row.item.product.sku || '—'} · ${warehouseNames.get(row.item.warehouseId || '') || 'Bodega de la orden'}${row.groupLabel ? ` · ${row.groupLabel}` : ''}${serialsMeta(row.item)}`,
+          quantity: row.item.quantity,
+        }] : []))}
         observation={{ value: store.deliveryObservations, placeholder: 'Observación opcional', onChange: store.setDeliveryObservations }}
         error={reviewError}
         notice={online ? null : 'Sin conexión: el registro se habilitará al recuperar la red.'}
@@ -303,7 +342,9 @@ export function ExitScanningWorkspace() {
         <FlatList
           data={rows}
           keyExtractor={(item) => item.key}
-          renderItem={({ item }) => item.kind === 'session' ? (
+          renderItem={({ item }) => item.kind === 'header' ? (
+            <SectionHeaderRow title={item.title} />
+          ) : item.kind === 'session' ? (
             <SessionItemCard
               name={item.item.product.name}
               meta={`SKU: ${item.item.product.sku || '—'} · ${warehouseNames.get(item.item.warehouseId || '') || 'Bodega de la orden'}${serialsMeta(item.item)}`}
@@ -428,12 +469,14 @@ export function ExitScanningWorkspace() {
           <ExitReviewDetails
             candidates={store.warehouseCandidates}
             selectedWarehouseId={store.warehouseId}
+            selectedGroupKey={store.currentGroupKey}
             warehouseName={reviewWarehouseName}
+            groupLabel={reviewGroupLabel}
             pending={store.currentAvailableStock}
             physicalStock={store.currentPhysicalStock}
             stockLoading={store.loading}
             alreadyInSession={alreadyInSession}
-            onSelectWarehouse={(warehouseId) => { setReviewError(null); void store.selectScanWarehouse(warehouseId); }}
+            onSelectCandidate={(candidate) => { setReviewError(null); void store.selectScanWarehouse(candidate.warehouseId, candidate.groupKey); }}
           />
           {store.warehouseId && !reviewOutOfStock ? (
             <SerialsField
@@ -495,41 +538,62 @@ function serialsMeta(item: ExitItem): string {
   return serialsSummary(item.serials, true);
 }
 
-function ExitReviewDetails({ candidates, selectedWarehouseId, warehouseName, pending, physicalStock, stockLoading, alreadyInSession, onSelectWarehouse }: {
+function SectionHeaderRow({ title }: { title: string }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  return (
+    <View style={[styles.sectionHeader, { borderBottomColor: colors.divider }]} accessibilityRole="header">
+      <MaterialIcons name="account-tree" size={15} color={colors.primary.main} />
+      <Text style={[styles.sectionHeaderText, { color: colors.text.primary }]} numberOfLines={1}>{title}</Text>
+    </View>
+  );
+}
+
+function ExitReviewDetails({ candidates, selectedWarehouseId, selectedGroupKey, warehouseName, groupLabel, pending, physicalStock, stockLoading, alreadyInSession, onSelectCandidate }: {
   candidates: ScanWarehouseCandidate[];
   selectedWarehouseId: string | null;
+  selectedGroupKey: string | null;
   warehouseName: string;
+  groupLabel: string | null;
   pending: number;
   physicalStock: number | null;
   stockLoading: boolean;
   alreadyInSession: number;
-  onSelectWarehouse: (warehouseId: string) => void;
+  onSelectCandidate: (candidate: ScanWarehouseCandidate) => void;
 }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const needsChoice = candidates.length > 1;
   const hasWarehouse = Boolean(selectedWarehouseId);
   const outOfStock = hasWarehouse && !stockLoading && physicalStock === 0;
+  // Con varias candidatas del mismo grupo la elección es solo de bodega; si hay más de un
+  // grupo (propios vs. OE de cliente) también se elige a qué orden se registra.
+  const multiGroup = new Set(candidates.map((candidate) => candidate.groupKey)).size > 1;
   return (
     <View style={styles.details}>
       {needsChoice ? (
         <View style={styles.warehouseChoice} accessibilityRole="radiogroup">
-          <Text style={[styles.detailsTitle, { color: colors.text.primary }]}>¿De qué bodega sale?</Text>
-          <Text style={[styles.detailsHint, { color: colors.text.secondary }]}>Este producto tiene unidades pendientes en {candidates.length} bodegas.</Text>
+          <Text style={[styles.detailsTitle, { color: colors.text.primary }]}>{multiGroup ? '¿De qué bodega y orden sale?' : '¿De qué bodega sale?'}</Text>
+          <Text style={[styles.detailsHint, { color: colors.text.secondary }]}>
+            {multiGroup
+              ? `Este producto tiene unidades pendientes en ${candidates.length} opciones (bodega y orden).`
+              : `Este producto tiene unidades pendientes en ${candidates.length} bodegas.`}
+          </Text>
           {candidates.map((candidate) => {
-            const selected = candidate.warehouseId === selectedWarehouseId;
+            const selected = candidate.warehouseId === selectedWarehouseId && candidate.groupKey === (selectedGroupKey || OWN_GROUP);
             return (
               <Pressable
-                key={candidate.warehouseId}
-                onPress={() => onSelectWarehouse(candidate.warehouseId)}
+                key={`${candidate.groupKey}:${candidate.warehouseId}`}
+                onPress={() => onSelectCandidate(candidate)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: selected }}
-                accessibilityLabel={`${candidate.warehouseName}, ${candidate.pending} pendientes`}
+                accessibilityLabel={`${candidate.warehouseName}${multiGroup ? `, ${candidate.groupLabel}` : ''}, ${candidate.pending} pendientes`}
                 style={({ pressed }) => [styles.warehouseOption, { borderColor: selected ? colors.primary.main : colors.divider, backgroundColor: selected ? `${colors.primary.main}12` : colors.background.default }, pressed && styles.pressed]}
               >
                 <MaterialIcons name={selected ? 'radio-button-checked' : 'radio-button-unchecked'} size={22} color={selected ? colors.primary.main : colors.text.secondary} />
                 <View style={styles.optionCopy}>
                   <Text style={[styles.optionName, { color: colors.text.primary }]}>{candidate.warehouseName}</Text>
+                  {multiGroup ? <Text style={[styles.optionGroup, { color: colors.primary.main }]}>{candidate.groupLabel}</Text> : null}
                   <Text style={[styles.detailsHint, { color: colors.text.secondary }]}>Pendiente en la orden: {candidate.pending}</Text>
                 </View>
               </Pressable>
@@ -542,6 +606,7 @@ function ExitReviewDetails({ candidates, selectedWarehouseId, warehouseName, pen
           <View style={styles.optionCopy}>
             <Text style={[styles.detailsHint, { color: colors.text.secondary }]}>Bodega de la orden</Text>
             <Text style={[styles.optionName, { color: colors.text.primary }]}>{warehouseName}</Text>
+            {groupLabel ? <Text style={[styles.optionGroup, { color: colors.primary.main }]}>{groupLabel}</Text> : null}
           </View>
         </View>
       )}
@@ -594,6 +659,9 @@ const styles = StyleSheet.create({
   warehouseRow: { alignItems: 'center', borderRadius: Radius.control, flexDirection: 'row', gap: Spacing.md, padding: Spacing.md },
   optionCopy: { flex: 1 },
   optionName: { ...Typography.bodySmallStrong },
+  optionGroup: { ...Typography.metadata, fontWeight: '700', marginTop: 1 },
+  sectionHeader: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.xs, marginBottom: Spacing.sm, marginTop: Spacing.xs, paddingBottom: Spacing.xs },
+  sectionHeaderText: { ...Typography.label, flex: 1 },
   metrics: { flexDirection: 'row', gap: Spacing.sm },
   pressed: { opacity: 0.8 },
 });

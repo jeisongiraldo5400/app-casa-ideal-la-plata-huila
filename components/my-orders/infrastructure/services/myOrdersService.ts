@@ -96,6 +96,9 @@ export async function fetchAssignedDeliveryOrderItems(orderId: string): Promise<
       quantity: row.quantity,
       delivered_quantity: row.delivered_quantity,
       notes: row.notes,
+      source_delivery_order_id: row.source_delivery_order_id,
+      source_order_number: row.source_order_number,
+      source_customer_name: row.source_customer_name,
     }),
   );
 }

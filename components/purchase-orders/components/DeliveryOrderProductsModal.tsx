@@ -308,6 +308,14 @@ export function DeliveryOrderProductsModal({
                                                         </Text>
                                                     </View>
                                                 )}
+                                                {item.group_label && (
+                                                    <View style={styles.warehouseRow}>
+                                                        <MaterialIcons name="account-tree" size={12} color={colors.primary.main} />
+                                                        <Text style={[styles.itemWarehouse, { color: colors.primary.main }]}>
+                                                            Orden de cliente: {item.group_label}
+                                                        </Text>
+                                                    </View>
+                                                )}
                                                 {item.notes && (
                                                     <View style={[styles.noteRow, { backgroundColor: colors.warning.main + '14', borderColor: colors.warning.main + '55' }]}>
                                                         <MaterialIcons name="sticky-note-2" size={13} color={colors.warning.main} />

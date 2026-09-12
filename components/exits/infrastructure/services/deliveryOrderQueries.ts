@@ -16,8 +16,22 @@ export type DeliveryOrderItemQueryRow = Pick<
 > & {
   /** Opcional: la columna existe desde la migración de notas por producto. */
   notes?: string | null;
+  /** Solo en copias de OE hijas dentro de una remisión (migración de remisiones mixtas). */
+  source_order_number?: string | null;
+  source_customer_name?: string | null;
+  source_order_status?: string | null;
   product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
   warehouse: Pick<Warehouse, 'id' | 'name'> | null;
+};
+
+/**
+ * Fila del RPC autorizado. Las columnas de la OE fuente se tipan aquí como opcionales
+ * para compilar tanto antes como después de que `database.types.ts` las incorpore.
+ */
+type AuthorizedItemRow = Database['public']['Functions']['get_authorized_delivery_order_items']['Returns'][number] & {
+  source_order_number?: string | null;
+  source_customer_name?: string | null;
+  source_order_status?: string | null;
 };
 
 const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
@@ -43,7 +57,7 @@ export async function fetchSelectableDeliveryOrderItems(
 
   if (!rpcResult.error) {
     return {
-      data: (rpcResult.data || []).map((item: Database['public']['Functions']['get_authorized_delivery_order_items']['Returns'][number]) => ({
+      data: (Array.isArray(rpcResult.data) ? rpcResult.data : []).map((item: AuthorizedItemRow) => ({
         id: item.id,
         product_id: item.product_id,
         warehouse_id: item.warehouse_id,
@@ -51,7 +65,10 @@ export async function fetchSelectableDeliveryOrderItems(
         delivered_quantity: item.delivered_quantity,
         created_at: item.created_at,
         deleted_at: null,
-        source_delivery_order_id: item.source_delivery_order_id,
+        source_delivery_order_id: item.source_delivery_order_id ?? null,
+        source_order_number: item.source_order_number ?? null,
+        source_customer_name: item.source_customer_name ?? null,
+        source_order_status: item.source_order_status ?? null,
         notes: item.notes ?? null,
         product: { id: item.product_id, name: item.product_name, barcode: item.product_barcode, sku: item.product_sku, deleted_at: null },
         warehouse: { id: item.warehouse_id, name: item.warehouse_name },
@@ -233,50 +250,71 @@ export async function fetchUserOrdersExpanded(userId: string): Promise<UserOrder
   return data || [];
 }
 
+/** Orden real contra la que se registran las salidas de una línea (la OE hija para las copias). */
+export function targetOrderIdOfLine(orderId: string, line: Pick<DeliveryOrderItemQueryRow, 'source_delivery_order_id'>): string {
+  return line.source_delivery_order_id || orderId;
+}
+
+/** Ids de orden que reciben salidas de la orden seleccionada: ella misma y sus OE hijas. */
+export function targetOrderIdsOf(orderId: string, lines: Pick<DeliveryOrderItemQueryRow, 'source_delivery_order_id'>[]): string[] {
+  const ids = new Set<string>([orderId]);
+  lines.forEach((line) => ids.add(targetOrderIdOfLine(orderId, line)));
+  return [...ids];
+}
+
 /**
- * Re-lee inventory_exits + delivery_order_items de una orden y devuelve los totales
- * registrados por clave y si la orden quedó completa. Usado tras registrar una salida.
+ * Totales registrados (producto+bodega) por orden objetivo, a partir de las líneas activas
+ * de la orden seleccionada y las salidas no canceladas de cada orden objetivo. Cada slot
+ * se construye solo con las líneas de su grupo (ver `buildRegisteredTotalsByKey`).
  */
-export async function loadOrderRegisteredTotals(
-  orderId: string
-): Promise<{ totals: Record<string, number>; completed: boolean } | null> {
-  const exits = await fetchInventoryExitsForOrders([orderId]);
-  const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
-  const registeredByKey = aggregateExitsByKey(exits, cancelledExitIds);
-
-  const { data: orderData, error: orderError } = await supabase
-    .from('delivery_orders')
-    .select(
-      `
-      items:delivery_order_items!fk_delivery_order_item_order!inner(
-        id,
-        product_id,
-        warehouse_id,
-        quantity,
-        delivered_quantity,
-        created_at,
-        deleted_at
-      )
-    `
-    )
-    .eq('id', orderId)
-    .is('items.deleted_at', null)
-    .maybeSingle();
-  if (orderError) throw orderError;
-  if (!orderData?.items) return null;
-
-  const fifoInputs = orderData.items.map((item) => ({
-    id: item.id,
-    product_id: item.product_id,
-    warehouse_id: item.warehouse_id,
-    quantity: Number(item.quantity) || 0,
-    db_delivered_quantity: Number(item.delivered_quantity) || 0,
-    created_at: item.created_at || EPOCH_ISO,
-  }));
-  const totals = buildRegisteredTotalsByKey(fifoInputs, registeredByKey);
-  Object.keys(totals).forEach((k) => {
-    if (totals[k] <= 0) delete totals[k];
+export function buildRegisteredTotalsByOrder(
+  orderId: string,
+  lines: DeliveryOrderItemQueryRow[],
+  exitsByOrder: Map<string, Map<string, number>>
+): Record<string, Record<string, number>> {
+  const byOrder: Record<string, Record<string, number>> = {};
+  targetOrderIdsOf(orderId, lines).forEach((targetId) => {
+    const groupLines = lines
+      .filter((line) => targetOrderIdOfLine(orderId, line) === targetId)
+      .map((line) => ({
+        id: line.id,
+        product_id: line.product_id,
+        warehouse_id: line.warehouse_id,
+        quantity: Number(line.quantity) || 0,
+        db_delivered_quantity: Number(line.delivered_quantity) || 0,
+        created_at: line.created_at || EPOCH_ISO,
+      }));
+    const totals = buildRegisteredTotalsByKey(groupLines, Object.fromEntries(exitsByOrder.get(targetId) || []));
+    Object.keys(totals).forEach((k) => {
+      if (totals[k] <= 0) delete totals[k];
+    });
+    byOrder[targetId] = totals;
   });
-  const completed = fifoInputs.length > 0 && fifoInputs.every((item) => item.db_delivered_quantity >= item.quantity);
-  return { totals, completed };
+  return byOrder;
+}
+
+/**
+ * Re-lee las líneas autorizadas de la orden seleccionada (propias y copias de OE hijas) y las
+ * salidas de todas sus órdenes objetivo; devuelve los totales por orden y si quedó completa.
+ * Usado tras registrar una salida. Usa el RPC autorizado porque la RLS de tabla puede no
+ * dejar leer la OE hija a quien solo tiene asignada la remisión.
+ */
+export async function loadRegisteredTotalsForSelectedOrder(
+  orderId: string
+): Promise<{ totalsByOrder: Record<string, Record<string, number>>; completed: boolean } | null> {
+  const { data: lines, error } = await fetchSelectableDeliveryOrderItems(orderId);
+  if (error) throw new Error(error.message);
+  const activeLines = lines.filter((line) => !line.deleted_at && line.product && !line.product.deleted_at);
+  if (activeLines.length === 0) return null;
+
+  const targetIds = targetOrderIdsOf(orderId, activeLines);
+  const exits = await fetchInventoryExitsForOrders(targetIds);
+  const cancelledExitIds = await getActiveCancelledExitIds(exits.map((exit) => exit.id));
+  const exitsByOrder = groupExitsByOrder(exits, cancelledExitIds);
+
+  const totalsByOrder = buildRegisteredTotalsByOrder(orderId, activeLines, exitsByOrder);
+  const completed = activeLines.every(
+    (line) => (Number(line.delivered_quantity) || 0) >= (Number(line.quantity) || 0)
+  );
+  return { totalsByOrder, completed };
 }
