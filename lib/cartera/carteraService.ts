@@ -35,6 +35,12 @@ export type ManagerPayment = {
   payment_method_id?: string | null;
   /** Nombre del método ya resuelto por el RPC (LEFT JOIN a `payment_methods`). */
   payment_method_name?: string | null;
+  /** 'abono' | 'pronto_pago' (20261024120000); ausente en servidores anteriores. */
+  payment_kind?: string | null;
+  /** Descuento por pronto pago; los totales siguen siendo `amount` (dinero). */
+  discount_amount?: number | string | null;
+  discount_reason?: string | null;
+  expected_total?: number | string | null;
   currently_assigned: boolean;
   support_path: string | null;
   support_mime: string | null;

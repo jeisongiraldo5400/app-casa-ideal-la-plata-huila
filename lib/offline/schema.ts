@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 5,
+  version: 6,
   tables: [
     tableSchema({
       name: 'customers',
@@ -64,6 +64,11 @@ export const schema = appSchema({
         { name: 'payment_method_id', type: 'string', isOptional: true },
         { name: 'payment_method_name', type: 'string', isOptional: true },
         { name: 'payment_site', type: 'string', isOptional: true },
+        // Pronto pago (v6): 'abono' | 'pronto_pago'; `amount` sigue siendo dinero recibido.
+        { name: 'payment_kind', type: 'string', isOptional: true },
+        { name: 'discount_amount', type: 'number', isOptional: true },
+        { name: 'discount_reason', type: 'string', isOptional: true },
+        { name: 'expected_total', type: 'number', isOptional: true },
         { name: 'sync_status', type: 'string', isIndexed: true },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],

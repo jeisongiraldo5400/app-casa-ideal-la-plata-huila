@@ -4,8 +4,26 @@ import {
   schemaMigrations,
 } from '@nozbe/watermelondb/Schema/migrations';
 
+/** Columnas de `negocio_pagos` añadidas en la versión 6 (también en `schema.ts`). */
+export const PRONTO_PAGO_PAGO_COLUMNS = [
+  { name: 'payment_kind', type: 'string' as const, isOptional: true },
+  { name: 'discount_amount', type: 'number' as const, isOptional: true },
+  { name: 'discount_reason', type: 'string' as const, isOptional: true },
+  { name: 'expected_total', type: 'number' as const, isOptional: true },
+];
+
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Descuento por pronto pago: tipo de pago, descuento, motivo y pendiente liquidado.
+      toVersion: 6,
+      steps: [
+        addColumns({
+          table: 'negocio_pagos',
+          columns: PRONTO_PAGO_PAGO_COLUMNS,
+        }),
+      ],
+    },
     {
       toVersion: 5,
       steps: [

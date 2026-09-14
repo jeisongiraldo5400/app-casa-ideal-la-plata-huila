@@ -272,6 +272,10 @@ export async function prepareReconcileRegisteredPago(
           row.paymentMethodId = local.paymentMethodId;
           row.paymentMethodName = local.paymentMethodName;
           row.paymentSite = local.paymentSite;
+          row.paymentKind = local.paymentKind;
+          row.discountAmount = local.discountAmount;
+          row.discountReason = local.discountReason;
+          row.expectedTotal = local.expectedTotal;
           row.rowSyncStatus = 'synced';
           row.serverUpdatedAt = null;
         })

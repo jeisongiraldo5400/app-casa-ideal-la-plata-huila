@@ -136,6 +136,10 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.paymentMethodId = row.payment_method_id ?? null;
         record.paymentMethodName = row.payment_method_name ?? null;
         record.paymentSite = row.payment_site ?? null;
+        record.paymentKind = row.payment_kind ?? null;
+        record.discountAmount = row.discount_amount == null ? null : Number(row.discount_amount);
+        record.discountReason = row.discount_reason ?? null;
+        record.expectedTotal = row.expected_total == null ? null : Number(row.expected_total);
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.created_at);
       })

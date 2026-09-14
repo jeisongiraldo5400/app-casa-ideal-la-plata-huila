@@ -2442,6 +2442,7 @@ export type Database = {
           amount: number
           created_at: string
           cuota_id: string
+          discount_amount: number
           id: string
           pago_id: string
         }
@@ -2449,6 +2450,7 @@ export type Database = {
           amount: number
           created_at?: string
           cuota_id: string
+          discount_amount: number
           id?: string
           pago_id: string
         }
@@ -2456,6 +2458,7 @@ export type Database = {
           amount?: number
           created_at?: string
           cuota_id?: string
+          discount_amount?: number
           id?: string
           pago_id?: string
         }
@@ -2491,10 +2494,14 @@ export type Database = {
           created_by: string | null
           cuota_id: string | null
           deleted_at: string | null
+          discount_amount: number
+          discount_reason: string | null
+          expected_total: number | null
           id: string
           negocio_id: string
           notes: string | null
           paid_at: string
+          payment_kind: string
           payment_method_id: string | null
           payment_site: string | null
           receipt_number: string | null
@@ -2514,10 +2521,14 @@ export type Database = {
           created_by?: string | null
           cuota_id?: string | null
           deleted_at?: string | null
+          discount_amount?: number
+          discount_reason?: string | null
+          expected_total?: number | null
           id?: string
           negocio_id: string
           notes?: string | null
           paid_at?: string
+          payment_kind?: string
           payment_method_id?: string | null
           payment_site?: string | null
           receipt_number?: string | null
@@ -2537,10 +2548,14 @@ export type Database = {
           created_by?: string | null
           cuota_id?: string | null
           deleted_at?: string | null
+          discount_amount?: number
+          discount_reason?: string | null
+          expected_total?: number | null
           id?: string
           negocio_id?: string
           notes?: string | null
           paid_at?: string
+          payment_kind?: string
           payment_method_id?: string | null
           payment_site?: string | null
           receipt_number?: string | null
@@ -4061,9 +4076,11 @@ export type Database = {
       negocio_pago_integrity_issues: {
         Row: {
           applied_amount: number | null
+          applied_discount_amount: number | null
           negocio_id: string | null
           pago_id: string | null
           payment_amount: number | null
+          payment_discount_amount: number | null
         }
         Relationships: [
           {
@@ -4316,6 +4333,11 @@ export type Database = {
         Args: { p_negocio_id: string }
         Returns: boolean
       }
+      can_register_negocio_pronto_pago: {
+        Args: { p_negocio_id: string }
+        Returns: boolean
+      }
+      can_void_negocio_pago: { Args: { p_negocio_id: string }; Returns: boolean }
       can_read_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       can_share_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       can_write_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
@@ -5791,6 +5813,21 @@ export type Database = {
         }
         Returns: string
       }
+      register_collection_route_pronto_pago: {
+        Args: {
+          p_discount_amount: number
+          p_discount_reason: string
+          p_expected_total: number
+          p_idempotency_key: string
+          p_notes: string
+          p_paid_at: string
+          p_payment_method_id: string
+          p_payment_site?: string
+          p_receipt_number: string
+          p_stop_id: string
+        }
+        Returns: string
+      }
       register_delivery_order_return: {
         Args: {
           p_delivery_order_id: string
@@ -5863,6 +5900,21 @@ export type Database = {
           p_notes: string
           p_paid_at: string
           p_payment_method_id?: string
+          p_payment_site?: string
+          p_receipt_number: string
+        }
+        Returns: string
+      }
+      register_negocio_pronto_pago: {
+        Args: {
+          p_discount_amount: number
+          p_discount_reason: string
+          p_expected_total: number
+          p_idempotency_key: string
+          p_negocio_id: string
+          p_notes: string
+          p_paid_at: string
+          p_payment_method_id: string
           p_payment_site?: string
           p_receipt_number: string
         }

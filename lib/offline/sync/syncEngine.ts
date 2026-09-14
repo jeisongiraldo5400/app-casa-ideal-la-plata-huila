@@ -30,6 +30,9 @@ import { NETWORK_RETRY_DELAY_MS, OUTBOX_MAX_ATTEMPTS, type OutboxStatus } from '
 import {
   assertPullIsComplete,
   cursorFromServerTime,
+  pullCursorForPayloadVersion,
+  PULL_PAYLOAD_VERSION,
+  PULL_PAYLOAD_VERSION_META_KEY,
   type CreateCustomerPayload,
   type OutboxPayloadBase,
   type PullPayload,
@@ -138,7 +141,10 @@ export async function runSync(reason: SyncReason = 'manual') {
 
 async function pullRemote(userId: string) {
   const database = getDatabase();
-  const lastPulledAt = await getMeta(database, 'last_pulled_at');
+  const lastPulledAt = pullCursorForPayloadVersion(
+    await getMeta(database, 'last_pulled_at'),
+    await getMeta(database, PULL_PAYLOAD_VERSION_META_KEY)
+  );
   const { data, error } = await supabase.rpc('pull_mobile_sync', {
     p_last_pulled_at: lastPulledAt,
     p_limit: PULL_LIMIT,
@@ -156,6 +162,7 @@ async function pullRemote(userId: string) {
   assertPullIsComplete(payload, PULL_LIMIT);
   await applyPullPayload(database, payload, userId);
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
+  await setMeta(database, PULL_PAYLOAD_VERSION_META_KEY, PULL_PAYLOAD_VERSION);
   await setLastOnlineVerifiedAt();
   if (payload.profile_name !== undefined) await setCachedProfileName(payload.profile_name);
   await setCachedRoles({

@@ -18,6 +18,7 @@ export type LocalNegocioRow = {
   municipioId: string | null;
   municipioName: string | null;
   sellerId: string | null;
+  gestorCobroId?: string | null;
 };
 
 export type LocalCuotaRow = {
@@ -44,6 +45,10 @@ export type LocalPagoRow = {
   createdByName?: string | null;
   paymentMethodName?: string | null;
   paymentSite?: string | null;
+  paymentKind?: string | null;
+  discountAmount?: number | null;
+  discountReason?: string | null;
+  expectedTotal?: number | null;
 };
 
 export type LocalNegocioListItem = {
@@ -73,6 +78,7 @@ export type LocalNegocioDetail = {
     direccion: string | null;
     municipio_id: string | null;
     seller_id: string | null;
+    gestor_cobro_id: string | null;
     delivery_order_id: null;
     customer_signature_url: null;
     guarantor_signature_url: null;
@@ -114,6 +120,12 @@ export type LocalNegocioDetail = {
     receipt_status: string;
     notes: string | null;
     created_by_name: string | null;
+    payment_method_name: string | null;
+    payment_site: string | null;
+    payment_kind: string | null;
+    discount_amount: number | null;
+    discount_reason: string | null;
+    expected_total: number | null;
   }>;
 };
 
@@ -191,6 +203,7 @@ export function mapNegocioDetailFromLocal(input: {
       direccion: input.negocio.direccion,
       municipio_id: input.negocio.municipioId,
       seller_id: input.negocio.sellerId,
+      gestor_cobro_id: input.negocio.gestorCobroId ?? null,
       delivery_order_id: null,
       customer_signature_url: null,
       guarantor_signature_url: null,
@@ -239,6 +252,10 @@ export function mapNegocioDetailFromLocal(input: {
       created_by_name: pago.createdByName ?? null,
       payment_method_name: pago.paymentMethodName ?? null,
       payment_site: pago.paymentSite ?? null,
+      payment_kind: pago.paymentKind ?? null,
+      discount_amount: pago.discountAmount ?? null,
+      discount_reason: pago.discountReason ?? null,
+      expected_total: pago.expectedTotal ?? null,
     })),
   };
 }

@@ -44,7 +44,9 @@ export const DETAIL_HEADER = [
   'Recibo virtual',
   'Recibo físico',
   'Estado recibo',
+  'Tipo',
   'Valor',
+  'Descuento',
   'Saldo pendiente negocio',
   'Método de pago',
   'Sitio de pago',
@@ -54,7 +56,7 @@ export const DETAIL_HEADER = [
 ] as const;
 
 /** Ancho (en caracteres) de cada columna de DETAIL_HEADER, en el mismo orden. */
-const DETAIL_WIDTHS = [18, 14, 30, 12, 16, 14, 13, 14, 22, 18, 17, 24, 17, 13];
+const DETAIL_WIDTHS = [18, 14, 30, 12, 16, 14, 13, 12, 14, 14, 22, 18, 17, 24, 17, 13];
 
 type ManagerPaymentFilters = {
   scope: 'performed' | 'portfolio';
@@ -113,6 +115,11 @@ function sheetFromRows(rows: (XLSX.CellObject | string | number)[][]): XLSX.Work
     e: { r: Math.max(rows.length - 1, 0), c: maxCol },
   });
   return sheet;
+}
+
+/** «Pronto pago» o «Abono» (los pagos sin tipo son abonos). */
+export function paymentKindLabel(kind: string | null | undefined) {
+  return kind === 'pronto_pago' ? 'Pronto pago' : 'Abono';
 }
 
 function receiptStatusLabel(status: ManagerPayment['receipt_status']) {
@@ -204,7 +211,10 @@ export function buildManagerPaymentsWorkbook(options: {
       payment.virtual_receipt_number || '',
       payment.receipt_number || '',
       receiptStatusLabel(payment.receipt_status),
+      paymentKindLabel(payment.payment_kind),
+      // «Valor» es dinero recibido; el descuento del pronto pago va aparte.
       moneyCell(payment.amount),
+      moneyCell(payment.discount_amount),
       moneyCell(payment.remaining_balance),
       paymentMethodLabel(payment, methodNames),
       paymentSiteLabel(payment.payment_site),

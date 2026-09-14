@@ -197,6 +197,14 @@ describe('registerPagoOffline', () => {
     expect(ops.find((op) => op.table === 'negocios')?.changes).toEqual({ remainingBalance: 0 });
   });
 
+  it('guarda y encola el monto con centavos, sin ruido de coma flotante', async () => {
+    await registerPagoOffline({ ...baseInput, amount: 93_333.33 + 0.1 + 0.2 - 0.3 });
+
+    const ops = mockBatch.mock.calls[0] as Op[];
+    expect(ops.find((op) => op.table === 'negocio_pagos')?.changes).toMatchObject({ amount: 93_333.33 });
+    expect(mockPrepareOutboxRecord.mock.calls[0][2]).toMatchObject({ amount: 93_333.33 });
+  });
+
   it('pide descargar la información si el negocio no está en el dispositivo', async () => {
     await expect(registerPagoOffline({ ...baseInput, negocioId: 'neg-x' })).rejects.toThrow(
       /no está descargado en el dispositivo/

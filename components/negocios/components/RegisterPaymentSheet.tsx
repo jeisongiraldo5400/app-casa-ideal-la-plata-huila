@@ -2,6 +2,8 @@ import { useTheme } from '@/components/theme';
 import { Button, Input, ModalSheet, OptionPickerField } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
+import { MAX_MONEY_DECIMALS, applyMoneyTextChange } from '@/lib/moneyInput';
+import { pagoAmountInputOptions } from '@/lib/negocios/registerPagoRpc';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -13,9 +15,15 @@ type Props = {
   onClose: () => void;
   subtitle: string;
   pendingBalance: number;
-  /** Valor ya formateado con puntos de miles. */
+  /** Texto del campo tal como se pinta: puntos de miles y coma decimal («93.333,33»). */
   amount: string;
-  onChangeAmount: (raw: string) => void;
+  /** Recibe el siguiente texto ya formateado; el monto se obtiene con `parsePagoAmountInput`. */
+  onChangeAmount: (display: string) => void;
+  /**
+   * Decimales admitidos (`money_decimal_places` de la configuración, 0–2).
+   * Por defecto 2: las cuotas pueden tener centavos.
+   */
+  amountDecimalPlaces?: number;
   receipt: string;
   onChangeReceipt: (value: string) => void;
   /** Métodos de pago disponibles; la selección es obligatoria. */
@@ -51,6 +59,7 @@ export function RegisterPaymentSheet({
   pendingBalance,
   amount,
   onChangeAmount,
+  amountDecimalPlaces = MAX_MONEY_DECIMALS,
   receipt,
   onChangeReceipt,
   paymentMethods,
@@ -70,6 +79,9 @@ export function RegisterPaymentSheet({
   useEffect(() => {
     if (!visible) setChoosingSupport(false);
   }, [visible]);
+
+  const amountOptions = pagoAmountInputOptions(amountDecimalPlaces);
+  const acceptsDecimals = amountOptions.decimalPlaces > 0;
 
   const pickSupport = (source: PagoSupportSource) => {
     setChoosingSupport(false);
@@ -101,12 +113,15 @@ export function RegisterPaymentSheet({
       <Input
         label="Valor del pago"
         placeholder="0"
-        keyboardType="number-pad"
+        // `decimal-pad` trae la coma (iOS, según región) o el punto (Android);
+        // ambos abren los centavos. `number-pad` no tiene separador en iOS.
+        keyboardType={acceptsDecimals ? 'decimal-pad' : 'number-pad'}
         value={amount}
         // El valor se reformatea en cada tecla; fijar el cursor al final evita
-        // que salte al inicio tras insertar los puntos de miles.
+        // que salte al inicio tras insertar los puntos de miles. Además
+        // `applyMoneyTextChange` asume que se escribe y borra al final.
         selection={{ start: amount.length, end: amount.length }}
-        onChangeText={onChangeAmount}
+        onChangeText={(text) => onChangeAmount(applyMoneyTextChange(amount, text, amountOptions).display)}
         autoFocus
         editable={!saving}
         containerStyle={styles.field}

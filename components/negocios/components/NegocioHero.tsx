@@ -11,14 +11,17 @@ type Props = {
   address: string;
   status: string;
   totalCredit: number;
+  /** Dinero recibido en pagos vigentes (sin descuentos). */
   totalPaid: number;
+  /** Descuentos por pronto pago vigentes; se muestran aparte de «Pagado». */
+  totalDiscount?: number;
   pendingBalance: number;
   /** "12 cuotas de $100.000 · OE 45" */
   planLabel?: string | null;
 };
 
-/** Cabecera de marca del detalle: cliente, estado y las tres cifras del crédito. */
-export function NegocioHero({ customerName, address, status, totalCredit, totalPaid, pendingBalance, planLabel }: Props) {
+/** Cabecera de marca del detalle: cliente, estado y las cifras del crédito (con el descuento por pronto pago aparte). */
+export function NegocioHero({ customerName, address, status, totalCredit, totalPaid, totalDiscount = 0, pendingBalance, planLabel }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   // En oscuro `primary.main` es #3b82f6 y el texto blanco no alcanza AA: se usa
@@ -28,7 +31,7 @@ export function NegocioHero({ customerName, address, status, totalCredit, totalP
   return (
     <View
       accessible
-      accessibilityLabel={`${customerName}. ${labelNegocioStatus(status)}. Crédito ${formatCOP(totalCredit)}, pagado ${formatCOP(totalPaid)}, saldo ${formatCOP(pendingBalance)}`}
+      accessibilityLabel={`${customerName}. ${labelNegocioStatus(status)}. Crédito ${formatCOP(totalCredit)}, pagado ${formatCOP(totalPaid)}${totalDiscount > 0 ? `, descuento pronto pago ${formatCOP(totalDiscount)}` : ''}, saldo ${formatCOP(pendingBalance)}`}
       style={[styles.hero, { backgroundColor: background }]}>
       <View style={styles.top}>
         <View style={styles.copy}>
@@ -45,6 +48,11 @@ export function NegocioHero({ customerName, address, status, totalCredit, totalP
         <Metric inverse label="Pagado" value={formatCOP(totalPaid)} style={styles.metric} align="center" />
         <Metric inverse label="Saldo" value={formatCOP(pendingBalance)} style={styles.metric} align="right" />
       </View>
+      {totalDiscount > 0 ? (
+        <View style={styles.discountRow}>
+          <Metric inverse label="Descuento pronto pago" value={formatCOP(totalDiscount)} style={styles.metric} />
+        </View>
+      ) : null}
       {planLabel ? <Text style={[styles.plan, { color: colors.onPrimary.textMuted }]}>{planLabel}</Text> : null}
     </View>
   );
@@ -61,5 +69,6 @@ const styles = StyleSheet.create({
   statusText: { ...Typography.label },
   metrics: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.md, gap: Spacing.sm },
   metric: { flex: 1 },
+  discountRow: { flexDirection: 'row', marginTop: -Spacing.sm },
   plan: { ...Typography.metadata },
 });

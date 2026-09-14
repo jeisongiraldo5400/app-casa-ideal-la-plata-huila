@@ -2,6 +2,7 @@ import { Q } from '@nozbe/watermelondb';
 import type { Model } from '@nozbe/watermelondb';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { MOBILE_PAYMENT_SITE } from '@/lib/paymentSite';
+import { normalizePagoAmountForServer } from '@/lib/negocios/registerPagoRpc';
 import type { Municipio } from '@/lib/cartera/carteraService';
 import type { CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
@@ -47,6 +48,7 @@ import {
   resetOutboxItem,
 } from '../sync/outbox';
 import { prepareRevertCommand } from '../sync/reconcile';
+import { outboxAffectsNegocio, UNSETTLED_OUTBOX_STATUSES } from '../sync/negocioPendingSync';
 import { refreshPendingCount, runSync } from '../sync/syncEngine';
 import {
   laneForCommand,
@@ -350,6 +352,7 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       municipioId: negocio.municipioId,
       municipioName: negocio.municipioName,
       sellerId: negocio.sellerId,
+      gestorCobroId: negocio.gestorCobroId,
     },
     customers: customers.map((row) => ({
       id: row.id,
@@ -380,6 +383,10 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       createdByName: row.createdByName,
       paymentMethodName: row.paymentMethodName,
       paymentSite: row.paymentSite,
+      paymentKind: row.paymentKind,
+      discountAmount: row.discountAmount,
+      discountReason: row.discountReason,
+      expectedTotal: row.expectedTotal,
     })),
   });
 }
@@ -520,6 +527,9 @@ export async function registerPagoOffline(input: {
   /** Nombre del usuario que registra el pago (para mostrarlo sin red). */
   registeredBy?: string | null;
 }) {
+  // A centavos, igual que el cobro con red: un entero no cambia (ni el hash de
+  // idempotencia) y un valor con decimales no arrastra ruido de coma flotante.
+  const amount = normalizePagoAmountForServer(input.amount);
   const database = getDatabase();
   const negocio = await findOrNull<Negocio>('negocios', input.negocioId);
   if (!negocio) {
@@ -544,7 +554,7 @@ export async function registerPagoOffline(input: {
       lateFeeAmount: cuota.lateFeeAmount,
       status: cuota.status,
     })),
-    input.amount
+    amount
   );
   if (applied.leftover > 0.009) {
     throw new Error('El valor supera el saldo pendiente de las cuotas descargadas.');
@@ -568,7 +578,7 @@ export async function registerPagoOffline(input: {
     paymentMethodId: input.paymentMethodId,
     paymentSite: MOBILE_PAYMENT_SITE,
     negocioId: input.negocioId,
-    amount: input.amount,
+    amount,
     paidAt: input.paidAt,
     receiptNumber: input.receiptNumber,
     notes: null,
@@ -588,7 +598,7 @@ export async function registerPagoOffline(input: {
         record._raw.id = pagoLocalId;
         record.negocioId = input.negocioId;
         record.cuotaId = null;
-        record.amount = input.amount;
+        record.amount = amount;
         record.paidAt = input.paidAt;
         record.receiptNumber = input.receiptNumber;
         record.virtualReceiptNumber = null;
@@ -598,6 +608,11 @@ export async function registerPagoOffline(input: {
         record.paymentMethodId = input.paymentMethodId;
         record.paymentMethodName = input.paymentMethodName || null;
         record.paymentSite = MOBILE_PAYMENT_SITE;
+        // Sin conexión solo se registran abonos: el pronto pago exige red.
+        record.paymentKind = 'abono';
+        record.discountAmount = 0;
+        record.discountReason = null;
+        record.expectedTotal = null;
         record.rowSyncStatus = 'pending';
         record.serverUpdatedAt = null;
       }),
@@ -624,7 +639,7 @@ export async function registerPagoOffline(input: {
         stop.prepareUpdate((record) => {
           record.status = 'cobrado';
           record.paymentId = pagoLocalId;
-          record.paymentAmount = input.amount;
+          record.paymentAmount = amount;
           record.arrivedAt = record.arrivedAt || nowIso;
           record.completedAt = nowIso;
           record.rowSyncStatus = 'pending';
@@ -676,6 +691,33 @@ async function findNextPendingStop(routeId: string, excludeStopId: string) {
     stops
       .filter((row) => row.id !== excludeStopId)
       .sort((a, b) => a.position - b.position)[0] || null
+  );
+}
+
+/**
+ * ¿Quedan comandos sin confirmar que afecten al negocio (o a la parada/ruta
+ * desde la que se cobra)? Sin base local no hay cola: devuelve false.
+ */
+export async function hasUnsettledSyncForNegocio(input: {
+  negocioId: string;
+  routeStopId?: string | null;
+}): Promise<boolean> {
+  if (!canUseLocalDb()) return false;
+  const database = getDatabase();
+  const stop = input.routeStopId
+    ? await findOrNull<CollectionRouteStopRecord>('collection_route_stops', input.routeStopId)
+    : null;
+  const items = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('status', Q.oneOf([...UNSETTLED_OUTBOX_STATUSES])))
+    .fetch();
+  return outboxAffectsNegocio(
+    items.map((item) => ({
+      type: item.type,
+      status: item.status,
+      payload: parseOutboxPayload<Record<string, unknown>>(item),
+    })),
+    { negocioId: input.negocioId, routeId: stop?.routeId ?? null, routeStopId: input.routeStopId ?? null }
   );
 }
 

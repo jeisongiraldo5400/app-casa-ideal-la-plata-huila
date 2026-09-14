@@ -37,6 +37,17 @@ import { useBluetoothPrinter } from '@/components/printing';
 
 const BUSINESS_PAGE_SIZE = 15;
 
+
+/** Campos del pronto pago para el recibo y el ticket de un cobro del gestor. */
+function managerPaymentReceiptExtras(payment: ManagerPayment) {
+  return {
+    paymentKind: payment.payment_kind ?? null,
+    discountAmount: payment.discount_amount == null ? null : Number(payment.discount_amount),
+    discountReason: payment.discount_reason ?? null,
+    expectedTotal: payment.expected_total == null ? null : Number(payment.expected_total),
+  };
+}
+
 export function CollectionManagerPaymentsModal({
   visible,
   manager,
@@ -139,6 +150,7 @@ export function CollectionManagerPaymentsModal({
         paymentMethodName: payment.payment_method_name,
         paymentSiteName: paymentSiteLabel(payment.payment_site),
         remainingBalance: Number(payment.remaining_balance),
+        ...managerPaymentReceiptExtras(payment),
       });
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
       if (await Sharing.isAvailableAsync()) {
@@ -165,6 +177,7 @@ export function CollectionManagerPaymentsModal({
       paymentMethodName: payment.payment_method_name,
       paymentSiteName: paymentSiteLabel(payment.payment_site),
       remainingBalance: Number(payment.remaining_balance),
+      ...managerPaymentReceiptExtras(payment),
     });
   };
 
@@ -498,6 +511,11 @@ export function CollectionManagerPaymentsModal({
                   <Text style={{ color: colors.text.primary, fontWeight: '700' }}>
                     {formatCOP(Number(p.amount))}
                   </Text>
+                  {p.payment_kind === 'pronto_pago' ? (
+                    <Text style={{ color: colors.info.main, fontSize: 12, fontWeight: '700' }}>
+                      Pronto pago · desc. {formatCOP(Number(p.discount_amount || 0))}
+                    </Text>
+                  ) : null}
                   <Text
                     style={{
                       color:

@@ -91,6 +91,14 @@ describe('pushOutboxItem · pagos', () => {
     expect(args).toMatchObject({ p_payment_site: 'app_movil' });
   });
 
+  it('manda el monto con centavos y deja intactos los enteros ya encolados', async () => {
+    await pushOutboxItem(outboxItem('register_pago', { ...basePago, amount: 93_333.33 }));
+    await pushOutboxItem(outboxItem('register_pago', basePago));
+
+    expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_amount: 93_333.33 });
+    expect(JSON.stringify(mockRpc.mock.calls[1][1].p_amount)).toBe('50000');
+  });
+
   it('manda la clave de idempotencia del outbox y deja la imputación FIFO al servidor', async () => {
     const result = await pushOutboxItem(outboxItem('register_pago', basePago));
 

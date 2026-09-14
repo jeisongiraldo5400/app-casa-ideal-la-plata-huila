@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { uploadAndAttachPagoSupport } from '@/lib/uploadPagoSupport';
-import { MOBILE_PAYMENT_SITE } from '@/lib/paymentSite';
+import { buildRegisterPagoRpcCall } from '@/lib/negocios/registerPagoRpc';
 import { getDatabase } from '../database';
 import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
@@ -98,31 +98,21 @@ async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey
 }
 
 async function pushRegisterPago(payload: RegisterPagoPayload, idempotencyKey: string): Promise<PushResult> {
-  const { data, error } = payload.routeStopId
-    ? await supabase.rpc('register_collection_route_payment', {
-        p_stop_id: payload.routeStopId,
-        p_amount: payload.amount,
-        p_paid_at: payload.paidAt,
-        p_receipt_number: payload.receiptNumber,
-        p_cuota_id: null,
-        p_notes: payload.notes,
-        p_idempotency_key: idempotencyKey,
-        p_payment_method_id: payload.paymentMethodId ?? null,
-        p_payment_site: payload.paymentSite ?? MOBILE_PAYMENT_SITE,
-      })
-    : await supabase.rpc('register_negocio_pago', {
-        p_negocio_id: payload.negocioId,
-        p_amount: payload.amount,
-        p_paid_at: payload.paidAt,
-        p_receipt_number: payload.receiptNumber,
-        p_cuota_id: null,
-        p_notes: payload.notes,
-        p_idempotency_key: idempotencyKey,
-        p_payment_method_id: payload.paymentMethodId ?? null,
-        // Los comandos encolados antes de esta versión no traen sitio: son
-        // igualmente cobros hechos desde la app, así que se etiquetan aquí.
-        p_payment_site: payload.paymentSite ?? MOBILE_PAYMENT_SITE,
-      });
+  // Mismos argumentos que el cobro con red (`buildRegisterPagoRpcCall`). Los
+  // comandos encolados antes del catálogo de métodos o del sitio de pago no
+  // traen esos campos: se mandan como null y como app móvil respectivamente.
+  const call = buildRegisterPagoRpcCall({
+    negocioId: payload.negocioId,
+    routeStopId: payload.routeStopId,
+    amount: payload.amount,
+    paidAt: payload.paidAt,
+    receiptNumber: payload.receiptNumber,
+    notes: payload.notes,
+    idempotencyKey,
+    paymentMethodId: payload.paymentMethodId,
+    paymentSite: payload.paymentSite,
+  });
+  const { data, error } = await supabase.rpc(call.name, call.args);
   if (error) throw error;
   const pagoId = String(data || '');
   if (!pagoId) return { outcome: 'retry', message: 'El servidor no devolvió el id del pago' };

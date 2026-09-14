@@ -74,6 +74,9 @@ export function classifyPushError(message: string): RetryDecision {
     text.includes('estado de visita') ||
     text.includes('debe indicar') ||
     text.includes('obligatori') ||
+    // Pago sin método (servidor desde 20261018130000): reintentar nunca lo resolverá.
+    text.includes('método de pago') ||
+    text.includes('metodo de pago') ||
     text.includes('tipo de soporte') ||
     text.includes('no puede superar') ||
     (text.includes('ruta') &&

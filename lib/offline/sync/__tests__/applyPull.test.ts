@@ -168,6 +168,101 @@ describe('applyPullPayload', () => {
   });
 });
 
+describe('applyPullPayload · pronto pago (v6)', () => {
+  function capturingDatabase() {
+    const created = new Map<string, Record<string, unknown>>();
+    const database = {
+      get: (table: string) => ({
+        find: async () => {
+          throw new Error('not found');
+        },
+        prepareCreate: (fn: (record: Record<string, unknown>) => void) => {
+          const record: Record<string, unknown> = { _raw: { id: '' } };
+          fn(record);
+          created.set(`${table}:${(record._raw as { id: string }).id}`, record);
+          return { op: 'create' };
+        },
+        query: () => ({ fetch: async () => [] }),
+      }),
+      write: async (fn: () => Promise<void>) => fn(),
+      batch: async () => undefined,
+    };
+    return { database, created };
+  }
+
+  const basePago = {
+    negocio_id: 'n1',
+    cuota_id: null,
+    paid_at: '2026-09-14T10:00:00Z',
+    receipt_number: null,
+    receipt_status: 'emitido',
+    notes: null,
+    created_at: '2026-09-14T10:00:00Z',
+    deleted_at: null,
+  };
+
+  function payloadWith(pagos: PullPayload['negocio_pagos']['upserts']): PullPayload {
+    return {
+      server_time: '2026-09-14T00:00:00Z',
+      must_wipe: false,
+      truncated: false,
+      roles: [],
+      customers: emptyChanges(),
+      negocios: emptyChanges(),
+      negocio_cuotas: emptyChanges(),
+      negocio_pagos: { upserts: pagos, deleted: [] },
+      collection_routes: emptyChanges(),
+      collection_route_stops: emptyChanges(),
+      municipios: emptyChanges(),
+    };
+  }
+
+  it('guarda tipo, descuento (numérico), motivo y pendiente liquidado', async () => {
+    const { database, created } = capturingDatabase();
+    await applyPullPayload(
+      database as never,
+      payloadWith([
+        {
+          ...basePago,
+          id: 'pp1',
+          amount: 900000,
+          virtual_receipt_number: 'RV-2026-0000010',
+          payment_kind: 'pronto_pago',
+          // PostgREST/jsonb puede traer numeric como texto.
+          discount_amount: '100000.50',
+          discount_reason: 'Paga todo por adelantado',
+          expected_total: '1000000.50',
+        },
+      ]),
+      'user-1'
+    );
+
+    expect(created.get('negocio_pagos:pp1')).toMatchObject({
+      amount: 900000,
+      paymentKind: 'pronto_pago',
+      discountAmount: 100000.5,
+      discountReason: 'Paga todo por adelantado',
+      expectedTotal: 1000000.5,
+    });
+  });
+
+  it('un servidor sin la migración no envía las columnas: quedan nulas', async () => {
+    const { database, created } = capturingDatabase();
+    await applyPullPayload(
+      database as never,
+      payloadWith([{ ...basePago, id: 'p1', amount: 50000, virtual_receipt_number: 'RV-1' }]),
+      'user-1'
+    );
+
+    expect(created.get('negocio_pagos:p1')).toMatchObject({
+      paymentKind: null,
+      discountAmount: null,
+      discountReason: null,
+      expectedTotal: null,
+    });
+  });
+});
+
 describe('pruneOutOfScopeNegocios', () => {
   it('elimina negocios fuera de alcance y conserva los que tienen cambios pendientes', async () => {
     const destroyed: string[] = [];

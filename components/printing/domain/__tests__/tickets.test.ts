@@ -121,6 +121,68 @@ describe('buildPaymentTicket', () => {
     expect(texts).toContain('RECIBO ANULADO');
   });
 
+  describe('pronto pago', () => {
+    const prontoPago: NegocioReceiptData = {
+      ...receipt,
+      amount: 900_000,
+      remainingBalance: 0,
+      paymentKind: 'pronto_pago',
+      discountAmount: 100_000,
+      discountReason: 'Paga todo el credito',
+      expectedTotal: 1_000_000,
+    };
+    const ticketTexts = (data: NegocioReceiptData) =>
+      buildPaymentTicket(data)
+        .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+        .map((line) => line.text);
+
+    it('imprime total pendiente, descuento, total pagado, saldo $0 y la leyenda', () => {
+      const texts = ticketTexts(prontoPago);
+
+      expect(texts).toContain('Recibo de pago - Pronto pago');
+      expect(texts).toContain(padRow('Total pendiente', formatTicketMoney(1_000_000)));
+      expect(texts).toContain(padRow('Descuento', formatTicketMoney(100_000)));
+      expect(texts).toContain(padRow('Total pagado', formatTicketMoney(900_000)));
+      expect(texts).toContain(padRow('Saldo pendiente', formatTicketMoney(0)));
+      expect(texts.join(' ')).toContain('Motivo descuento: Paga todo el credito');
+      expect(texts.join(' ')).toContain('Crédito cancelado por pronto pago.');
+      expect(texts).not.toContain(padRow('Valor recibido', formatTicketMoney(900_000)));
+      // El orden es el del recibo: pendiente − descuento = pagado, luego saldo.
+      const order = ['Total pendiente', 'Descuento', 'Total pagado', 'Saldo pendiente'].map((label) =>
+        texts.findIndex((text) => text.startsWith(label))
+      );
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(texts.every((text) => text.length <= 32)).toBe(true);
+    });
+
+    it('sin motivo no imprime la línea «Motivo descuento»', () => {
+      for (const discountReason of [null, '', '  ']) {
+        const texts = ticketTexts({ ...prontoPago, discountReason }).join(' ');
+        expect(texts).toContain('Descuento');
+        expect(texts).not.toContain('Motivo descuento');
+      }
+    });
+
+    it('sin `expectedTotal` deriva el pendiente de valor + descuento', () => {
+      const texts = ticketTexts({ ...prontoPago, expectedTotal: null });
+      expect(texts).toContain(padRow('Total pendiente', formatTicketMoney(1_000_000)));
+    });
+
+    it('anulado conserva los montos pero no dice que el crédito quedó cancelado', () => {
+      const texts = ticketTexts({ ...prontoPago, status: 'anulado' }).join(' ');
+      expect(texts).toContain('RECIBO ANULADO');
+      expect(texts).toContain('Total pendiente');
+      expect(texts).not.toContain('cancelado por pronto pago');
+    });
+
+    it('un abono sigue con «Valor recibido» y sin campos de descuento', () => {
+      const texts = ticketTexts({ ...receipt, paymentKind: 'abono', discountAmount: 0 }).join(' ');
+      expect(texts).toContain('Valor recibido');
+      expect(texts).not.toContain('Descuento');
+      expect(texts).not.toContain('Pronto pago');
+    });
+  });
+
   it('termina con avance de papel porque la PT-210 no corta', () => {
     const ticket = buildPaymentTicket(receipt);
     expect(ticket[ticket.length - 1]).toEqual({ type: 'spacer', lines: 4 });

@@ -17,6 +17,9 @@ describe('retryPolicy', () => {
     expect(classifyPushError('Solo puede cobrarse la parada actual')).toBe('fail');
     expect(classifyPushError('Negocio no encontrado')).toBe('fail');
     expect(classifyPushError('La ruta no está disponible para iniciar')).toBe('fail');
+    expect(
+      classifyPushError('Seleccione el método de pago. Si usa la app móvil, actualícela a la última versión.')
+    ).toBe('fail');
     expect(classifyPushError('Ya existe un cliente con documento')).toBe('conflict');
     expect(classifyPushError('La clave de idempotencia ya fue usada con datos diferentes')).toBe('conflict');
     expect(classifyPushError('Network request failed')).toBe('network');

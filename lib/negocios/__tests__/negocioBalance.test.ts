@@ -2,7 +2,10 @@ import {
   comparePagosOldestFirst,
   computeRemainingBalance,
   cuotaSaldo,
+  isProntoPago,
+  pagoSettledAmount,
   remainingAfterPago,
+  summarizePagos,
 } from '@/lib/negocios/negocioBalance';
 
 describe('negocioBalance', () => {
@@ -83,5 +86,53 @@ describe('remainingAfterPago con paid_at empatado', () => {
   it('un pago anulado no descuenta saldo en el recibo anterior', () => {
     const anulado = { ...segundo, receipt_status: 'anulado' };
     expect(remainingAfterPago(cuotas, [primero, anulado], primero)).toBe(70000);
+  });
+});
+
+describe('saldos con descuento por pronto pago', () => {
+  // Crédito de 1.000.000: abono de 200.000 y luego pronto pago de 720.000 con
+  // descuento de 80.000. `paid_amount` de las cuotas incluye el descuento.
+  const cuotas = [
+    { amount: 500000, paid_amount: 500000, late_fee_amount: 0, status: 'pagada' },
+    { amount: 500000, paid_amount: 500000, late_fee_amount: 0, status: 'pagada' },
+  ];
+  const abono = { id: 'p1', amount: 200000, paid_at: '2026-09-01T10:00:00Z', receipt_status: 'emitido' };
+  const pronto = {
+    id: 'p2',
+    amount: '720000.00',
+    paid_at: '2026-09-10T10:00:00Z',
+    receipt_status: 'emitido',
+    payment_kind: 'pronto_pago',
+    discount_amount: '80000.00',
+  };
+
+  it('el recibo del abono previo suma dinero y descuento del pronto pago posterior', () => {
+    expect(remainingAfterPago(cuotas, [pronto, abono], abono)).toBe(800000);
+  });
+
+  it('el recibo del pronto pago queda en $0', () => {
+    expect(remainingAfterPago(cuotas, [pronto, abono], pronto)).toBe(0);
+  });
+
+  it('un pronto pago anulado no cuenta en los recibos anteriores', () => {
+    const cuotasReabiertas = [
+      { amount: 500000, paid_amount: 200000, late_fee_amount: 0, status: 'parcial' },
+      { amount: 500000, paid_amount: 0, late_fee_amount: 0, status: 'pendiente' },
+    ];
+    const anulado = { ...pronto, receipt_status: 'anulado' };
+    expect(remainingAfterPago(cuotasReabiertas, [anulado, abono], abono)).toBe(800000);
+  });
+
+  it('separa dinero recibido y descuentos vigentes para el encabezado', () => {
+    expect(summarizePagos([pronto, abono])).toEqual({ paid: 920000, discount: 80000 });
+    expect(summarizePagos([{ ...pronto, receipt_status: 'anulado' }, abono])).toEqual({ paid: 200000, discount: 0 });
+    expect(summarizePagos(null)).toEqual({ paid: 0, discount: 0 });
+  });
+
+  it('pagos sin columnas nuevas son abonos sin descuento', () => {
+    expect(isProntoPago(abono)).toBe(false);
+    expect(isProntoPago(pronto)).toBe(true);
+    expect(pagoSettledAmount(abono)).toBe(200000);
+    expect(pagoSettledAmount(pronto)).toBe(800000);
   });
 });

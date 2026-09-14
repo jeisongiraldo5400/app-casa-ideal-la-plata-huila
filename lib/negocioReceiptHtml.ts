@@ -21,7 +21,36 @@ export type NegocioReceiptData = {
   /** Sitio de pago ya traducido a etiqueta ("Almacén", "Aplicación Móvil"). */
   paymentSiteName?: string | null;
   remainingBalance: number;
+  /** 'abono' | 'pronto_pago'. Sin valor se trata como abono. */
+  paymentKind?: string | null;
+  /** Descuento por pronto pago. */
+  discountAmount?: number | null;
+  /** Motivo del descuento (opcional); sin motivo no se muestra la fila. */
+  discountReason?: string | null;
+  /** Pendiente total que se liquidó; si falta se deriva de `amount + discountAmount`. */
+  expectedTotal?: number | null;
 };
+
+/** Pie del recibo y del ticket de un pronto pago vigente (mismo texto que el web). */
+export const PRONTO_PAGO_RECEIPT_LEGEND = 'Crédito cancelado por pronto pago.';
+
+export function isProntoPagoReceipt(data: Pick<NegocioReceiptData, 'paymentKind'>) {
+  return data.paymentKind === 'pronto_pago';
+}
+
+/** Montos del recibo de pronto pago: pendiente liquidado, descuento y dinero recibido. */
+export function prontoPagoReceiptAmounts(
+  data: Pick<NegocioReceiptData, 'amount' | 'discountAmount' | 'expectedTotal'>
+) {
+  const amount = Number(data.amount) || 0;
+  const discount = Math.max(Number(data.discountAmount) || 0, 0);
+  const expected = Number(data.expectedTotal);
+  return {
+    expectedTotal: Number.isFinite(expected) && data.expectedTotal != null ? expected : amount + discount,
+    discount,
+    amount,
+  };
+}
 
 export function receiptRegisteredBy(data: Pick<NegocioReceiptData, 'registeredBy' | 'sellerName'>) {
   return data.registeredBy || data.sellerName || 'Casa Ideal';
@@ -99,6 +128,19 @@ const field = (label: string, value: string, wide = false) =>
 export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
   const isVoided = data.status === 'anulado';
   const status = receiptStatus(data.status);
+  const prontoPago = isProntoPagoReceipt(data);
+  const pronto = prontoPagoReceiptAmounts(data);
+  // Un pronto pago liquida todo el crédito: el saldo que deja siempre es 0.
+  const remainingBalance = prontoPago ? 0 : data.remainingBalance;
+  const discountReason = String(data.discountReason ?? '').trim();
+  // Solo clases existentes (.field, .balance, .foot): RECEIPT_CSS debe seguir
+  // idéntico al del web.
+  const prontoPagoFields = prontoPago
+    ? `
+  ${field('Total pendiente', esc(formatCOP(pronto.expectedTotal)))}
+  ${field('Descuento pronto pago', esc(formatCOP(pronto.discount)))}${discountReason ? `
+  ${field('Motivo del descuento', esc(discountReason), true)}` : ''}`
+    : '';
   return `<!doctype html><html lang="es"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Recibo ${esc(data.receiptNumber)}</title><style>${RECEIPT_CSS}</style></head><body>
@@ -109,21 +151,21 @@ ${isVoided ? '<div class="watermark" aria-hidden="true">ANULADO</div>' : ''}
   <div class="company"><b>NIT ${esc(COMPANY.nit)}</b><br />${esc(COMPANY.address)}<br />Cel. ${esc(COMPANY.phone)}</div>
 </header>
 <section class="title">
-  <div><div class="eyebrow">Recibo de pago</div><h1>${esc(data.receiptNumber)}</h1></div>
+  <div><div class="eyebrow">Recibo de pago${prontoPago ? ' · Pronto pago' : ''}</div><h1>${esc(data.receiptNumber)}</h1></div>
   <span class="status status-${status.tone}">${esc(status.label)}</span>
 </section>
 ${isVoided ? '<p class="void-banner">RECIBO ANULADO · Este comprobante no es soporte de pago.</p>' : ''}
-<section class="amount"><span>Valor recibido</span><strong>${formatCOP(data.amount)}</strong></section>
+<section class="amount"><span>${prontoPago ? 'Total pagado' : 'Valor recibido'}</span><strong>${formatCOP(data.amount)}</strong></section>
 <section class="fields">
   ${field('Negocio', esc(formatNegocioCodigo(data.negocioNumero)))}
   ${field('Fecha y hora de pago', esc(formatPaymentDateTime(data.paidAt)))}
-  ${field('Cliente', esc(data.customerName), true)}
+  ${field('Cliente', esc(data.customerName), true)}${prontoPagoFields}
   ${field('Método de pago', esc(data.paymentMethodName) || 'No registrado')}
   ${field('Sitio de pago', esc(data.paymentSiteName) || 'No registrado')}
   ${field('Recibo físico', esc(data.physicalReceiptNumber) || 'No aplica')}
   ${field('Registrado por', esc(receiptRegisteredBy(data)))}
 </section>
-<section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(data.remainingBalance)}</strong></section>
-<footer class="foot">${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>
+<section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(remainingBalance)}</strong></section>
+<footer class="foot">${prontoPago && !isVoided ? `${esc(PRONTO_PAGO_RECEIPT_LEGEND)}<br />` : ''}${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>
 </main></body></html>`;
 }

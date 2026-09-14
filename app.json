@@ -2,7 +2,7 @@
   "expo": {
     "name": "Casa Ideal",
     "slug": "app-casa-ideal",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "orientation": "default",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",

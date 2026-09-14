@@ -55,7 +55,23 @@ import {
   canRegisterCustomerSignatureLater,
   sellerSignatureRequiredError,
 } from '@/lib/negocioSignatureRules';
-import { computeRemainingBalance, remainingAfterPago } from '@/lib/negocios/negocioBalance';
+import { computeRemainingBalance, remainingAfterPago, summarizePagos } from '@/lib/negocios/negocioBalance';
+import {
+  canOfferProntoPago,
+  localProntoPagoPermission,
+  prontoPagoDecimalPlaces,
+} from '@/lib/negocios/prontoPago';
+import { canOfferVoidPago } from '@/lib/negocios/voidNegocioPago';
+import { ProntoPagoSheet } from '@/components/negocios/components/ProntoPagoSheet';
+import { VoidPagoSheet } from '@/components/negocios/components/VoidPagoSheet';
+import {
+  useProntoPago,
+  type ProntoPagoRegistered,
+} from '@/components/negocios/infrastructure/hooks/useProntoPago';
+import { useNegocioPagoPermissions } from '@/components/negocios/infrastructure/hooks/useNegocioPagoPermissions';
+import { useVoidNegocioPago } from '@/components/negocios/infrastructure/hooks/useVoidNegocioPago';
+import { fetchRegisteredPagoReceipt } from '@/components/negocios/infrastructure/services/negocioPagosService';
+import { runSync } from '@/lib/offline/sync/syncEngine';
 import {
   openPagoSupport,
   uploadAndAttachPagoSupport,
@@ -71,7 +87,12 @@ import {
 } from '@/lib/offline/repositories/offlineRepository';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
-import { formatNegocioMoneyInput } from '@/components/negocios/infrastructure/services/negociosStockService';
+import {
+  buildRegisterPagoRpcCall,
+  pagoAmountExceedsBalance,
+  pagoAmountInputOptions,
+  parsePagoAmountInput,
+} from '@/lib/negocios/registerPagoRpc';
 import {
   fetchPaymentMethods,
   type PaymentMethodOption,
@@ -110,7 +131,8 @@ function NegocioDetailScreenInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
   const { user } = useAuth();
-  const { isAdmin } = useUserRoles();
+  const { isAdmin, isGestorCobro } = useUserRoles();
+  const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   const [sellerSheetOpen, setSellerSheetOpen] = useState(false);
   const [sellerSaving, setSellerSaving] = useState(false);
@@ -125,7 +147,14 @@ function NegocioDetailScreenInner() {
     };
   }, [user?.id]);
 
+  /** Texto del campo de valor tal como se pinta («93.333,33»). */
   const [payAmount, setPayAmount] = useState('');
+  /**
+   * Decimales admitidos en el valor del pago (`money_decimal_places` de la
+   * configuración de crédito). Sin red se conserva el último conocido; por
+   * defecto 2, porque las cuotas pueden tener centavos.
+   */
+  const [payMoneyDecimals, setPayMoneyDecimals] = useState<number | null>(null);
   const [payReceipt, setPayReceipt] = useState('');
   const [payMethodId, setPayMethodId] = useState('');
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
@@ -162,7 +191,7 @@ function NegocioDetailScreenInner() {
   } | null>(null);
   const activatingRef = useRef(false);
   const hasNegocioRef = useRef(false);
-  const formattedPayAmount = formatNegocioMoneyInput(payAmount);
+  const payAmountOptions = pagoAmountInputOptions(payMoneyDecimals);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -270,7 +299,7 @@ function NegocioDetailScreenInner() {
           .maybeSingle(),
         supabase
           .from('credit_settings')
-          .select('legal_text')
+          .select('legal_text, money_decimal_places')
           .is('deleted_at', null)
           .eq('is_active', true)
           .order('created_at', { ascending: false })
@@ -329,6 +358,7 @@ function NegocioDetailScreenInner() {
       setCustomerName(custRes.data?.name || '');
       setCustomerMeta(custRes.data || {});
       setLegalText(settingsRes.data?.legal_text || null);
+      setPayMoneyDecimals(settingsRes.data?.money_decimal_places ?? null);
       setCustomerSignature(customerSignatureUrl || '');
       setGuarantorSignature(guarantorSignatureUrl || '');
       setSellerSignature(sellerSignatureUrl || '');
@@ -443,6 +473,11 @@ function NegocioDetailScreenInner() {
   }, [pendingCount, lastSyncedAt, fromLocal, load]);
 
   const pendingBalance = useMemo(() => computeRemainingBalance(cuotas), [cuotas]);
+  const serverPagoPermissions = useNegocioPagoPermissions({
+    negocioId: negocio?.id,
+    enabled: online && !fromLocal,
+    reloadKey: negocio,
+  });
 
   const pickSupportFromCamera = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -521,6 +556,8 @@ function NegocioDetailScreenInner() {
     amount: number;
     physicalReceiptNumber: string | null;
     paymentMethodName: string | null;
+    /** Pronto pago: el saldo queda en 0 y el ticket lleva pendiente y descuento. */
+    prontoPago?: { discountAmount: number; discountReason: string | null; expectedTotal: number };
   }) => {
     if (!negocio) return false;
     return printPaymentIfReady({
@@ -536,8 +573,63 @@ function NegocioDetailScreenInner() {
       paymentMethodName: input.paymentMethodName,
       // Este recibo se emite justo después de cobrar desde la app.
       paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
-      remainingBalance: Math.max(pendingBalance - input.amount, 0),
+      remainingBalance: input.prontoPago ? 0 : Math.max(pendingBalance - input.amount, 0),
+      ...(input.prontoPago
+        ? {
+            paymentKind: 'pronto_pago',
+            discountAmount: input.prontoPago.discountAmount,
+            discountReason: input.prontoPago.discountReason,
+            expectedTotal: input.prontoPago.expectedTotal,
+          }
+        : {}),
     });
+  };
+
+  /** Pide al motor de sincronización traer lo que cambió en el servidor. */
+  const syncAfterOnlineChange = () => {
+    if (canUseLocalDb()) void runSync('mutation');
+  };
+
+  const onProntoPagoRegistered = async ({ pagoId, values, paidAt, paymentMethodName }: ProntoPagoRegistered) => {
+    await refreshAfterPago();
+    syncAfterOnlineChange();
+
+    let receiptNumber = values.receiptNumber || 'Provisional';
+    let physicalReceiptNumber = values.receiptNumber;
+    let persistedPaidAt = paidAt;
+    let amount = values.netAmount;
+    let discountAmount = values.discountAmount;
+    let expectedTotal = values.pendingTotal;
+    let discountReason = values.discountReason;
+    try {
+      const row = await fetchRegisteredPagoReceipt(pagoId);
+      if (row?.virtual_receipt_number) {
+        receiptNumber = row.virtual_receipt_number;
+        physicalReceiptNumber = row.receipt_number;
+      }
+      if (row?.paid_at) persistedPaidAt = row.paid_at;
+      if (row?.amount != null) amount = Number(row.amount);
+      if (row?.discount_amount != null) discountAmount = Number(row.discount_amount);
+      if (row?.expected_total != null) expectedTotal = Number(row.expected_total);
+      if (row?.discount_reason) discountReason = row.discount_reason;
+    } catch {
+      // El pago ya está confirmado; el ticket sale con los valores confirmados en la hoja.
+    }
+    const printed = await printReceiptAfterPago({
+      receiptNumber,
+      paidAt: persistedPaidAt,
+      amount,
+      physicalReceiptNumber,
+      paymentMethodName,
+      prontoPago: { discountAmount, discountReason, expectedTotal },
+    });
+    notifyPagoResult(
+      'Pronto pago registrado',
+      routeStopId
+        ? 'El negocio quedó saldado y la parada se completó.'
+        : 'El negocio quedó saldado.',
+      printed
+    );
   };
 
   /**
@@ -564,7 +656,7 @@ function NegocioDetailScreenInner() {
 
   const registerPago = async () => {
     if (!negocio) return;
-    const amount = Number(payAmount);
+    const amount = parsePagoAmountInput(payAmount, payAmountOptions);
     if (!amount || amount <= 0) {
       return Alert.alert('Indique un valor válido');
     }
@@ -573,7 +665,7 @@ function NegocioDetailScreenInner() {
     }
     const paymentMethodLabel =
       paymentMethods.find((method) => method.id === payMethodId)?.name || null;
-    if (amount - pendingBalance > 0.009) {
+    if (pagoAmountExceedsBalance(amount, pendingBalance)) {
       return Alert.alert(
         'Valor supera el saldo',
         `El saldo pendiente es ${formatCOP(pendingBalance)}.`
@@ -589,29 +681,18 @@ function NegocioDetailScreenInner() {
       paymentPaidAt.current ||= new Date().toISOString();
       const paidAt = paymentPaidAt.current;
       try {
-        const { data, error } = routeStopId
-          ? await supabase.rpc('register_collection_route_payment', {
-              p_stop_id: routeStopId,
-              p_amount: amount,
-              p_paid_at: paidAt,
-              p_receipt_number: payReceipt || null,
-              p_cuota_id: null,
-              p_notes: null,
-              p_idempotency_key: paymentIdempotencyKey.current,
-              p_payment_method_id: payMethodId,
-              p_payment_site: MOBILE_PAYMENT_SITE,
-            })
-          : await supabase.rpc('register_negocio_pago', {
-              p_negocio_id: negocio.id,
-              p_amount: amount,
-              p_paid_at: paidAt,
-              p_receipt_number: payReceipt || null,
-              p_cuota_id: null,
-              p_notes: null,
-              p_idempotency_key: paymentIdempotencyKey.current,
-              // Todo cobro hecho desde esta app se registra como Aplicación Móvil.
-              p_payment_site: MOBILE_PAYMENT_SITE,
-            });
+        const call = buildRegisterPagoRpcCall({
+          negocioId: negocio.id,
+          routeStopId: routeStopId || null,
+          amount,
+          paidAt,
+          receiptNumber: payReceipt || null,
+          notes: null,
+          idempotencyKey: paymentIdempotencyKey.current,
+          // Obligatorio en el servidor desde 20261018130000: sin él, el RPC rechaza el cobro.
+          paymentMethodId: payMethodId,
+        });
+        const { data, error } = await supabase.rpc(call.name, call.args);
         if (error) throw error;
         const pagoId = String(data || '');
         paymentIdempotencyKey.current = null;
@@ -835,6 +916,14 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  /** Campos del pronto pago para el recibo y el ticket de un pago existente. */
+  const pagoReceiptExtras = (pago: any) => ({
+    paymentKind: pago.payment_kind ?? null,
+    discountAmount: pago.discount_amount == null ? null : Number(pago.discount_amount),
+    discountReason: pago.discount_reason ?? null,
+    expectedTotal: pago.expected_total == null ? null : Number(pago.expected_total),
+  });
+
   const shareReceipt = async (pago: any) => {
     if (!negocio) return;
     // Saldo que quedó tras ese pago, no el saldo actual del negocio.
@@ -852,6 +941,7 @@ function NegocioDetailScreenInner() {
       paymentMethodName: pago.payment_method_name,
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
+      ...pagoReceiptExtras(pago),
     });
     try {
       const Print = require('expo-print');
@@ -881,6 +971,7 @@ function NegocioDetailScreenInner() {
       paymentMethodName: pago.payment_method_name,
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
+      ...pagoReceiptExtras(pago),
     });
   };
 
@@ -1111,6 +1202,35 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  const prontoPago = useProntoPago({
+    negocioId: negocio?.id,
+    routeStopId: routeStopId || null,
+    online,
+    fromLocal,
+    onRegistered: onProntoPagoRegistered,
+  });
+
+  const voidPago = useVoidNegocioPago({
+    pagos,
+    onBlocked: (message) => Alert.alert('No se puede anular', message),
+    onVoided: async (pago) => {
+      await refreshAfterPago();
+      syncAfterOnlineChange();
+      Alert.alert(
+        'Pago anulado',
+        `${pago.virtual_receipt_number || 'El pago'} quedó anulado y su valor volvió a las cuotas.`
+      );
+    },
+  });
+
+  const confirmVoidPago = (reason: string) => {
+    const receipt = voidPago.target?.virtual_receipt_number || 'este pago';
+    Alert.alert('Confirmar anulación', `¿Anular ${receipt}? Esta acción no se puede deshacer.`, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Anular', style: 'destructive', onPress: () => void voidPago.confirm(reason) },
+    ]);
+  };
+
   const headerTitle = negocio ? labelNegocioCodigo(negocio.numero) : 'Negocio';
   const screenOptions = {
     title: headerTitle,
@@ -1151,9 +1271,23 @@ function NegocioDetailScreenInner() {
   const activationSignatureError = canActivate
     ? sellerSignatureRequiredError(customerSignature, sellerSignature)
     : null;
-  const totalPaid = pagos
-    .filter((pago) => pago.receipt_status !== 'anulado')
-    .reduce((total, pago) => total + Number(pago.amount || 0), 0);
+  // «Pagado» es dinero recibido; los descuentos por pronto pago van aparte.
+  const { paid: totalPaid, discount: totalDiscount } = summarizePagos(pagos);
+  const prontoPagoAllowed =
+    serverPagoPermissions.canRegisterProntoPago ??
+    localProntoPagoPermission({
+      isAdmin: isAdmin(),
+      isGestorCobro: isGestorCobro(),
+      gestorCobroId: negocio.gestor_cobro_id,
+      userId: user?.id,
+    });
+  const showProntoPago = canOfferProntoPago({
+    status: negocio.status,
+    pendingBalance,
+    allowed: prontoPagoAllowed,
+  });
+  const prontoPagoDecimals = prontoPagoDecimalPlaces(negocio.formula_snapshot, payMoneyDecimals);
+  const canVoidPagos = serverPagoPermissions.canVoidPago === true;
   const address =
     [negocio.direccion, negocio.vereda?.nombre, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
       .filter(Boolean)
@@ -1209,9 +1343,36 @@ function NegocioDetailScreenInner() {
           status={negocio.status}
           totalCredit={Number(negocio.total_credit)}
           totalPaid={totalPaid}
+          totalDiscount={totalDiscount}
           pendingBalance={pendingBalance}
           planLabel={planLabel}
         />
+
+        {showProntoPago ? (
+          <Card variant="outlined" style={styles.prontoPagoCard}>
+            <View style={styles.sellerRow}>
+              <MaterialIcons name="bolt" size={IconSize.md} color={colors.primary.main} />
+              <View style={styles.sellerCopy}>
+                <Text style={[styles.sellerName, { color: colors.text.primary }]}>Liquidar con descuento</Text>
+                <Text style={[styles.helper, { color: colors.text.secondary }]}>
+                  Salda todo el crédito ({formatCOP(pendingBalance)}) con un descuento por pronto pago.
+                </Text>
+              </View>
+            </View>
+            <Button
+              title="Registrar descuento pronto pago"
+              variant="outline"
+              icon="percent"
+              onPress={prontoPago.open}
+              disabled={Boolean(prontoPago.blockReason)}
+            />
+            {prontoPago.blockReason ? (
+              <Text style={[styles.helper, { color: colors.warning.dark, fontWeight: '600' }]}>
+                {prontoPago.blockReason}
+              </Text>
+            ) : null}
+          </Card>
+        ) : null}
 
         {/* El detalle local no incluye ítems ni subtotal de productos. */}
         {!fromLocal ? <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} /> : null}
@@ -1306,6 +1467,11 @@ function NegocioDetailScreenInner() {
                   }}
                   onShare={() => void shareReceipt(pago)}
                   onPrint={() => void printReceipt(pago)}
+                  onVoid={
+                    canOfferVoidPago({ canVoid: canVoidPagos, online, fromLocal, pago })
+                      ? () => voidPago.request(pago)
+                      : undefined
+                  }
                 />
               ))}
             </View>
@@ -1388,17 +1554,41 @@ function NegocioDetailScreenInner() {
         onConfirm={reassignSeller}
       />
 
+      <ProntoPagoSheet
+        visible={prontoPago.visible}
+        onClose={prontoPago.close}
+        subtitle={`${labelNegocioCodigo(negocio.numero)} · ${customerName}`}
+        loading={prontoPago.loading}
+        summary={prontoPago.summary}
+        decimalPlaces={prontoPagoDecimals}
+        paymentMethods={prontoPago.paymentMethods}
+        paymentMethodsLoading={prontoPago.paymentMethodsLoading}
+        saving={prontoPago.saving}
+        blockedReason={prontoPago.blockReason}
+        notice={prontoPago.notice}
+        onSubmit={(values) => void prontoPago.submit(values)}
+      />
+
+      <VoidPagoSheet
+        pago={voidPago.target}
+        onClose={voidPago.close}
+        saving={voidPago.saving}
+        errorText={voidPago.errorText}
+        onConfirm={confirmVoidPago}
+      />
+
       <RegisterPaymentSheet
         visible={payModalOpen}
         onClose={closePaySheet}
         subtitle={`${labelNegocioCodigo(negocio.numero)} · ${customerName}`}
         pendingBalance={pendingBalance}
-        amount={formattedPayAmount}
+        amount={payAmount}
         onChangeAmount={(value) => {
           paymentIdempotencyKey.current = null;
           paymentPaidAt.current = null;
-          setPayAmount(value.replace(/\D/g, '').slice(0, 12));
+          setPayAmount(value);
         }}
+        amountDecimalPlaces={payAmountOptions.decimalPlaces}
         receipt={payReceipt}
         onChangeReceipt={(value) => {
           paymentIdempotencyKey.current = null;
@@ -1436,6 +1626,7 @@ const styles = StyleSheet.create({
   warningText: { ...Typography.bodySmall, flex: 1 },
   signingCard: { gap: Spacing.lg },
   sellerCard: { padding: Spacing.lg },
+  prontoPagoCard: { padding: Spacing.lg, gap: Spacing.md },
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   sellerCopy: { flex: 1, gap: 2 },
   sellerLabel: { ...Typography.label },

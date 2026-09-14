@@ -176,7 +176,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     expect(writtenWorkbook().SheetNames).toEqual(['Cobros', 'Resumen']);
   });
 
-  it('la hoja «Cobros» conserva las 14 columnas en orden, con «Método de pago» antes de «Sitio de pago»', async () => {
+  it('la hoja «Cobros» conserva las 16 columnas en orden, con «Tipo» y «Descuento» junto a «Valor»', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
 
     await exportAndShareManagerPaymentsExcel({ manager, filters });
@@ -190,7 +190,9 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       'Recibo virtual',
       'Recibo físico',
       'Estado recibo',
+      'Tipo',
       'Valor',
+      'Descuento',
       'Saldo pendiente negocio',
       'Método de pago',
       'Sitio de pago',
@@ -199,8 +201,26 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       'Tiene soporte',
     ]);
     expect(rows).toHaveLength(1);
-    expect(sheet['!cols']).toHaveLength(14);
-    expect(sheet['!autofilter']).toEqual({ ref: 'A1:N2' });
+    expect(sheet['!cols']).toHaveLength(16);
+    expect(sheet['!autofilter']).toEqual({ ref: 'A1:P2' });
+  });
+
+  it('marca el pronto pago y deja el descuento aparte del valor recibido', async () => {
+    mockFetchManagerPayments.mockResolvedValueOnce({
+      rows: [
+        payment({ amount: 900_000, payment_kind: 'pronto_pago', discount_amount: '100000.50' }),
+        payment({ amount: 50_000 }),
+      ],
+      summary: summary(2),
+    });
+
+    await exportAndShareManagerPaymentsExcel({ manager, filters });
+
+    const { sheet, rows } = detailTable(writtenWorkbook());
+    expect(rows.map((row) => row.Tipo)).toEqual(['Pronto pago', 'Abono']);
+    expect(rows.map((row) => row.Valor)).toEqual([900_000, 50_000]);
+    expect(rows.map((row) => row.Descuento)).toEqual([100_000.5, 0]);
+    expect(detailCell(sheet, 0, 'Descuento')).toMatchObject({ t: 'n', z: MONEY_FORMAT });
   });
 
   it('guarda montos como números con formato de moneda y la fecha como fecha real de Excel', async () => {

@@ -184,6 +184,14 @@ export type PullPago = {
   payment_method_id?: string | null;
   payment_method_name?: string | null;
   payment_site?: string | null;
+  /**
+   * Pronto pago (20261023120000). Opcionales: un servidor anterior a esa
+   * migración no los envía y los pagos se tratan como abonos sin descuento.
+   */
+  payment_kind?: string | null;
+  discount_amount?: number | string | null;
+  discount_reason?: string | null;
+  expected_total?: number | string | null;
   created_at: string | null;
   deleted_at: string | null;
 };
@@ -266,4 +274,25 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
   const parsed = Date.parse(serverTime);
   if (Number.isNaN(parsed)) return serverTime;
   return new Date(parsed - overlapMs).toISOString();
+}
+
+/**
+ * Versión de los campos del pull que se guardan localmente. El pull es delta
+ * (`last_pulled_at`): al añadir columnas, las filas descargadas antes quedarían
+ * sin ellas hasta que el servidor las vuelva a tocar. Subir esta versión fuerza
+ * una descarga completa una sola vez tras actualizar la app.
+ *
+ * 6: pagos con `payment_kind`, `discount_amount`, `discount_reason` y
+ * `expected_total` (pronto pago). Sin esto, un pronto pago descargado por la
+ * versión anterior dejaría mal el saldo de los recibos reimpresos.
+ */
+export const PULL_PAYLOAD_VERSION = '6';
+export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
+
+export function pullCursorForPayloadVersion(
+  storedCursor: string | null,
+  storedVersion: string | null,
+  currentVersion: string = PULL_PAYLOAD_VERSION
+): string | null {
+  return storedVersion === currentVersion ? storedCursor : null;
 }

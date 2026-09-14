@@ -102,4 +102,28 @@ describe('mapNegocioDetailFromLocal', () => {
     expect(detail.pagos[0].virtual_receipt_number).toBe('VR-1');
     expect(detail.negocio.delivery_order_id).toBeNull();
   });
+
+  it('conserva el gestor asignado y los campos del pronto pago para el detalle sin red', () => {
+    const detail = mapNegocioDetailFromLocal({
+      negocio: { ...negocios[0], gestorCobroId: 'g1' },
+      customers,
+      cuotas,
+      pagos: [
+        {
+          ...pagos[0],
+          paymentKind: 'pronto_pago',
+          discountAmount: 100,
+          discountReason: 'Paga todo',
+          expectedTotal: 300,
+        },
+      ],
+    });
+    expect(detail.negocio.gestor_cobro_id).toBe('g1');
+    expect(detail.pagos[0]).toMatchObject({
+      payment_kind: 'pronto_pago',
+      discount_amount: 100,
+      discount_reason: 'Paga todo',
+      expected_total: 300,
+    });
+  });
 });

@@ -57,6 +57,13 @@ export class NegocioPago extends Model {
   @field('payment_method_id') paymentMethodId!: string | null;
   @field('payment_method_name') paymentMethodName!: string | null;
   @field('payment_site') paymentSite!: string | null;
+  /** 'abono' | 'pronto_pago'; null en filas descargadas antes de la versión 6. */
+  @field('payment_kind') paymentKind!: string | null;
+  /** Descuento por pronto pago (no es dinero recibido). */
+  @field('discount_amount') discountAmount!: number | null;
+  @field('discount_reason') discountReason!: string | null;
+  /** Pendiente total que liquidó el pronto pago (= amount + discount_amount). */
+  @field('expected_total') expectedTotal!: number | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }
