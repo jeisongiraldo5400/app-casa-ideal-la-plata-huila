@@ -2,6 +2,7 @@ import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { PURCHASE_ORDER_RECEIPT_ENTRY_TYPE } from '../domain/purchaseOrderReceipts';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
@@ -78,11 +79,12 @@ export function PurchaseOrderCard({ order, showCreatedBy = true }: PurchaseOrder
                 .eq('purchase_order_id', order.id)
                 .is('deleted_at', null);
 
-            // Obtener entradas registradas
+            // Recepciones vigentes (PO_ENTRY): las devoluciones a proveedor no cuentan
             const { data: entries } = await supabase
                 .from('inventory_entries')
                 .select('product_id, quantity')
                 .eq('purchase_order_id', order.id)
+                .eq('entry_type', PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
                 .is('deleted_at', null);
 
             // Calcular totales

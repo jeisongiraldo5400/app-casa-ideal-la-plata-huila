@@ -5,10 +5,10 @@ export type NegocioProduct = {
   name: string;
   sku: string;
   barcode: string;
-  sale_price: number;
 };
 
-const PRODUCT_FIELDS = 'id, name, sku, barcode, sale_price';
+// Sin sale_price: los productos no tienen precio de venta (20261028160000).
+const PRODUCT_FIELDS = 'id, name, sku, barcode';
 
 function safeSearchTerm(value: string) {
   return value.trim().replace(/[,()%_'"\\]/g, ' ').replace(/\s+/g, ' ');

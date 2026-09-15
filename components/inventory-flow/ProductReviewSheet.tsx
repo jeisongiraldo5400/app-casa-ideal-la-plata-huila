@@ -4,7 +4,8 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import { parseWholeQuantityText, quantityFromText, syncQuantityDraft } from '@/lib/quantityInput';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -64,6 +65,28 @@ export function ProductReviewSheet({
   const canDecrease = quantity > 1 && !busy;
   const canIncrease = quantity < cap && !busy;
 
+  // Borrador del campo: «1.5», «1,5» o «1.000» se muestran tal cual con el error
+  // y la cantidad pasa a 0 (no se puede agregar). Con `parseInt` el punto se
+  // perdía y el siguiente dígito se pegaba: «1.5» terminaba en 15.
+  const [quantityText, setQuantityText] = useState(() => String(quantity));
+  const parsedQuantityText = parseWholeQuantityText(quantityText);
+
+  useEffect(() => {
+    setQuantityText((previous) => syncQuantityDraft(previous, quantity));
+  }, [quantity]);
+
+  useEffect(() => {
+    // Cada producto revisado empieza con la cantidad propuesta.
+    if (visible) setQuantityText(String(quantity));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, product.barcode]);
+
+  /** Botones (−, +, «1 unidad», «Todo»): reemplazan cualquier texto escrito. */
+  const setQuantityFromControl = (next: number) => {
+    setQuantityText(String(next));
+    onQuantityChange(next);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -100,7 +123,7 @@ export function ProductReviewSheet({
                 <View style={styles.stepperRow}>
                   <Pressable
                     disabled={!canDecrease}
-                    onPress={() => onQuantityChange(clamp(quantity - 1))}
+                    onPress={() => setQuantityFromControl(clamp(quantity - 1))}
                     accessibilityRole="button"
                     accessibilityLabel="Disminuir cantidad"
                     accessibilityState={{ disabled: !canDecrease }}
@@ -109,11 +132,13 @@ export function ProductReviewSheet({
                     <MaterialIcons name="remove" size={25} color={colors.primary.contrastText} />
                   </Pressable>
                   <Input
-                    value={String(quantity)}
+                    value={quantityText}
                     onChangeText={(text) => {
-                      const next = Number.parseInt(text, 10);
-                      onQuantityChange(Number.isFinite(next) ? clamp(next) : 0);
+                      setQuantityText(text);
+                      const parsed = parseWholeQuantityText(text);
+                      onQuantityChange(parsed.status === 'whole' ? clamp(parsed.value) : quantityFromText(parsed));
                     }}
+                    error={parsedQuantityText.status === 'invalid' ? parsedQuantityText.error : undefined}
                     keyboardType="number-pad"
                     selectTextOnFocus
                     editable={!busy}
@@ -123,7 +148,7 @@ export function ProductReviewSheet({
                   />
                   <Pressable
                     disabled={!canIncrease}
-                    onPress={() => onQuantityChange(clamp(quantity + 1))}
+                    onPress={() => setQuantityFromControl(clamp(quantity + 1))}
                     accessibilityRole="button"
                     accessibilityLabel="Aumentar cantidad"
                     accessibilityState={{ disabled: !canIncrease }}
@@ -133,11 +158,11 @@ export function ProductReviewSheet({
                   </Pressable>
                 </View>
                 <View style={styles.quickRow}>
-                  <Pressable onPress={() => onQuantityChange(clamp(1))} disabled={busy} accessibilityRole="button" style={({ pressed }) => [styles.quick, { borderColor: colors.divider }, pressed && styles.pressed]}>
+                  <Pressable onPress={() => setQuantityFromControl(clamp(1))} disabled={busy} accessibilityRole="button" style={({ pressed }) => [styles.quick, { borderColor: colors.divider }, pressed && styles.pressed]}>
                     <Text style={[styles.quickText, { color: colors.primary.main }]}>1 unidad</Text>
                   </Pressable>
                   {Number.isFinite(cap) && cap > 0 && cap < 1000 ? (
-                    <Pressable onPress={() => onQuantityChange(cap)} disabled={busy} accessibilityRole="button" style={({ pressed }) => [styles.quick, { borderColor: colors.divider }, pressed && styles.pressed]}>
+                    <Pressable onPress={() => setQuantityFromControl(cap)} disabled={busy} accessibilityRole="button" style={({ pressed }) => [styles.quick, { borderColor: colors.divider }, pressed && styles.pressed]}>
                       <Text style={[styles.quickText, { color: colors.primary.main }]}>Todo ({cap})</Text>
                     </Pressable>
                   ) : null}

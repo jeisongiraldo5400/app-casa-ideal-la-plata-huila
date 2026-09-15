@@ -15,7 +15,6 @@ const product = {
   name: 'Nevera',
   sku: 'NEV-1',
   barcode: '770123',
-  sale_price: 2_000_000,
 };
 
 describe('negociosProductsService', () => {

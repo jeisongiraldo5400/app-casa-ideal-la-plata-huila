@@ -17,7 +17,6 @@ const listingItem = {
   slug: 'sofa-lino',
   displayName: 'Sofá de lino',
   shortDescription: null,
-  salePrice: 1000,
   categoryId: 'cat-sala',
   categoryName: 'Sala',
   brandName: null,

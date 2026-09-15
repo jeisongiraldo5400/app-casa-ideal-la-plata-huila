@@ -25,7 +25,6 @@ const item = {
   warehouse_name: 'Principal',
   quantity: 2,
   available_quantity: 2,
-  sale_price: 200,
 };
 
 const own: RemissionOriginGroup = {

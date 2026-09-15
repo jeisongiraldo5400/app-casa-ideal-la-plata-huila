@@ -17,7 +17,6 @@ function listingRow(index: number, totalCount: number) {
     slug: `ficha-${index}`,
     display_name: `Ficha ${index}`,
     short_description: null,
-    sale_price: 100,
     category_id: 'cat-1',
     category_name: 'Sala',
     brand_name: null,

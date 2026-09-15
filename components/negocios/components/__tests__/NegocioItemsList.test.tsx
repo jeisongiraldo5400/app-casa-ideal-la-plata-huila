@@ -63,7 +63,7 @@ describe('NegocioItemsList', () => {
     expect(screen.getByText('$ 2.400.000')).toBeTruthy();
   });
 
-  it('deja vacío el valor unitario de un producto sin precio de contado', () => {
+  it('deja vacío el valor unitario de un producto sin precio', () => {
     const screen = render(<ItemsHarness initialPrice={0} />);
     const input = screen.getByLabelText('Valor unitario de Nevera Samsung 300L');
 
@@ -100,4 +100,30 @@ describe('NegocioItemsList', () => {
     fireEvent(input, 'blur');
     expect(input.props.value).toBe('1');
   });
+  it.each(['1.5', '1,5', '1.000'])(
+    'con «%s» muestra el error, deja la línea en 0 y nunca la convierte en 15 ni 1',
+    (typed) => {
+      const screen = render(<ItemsHarness initialPrice={10} />);
+      const input = screen.getByLabelText('Cantidad de Nevera Samsung 300L');
+
+      fireEvent(input, 'focus');
+      fireEvent.changeText(input, typed);
+      expect(input.props.value).toBe(typed);
+      expect(screen.getByText('La cantidad debe ser un número entero')).toBeTruthy();
+      // Subtotal 0: la línea no vale ni 15 ni 1 unidades.
+      expect(screen.getByText('$ 0')).toBeTruthy();
+      expect(screen.queryByText('$ 150')).toBeNull();
+
+      fireEvent(input, 'blur');
+      expect(input.props.value).toBe(typed);
+      expect(screen.getByText('La cantidad debe ser un número entero')).toBeTruthy();
+
+      fireEvent(input, 'focus');
+      fireEvent.changeText(input, '2');
+      fireEvent(input, 'blur');
+      expect(input.props.value).toBe('2');
+      expect(screen.queryByText('La cantidad debe ser un número entero')).toBeNull();
+      expect(screen.getByText('$ 20')).toBeTruthy();
+    }
+  );
 });

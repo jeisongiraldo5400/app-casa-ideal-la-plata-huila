@@ -19,7 +19,6 @@ function product(id: string, totalCount = 2, warehouseId = 'warehouse-1') {
     color_name: null,
     created_at: '2026-08-21T00:00:00Z',
     deleted_at: null,
-    sale_price: 100,
     status: true,
     stock_by_warehouse: [
       { warehouseId, warehouseName: 'Bodega', quantity: 2 },

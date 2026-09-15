@@ -38,6 +38,8 @@ import { NegocioProductsSummary } from '@/components/negocios/components/Negocio
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
 import { SellerReassignSheet } from '@/components/negocios/components/SellerReassignSheet';
+import { NegocioContactDetailsSheet } from '@/components/negocios/components/NegocioContactDetailsSheet';
+import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { PaymentCard } from '@/components/negocios/components/PaymentCard';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
@@ -136,6 +138,7 @@ function NegocioDetailScreenInner() {
   const registeredByName = currentUserName || user?.email || null;
   const [sellerSheetOpen, setSellerSheetOpen] = useState(false);
   const [sellerSaving, setSellerSaving] = useState(false);
+  const [contactSheetOpen, setContactSheetOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -284,7 +287,9 @@ function NegocioDetailScreenInner() {
           .order('due_date'),
         supabase
           .from('negocio_pagos')
-          .select('*, payment_method:payment_methods(name)')
+          // `cierre`: número del cierre de recaudo; un pago consolidado no se
+          // anula (null si RLS no deja leer el cierre).
+          .select('*, payment_method:payment_methods(name), cierre:recaudo_cierres(numero)')
           .eq('negocio_id', id)
           // Mismo desempate que `comparePagosOldestFirst`: con dos abonos a la
           // misma hora, ordenar solo por `paid_at` deja el orden indeterminado
@@ -328,9 +333,11 @@ function NegocioDetailScreenInner() {
       const pagoRows = ((pagosRes.data || []) as {
         created_by: string | null;
         payment_method?: { name: string } | null;
-      }[]).map((pago) => ({
+        cierre?: { numero: string } | null;
+      }[]).map(({ cierre, ...pago }) => ({
         ...pago,
         payment_method_name: pago.payment_method?.name ?? null,
+        cierre_numero: cierre?.numero ?? null,
       }));
       // Los pagos se pintan antes de resolver los nombres: el autor es un dato
       // decorativo y su consulta (tabla `profiles`, sujeta a RLS) no puede
@@ -1313,6 +1320,10 @@ function NegocioDetailScreenInner() {
       ? `${downPaymentLabel ? `${downPaymentLabel} · ` : ''}${cuotasLabel}${orderNumber ? ` · OE ${orderNumber}` : ''}`
       : downPaymentLabel;
   const canReassignSeller = !fromLocal && isAdmin() && negocio.status !== 'anulado';
+  // Activo, entregado o cerrado: solo dirección, notas y gestor de cobro (el
+  // servidor valida admin, vendedor dueño o gestor asignado). Solo con conexión.
+  const contactDetailsEditable = canEditNegocioContactDetails(negocio.status);
+  const canEditContactDetails = contactDetailsEditable && !fromLocal && online;
   const pageCuotas = cuotas.slice(installmentPage * TABLE_PAGE_SIZE, (installmentPage + 1) * TABLE_PAGE_SIZE);
   const pagePagos = pagos.slice(paymentPage * TABLE_PAGE_SIZE, (paymentPage + 1) * TABLE_PAGE_SIZE);
   const readOnlySignatures = [
@@ -1391,6 +1402,30 @@ function NegocioDetailScreenInner() {
             ) : null}
           </View>
         </Card>
+
+        {contactDetailsEditable || negocio.notes ? (
+          <Card variant="outlined" style={styles.sellerCard}>
+            <View style={styles.sellerRow}>
+              <MaterialIcons name="place" size={IconSize.md} color={colors.primary.main} />
+              <View style={styles.sellerCopy}>
+                <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Dirección y notas</Text>
+                <Text style={[styles.helper, { color: colors.text.primary }]}>{address}</Text>
+                {negocio.notes ? (
+                  <Text style={[styles.helper, { color: colors.text.secondary }]}>Notas: {negocio.notes}</Text>
+                ) : null}
+              </View>
+              {canEditContactDetails ? (
+                <Button
+                  title="Editar"
+                  variant="outline"
+                  size="sm"
+                  onPress={() => setContactSheetOpen(true)}
+                  accessibilityLabel="Editar dirección y notas"
+                />
+              ) : null}
+            </View>
+          </Card>
+        ) : null}
 
         <View style={styles.section}>
           <SectionHeader title="Cuotas" hint={`${cuotas.length} cuota${cuotas.length === 1 ? '' : 's'}`} />
@@ -1553,6 +1588,30 @@ function NegocioDetailScreenInner() {
         onClose={() => setSellerSheetOpen(false)}
         onConfirm={reassignSeller}
       />
+
+      {contactSheetOpen ? (
+        <NegocioContactDetailsSheet
+          visible
+          negocio={{
+            id: negocio.id,
+            numero: negocio.numero,
+            status: negocio.status,
+            direccion: negocio.direccion,
+            municipio_id: negocio.municipio_id,
+            vereda_id: negocio.vereda_id,
+            notes: negocio.notes,
+            municipioNombre: negocio.municipio?.nombre,
+            veredaNombre: negocio.vereda?.nombre,
+          }}
+          onClose={() => setContactSheetOpen(false)}
+          onSaved={async (result) => {
+            setContactSheetOpen(false);
+            await load();
+            syncAfterOnlineChange();
+            Alert.alert('Listo', result.changed ? 'Dirección y notas actualizadas.' : 'No había cambios.');
+          }}
+        />
+      ) : null}
 
       <ProntoPagoSheet
         visible={prontoPago.visible}

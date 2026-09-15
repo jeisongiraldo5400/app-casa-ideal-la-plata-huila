@@ -1,6 +1,8 @@
 import { logHandledError } from "@/lib/errorMessage";
 import { logOperationError } from "@/lib/operationLogger";
 import { supabase } from "@/lib/supabase";
+import { PURCHASE_ORDER_RECEIPT_ENTRY_TYPE } from "../../domain/purchaseOrderReceipts";
+import { PURCHASE_ORDER_APPROVAL_ADMIN_ONLY_MESSAGE } from "../../domain/purchaseOrderApproval";
 import { Database } from "@/types/database.types";
 import { create } from "zustand";
 
@@ -43,9 +45,15 @@ interface PurchaseOrdersState {
     status?: "pending" | "approved" | "received",
     userId?: string,
   ) => Promise<void>;
+  /**
+   * Aprobar ("approved") exige `options.canApprove` (solo admin, ver
+   * canApprovePurchaseOrders); sin él se rechaza sin ir al servidor, que de
+   * todas formas lo exige.
+   */
   updatePurchaseOrderStatus: (
     orderId: string,
     status: "pending" | "approved" | "received",
+    options?: { canApprove?: boolean },
   ) => Promise<{ success: boolean; error: string | null }>;
   validateOrderIsComplete: (orderId: string) => Promise<{
     isComplete: boolean;
@@ -214,7 +222,11 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
     updatePurchaseOrderStatus: async (
       orderId: string,
       status: "pending" | "approved" | "received",
+      options?: { canApprove?: boolean },
     ) => {
+      if (status === "approved" && !options?.canApprove) {
+        return { success: false, error: PURCHASE_ORDER_APPROVAL_ADMIN_ONLY_MESSAGE };
+      }
       set({ loading: true, error: null });
       try {
         const updateData: PurchaseOrderUpdate = {
@@ -307,11 +319,12 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
           };
         }
 
-        // Cargar las entradas de inventario para esta orden
+        // Recepciones vigentes (PO_ENTRY) de esta orden: las devoluciones a proveedor no cuentan
         const { data: inventoryEntries, error: entriesError } = await supabase
           .from("inventory_entries")
           .select("product_id, quantity")
           .eq("purchase_order_id", orderId)
+          .eq("entry_type", PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
           .is("deleted_at", null);
 
         if (entriesError) {

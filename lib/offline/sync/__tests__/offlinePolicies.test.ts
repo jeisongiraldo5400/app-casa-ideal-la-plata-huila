@@ -16,10 +16,27 @@ describe('retryPolicy', () => {
     expect(classifyPushError('Sin permiso sobre este negocio')).toBe('fail');
     expect(classifyPushError('Solo puede cobrarse la parada actual')).toBe('fail');
     expect(classifyPushError('Negocio no encontrado')).toBe('fail');
+    expect(classifyPushError('Solo un administrador puede aprobar la orden de compra OC-2026-0009.')).toBe('fail');
+    expect(
+      classifyPushError(
+        'La orden de compra OC-2026-0009 está aprobada: la devolución no se puede revertir. Si necesita ingresar la mercancía de nuevo, cree una nueva orden de compra.'
+      )
+    ).toBe('fail');
     expect(classifyPushError('La ruta no está disponible para iniciar')).toBe('fail');
     expect(
       classifyPushError('Seleccione el método de pago. Si usa la app móvil, actualícela a la última versión.')
     ).toBe('fail');
+    expect(
+      classifyPushError(
+        'Las salidas sin orden de entrega solo las registra un administrador. Registre la salida contra una orden de entrega.'
+      )
+    ).toBe('fail');
+    expect(
+      classifyPushError(
+        'El negocio 2026001 está Activo: solo se pueden editar la dirección, las notas y el gestor de cobro. Para cambiar productos, precios, cuotas o cliente, un administrador debe anularlo y crear uno nuevo.'
+      )
+    ).toBe('fail');
+    expect(classifyPushError('El negocio 2026004 está Anulado: no se puede editar.')).toBe('fail');
     expect(classifyPushError('Ya existe un cliente con documento')).toBe('conflict');
     expect(classifyPushError('La clave de idempotencia ya fue usada con datos diferentes')).toBe('conflict');
     expect(classifyPushError('Network request failed')).toBe('network');

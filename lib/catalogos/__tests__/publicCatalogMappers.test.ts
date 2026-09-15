@@ -22,7 +22,6 @@ const listingRow: PublicCatalogListingRow = {
   slug: 'producto-1',
   display_name: 'Producto 1',
   short_description: 'Corta',
-  sale_price: 1000,
   category_id: 'cat-1',
   category_name: 'Categoría',
   brand_name: 'Marca',
@@ -67,7 +66,6 @@ function buildRawDetail(overrides: Partial<PublicCatalogProductDetailRaw> = {}):
     marketingDescription: null,
     seoTitle: null,
     seoDescription: null,
-    salePrice: 1000,
     isFeatured: false,
     publishedAt: '2026-09-01T00:00:00Z',
     category: { id: 'cat-1', name: 'Categoría' },
@@ -123,7 +121,7 @@ describe('mapPublicCatalogProductDetail', () => {
           {
             relationType: 'similar',
             sortOrder: 0,
-            product: { id: 'cp-2', productId: 'p-2', slug: 'producto-2', displayName: 'Producto 2', salePrice: 2000, coverBucket: 'catalog-images', coverStoragePath: 'cp-2/portada.jpg' },
+            product: { id: 'cp-2', productId: 'p-2', slug: 'producto-2', displayName: 'Producto 2', coverBucket: 'catalog-images', coverStoragePath: 'cp-2/portada.jpg' },
           },
         ],
       })

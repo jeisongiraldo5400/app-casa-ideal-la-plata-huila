@@ -6,9 +6,9 @@ import {
   availableQtyForItem,
   formatNegocioMoneyInput,
   parseNegocioMoney,
-  parseNegocioQuantity,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import { parseWholeQuantityText, quantityFromText, syncQuantityDraft } from '@/lib/quantityInput';
 
 type ThemeColors = {
   text: { primary: string; secondary: string };
@@ -40,7 +40,7 @@ function EditableMoneyInput({
   colors: ThemeColors;
   onChange: (value: number) => void;
 }) {
-  // Un valor unitario 0 (producto sin precio de contado) se muestra vacío
+  // Un valor unitario 0 (producto sin precio) se muestra vacío
   // para que el usuario lo escriba, igual que en la web.
   const toDraft = (amount: number) => (amount > 0 ? formatNegocioMoneyInput(amount) : '');
   const [draft, setDraft] = useState(() => toDraft(value));
@@ -89,6 +89,10 @@ function EditableMoneyInput({
 /**
  * Cantidad con borrador local: un input controlado que ignora textos
  * inválidos impide borrar el dígito para escribir otro ("1" → "" → "15").
+ *
+ * Lo escrito nunca se limpia: «1.5», «1,5» o «1.000» quedan visibles con
+ * `WHOLE_QUANTITY_MESSAGE` y la línea pasa a cantidad 0, así que el negocio no
+ * se puede guardar hasta corregirlo (ver `lib/quantityInput.ts`).
  */
 function EditableQuantityInput({
   value,
@@ -107,35 +111,53 @@ function EditableQuantityInput({
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (!focused) setDraft(String(value));
+    if (focused) return;
+    // Al salir con el campo vacío se restaura la cantidad vigente; un texto
+    // inválido se conserva para que el usuario lo vea y lo corrija.
+    setDraft((previous) =>
+      parseWholeQuantityText(previous).status === 'empty'
+        ? String(value)
+        : syncQuantityDraft(previous, value)
+    );
   }, [focused, value]);
 
+  const parsedDraft = parseWholeQuantityText(draft);
+  const invalid = parsedDraft.status === 'invalid';
+
   const handleChange = (text: string) => {
-    const digits = text.replace(/\D/g, '');
-    setDraft(digits);
-    const quantity = parseNegocioQuantity(digits);
-    if (Number.isSafeInteger(quantity) && quantity > 0 && quantity !== value) {
-      onChange(quantity);
+    setDraft(text);
+    const parsed = parseWholeQuantityText(text);
+    if (parsed.status === 'empty') return;
+    const quantity = quantityFromText(parsed);
+    if (parsed.status === 'invalid' || quantity > 0) {
+      if (quantity !== value) onChange(quantity);
     }
   };
 
   return (
-    <TextInput
-      accessibilityLabel={label}
-      keyboardType="numeric"
-      selectTextOnFocus
-      style={[
-        styles.input,
-        {
-          borderColor: hasIssue ? 'crimson' : colors.divider,
-          color: colors.text.primary,
-        },
-      ]}
-      value={draft}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onChangeText={handleChange}
-    />
+    <>
+      <TextInput
+        accessibilityLabel={label}
+        keyboardType="numeric"
+        selectTextOnFocus
+        style={[
+          styles.input,
+          {
+            borderColor: hasIssue || invalid ? 'crimson' : colors.divider,
+            color: colors.text.primary,
+          },
+        ]}
+        value={draft}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChangeText={handleChange}
+      />
+      {parsedDraft.status === 'invalid' ? (
+        <Text style={{ color: 'crimson', fontSize: 11 }} accessibilityLiveRegion="polite">
+          {parsedDraft.error}
+        </Text>
+      ) : null}
+    </>
   );
 }
 

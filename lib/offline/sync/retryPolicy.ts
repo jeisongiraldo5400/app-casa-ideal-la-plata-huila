@@ -56,6 +56,10 @@ export function classifyPushError(message: string): RetryDecision {
   if (
     text.includes('saldo') ||
     text.includes('sin permiso') ||
+    // «Solo un administrador puede aprobar la orden de compra …» (20261028140000).
+    text.includes('solo un administrador') ||
+    // «… está aprobada: la devolución no se puede revertir …» (20261028140000).
+    text.includes('no se puede revertir') ||
     text.includes('no autenticado') ||
     text.includes('no encontrad') ||
     text.includes('no válido') ||
@@ -78,6 +82,12 @@ export function classifyPushError(message: string): RetryDecision {
     text.includes('método de pago') ||
     text.includes('metodo de pago') ||
     text.includes('tipo de soporte') ||
+    // Salida sin orden de entrega de un no admin (servidor desde 20261028130000).
+    text.includes('solo las registra un administrador') ||
+    // Negocio ya activado (servidor desde 20261029130000): hoy no hay comandos
+    // offline que editen negocios; si se agregan, este rechazo es definitivo.
+    text.includes('solo se pueden editar la dirección') ||
+    text.includes('no se puede editar') ||
     text.includes('no puede superar') ||
     (text.includes('ruta') &&
       (text.includes('cerrada') || text.includes('completada') || text.includes('cancelada')))

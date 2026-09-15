@@ -1,6 +1,7 @@
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { PURCHASE_ORDER_RECEIPT_ENTRY_TYPE } from '../domain/purchaseOrderReceipts';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -77,11 +78,12 @@ export function PurchaseOrderProductsModal({
                 return;
             }
 
-            // 2. Cargar entradas de inventario registradas para esta orden
+            // 2. Recepciones vigentes (PO_ENTRY) de esta orden: las devoluciones a proveedor no cuentan
             const { data: entriesData, error: entriesError } = await supabase
                 .from('inventory_entries')
                 .select('product_id, quantity')
                 .eq('purchase_order_id', orderId)
+                .eq('entry_type', PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
                 .is('deleted_at', null);
 
             if (entriesError) {

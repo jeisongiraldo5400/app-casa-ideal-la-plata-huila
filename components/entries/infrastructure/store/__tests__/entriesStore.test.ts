@@ -284,19 +284,21 @@ describe('entriesStore', () => {
 
       useEntriesStore.setState({ purchaseOrders: [mockOrder as any] });
 
-      // Las entradas registradas se consultan con .in() (una sola función para 1 o N órdenes).
+      // Las entradas registradas se consultan con .in() (una sola función para 1 o N órdenes)
+      // y solo cuentan las recepciones PO_ENTRY: una devolución a proveedor no suma.
       const entriesResult = () =>
         Promise.resolve({
           data: [
-            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 10 },
-            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 5 },
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 10, entry_type: 'PO_ENTRY' },
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 5, entry_type: 'PO_ENTRY' },
+            { purchase_order_id: 'order-1', product_id: 'product-1', quantity: 2, entry_type: 'return' },
           ],
           error: null,
         });
       (supabase.from as jest.Mock).mockImplementation(() => ({
         select: () => ({
           eq: () => ({ is: entriesResult }),
-          in: () => ({ is: entriesResult }),
+          in: () => ({ eq: () => ({ is: entriesResult }), is: entriesResult }),
         }),
       }));
 

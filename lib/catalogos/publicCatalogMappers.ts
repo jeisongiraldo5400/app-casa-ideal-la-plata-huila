@@ -26,7 +26,6 @@ export type PublicCatalogListingRow = {
   slug: string;
   display_name: string;
   short_description: string | null;
-  sale_price: number;
   category_id: string | null;
   category_name: string | null;
   brand_name: string | null;
@@ -50,7 +49,6 @@ export type PublicCatalogProductDetailRaw = {
   marketingDescription: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
-  salePrice: number;
   isFeatured: boolean;
   publishedAt: string | null;
   category: { id: string; name: string } | null;
@@ -119,7 +117,6 @@ type RawRelatedProduct = {
     productId: string;
     slug: string;
     displayName: string;
-    salePrice: number;
     coverBucket: string | null;
     coverStoragePath: string | null;
   };
@@ -148,7 +145,6 @@ export function mapPublicCatalogListingRow(row: PublicCatalogListingRow): Public
     slug: row.slug,
     displayName: row.display_name,
     shortDescription: row.short_description,
-    salePrice: Number(row.sale_price),
     categoryId: row.category_id,
     categoryName: row.category_name,
     brandName: row.brand_name,
@@ -228,7 +224,6 @@ function mapRelatedProduct(raw: RawRelatedProduct): PublicCatalogRelatedProduct 
       productId: raw.product.productId,
       slug: raw.product.slug,
       displayName: raw.product.displayName,
-      salePrice: raw.product.salePrice,
       coverImageUrl: resolvePublicImageUrl(raw.product.coverBucket, raw.product.coverStoragePath),
     },
   };
@@ -245,7 +240,6 @@ export function mapPublicCatalogProductDetail(raw: PublicCatalogProductDetailRaw
     marketingDescription: raw.marketingDescription,
     seoTitle: raw.seoTitle,
     seoDescription: raw.seoDescription,
-    salePrice: raw.salePrice,
     isFeatured: raw.isFeatured,
     publishedAt: raw.publishedAt,
     category: raw.category,

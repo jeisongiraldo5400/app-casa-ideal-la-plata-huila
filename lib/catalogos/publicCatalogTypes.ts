@@ -10,7 +10,6 @@ export type PublicCatalogListingItem = {
   slug: string;
   displayName: string;
   shortDescription: string | null;
-  salePrice: number;
   categoryId: string | null;
   categoryName: string | null;
   brandName: string | null;
@@ -103,7 +102,6 @@ export type PublicCatalogRelatedProduct = {
     productId: string;
     slug: string;
     displayName: string;
-    salePrice: number;
     coverImageUrl: string | null;
   };
 };
@@ -118,7 +116,6 @@ export type PublicCatalogProductDetail = {
   marketingDescription: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
-  salePrice: number;
   isFeatured: boolean;
   publishedAt: string | null;
   category: { id: string; name: string } | null;

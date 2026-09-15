@@ -1,16 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import { negocioPagoErrorMessage } from '@/lib/negocios/prontoPago';
-import {
-  blockingProntoPagoReceipt,
-  validateVoidReason,
-  voidBlockedByProntoPagoMessage,
-} from '@/lib/negocios/voidNegocioPago';
+import { validateVoidReason, voidBlockedMessage } from '@/lib/negocios/voidNegocioPago';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import type { PagoBalanceInput } from '@/lib/negocios/negocioBalance';
 import type { VoidPagoTarget } from '../../components/VoidPagoSheet';
 import { voidNegocioPago } from '../services/negocioPagosService';
 
-type VoidablePago = VoidPagoTarget & PagoBalanceInput;
+type VoidablePago = VoidPagoTarget &
+  PagoBalanceInput & { receipt_status?: string | null; cierre_id?: string | null; cierre_numero?: string | null };
 
 type Options = {
   pagos: VoidablePago[];
@@ -29,9 +26,9 @@ export function useVoidNegocioPago({ pagos, onVoided, onBlocked }: Options) {
 
   const request = useCallback(
     (pago: VoidablePago) => {
-      const blocking = blockingProntoPagoReceipt(pagos, pago);
-      if (blocking) {
-        onBlocked(voidBlockedByProntoPagoMessage(blocking));
+      const blocked = voidBlockedMessage(pagos, pago);
+      if (blocked) {
+        onBlocked(blocked);
         return;
       }
       setErrorText(null);

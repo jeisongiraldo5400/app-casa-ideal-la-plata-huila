@@ -18,9 +18,9 @@ import {
   formatNegocioMoneyInput,
   getAddFormAvailability,
   parseNegocioMoney,
-  parseNegocioQuantity,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
+import { parseWholeQuantityText, quantityFromText } from '@/lib/quantityInput';
 import {
   findActiveProductByBarcode,
   type NegocioProduct,
@@ -118,7 +118,10 @@ export function NegocioProductAddSection({
     );
   }, [selectedProduct, warehouseId, productStock, items]);
 
-  const quantity = parseNegocioQuantity(qty);
+  // «1.5», «1,5» o «1.000» no se convierten en 15, 1 ni 1000: se marcan y no se
+  // puede agregar (ver lib/quantityInput.ts).
+  const parsedQty = parseWholeQuantityText(qty);
+  const quantity = parsedQty.status === 'whole' ? parsedQty.value : NaN;
   const price = parseNegocioMoney(unitPrice);
   const qtyExceedsStock =
     Number.isFinite(quantity) && quantity > availability.available;
@@ -139,8 +142,9 @@ export function NegocioProductAddSection({
 
   const pickProduct = (product: NegocioProduct) => {
     setSelectedProduct(product);
-    const catalogPrice = Number(product.sale_price) || 0;
-    setUnitPrice(catalogPrice > 0 ? formatNegocioMoneyInput(catalogPrice) : '');
+    // Los productos no tienen precio de venta: el valor unitario lo escribe
+    // siempre el usuario.
+    setUnitPrice('');
     setQty('1');
     onProductQueryChange('');
   };
@@ -193,7 +197,7 @@ export function NegocioProductAddSection({
       selectedProduct.id,
       nextWarehouseId
     );
-    const currentQty = parseNegocioQuantity(qty);
+    const currentQty = quantityFromText(parseWholeQuantityText(qty));
     if (
       Number.isFinite(currentQty) &&
       currentQty > nextAvailability.available &&
@@ -267,11 +271,6 @@ export function NegocioProductAddSection({
         filteredProducts.map((p) => (
           <Pressable key={p.id} onPress={() => pickProduct(p)} style={styles.option}>
             <Text style={{ color: colors.text.primary, flex: 1 }}>{p.name}</Text>
-            <Text style={{ color: colors.primary.main }}>
-              {Number(p.sale_price) > 0
-                ? formatCOP(Number(p.sale_price))
-                : 'Sin precio'}
-            </Text>
           </Pressable>
         ))}
 
@@ -337,10 +336,14 @@ export function NegocioProductAddSection({
               </Text>
               <TextInput
                 keyboardType="numeric"
+                accessibilityLabel="Cantidad"
                 style={[
                   styles.input,
                   {
-                    borderColor: qtyExceedsStock ? 'crimson' : colors.divider,
+                    borderColor:
+                      qtyExceedsStock || parsedQty.status === 'invalid'
+                        ? 'crimson'
+                        : colors.divider,
                     color: colors.text.primary,
                   },
                 ]}
@@ -348,11 +351,17 @@ export function NegocioProductAddSection({
                 onChangeText={setQty}
                 editable={hasStock && !loadingStock}
               />
+              {parsedQty.status === 'invalid' ? (
+                <Text style={{ color: 'crimson', fontSize: 12 }} accessibilityLiveRegion="polite">
+                  {parsedQty.error}
+                </Text>
+              ) : null}
 
               <Text style={{ color: colors.text.secondary, marginTop: 8 }}>
-                Valor unitario (contado)
+                Valor unitario
               </Text>
               <TextInput
+                accessibilityLabel="Valor unitario"
                 keyboardType="numeric"
                 style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
                 placeholder="Ej: 2227000"

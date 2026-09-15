@@ -1,4 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import {
+  PURCHASE_ORDER_RECEIPT_ENTRY_TYPE,
+  isPurchaseOrderReceipt,
+} from '@/components/purchase-orders/domain/purchaseOrderReceipts';
 import { Database } from '@/types/database.types';
 import type { PurchaseOrderWithItems } from '@/components/entries/infrastructure/store/entriesStore';
 
@@ -54,16 +58,23 @@ export type InventoryEntryRow = {
   quantity: number;
 };
 
-/** Entradas registradas (no eliminadas) de una o varias órdenes de compra. Lanza si falla. */
+/**
+ * Recepciones vigentes (PO_ENTRY no eliminadas) de una o varias órdenes de compra.
+ * Las devoluciones a proveedor ('return') llevan la misma orden y no cuentan como
+ * recibido. Lanza si falla.
+ */
 export async function fetchInventoryEntriesForOrders(orderIds: string[]): Promise<InventoryEntryRow[]> {
   if (orderIds.length === 0) return [];
   const { data, error } = await supabase
     .from('inventory_entries')
-    .select('purchase_order_id, product_id, quantity')
+    .select('purchase_order_id, product_id, quantity, entry_type')
     .in('purchase_order_id', orderIds)
+    .eq('entry_type', PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
     .is('deleted_at', null);
   if (error) throw error;
-  return data || [];
+  return (data || [])
+    .filter(isPurchaseOrderReceipt)
+    .map(({ purchase_order_id, product_id, quantity }) => ({ purchase_order_id, product_id, quantity }));
 }
 
 export type EntryValidationData = {

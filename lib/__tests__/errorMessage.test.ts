@@ -42,6 +42,33 @@ describe('errorMessage', () => {
   });
 });
 
+describe('errorMessage · rechazos por permisos o RLS', () => {
+  it('traduce «permission denied for table» con el contexto de la tabla', () => {
+    expect(
+      errorMessage({ code: '42501', message: 'permission denied for table delivery_order_item_approvals' })
+    ).toBe('No tiene permiso para realizar esta acción sobre las aprobaciones de productos de la orden de entrega.');
+  });
+
+  it('traduce la violación de RLS aunque no llegue el código', () => {
+    expect(
+      errorMessage({ message: 'new row violates row-level security policy for table "inventory_exits"' })
+    ).toBe('No tiene permiso para realizar esta acción sobre las salidas de inventario.');
+  });
+
+  it('usa el genérico con una tabla desconocida o sin texto', () => {
+    expect(errorMessage({ code: '42501', message: 'permission denied for table otra_tabla' })).toBe(
+      'No tiene permiso para realizar esta acción.'
+    );
+    expect(errorMessage({ code: '42501' })).toBe('No tiene permiso para realizar esta acción.');
+  });
+
+  it('respeta el texto propio en español de un 42501', () => {
+    expect(errorMessage({ code: '42501', message: 'Sin permiso para aprobar productos' })).toBe(
+      'Sin permiso para aprobar productos'
+    );
+  });
+});
+
 describe('logHandledError', () => {
   let warn: jest.SpyInstance;
   let error: jest.SpyInstance;

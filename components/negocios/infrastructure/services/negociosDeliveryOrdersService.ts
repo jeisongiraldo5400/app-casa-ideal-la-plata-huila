@@ -8,7 +8,6 @@ export interface DeliveryOrderItemOption {
   warehouse_name: string;
   quantity: number;
   available_quantity: number;
-  sale_price: number;
 }
 
 export type DeliveryOrderOriginKind = 'remission' | 'customer';
@@ -135,7 +134,7 @@ export function toDeliveryOrderOption(
       product_id: string;
       warehouse_id: string;
       quantity: number;
-      product?: DeliveryOrderRelation<{ name?: string | null; sale_price?: number | null }>;
+      product?: DeliveryOrderRelation<{ name?: string | null }>;
       warehouse?: DeliveryOrderRelation<{ name?: string | null }>;
     }>;
   },
@@ -160,7 +159,6 @@ export function toDeliveryOrderOption(
       return {
         product_id: i.product_id,
         product_name: product?.name || 'Producto',
-        sale_price: Number(product?.sale_price) || 0,
         warehouse_id: i.warehouse_id,
         warehouse_name: warehouse?.name || 'Bodega',
         quantity: totalQty,
@@ -213,7 +211,7 @@ export async function fetchAvailableDeliveryOrders(): Promise<DeliveryOrderOptio
         warehouse_id,
         quantity,
         deleted_at,
-        product:products(name, sale_price),
+        product:products(name),
         warehouse:warehouses(name)
       )
     `)
@@ -364,7 +362,6 @@ export interface RemissionOriginRow {
   source_has_negocio: boolean;
   product_id: string;
   product_name: string;
-  sale_price: number;
   warehouse_id: string;
   warehouse_name: string;
   quantity: number;
@@ -406,7 +403,6 @@ export function mapRemissionOriginRows(
     const item: DeliveryOrderItemOption = {
       product_id: row.product_id,
       product_name: row.product_name || 'Producto',
-      sale_price: num(row.sale_price),
       warehouse_id: row.warehouse_id,
       warehouse_name: row.warehouse_name || 'Bodega',
       quantity: num(row.quantity),
@@ -460,7 +456,6 @@ export function parseRemissionOriginRows(rows: unknown): RemissionOriginRow[] {
       source_has_negocio: row.source_has_negocio === true,
       product_id: productId,
       product_name: str(row.product_name) || 'Producto',
-      sale_price: num(row.sale_price),
       warehouse_id: warehouseId,
       warehouse_name: str(row.warehouse_name) || 'Bodega',
       quantity: num(row.quantity),

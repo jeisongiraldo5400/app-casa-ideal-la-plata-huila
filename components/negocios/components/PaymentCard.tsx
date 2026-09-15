@@ -33,6 +33,10 @@ export type PaymentRow = {
   expected_total?: number | string | null;
   /** Nota del pago; al anular, el servidor añade «Anulado: <motivo>». */
   notes?: string | null;
+  /** Cierre de recaudo que consolidó el pago (solo con datos del servidor). */
+  cierre_id?: string | null;
+  /** Número del cierre (CR-…); null si RLS no deja leerlo. */
+  cierre_numero?: string | null;
 };
 
 type Props = {
@@ -101,6 +105,11 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing, o
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Registrado por: {pago.created_by_name || 'Sin registro'}
           </Text>
+          {pago.cierre_id && !voided ? (
+            <Text style={[styles.meta, { color: colors.text.secondary }]}>
+              {pago.cierre_numero ? `En cierre de recaudo ${pago.cierre_numero}` : 'En cierre de recaudo'} · solo un administrador puede anularlo
+            </Text>
+          ) : null}
           {voidNote ? (
             <Text style={[styles.meta, { color: colors.error.main }]}>Motivo de anulación: {voidNote}</Text>
           ) : null}

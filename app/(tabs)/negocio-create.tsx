@@ -1224,7 +1224,9 @@ function NegocioCreateScreenInner() {
                             warehouse_id: remItem.warehouse_id,
                             quantity: 1,
                             description: remItem.product_name,
-                            unit_price: remItem.sale_price || 0,
+                            // Sin precio de venta: el usuario escribe el
+                            // valor unitario en la lista de productos.
+                            unit_price: 0,
                           })
                         }
                         style={[

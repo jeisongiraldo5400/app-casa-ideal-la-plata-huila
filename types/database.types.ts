@@ -3072,7 +3072,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
-          sale_price: number
+          sale_price: number | null
           sku: string
           status: boolean | null
           updated_at: string | null
@@ -3087,7 +3087,7 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
-          sale_price?: number
+          sale_price?: number | null
           sku: string
           status?: boolean | null
           updated_at?: string | null
@@ -3102,7 +3102,7 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
-          sale_price?: number
+          sale_price?: number | null
           sku?: string
           status?: boolean | null
           updated_at?: string | null
@@ -4488,7 +4488,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
-          sale_price: number
+          sale_price: number | null
           sku: string
           status: boolean | null
           updated_at: string | null
@@ -5311,7 +5311,6 @@ export type Database = {
           deleted_at: string
           id: string
           name: string
-          sale_price: number
           sku: string
           status: boolean
           stock_by_warehouse: Json
@@ -5375,7 +5374,7 @@ export type Database = {
           is_featured: boolean
           product_id: string
           published_at: string
-          sale_price: number
+          sale_price: number | null
           short_description: string
           slug: string
           total_count: number
@@ -5398,7 +5397,7 @@ export type Database = {
           is_featured: boolean
           product_id: string
           published_at: string
-          sale_price: number
+          sale_price: number | null
           short_description: string
           slug: string
           total_count: number
@@ -5485,7 +5484,7 @@ export type Database = {
           product_id: string
           product_name: string
           quantity: number
-          sale_price: number
+          sale_price: number | null
           source_customer_id: string
           source_customer_name: string
           source_delivery_order_id: string
@@ -6109,6 +6108,16 @@ export type Database = {
           p_negocio_id: string
         }
         Returns: string
+      }
+      update_negocio_contact_details: {
+        Args: {
+          p_direccion: string
+          p_municipio_id: string
+          p_negocio_id: string
+          p_notes?: string
+          p_vereda_id?: string
+        }
+        Returns: Json
       }
       update_purchase_order_progress: {
         Args: { order_id_param: string }
