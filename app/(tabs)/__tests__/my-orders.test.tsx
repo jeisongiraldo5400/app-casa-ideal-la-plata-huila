@@ -270,4 +270,23 @@ describe('MyOrdersScreen', () => {
       p_order_id: 'history-order-1',
     });
   });
+  // Regresión: SearchBox vivía dentro de MyOrdersScreen, así que cada render
+  // creaba un componente nuevo y React desmontaba el campo. Escribir provoca un
+  // render, de modo que el teclado perdía el foco letra por letra y no se podía
+  // escribir de seguido. Si vuelve a anidarse, el campo deja de ser el mismo.
+  it('mantiene vivo el campo de búsqueda mientras se escribe', async () => {
+    const screen = render(<MyOrdersScreen />);
+    await screen.findByTestId('assigned-order-order-1');
+
+    const input = screen.getByPlaceholderText('Buscar por orden, cliente o destino');
+
+    for (const text of ['c', 'cl', 'cli']) {
+      await act(async () => {
+        fireEvent.changeText(input, text);
+      });
+      expect(screen.getByPlaceholderText('Buscar por orden, cliente o destino')).toBe(input);
+    }
+
+    expect(input.props.value).toBe('cli');
+  });
 });

@@ -33,6 +33,8 @@ import {
 
 type OrdersTab = 'pending' | 'history';
 
+type Colors = ReturnType<typeof getColors>;
+
 /** Orden cuya lista de productos está abierta en el modal. */
 interface ProductsModalTarget {
   id: string;
@@ -49,6 +51,136 @@ const STATUS_LABELS: Record<string, string> = {
 
 function formatQuantity(quantity: number) {
   return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(quantity);
+}
+
+/**
+ * Vive fuera de MyOrdersScreen a propósito.
+ *
+ * Declarada dentro, cada render creaba una función nueva y para React eso es un
+ * componente distinto: desmontaba el TextInput y montaba otro. Como escribir
+ * cambia el estado de búsqueda y provoca un render, el campo perdía el foco
+ * letra por letra y no se podía escribir de seguido.
+ */
+function SearchBox({
+  value,
+  onChangeText,
+  placeholder,
+  loading,
+  colors,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  loading: boolean;
+  colors: Colors;
+}) {
+  return (
+    <View style={[styles.searchBox, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+      <MaterialIcons name="search" size={21} color={colors.text.secondary} />
+      <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.text.secondary} style={[styles.searchInput, { color: colors.text.primary }]} autoCapitalize="none" returnKeyType="search" />
+      {loading ? <ActivityIndicator size="small" color={colors.primary.main} /> : null}
+      {value ? <TouchableOpacity accessibilityLabel="Limpiar búsqueda" onPress={() => onChangeText('')} hitSlop={8}><MaterialIcons name="close" size={20} color={colors.text.secondary} /></TouchableOpacity> : null}
+    </View>
+  );
+}
+
+// El resto de piezas de la pantalla, fuera por el mismo motivo que SearchBox:
+// declaradas dentro, React desmontaba y volvía a montar cada tarjeta de la lista
+// en cada pulsación de tecla.
+function StatusBadge({ status, colors }: { status: string; colors: Colors }) {
+  const statusColor = status === 'delivered' ? colors.success.main : status === 'cancelled' ? colors.error.main : colors.warning.main;
+  return (
+    <View style={[styles.statusBadge, { backgroundColor: statusColor + '1A' }]}>
+      <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status] || status}</Text>
+    </View>
+  );
+}
+
+/**
+ * Mismo gesto, icono y etiqueta que en "Todas las órdenes": el usuario abre la
+ * lista de productos de la orden sin aprender otra interacción. Va dentro de
+ * la tarjeta pulsable, y al ser un táctil anidado se queda con el toque en vez
+ * de disparar la acción de la tarjeta.
+ */
+function ProductsButton({ orderId, orderNumber, colors, onOpen }: { orderId: string; orderNumber: string | null; colors: Colors; onOpen: (target: ProductsModalTarget) => void }) {
+  return (
+    <TouchableOpacity
+      testID={`view-products-${orderId}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Ver productos de ${orderNumber || 'la orden'}`}
+      style={[styles.productsButton, { backgroundColor: colors.primary.main + '10' }]}
+      onPress={() => onOpen({ id: orderId, orderNumber: orderNumber || orderId.slice(0, 8) })}
+      activeOpacity={0.7}
+    >
+      <MaterialIcons name="inventory-2" size={18} color={colors.primary.main} />
+      <Text style={[styles.productsButtonText, { color: colors.primary.main }]}>Ver productos</Text>
+    </TouchableOpacity>
+  );
+}
+
+function DetailRow({ icon, text, secondary = false, colors }: { icon: React.ComponentProps<typeof MaterialIcons>['name']; text: string; secondary?: boolean; colors: Colors }) {
+  return (
+    <View style={styles.detailRow}>
+      <MaterialIcons name={icon} size={18} color={colors.text.secondary} />
+      <Text style={[styles.detailText, { color: secondary ? colors.text.secondary : colors.text.primary }]} numberOfLines={1}>{text}</Text>
+    </View>
+  );
+}
+
+function ProgressBar({ progress, colors }: { progress: number; colors: Colors }) {
+  return <View style={[styles.progressTrack, { backgroundColor: colors.divider }]}><View style={[styles.progressValue, { width: `${progress}%`, backgroundColor: colors.success.main }]} /></View>;
+}
+
+function TabButton({ label, count, selected, onPress, colors }: { label: string; count: number; selected: boolean; onPress: () => void; colors: Colors }) {
+  return (
+    <TouchableOpacity accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.tabButton, selected && { backgroundColor: colors.primary.main }]}>
+      <Text style={[styles.tabLabel, { color: selected ? colors.primary.contrastText : colors.text.secondary }]} numberOfLines={1}>{label}</Text>
+      <View style={[styles.tabCount, { backgroundColor: selected ? colors.primary.contrastText + '25' : colors.divider }]}>
+        <Text style={[styles.tabCountText, { color: selected ? colors.primary.contrastText : colors.text.primary }]}>{count}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function HistoryDetail({ orderId, detail, colors, onRetry }: { orderId: string; detail: { items: RegisteredDeliveryOrderItem[]; serialsByExitId?: Record<string, ExitSerialRecord[]>; loading: boolean; error: string | null } | undefined; colors: Colors; onRetry: (orderId: string) => void }) {
+  if (!detail || detail.loading) return <View style={styles.detailLoading}><ActivityIndicator color={colors.primary.main} /></View>;
+  if (detail.error) {
+    return (
+      <View style={[styles.detailError, { backgroundColor: colors.error.main + '12' }]}>
+        <Text style={[styles.detailErrorText, { color: colors.error.main }]}>{detail.error}</Text>
+        <TouchableOpacity onPress={() => onRetry(orderId)}><Text style={[styles.detailRetry, { color: colors.primary.main }]}>Reintentar</Text></TouchableOpacity>
+      </View>
+    );
+  }
+  if (detail.items.length === 0) return <Text style={[styles.detailEmpty, { color: colors.text.secondary }]}>No hay productos disponibles.</Text>;
+  return (
+    <View style={[styles.historyDetail, { borderTopColor: colors.divider }]}>
+      {detail.items.map((item) => (
+        <View key={item.exit_id} style={[styles.historyItem, { borderBottomColor: colors.divider }]}>
+          <View style={styles.historyItemTop}>
+            <View style={styles.historyItemNameArea}>
+              <Text style={[styles.historyItemName, { color: colors.text.primary }]}>{item.product_name}</Text>
+              <Text style={[styles.historyItemMeta, { color: colors.text.secondary }]}>{item.product_sku ? `SKU ${item.product_sku} · ` : ''}{item.warehouse_name}</Text>
+            </View>
+            <Text style={[styles.historyItemQuantity, { color: item.is_cancelled ? colors.error.main : colors.primary.main }]}>{formatQuantity(item.quantity)}</Text>
+          </View>
+          <Text style={[styles.historyItemMeta, { color: colors.text.secondary }]}>{formatPaymentDateTime(item.created_at)}</Text>
+          <ExitSerialChips serials={detail.serialsByExitId?.[item.exit_id]} />
+          {item.is_cancelled ? (
+            <View style={[styles.cancelledNotice, { backgroundColor: colors.error.main + '12' }]}>
+              <MaterialIcons name="cancel" size={14} color={colors.error.main} />
+              <Text style={[styles.cancelledNoticeText, { color: colors.error.main }]}>Cancelada{item.cancellation_observations ? `: ${item.cancellation_observations}` : ''}</Text>
+            </View>
+          ) : null}
+          {item.delivery_observations ? <Text style={[styles.observations, { color: colors.text.secondary }]}>Nota: {item.delivery_observations}</Text> : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function InlineError({ message, colors }: { message: string; colors: Colors }) {
+  return <View style={[styles.inlineError, { backgroundColor: colors.error.main + '12', borderColor: colors.error.main + '55' }]}><MaterialIcons name="error-outline" size={18} color={colors.error.main} /><Text style={[styles.inlineErrorText, { color: colors.error.main }]}>{message}</Text></View>;
 }
 
 export function MyOrdersScreen() {
@@ -161,14 +293,14 @@ export function MyOrdersScreen() {
               {isCustomerOrder ? 'Entrega a cliente' : 'Remisión interna'}
             </Text>
           </View>
-          <StatusBadge status={item.status} />
+          <StatusBadge colors={colors} status={item.status} />
         </View>
 
-        <DetailRow
+        <DetailRow colors={colors}
           icon={isCustomerOrder ? 'person-outline' : 'person-pin'}
           text={item.customer_name || (isCustomerOrder ? 'Cliente sin nombre' : 'Usuario asignado')}
         />
-        {item.delivery_address ? <DetailRow icon="place" text={item.delivery_address} secondary /> : null}
+        {item.delivery_address ? <DetailRow colors={colors} icon="place" text={item.delivery_address} secondary /> : null}
 
         <View style={styles.progressHeader}>
           <Text style={[styles.progressLabel, { color: colors.text.secondary }]}>Pendiente por despachar</Text>
@@ -176,12 +308,12 @@ export function MyOrdersScreen() {
             {formatQuantity(item.pending_quantity)} / {formatQuantity(item.total_quantity)}
           </Text>
         </View>
-        <ProgressBar progress={progress} />
+        <ProgressBar colors={colors} progress={progress} />
         <Text style={[styles.itemsText, { color: colors.text.secondary }]}>
           {item.total_items} {item.total_items === 1 ? 'producto' : 'productos'}
         </Text>
 
-        <ProductsButton orderId={item.id} orderNumber={item.order_number} />
+        <ProductsButton colors={colors} onOpen={setProductsModalTarget} orderId={item.id} orderNumber={item.order_number} />
 
         <View style={[styles.exitButton, { backgroundColor: colors.primary.main }]}>
           {isStarting
@@ -220,14 +352,14 @@ export function MyOrdersScreen() {
               Última salida: {formatPaymentDateTime(item.last_exit_at)}
             </Text>
           </View>
-          <StatusBadge status={item.status} />
+          <StatusBadge colors={colors} status={item.status} />
         </View>
 
-        <DetailRow
+        <DetailRow colors={colors}
           icon={item.recipient_type === 'customer' ? 'person-outline' : 'person-pin'}
           text={item.recipient_name || 'Destinatario sin nombre'}
         />
-        {item.delivery_address ? <DetailRow icon="place" text={item.delivery_address} secondary /> : null}
+        {item.delivery_address ? <DetailRow colors={colors} icon="place" text={item.delivery_address} secondary /> : null}
 
         <View style={styles.progressHeader}>
           <Text style={[styles.progressLabel, { color: colors.text.secondary }]}>Registrado por ti</Text>
@@ -235,7 +367,7 @@ export function MyOrdersScreen() {
             {formatQuantity(item.my_active_quantity)} de {formatQuantity(item.total_quantity)}
           </Text>
         </View>
-        <ProgressBar progress={progress} />
+        <ProgressBar colors={colors} progress={progress} />
 
         <View style={styles.historyBadges}>
           <View style={[styles.smallBadge, { backgroundColor: colors.success.main + '18' }]}>
@@ -254,7 +386,7 @@ export function MyOrdersScreen() {
           ) : null}
         </View>
 
-        <ProductsButton orderId={item.id} orderNumber={item.order_number} />
+        <ProductsButton colors={colors} onOpen={setProductsModalTarget} orderId={item.id} orderNumber={item.order_number} />
 
         <View style={[styles.expandHint, { borderTopColor: colors.divider }]}>
           <Text style={[styles.expandHintText, { color: colors.primary.main }]}>
@@ -263,7 +395,7 @@ export function MyOrdersScreen() {
           <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={22} color={colors.primary.main} />
         </View>
 
-        {expanded ? <HistoryDetail orderId={item.id} detail={detail} /> : null}
+        {expanded ? <HistoryDetail colors={colors} onRetry={orders.retryHistoryDetail} orderId={item.id} detail={detail} /> : null}
       </TouchableOpacity>
     );
   };
@@ -309,8 +441,8 @@ export function MyOrdersScreen() {
       <Text style={[styles.header, { color: colors.text.secondary }]}>Pendientes e historial de salidas registradas</Text>
 
       <View style={[styles.tabs, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-        <TabButton label="Pendientes" count={orders.pendingOrders.length} selected={isPending} onPress={() => setActiveTab('pending')} />
-        <TabButton label="Mis entregas" count={orders.historyTotalCount} selected={!isPending} onPress={() => setActiveTab('history')} />
+        <TabButton colors={colors} label="Pendientes" count={orders.pendingOrders.length} selected={isPending} onPress={() => setActiveTab('pending')} />
+        <TabButton colors={colors} label="Mis entregas" count={orders.historyTotalCount} selected={!isPending} onPress={() => setActiveTab('history')} />
       </View>
 
       <SearchBox
@@ -318,6 +450,7 @@ export function MyOrdersScreen() {
         onChangeText={isPending ? orders.setPendingSearch : orders.setHistorySearch}
         placeholder={isPending ? 'Buscar por orden, cliente o destino' : 'Buscar por orden, producto o destinatario'}
         loading={!isPending && orders.historyInitialLoading && orders.historyOrders.length > 0}
+        colors={colors}
       />
 
       {initialLoading ? (
@@ -336,7 +469,7 @@ export function MyOrdersScreen() {
           contentContainerStyle={[styles.listContent, currentDataEmpty && styles.emptyListContent]}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={orders.pendingRefreshing} onRefresh={() => void orders.loadPending(true)} tintColor={colors.primary.main} />}
-          ListHeaderComponent={blockingError ? <InlineError message={blockingError} /> : null}
+          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : null}
           ListEmptyComponent={renderEmptyState(false)}
         />
       ) : (
@@ -350,7 +483,7 @@ export function MyOrdersScreen() {
           onEndReached={orders.loadMoreHistory}
           onEndReachedThreshold={0.35}
           refreshControl={<RefreshControl refreshing={orders.historyRefreshing} onRefresh={() => void orders.refreshHistory()} tintColor={colors.primary.main} />}
-          ListHeaderComponent={blockingError ? <InlineError message={blockingError} /> : null}
+          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : null}
           ListEmptyComponent={renderEmptyState(true)}
           ListFooterComponent={orders.historyLoadingMore ? (
             <View style={styles.loadingMore}>
@@ -372,113 +505,6 @@ export function MyOrdersScreen() {
       ) : null}
     </View>
   );
-
-  function StatusBadge({ status }: { status: string }) {
-    const statusColor = status === 'delivered' ? colors.success.main : status === 'cancelled' ? colors.error.main : colors.warning.main;
-    return (
-      <View style={[styles.statusBadge, { backgroundColor: statusColor + '1A' }]}>
-        <Text style={[styles.statusText, { color: statusColor }]}>{STATUS_LABELS[status] || status}</Text>
-      </View>
-    );
-  }
-
-  /**
-   * Mismo gesto, icono y etiqueta que en "Todas las órdenes": el usuario abre la
-   * lista de productos de la orden sin aprender otra interacción. Va dentro de
-   * la tarjeta pulsable, y al ser un táctil anidado se queda con el toque en vez
-   * de disparar la acción de la tarjeta.
-   */
-  function ProductsButton({ orderId, orderNumber }: { orderId: string; orderNumber: string | null }) {
-    return (
-      <TouchableOpacity
-        testID={`view-products-${orderId}`}
-        accessibilityRole="button"
-        accessibilityLabel={`Ver productos de ${orderNumber || 'la orden'}`}
-        style={[styles.productsButton, { backgroundColor: colors.primary.main + '10' }]}
-        onPress={() => setProductsModalTarget({ id: orderId, orderNumber: orderNumber || orderId.slice(0, 8) })}
-        activeOpacity={0.7}
-      >
-        <MaterialIcons name="inventory-2" size={18} color={colors.primary.main} />
-        <Text style={[styles.productsButtonText, { color: colors.primary.main }]}>Ver productos</Text>
-      </TouchableOpacity>
-    );
-  }
-
-  function DetailRow({ icon, text, secondary = false }: { icon: React.ComponentProps<typeof MaterialIcons>['name']; text: string; secondary?: boolean }) {
-    return (
-      <View style={styles.detailRow}>
-        <MaterialIcons name={icon} size={18} color={colors.text.secondary} />
-        <Text style={[styles.detailText, { color: secondary ? colors.text.secondary : colors.text.primary }]} numberOfLines={1}>{text}</Text>
-      </View>
-    );
-  }
-
-  function ProgressBar({ progress }: { progress: number }) {
-    return <View style={[styles.progressTrack, { backgroundColor: colors.divider }]}><View style={[styles.progressValue, { width: `${progress}%`, backgroundColor: colors.success.main }]} /></View>;
-  }
-
-  function TabButton({ label, count, selected, onPress }: { label: string; count: number; selected: boolean; onPress: () => void }) {
-    return (
-      <TouchableOpacity accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.tabButton, selected && { backgroundColor: colors.primary.main }]}>
-        <Text style={[styles.tabLabel, { color: selected ? colors.primary.contrastText : colors.text.secondary }]} numberOfLines={1}>{label}</Text>
-        <View style={[styles.tabCount, { backgroundColor: selected ? colors.primary.contrastText + '25' : colors.divider }]}>
-          <Text style={[styles.tabCountText, { color: selected ? colors.primary.contrastText : colors.text.primary }]}>{count}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
-  function SearchBox({ value, onChangeText, placeholder, loading }: { value: string; onChangeText: (text: string) => void; placeholder: string; loading: boolean }) {
-    return (
-      <View style={[styles.searchBox, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-        <MaterialIcons name="search" size={21} color={colors.text.secondary} />
-        <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.text.secondary} style={[styles.searchInput, { color: colors.text.primary }]} autoCapitalize="none" returnKeyType="search" />
-        {loading ? <ActivityIndicator size="small" color={colors.primary.main} /> : null}
-        {value ? <TouchableOpacity accessibilityLabel="Limpiar búsqueda" onPress={() => onChangeText('')} hitSlop={8}><MaterialIcons name="close" size={20} color={colors.text.secondary} /></TouchableOpacity> : null}
-      </View>
-    );
-  }
-
-  function HistoryDetail({ orderId, detail }: { orderId: string; detail: { items: RegisteredDeliveryOrderItem[]; serialsByExitId?: Record<string, ExitSerialRecord[]>; loading: boolean; error: string | null } | undefined }) {
-    if (!detail || detail.loading) return <View style={styles.detailLoading}><ActivityIndicator color={colors.primary.main} /></View>;
-    if (detail.error) {
-      return (
-        <View style={[styles.detailError, { backgroundColor: colors.error.main + '12' }]}>
-          <Text style={[styles.detailErrorText, { color: colors.error.main }]}>{detail.error}</Text>
-          <TouchableOpacity onPress={() => orders.retryHistoryDetail(orderId)}><Text style={[styles.detailRetry, { color: colors.primary.main }]}>Reintentar</Text></TouchableOpacity>
-        </View>
-      );
-    }
-    if (detail.items.length === 0) return <Text style={[styles.detailEmpty, { color: colors.text.secondary }]}>No hay productos disponibles.</Text>;
-    return (
-      <View style={[styles.historyDetail, { borderTopColor: colors.divider }]}>
-        {detail.items.map((item) => (
-          <View key={item.exit_id} style={[styles.historyItem, { borderBottomColor: colors.divider }]}>
-            <View style={styles.historyItemTop}>
-              <View style={styles.historyItemNameArea}>
-                <Text style={[styles.historyItemName, { color: colors.text.primary }]}>{item.product_name}</Text>
-                <Text style={[styles.historyItemMeta, { color: colors.text.secondary }]}>{item.product_sku ? `SKU ${item.product_sku} · ` : ''}{item.warehouse_name}</Text>
-              </View>
-              <Text style={[styles.historyItemQuantity, { color: item.is_cancelled ? colors.error.main : colors.primary.main }]}>{formatQuantity(item.quantity)}</Text>
-            </View>
-            <Text style={[styles.historyItemMeta, { color: colors.text.secondary }]}>{formatPaymentDateTime(item.created_at)}</Text>
-            <ExitSerialChips serials={detail.serialsByExitId?.[item.exit_id]} />
-            {item.is_cancelled ? (
-              <View style={[styles.cancelledNotice, { backgroundColor: colors.error.main + '12' }]}>
-                <MaterialIcons name="cancel" size={14} color={colors.error.main} />
-                <Text style={[styles.cancelledNoticeText, { color: colors.error.main }]}>Cancelada{item.cancellation_observations ? `: ${item.cancellation_observations}` : ''}</Text>
-              </View>
-            ) : null}
-            {item.delivery_observations ? <Text style={[styles.observations, { color: colors.text.secondary }]}>Nota: {item.delivery_observations}</Text> : null}
-          </View>
-        ))}
-      </View>
-    );
-  }
-
-  function InlineError({ message }: { message: string }) {
-    return <View style={[styles.inlineError, { backgroundColor: colors.error.main + '12', borderColor: colors.error.main + '55' }]}><MaterialIcons name="error-outline" size={18} color={colors.error.main} /><Text style={[styles.inlineErrorText, { color: colors.error.main }]}>{message}</Text></View>;
-  }
 }
 
 const styles = StyleSheet.create({
