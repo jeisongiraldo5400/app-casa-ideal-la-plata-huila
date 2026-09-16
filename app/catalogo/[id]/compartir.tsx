@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { BackButton, Card, ScreenErrorBoundary, ScreenState, SectionHeader } from '@/components/ui';
@@ -17,6 +18,8 @@ import { pluralize } from '@/lib/catalogos/labels';
 import type { CatalogShareLink } from '@/lib/catalogos/types';
 
 export default function CatalogoCompartirScreen() {
+  // Módulo oculto en esta versión (constants/features.ts).
+  if (!CATALOGOS_HABILITADOS) return <Redirect href="/(tabs)" />;
   return (
     <ScreenErrorBoundary screen="Compartir catálogo">
       <CatalogoCompartirInner />

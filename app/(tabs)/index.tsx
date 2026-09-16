@@ -1,6 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { ActionCard, HeroActionCard, ScreenErrorBoundary, ScreenHeader, SectionHeader, StatCard } from '@/components/ui';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { Spacing, getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -98,7 +99,7 @@ function HomeScreenInner() {
           </View>
         ) : null}
 
-        {canAccessCatalogs() ? (
+        {CATALOGOS_HABILITADOS && canAccessCatalogs() ? (
           <View style={styles.section}>
             <SectionHeader title="Catálogos" />
             <View style={styles.actionGrid}>

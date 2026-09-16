@@ -1,6 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useAuthStore } from '@/components/auth/infrastructure/store/authStore';
 import { useTheme, useThemeStore } from '@/components/theme';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { Typography, getColors } from '@/constants/theme';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
@@ -123,6 +124,11 @@ function RootLayoutNav() {
     headerShadowVisible: false,
   };
 
+  // Con el módulo de catálogos oculto la pantalla solo redirige: sin header.
+  const catalogoScreenOptions = CATALOGOS_HABILITADOS
+    ? detailScreenOptions
+    : { ...detailScreenOptions, headerShown: false, header: undefined };
+
   if (!initialized && !appIsReady) {
     return null;
   }
@@ -133,9 +139,15 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="negocio/[id]" options={detailScreenOptions} />
         <Stack.Screen name="cliente/[id]" options={detailScreenOptions} />
-        <Stack.Screen name="catalogo/[id]" options={detailScreenOptions} />
-        <Stack.Screen name="catalogo/[id]/productos" options={detailScreenOptions} />
-        <Stack.Screen name="catalogo/[id]/compartir" options={detailScreenOptions} />
+        {/*
+          Catálogos: el módulo está oculto en esta versión (CATALOGOS_HABILITADOS
+          en constants/features.ts). Las pantallas se siguen declarando porque los
+          archivos existen y expo-router las registra igual, pero con la bandera
+          apagada redirigen al inicio sin header ni carga de datos.
+        */}
+        <Stack.Screen name="catalogo/[id]" options={catalogoScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/productos" options={catalogoScreenOptions} />
+        <Stack.Screen name="catalogo/[id]/compartir" options={catalogoScreenOptions} />
         <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>

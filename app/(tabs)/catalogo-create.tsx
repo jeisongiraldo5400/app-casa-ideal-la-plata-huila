@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { ActionBar, Button, Card, Input, ScreenErrorBoundary, ScreenState } from '@/components/ui';
@@ -10,6 +11,8 @@ import { errorMessage } from '@/lib/errorMessage';
 import { hasErrors, validateCreateCatalog, type CreateCatalogErrors } from '@/lib/catalogos/validators';
 
 export default function CatalogoCreateScreen() {
+  // Módulo oculto en esta versión (constants/features.ts).
+  if (!CATALOGOS_HABILITADOS) return <Redirect href="/(tabs)" />;
   return (
     <ScreenErrorBoundary screen="Nuevo catálogo">
       <CatalogoCreateInner />

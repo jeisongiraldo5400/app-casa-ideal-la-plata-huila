@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { ActionCard, BackButton, Button, Card, HeroActionCard, Metric, ScreenErrorBoundary, ScreenState, SectionHeader } from '@/components/ui';
@@ -20,6 +21,8 @@ import { pluralize } from '@/lib/catalogos/labels';
 const RECENT_LINKS = 3;
 
 export default function CatalogoDetailScreen() {
+  // Módulo oculto en esta versión (constants/features.ts).
+  if (!CATALOGOS_HABILITADOS) return <Redirect href="/(tabs)" />;
   return (
     <ScreenErrorBoundary screen="Catálogo">
       <CatalogoDetailInner />

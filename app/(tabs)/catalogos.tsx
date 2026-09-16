@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
@@ -15,6 +16,9 @@ import {
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 
 export default function CatalogosScreen() {
+  // Módulo oculto en esta versión: ni siquiera se monta la pantalla, así que no
+  // se piden catálogos al servidor (constants/features.ts).
+  if (!CATALOGOS_HABILITADOS) return <Redirect href="/(tabs)" />;
   return (
     <ScreenErrorBoundary screen="Catálogos">
       <CatalogosScreenInner />

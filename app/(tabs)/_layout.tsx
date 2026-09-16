@@ -1,5 +1,6 @@
 import { useTheme } from '@/components/theme';
 import { BackButton, FloatingTabBar, IconButton } from '@/components/ui';
+import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { IconSize, Typography, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { Tabs, useRouter } from 'expo-router';
@@ -216,11 +217,19 @@ export default function TabLayout() {
           headerLeft: () => <BackButton />,
         }}
       />
+      {/*
+        Catálogos: el módulo está oculto en esta versión (CATALOGOS_HABILITADOS
+        en constants/features.ts). Las dos pantallas se siguen declarando —los
+        archivos existen y expo-router las registraría igual, y sin `href: null`
+        aparecerían como pestañas— pero con la bandera apagada cada una redirige
+        al inicio antes de montar nada.
+      */}
       <Tabs.Screen
         name="catalogos"
         options={{
           href: null,
-          title: 'Catálogos',
+          title: CATALOGOS_HABILITADOS ? 'Catálogos' : '',
+          headerShown: CATALOGOS_HABILITADOS,
           headerLeft: () => <BackButton />,
         }}
       />
@@ -228,7 +237,8 @@ export default function TabLayout() {
         name="catalogo-create"
         options={{
           href: null,
-          title: 'Nuevo catálogo',
+          title: CATALOGOS_HABILITADOS ? 'Nuevo catálogo' : '',
+          headerShown: CATALOGOS_HABILITADOS,
           headerLeft: () => <BackButton />,
         }}
       />
