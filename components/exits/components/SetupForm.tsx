@@ -134,6 +134,9 @@ export function SetupForm() {
     ? deliveryOrderProgress.items.every(item => item.isComplete)
     : false;
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+  // Con un cliente elegido la lista de sugerencias se cierra: seguir mostrándola la
+  // encimaba sobre «Seleccione la orden». Se vuelve a abrir al editar el texto.
+  const showCustomerSuggestions = hasCommittedSearch && customers.length > 0 && !selectedCustomerId;
   const currentStep = !exitMode ? 1 : !selectedDeliveryOrderId ? 2 : 3;
 
   return (
@@ -255,11 +258,14 @@ export function SetupForm() {
                 </View>
               )}
 
-              {hasCommittedSearch && customers.length > 0 && (
-                <View style={[styles.customersList, {
+              {showCustomerSuggestions && (
+                <View
+                  testID="exit-customer-suggestions"
+                  style={[styles.customersList, {
                   backgroundColor: Colors.background.paper,
                   borderColor: Colors.divider
-                }]}>
+                }]}
+                >
                   {customers.slice(0, 5).map((customer) => (
                     <TouchableOpacity
                       key={customer.id}
@@ -283,7 +289,7 @@ export function SetupForm() {
                 </View>
               )}
 
-              {!customersLoading && canShowEmptyState && customers.length === 0 && (
+              {!customersLoading && canShowEmptyState && customers.length === 0 && !selectedCustomerId && (
                 <Text style={[styles.noResults, { color: Colors.text.secondary }]}>No se encontraron clientes</Text>
               )}
             </View>
@@ -369,7 +375,9 @@ const styles = StyleSheet.create({
   clearButton: { alignItems: 'center', borderRadius: Radius.pill, height: 44, justifyContent: 'center', position: 'absolute', right: Spacing.xs, width: 44 },
   loadingContainer: { alignItems: 'center', borderRadius: Radius.chip, flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md, padding: Spacing.md },
   loadingText: { ...Typography.bodySmall },
-  customersList: { borderRadius: Radius.control, borderWidth: 1, marginTop: Spacing.sm, maxHeight: 250 },
+  // En flujo normal y recortada: el `maxHeight` sin `overflow: 'hidden'` dejaba que las 5
+  // filas (más altas que 250 px) se dibujaran encima de la sección siguiente.
+  customersList: { borderRadius: Radius.control, borderWidth: 1, marginTop: Spacing.sm, overflow: 'hidden' },
   customerItem: { borderBottomWidth: 1, minHeight: 56, padding: Spacing.lg },
   customerName: { ...Typography.bodyStrong, marginBottom: Spacing.xs },
   customerIdNumber: { ...Typography.bodySmall },

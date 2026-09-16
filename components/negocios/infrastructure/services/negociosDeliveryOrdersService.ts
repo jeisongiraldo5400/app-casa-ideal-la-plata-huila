@@ -1,3 +1,4 @@
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { supabase } from '@/lib/supabase';
 import type { ProductWarehouseStock } from './negociosStockService';
 
@@ -230,28 +231,44 @@ export async function fetchAvailableDeliveryOrders(): Promise<DeliveryOrderOptio
 
   let soldMap = new Map<string, number>();
   if (remissionIds.length > 0) {
-    const { data: soldItems, error: soldItemsError } = await supabase
-      .from('negocios')
-      .select('remission_id, source_delivery_order_id, negocio_items(product_id, warehouse_id, quantity)')
-      .in('remission_id', remissionIds)
-      .is('deleted_at', null)
-      .in('status', ['activo', 'entregado', 'cerrado']);
-
-    if (soldItemsError) {
-      const { data: fallbackSold, error: fallbackError } = await supabase
-        .from('negocios')
-        .select('remission_id, negocio_items(product_id, warehouse_id, quantity)')
-        .in('remission_id', remissionIds)
-        .is('deleted_at', null)
-        .in('status', ['activo', 'entregado', 'cerrado']);
-
-      if (fallbackError) {
-        throw new Error(fallbackError.message || 'Error al calcular ventas de remisiones');
+    // Son todas las remisiones no canceladas (históricas incluidas): en lotes para que la
+    // URL de PostgREST no supere el límite, y por páginas porque una remisión tiene varios negocios.
+    try {
+      const soldItems = await fetchInChunks(
+        remissionIds,
+        (chunk) =>
+          supabase
+            .from('negocios')
+            .select('remission_id, source_delivery_order_id, negocio_items(product_id, warehouse_id, quantity)')
+            .in('remission_id', chunk)
+            .is('deleted_at', null)
+            .in('status', ['activo', 'entregado', 'cerrado'])
+            .order('id', { ascending: true }),
+        { pageSize: IN_FILTER_PAGE_SIZE }
+      );
+      soldMap = mapSoldQuantities(soldItems);
+    } catch {
+      try {
+        const fallbackSold = await fetchInChunks(
+          remissionIds,
+          (chunk) =>
+            supabase
+              .from('negocios')
+              .select('remission_id, negocio_items(product_id, warehouse_id, quantity)')
+              .in('remission_id', chunk)
+              .is('deleted_at', null)
+              .in('status', ['activo', 'entregado', 'cerrado'])
+              .order('id', { ascending: true }),
+          { pageSize: IN_FILTER_PAGE_SIZE }
+        );
+        soldMap = mapSoldQuantities(fallbackSold);
+      } catch (fallbackError: unknown) {
+        const message =
+          fallbackError && typeof fallbackError === 'object' && 'message' in fallbackError
+            ? String(fallbackError.message)
+            : '';
+        throw new Error(message || 'Error al calcular ventas de remisiones');
       }
-
-      soldMap = mapSoldQuantities(fallbackSold || []);
-    } else {
-      soldMap = mapSoldQuantities(soldItems || []);
     }
   }
 

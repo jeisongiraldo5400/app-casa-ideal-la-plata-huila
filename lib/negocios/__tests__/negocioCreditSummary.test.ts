@@ -65,6 +65,34 @@ describe('buildNegocioCreditSummary', () => {
     expect(summary.interestNote).toMatch(/Sin interés/);
   });
 
+  it('ignora la fila que todavía se está escribiendo y no corre la numeración', () => {
+    const schedule = [
+      { amount: 300_000, due_date: '2026-09-03' },
+      // Fila recién agregada: sin valor ni fecha.
+      { amount: Number.NaN, due_date: '' },
+    ];
+    const calc = calculateCredit({
+      productsSubtotal: 1_000_000,
+      downPayment: 300_000,
+      installmentsCount: 3,
+      frequency: 'mensual',
+      settings,
+    });
+    const summary = buildNegocioCreditSummary({
+      calc,
+      settings,
+      schedule,
+      frequency: 'mensual',
+      firstDueDate: '2026-10-03',
+    });
+
+    // Antes aparecía «Cuota inicial · paga el —» y el abono real pasaba a «Abono 2».
+    expect(summary.downPayments).toEqual([
+      { label: 'Cuota inicial', dueDate: '2026-09-03', amount: 300_000 },
+    ]);
+    expect(summary.downPaymentTotal).toBe(300_000);
+  });
+
   it('sin saldo por financiar no hay plan', () => {
     const schedule = [{ amount: 1_000_000, due_date: '2026-09-03' }];
     const calc = calculateCredit({

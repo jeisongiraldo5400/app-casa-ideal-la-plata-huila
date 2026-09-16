@@ -1,5 +1,6 @@
 import { useTheme } from "@/components/theme";
 import { getColors } from "@/constants/theme";
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from "@/lib/inChunks";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/database.types";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -68,46 +69,46 @@ async function buildDeliveryOrdersFromTableRows(
   }
 
   const orderIds = ordersData.map((order: any) => order.id);
-  const BATCH_SIZE = 500;
-  let allItemsData: any[] = [];
-
-  for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-    const batch = orderIds.slice(i, i + BATCH_SIZE);
-    const { data: itemsData, error: itemsError } = await supabase
-      .from("delivery_order_items")
-      .select("delivery_order_id, product_id, quantity, delivered_quantity")
-      .in("delivery_order_id", batch)
-      .is("deleted_at", null);
-
-    if (itemsError) {
-      console.error("Error loading delivery order items batch:", itemsError);
-    } else {
-      allItemsData = [...allItemsData, ...(itemsData || [])];
-    }
-  }
-
-  const { data: cancelledExits } = await supabase
-    .from("inventory_exit_cancellations")
-    .select("inventory_exit_id");
-
-  const cancelledExitIds = new Set(
-    (cancelledExits || []).map((c: any) => c.inventory_exit_id),
+  // «Cargar más» amplía la lista sin tope: lotes de ids cortos (la URL de PostgREST
+  // falla con cientos de UUID) y páginas (cada respuesta trae como mucho max-rows filas).
+  // Si un lote falla se lanza: antes se ignoraba y la tarjeta mostraba avances en 0.
+  const allItemsData: any[] = await fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from("delivery_order_items")
+        .select("delivery_order_id, product_id, quantity, delivered_quantity")
+        .in("delivery_order_id", chunk)
+        .is("deleted_at", null)
+        .order("id", { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE },
   );
 
-  let allExitsData: any[] = [];
-  for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-    const batch = orderIds.slice(i, i + BATCH_SIZE);
-    const { data: exitsData, error: exitsError } = await supabase
-      .from("inventory_exits")
-      .select("id, delivery_order_id, product_id, quantity")
-      .in("delivery_order_id", batch);
+  const allExitsData: any[] = await fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from("inventory_exits")
+        .select("id, delivery_order_id, product_id, quantity")
+        .in("delivery_order_id", chunk)
+        .order("id", { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE },
+  );
 
-    if (exitsError) {
-      console.error("Error loading inventory exits batch:", exitsError);
-    } else {
-      allExitsData = [...allExitsData, ...(exitsData || [])];
-    }
-  }
+  // Solo las cancelaciones de estas salidas: leer la tabla completa se cortaba en
+  // max-rows filas y las cancelaciones más recientes dejaban de descontarse.
+  const cancellations = await fetchInChunks(
+    allExitsData.map((exit: any) => exit.id),
+    (chunk) =>
+      supabase
+        .from("inventory_exit_cancellations")
+        .select("inventory_exit_id")
+        .in("inventory_exit_id", chunk)
+        .is("deleted_at", null),
+  );
+  const cancelledExitIds = new Set(
+    cancellations.map((c) => c.inventory_exit_id),
+  );
 
   const exitsByOrderProduct = new Map<string, number>();
   allExitsData.forEach((exit: any) => {

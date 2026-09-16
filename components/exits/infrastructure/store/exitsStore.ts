@@ -427,6 +427,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({
       loading: false,
       loadingMessage: null,
+      // Un error de carga del destino anterior no debe quedar pegado en el nuevo.
+      error: null,
       exitMode: mode,
       // Reset related fields when mode changes
       selectedUserId: null,
@@ -448,6 +450,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({
       loading: false,
       loadingMessage: null,
+      // Un error de carga del destino anterior no debe quedar pegado en el nuevo.
+      error: null,
       selectedUserId: userId,
       // Reset delivery order when user changes
       selectedDeliveryOrderId: null,
@@ -465,6 +469,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     set({
       loading: false,
       loadingMessage: null,
+      // Un error de carga del destino anterior no debe quedar pegado en el nuevo.
+      error: null,
       selectedCustomerId: customerId,
       // Reset delivery order when customer changes
       selectedDeliveryOrderId: null,
@@ -527,7 +533,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   searchDeliveryOrdersByCustomer: async (customerId: string) => {
     const generation = sessionGeneration;
     const isStale = () => generation !== sessionGeneration;
-    set({ loading: true, loadingMessage: 'Cargando órdenes de entrega...' });
+    set({ loading: true, loadingMessage: 'Cargando órdenes de entrega...', error: null });
 
     try {
       const orders = await fetchPendingCustomerOrders(customerId);
@@ -594,7 +600,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   searchDeliveryOrdersByUser: async (userId: string) => {
     const generation = sessionGeneration;
     const isStale = () => generation !== sessionGeneration;
-    set({ loading: true, loadingMessage: 'Cargando órdenes...' });
+    set({ loading: true, loadingMessage: 'Cargando órdenes...', error: null });
 
     try {
       const orders = await fetchUserOrdersExpanded(userId);

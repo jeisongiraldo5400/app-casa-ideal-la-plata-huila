@@ -1,4 +1,6 @@
 import {
+  createDownPaymentRow,
+  downPaymentRowLabels,
   downPaymentRowsToSchedule,
   downPaymentScheduleError,
   downPaymentScheduleTotal,
@@ -146,5 +148,32 @@ describe('parseDownPaymentSchedule', () => {
     expect(downPaymentRowsToSchedule([{ key: 'a', amount: '1.500.000', dueDate: '2026-09-03' }])).toEqual([
       { amount: 1_500_000, due_date: '2026-09-03' },
     ]);
+  });
+});
+
+describe('downPaymentRowLabels', () => {
+  const row = (amount: string, dueDate: string) => createDownPaymentRow({ amount, dueDate });
+
+  it('numera la cuota inicial y los abonos por la fecha que guardará la base', () => {
+    expect(
+      downPaymentRowLabels([row('200000', '2026-09-11'), row('300000', '2026-09-03')])
+    ).toEqual(['Abono 2', 'Cuota inicial']);
+  });
+
+  it('una fila recién agregada no le roba el número a la cuota inicial', () => {
+    expect(downPaymentRowLabels([row('300000', '2026-09-03'), row('', '')])).toEqual([
+      'Cuota inicial',
+      'Abono 2',
+    ]);
+  });
+
+  it('el error señala la fila con el mismo nombre que muestra el formulario', () => {
+    expect(
+      downPaymentScheduleError(
+        downPaymentRowsToSchedule([row('300000', '2026-09-03'), row('', '')]),
+        '2026-09-03',
+        1_000_000
+      )
+    ).toMatch(/valor del abono 2/);
   });
 });

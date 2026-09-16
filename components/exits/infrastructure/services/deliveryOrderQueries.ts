@@ -1,5 +1,6 @@
 import { buildRegisteredTotalsByKey } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
 import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
 
@@ -8,6 +9,14 @@ type Warehouse = Database['public']['Tables']['warehouses']['Row'];
 type DeliveryOrderRow = Database['public']['Tables']['delivery_orders']['Row'];
 
 export const EPOCH_ISO = '1970-01-01T00:00:00.000Z';
+
+/** Mensaje de un error de supabase-js (objeto con `message`, no siempre instancia de Error). */
+function queryErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
 
 /** Línea de orden con producto y bodega resueltos (RPC autorizado o consulta RLS). */
 export type DeliveryOrderItemQueryRow = Pick<
@@ -106,15 +115,22 @@ export async function fetchSelectableDeliveryOrderItems(
   // Cargar catálogos por separado: un join !inner vacío eliminaba toda la respuesta.
   const productIds = [...new Set(rawItems.map((item) => item.product_id))];
   const warehouseIds = [...new Set(rawItems.map((item) => item.warehouse_id))];
-  const [productsResult, warehousesResult] = await Promise.all([
-    supabase.from('products').select('id, name, barcode, sku, deleted_at').in('id', productIds).is('deleted_at', null),
-    supabase.from('warehouses').select('id, name').in('id', warehouseIds),
-  ]);
-  if (productsResult.error) return { data: [], error: productsResult.error };
-  if (warehousesResult.error) return { data: [], error: warehousesResult.error };
+  // En lotes: una remisión grande puede traer cientos de productos distintos.
+  let products: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'>[];
+  let warehouses: Pick<Warehouse, 'id' | 'name'>[];
+  try {
+    [products, warehouses] = await Promise.all([
+      fetchInChunks(productIds, (chunk) =>
+        supabase.from('products').select('id, name, barcode, sku, deleted_at').in('id', chunk).is('deleted_at', null)
+      ),
+      fetchInChunks(warehouseIds, (chunk) => supabase.from('warehouses').select('id, name').in('id', chunk)),
+    ]);
+  } catch (catalogError: unknown) {
+    return { data: [], error: { message: queryErrorMessage(catalogError, 'No fue posible cargar los productos de la orden') } };
+  }
 
-  const productsById = new Map((productsResult.data || []).map((product) => [product.id, product]));
-  const warehousesById = new Map((warehousesResult.data || []).map((warehouse) => [warehouse.id, warehouse]));
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const warehousesById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]));
 
   return {
     data: rawItems.map((item) => ({
@@ -133,13 +149,17 @@ export type InventoryExitRow = Pick<
 
 /** Salidas registradas para una o varias órdenes. Lanza si la consulta falla. */
 export async function fetchInventoryExitsForOrders(orderIds: string[]): Promise<InventoryExitRow[]> {
-  if (orderIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from('inventory_exits')
-    .select('id, delivery_order_id, product_id, warehouse_id, quantity')
-    .in('delivery_order_id', orderIds);
-  if (error) throw error;
-  return data || [];
+  // En lotes (URL corta) y por páginas: cada orden puede tener varias salidas.
+  return fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from('inventory_exits')
+        .select('id, delivery_order_id, product_id, warehouse_id, quantity')
+        .in('delivery_order_id', chunk)
+        .order('id', { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE }
+  );
 }
 
 /**
@@ -148,13 +168,20 @@ export async function fetchInventoryExitsForOrders(orderIds: string[]): Promise<
  */
 export async function getActiveCancelledExitIds(exitIds: string[]): Promise<Set<string>> {
   if (exitIds.length === 0) return new Set();
-  const { data, error } = await supabase
-    .from('inventory_exit_cancellations')
-    .select('inventory_exit_id')
-    .in('inventory_exit_id', exitIds)
-    .is('deleted_at', null);
-  if (error) throw new Error(`No fue posible verificar las salidas canceladas: ${error.message}`);
-  return new Set((data || []).map((cancellation) => cancellation.inventory_exit_id));
+  try {
+    // Un usuario con remisiones históricas acumula miles de salidas: sin lotes la URL
+    // superaba el límite y PostgREST respondía 400 «Bad Request».
+    const data = await fetchInChunks(exitIds, (chunk) =>
+      supabase
+        .from('inventory_exit_cancellations')
+        .select('inventory_exit_id')
+        .in('inventory_exit_id', chunk)
+        .is('deleted_at', null)
+    );
+    return new Set(data.map((cancellation) => cancellation.inventory_exit_id));
+  } catch (error: unknown) {
+    throw new Error(`No fue posible verificar las salidas canceladas: ${queryErrorMessage(error, 'error desconocido')}`);
+  }
 }
 
 /** Suma por producto+bodega de las salidas no canceladas. */
@@ -187,13 +214,18 @@ export function groupExitsByOrder(exits: InventoryExitRow[], cancelledIds: Set<s
 export async function fetchDeliveredTotalsByOrder(orderIds: string[]): Promise<Map<string, number>> {
   const totals = new Map<string, number>();
   if (orderIds.length === 0) return totals;
-  const { data, error } = await supabase
-    .from('delivery_order_items')
-    .select('delivery_order_id, delivered_quantity')
-    .in('delivery_order_id', orderIds)
-    .is('deleted_at', null);
-  if (error) throw error;
-  (data || []).forEach((item) => {
+  const data = await fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from('delivery_order_items')
+        .select('delivery_order_id, delivered_quantity')
+        .in('delivery_order_id', chunk)
+        .is('deleted_at', null)
+        .order('id', { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE }
+  );
+  data.forEach((item) => {
     totals.set(item.delivery_order_id, (totals.get(item.delivery_order_id) || 0) + (item.delivered_quantity || 0));
   });
   return totals;

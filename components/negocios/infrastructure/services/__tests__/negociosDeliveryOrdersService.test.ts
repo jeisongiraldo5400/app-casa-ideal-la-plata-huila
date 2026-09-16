@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import {
   deliveryOrderAvailabilityKey,
+  fetchAvailableDeliveryOrders,
   fetchPendingRemissions,
   fetchRemissionOriginProducts,
   formatPendingRemissionLabel,
@@ -284,5 +285,54 @@ describe('grupos de origen de una remisión', () => {
 
     expect(mockRpc).toHaveBeenCalledWith('get_remission_origin_products', { p_remission_id: 'rem-1' });
     expect(groups).toEqual([expect.objectContaining({ kind: 'own', sourceOrderId: 'rem-1' })]);
+  });
+});
+
+describe('fetchAvailableDeliveryOrders con muchas remisiones', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('consulta las ventas de 1100 remisiones en lotes de 150 como máximo', async () => {
+    const remissions = Array.from({ length: 1100 }, (_, i) => ({
+      id: `rem-${i}`,
+      order_number: String(i),
+      created_at: '2026-09-01T00:00:00Z',
+      order_type: 'remission',
+      status: 'pending',
+      items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 5, deleted_at: null, product: { name: 'Base' }, warehouse: { name: 'Principal' } }],
+    }));
+    const inCalls: string[][] = [];
+
+    (supabase.from as jest.Mock).mockImplementation((table: string) => {
+      if (table === 'delivery_orders') {
+        const chain: Record<string, unknown> = {};
+        ['select', 'in', 'is', 'neq'].forEach((method) => { chain[method] = () => chain; });
+        chain.order = () => Promise.resolve({ data: remissions, error: null });
+        return chain;
+      }
+      let chunk: string[] = [];
+      const chain: Record<string, unknown> = {};
+      ['select', 'is', 'order'].forEach((method) => { chain[method] = () => chain; });
+      chain.in = (column: string, values: string[]) => {
+        if (column === 'remission_id') {
+          chunk = values;
+          inCalls.push(values);
+        }
+        return chain;
+      };
+      // Cada remisión tiene un negocio que vendió 2 unidades.
+      chain.range = () =>
+        Promise.resolve({
+          data: chunk.map((id) => ({ remission_id: id, source_delivery_order_id: null, negocio_items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2 }] })),
+          error: null,
+        });
+      return chain;
+    });
+
+    const options = await fetchAvailableDeliveryOrders();
+
+    expect(inCalls).toHaveLength(Math.ceil(1100 / 150));
+    expect(inCalls.every((values) => values.length <= 150)).toBe(true);
+    expect(options).toHaveLength(1100);
+    expect(options.every((option) => option.items[0]?.available_quantity === 3)).toBe(true);
   });
 });

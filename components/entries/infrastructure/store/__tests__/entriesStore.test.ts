@@ -298,7 +298,11 @@ describe('entriesStore', () => {
       (supabase.from as jest.Mock).mockImplementation(() => ({
         select: () => ({
           eq: () => ({ is: entriesResult }),
-          in: () => ({ eq: () => ({ is: entriesResult }), is: entriesResult }),
+          // Las recepciones se leen en lotes y por páginas: .order().range().
+          in: () => ({
+            eq: () => ({ is: () => ({ order: () => ({ range: entriesResult }) }) }),
+            is: entriesResult,
+          }),
         }),
       }));
 

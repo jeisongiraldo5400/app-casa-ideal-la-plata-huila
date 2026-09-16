@@ -24,7 +24,7 @@ jest.mock('@/lib/operationLogger', () => ({ logOperationError: jest.fn(async () 
 /** Query builder falso: cada método devuelve el mismo objeto y es thenable. */
 function chain(result: { data: unknown; error: unknown } = { data: [], error: null }) {
   const obj: Record<string, unknown> = {};
-  ['select', 'eq', 'in', 'is', 'order', 'limit', 'maybeSingle', 'single'].forEach((method) => {
+  ['select', 'eq', 'in', 'is', 'order', 'range', 'limit', 'maybeSingle', 'single'].forEach((method) => {
     obj[method] = jest.fn(() => obj);
   });
   obj.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>

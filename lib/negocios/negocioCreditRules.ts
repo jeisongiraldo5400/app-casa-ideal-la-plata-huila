@@ -110,6 +110,57 @@ export function downPaymentScheduleTotal(schedule: DownPaymentEntry[]): number {
   }, 0);
 }
 
+/** `true` cuando el abono ya tiene valor y fecha (la fila dejó de estar a medias). */
+export function isCompleteDownPayment(entry: DownPaymentEntry): boolean {
+  const amount = toNumber(entry.amount);
+  return (
+    Number.isFinite(amount) && amount > 0 && DATE_VALUE.test(String(entry.due_date ?? ''))
+  );
+}
+
+/** Nombre visible de un abono según su posición: el primero es la cuota inicial. */
+export function downPaymentLabel(rank: number): string {
+  return rank === 0 ? 'Cuota inicial' : `Abono ${rank + 1}`;
+}
+
+/**
+ * Etiqueta de cada abono **en el orden de las filas del formulario**, numerado
+ * como lo guardará la base: por fecha de pago, y las filas todavía incompletas
+ * al final.
+ *
+ * Sin esto, agregar una fila vacía la colocaba primero (su fecha vacía ordena
+ * antes que cualquier otra) y renombraba la cuota inicial ya escrita como
+ * «Abono 2», además de listarla en el resumen como «Cuota inicial · paga el —».
+ */
+export function downPaymentLabels(schedule: DownPaymentEntry[]): string[] {
+  const ranked = schedule
+    .map((entry, index) => ({ index, entry, complete: isCompleteDownPayment(entry) }))
+    .sort((a, b) => {
+      if (a.complete !== b.complete) return a.complete ? -1 : 1;
+      if (a.complete && b.complete) {
+        const byDate = String(a.entry.due_date).localeCompare(String(b.entry.due_date));
+        if (byDate !== 0) return byDate;
+      }
+      return a.index - b.index;
+    });
+
+  const labels = new Array<string>(schedule.length).fill('');
+  ranked.forEach((item, rank) => {
+    labels[item.index] = downPaymentLabel(rank);
+  });
+  return labels;
+}
+
+/** Etiquetas para las filas editables del formulario (mismo criterio). */
+export function downPaymentRowLabels(rows: DownPaymentRow[]): string[] {
+  return downPaymentLabels(downPaymentRowsToSchedule(rows));
+}
+
+/** «de la cuota inicial» / «del abono 2», para los mensajes de error. */
+function possessiveLabel(label: string): string {
+  return label === 'Cuota inicial' ? 'de la cuota inicial' : `del ${label.toLowerCase()}`;
+}
+
 /**
  * Mensaje de error del cronograma de abonos iniciales, o `null` si es válido.
  * Un cronograma vacío es válido (negocio sin cuota inicial).
@@ -120,10 +171,11 @@ export function downPaymentScheduleError(
   productsSubtotal: number
 ): string | null {
   const seenDates = new Set<string>();
+  const labels = downPaymentLabels(schedule);
   let total = 0;
   for (let index = 0; index < schedule.length; index += 1) {
     const entry = schedule[index];
-    const label = index === 0 ? 'de la cuota inicial' : `del abono ${index + 1}`;
+    const label = possessiveLabel(labels[index]);
     const amount = toNumber(entry.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       return `Indique el valor ${label}`;

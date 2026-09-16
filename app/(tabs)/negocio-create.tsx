@@ -37,6 +37,7 @@ import {
 } from '@/lib/negocioSignatureRules';
 import {
   createDownPaymentRow,
+  downPaymentRowLabels,
   downPaymentRowsToSchedule,
   downPaymentScheduleError,
   downPaymentScheduleTotal,
@@ -425,6 +426,9 @@ function NegocioCreateScreenInner() {
   const installmentsNumber = Number(installments);
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const downPaymentSchedule = downPaymentRowsToSchedule(downPayments);
+  // La numeración es la misma del resumen y la que guardará la base (por fecha),
+  // no la posición en la que se agregó la fila.
+  const downPaymentLabels = downPaymentRowLabels(downPayments);
   const downPaymentError = downPaymentScheduleError(downPaymentSchedule, localDateValue(), subtotal);
   const downPaymentTotal = downPaymentScheduleTotal(downPaymentSchedule);
   // Si los abonos cubren el valor de los productos no hay plan de cuotas.
@@ -1312,12 +1316,12 @@ function NegocioCreateScreenInner() {
               >
                 <View style={styles.abonoHeader}>
                   <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 14 }}>
-                    {index === 0 ? 'Cuota inicial' : `Abono ${index + 1}`}
+                    {downPaymentLabels[index]}
                   </Text>
                   <Pressable
                     onPress={() => removeDownPayment(row.key)}
                     accessibilityRole="button"
-                    accessibilityLabel={index === 0 ? 'Quitar cuota inicial' : `Quitar abono ${index + 1}`}
+                    accessibilityLabel={`Quitar ${downPaymentLabels[index].toLowerCase()}`}
                     hitSlop={8}
                   >
                     <MaterialIcons name="delete-outline" size={22} color={colors.error.main} />

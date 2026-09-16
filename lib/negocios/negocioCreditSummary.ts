@@ -1,5 +1,10 @@
 import { formatCOP, type CreditCalcResult, type CreditSettingsInput } from '@/lib/creditCalculator';
-import { downPaymentScheduleTotal, sortDownPaymentSchedule, type DownPaymentEntry } from './negocioCreditRules';
+import {
+  downPaymentLabels,
+  downPaymentScheduleTotal,
+  isCompleteDownPayment,
+  type DownPaymentEntry,
+} from './negocioCreditRules';
 
 /**
  * Resumen legible del crédito que se muestra al vendedor mientras arma el
@@ -70,13 +75,20 @@ export function buildNegocioCreditSummary({
   const monthsFactor = frequency === 'semanal' ? 7 / 30 : frequency === 'quincenal' ? 0.5 : 1;
   const financedMonths = n * monthsFactor;
 
-  const sorted = sortDownPaymentSchedule(schedule);
-  const downPayments = sorted.map((entry, index) => ({
-    label: index === 0 ? 'Cuota inicial' : `Abono ${index + 1}`,
-    dueDate: entry.due_date,
-    amount: Number.isFinite(entry.amount) ? entry.amount : 0,
-  }));
-  const downPaymentTotal = downPaymentScheduleTotal(sorted);
+  // Solo los abonos ya escritos: una fila a medio llenar no se lista ni corre
+  // la numeración de los demás. El orden y el número son los mismos que muestra
+  // el formulario (`downPaymentLabels`) y los que guardará la base: por fecha.
+  const labels = downPaymentLabels(schedule);
+  const downPayments = schedule
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => isCompleteDownPayment(entry))
+    .map(({ entry, index }) => ({
+      label: labels[index],
+      dueDate: entry.due_date,
+      amount: Number.isFinite(entry.amount) ? entry.amount : 0,
+    }))
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const downPaymentTotal = downPaymentScheduleTotal(schedule);
 
   let interestNote: string;
   if (n === 0 || calc.interestAmount <= 0) {

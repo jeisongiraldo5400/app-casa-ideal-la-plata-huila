@@ -1,3 +1,4 @@
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { supabase } from '@/lib/supabase';
 import {
   PURCHASE_ORDER_RECEIPT_ENTRY_TYPE,
@@ -65,14 +66,20 @@ export type InventoryEntryRow = {
  */
 export async function fetchInventoryEntriesForOrders(orderIds: string[]): Promise<InventoryEntryRow[]> {
   if (orderIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from('inventory_entries')
-    .select('purchase_order_id, product_id, quantity, entry_type')
-    .in('purchase_order_id', orderIds)
-    .eq('entry_type', PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
-    .is('deleted_at', null);
-  if (error) throw error;
-  return (data || [])
+  // En lotes (URL corta) y por páginas: cada orden acumula varias recepciones.
+  const data = await fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from('inventory_entries')
+        .select('purchase_order_id, product_id, quantity, entry_type')
+        .in('purchase_order_id', chunk)
+        .eq('entry_type', PURCHASE_ORDER_RECEIPT_ENTRY_TYPE)
+        .is('deleted_at', null)
+        .order('id', { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE }
+  );
+  return data
     .filter(isPurchaseOrderReceipt)
     .map(({ purchase_order_id, product_id, quantity }) => ({ purchase_order_id, product_id, quantity }));
 }
@@ -90,15 +97,27 @@ export class EntryValidationQueryError extends Error {
   }
 }
 
+function errorText(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
+  return String(error);
+}
+
 /** Bodega, productos y estado de la orden en paralelo, para validar antes de registrar. */
 export async function fetchEntryValidationData(params: {
   warehouseId: string;
   productIds: string[];
   purchaseOrderId: string | null;
 }): Promise<EntryValidationData> {
+  // Los productos van en lotes: una recepción grande puede traer cientos de referencias.
+  const productsQuery = fetchInChunks(params.productIds, (chunk) =>
+    supabase.from('products').select('id, deleted_at').in('id', chunk)
+  ).then(
+    (rows) => ({ data: rows, error: null }),
+    (error: unknown) => ({ data: null, error: { message: errorText(error) } })
+  );
   const [warehouseResult, productsResult, orderResult] = await Promise.all([
     supabase.from('warehouses').select('id, is_active, deleted_at').eq('id', params.warehouseId).maybeSingle(),
-    supabase.from('products').select('id, deleted_at').in('id', params.productIds),
+    productsQuery,
     params.purchaseOrderId
       ? supabase.from('purchase_orders').select('status').eq('id', params.purchaseOrderId).maybeSingle()
       : Promise.resolve(null),

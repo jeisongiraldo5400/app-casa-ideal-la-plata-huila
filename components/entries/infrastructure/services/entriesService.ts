@@ -1,3 +1,4 @@
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from "@/lib/inChunks";
 import { supabase } from "@/lib/supabase";
 import { Database } from "@/types/database.types";
 
@@ -92,25 +93,28 @@ export async function fetchPurchaseOrderItems(orderIds: string[]): Promise<Purch
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("purchase_order_items")
-    .select(
-      `
+  // En lotes (URL corta) y por páginas: un proveedor puede acumular muchas órdenes pendientes.
+  const data = await fetchInChunks(
+    orderIds,
+    (chunk) =>
+      supabase
+        .from("purchase_order_items")
+        .select(
+          `
       *,
       products!inner(id, name, barcode, sku, deleted_at),
       purchase_order_id
     `
-    )
-    .in("purchase_order_id", orderIds)
-    .is("deleted_at", null)
-    .is("products.deleted_at", null);
-
-  if (error) {
-    throw error;
-  }
+        )
+        .in("purchase_order_id", chunk)
+        .is("deleted_at", null)
+        .is("products.deleted_at", null)
+        .order("id", { ascending: true }),
+    { pageSize: IN_FILTER_PAGE_SIZE }
+  );
 
   // El join !inner con alias no lo infiere el generador de tipos.
-  return ((data || []) as unknown as PurchaseOrderItemWithProductJoin[]).filter(
+  return (data as unknown as PurchaseOrderItemWithProductJoin[]).filter(
     (item) => !item.deleted_at && item.products && !item.products.deleted_at
   );
 }
