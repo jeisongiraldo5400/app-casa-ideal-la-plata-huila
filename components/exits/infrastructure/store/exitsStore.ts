@@ -33,7 +33,6 @@ import {
 } from '@/components/exits/infrastructure/services/exitAuthorization';
 import {
   fetchActiveProfiles,
-  fetchWarehouseStock,
   searchCustomersByTerm,
 } from '@/components/exits/infrastructure/services/exitsService';
 import {
@@ -102,7 +101,6 @@ export interface ExitItem {
   availableStock?: number;
   warehouseId?: string; // Para órdenes de entrega con múltiples bodegas
   /** Stock físico en la bodega al escanear; null si no se pudo consultar. */
-  physicalStock?: number | null;
   /** Seriales de fábrica de las unidades de esta línea (opcionales, máx. uno por unidad). */
   serials?: ExitSerial[];
   /** Grupo de la línea de orden: `'own'` (propios) o id de la OE hija. Ausente equivale a `'own'`. */
@@ -223,7 +221,6 @@ export interface ExitsState {
   currentQuantity: number;
   currentAvailableStock: number;
   /** Stock físico en la bodega resuelta; null cuando no se pudo consultar. */
-  currentPhysicalStock: number | null;
   /** Línea de orden objetivo al escanear (p. ej. segunda fila mismo SKU). */
   targetOrderItemId: string | null;
   /** Grupo (propios u OE hija) elegido para el producto en revisión. */
@@ -391,7 +388,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   currentScannedBarcode: null,
   currentQuantity: 1,
   currentAvailableStock: 0,
-  currentPhysicalStock: null,
   targetOrderItemId: null,
   currentGroupKey: null,
   warehouseCandidates: [],
@@ -973,7 +969,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       error: null,
       currentScannedBarcode: barcode,
       warehouseCandidates: [],
-      currentPhysicalStock: null,
       currentSerials: [],
       serialChecking: false
     });
@@ -988,7 +983,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         targetOrderItemId: null,
         currentGroupKey: null,
         warehouseCandidates: [],
-        currentPhysicalStock: null
       });
 
     try {
@@ -1080,7 +1074,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         targetOrderItemId: null,
         currentGroupKey: null,
         currentAvailableStock: 0,
-        currentPhysicalStock: null,
         error: null
       });
 
@@ -1156,44 +1149,17 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const selectionChanged =
       get().warehouseId !== warehouseId || get().currentGroupKey !== candidate.groupKey;
     set({
-      loading: true,
-      loadingMessage: 'Consultando stock en bodega...',
+      loading: false,
+      loadingMessage: null,
       warehouseId,
       currentGroupKey: candidate.groupKey,
       targetOrderItemId: targetLine?.id ?? null,
       currentAvailableStock: candidate.pending,
-      currentPhysicalStock: null,
       // La verificación de un serial depende de la bodega (y el grupo fija la orden objetivo):
       // al cambiar cualquiera de los dos se capturan de nuevo.
       ...(selectionChanged ? { currentSerials: [], serialChecking: false } : {}),
+      currentQuantity: 1,
       error: null
-    });
-
-    let physicalStock: number | null = null;
-    try {
-      physicalStock = await fetchWarehouseStock(currentProduct.id, warehouseId);
-    } catch (stockError: unknown) {
-      // Sin stock físico seguimos con el pendiente de la orden; el RPC valida al registrar.
-      console.error('Error loading warehouse stock:', stockError);
-      logOperationError({
-        error_code: 'EXIT_STOCK_LOOKUP_FAILED',
-        error_message: stockError instanceof Error ? stockError.message : String(stockError),
-        module: 'exits',
-        operation: 'scan_barcode',
-        step: 'warehouse_stock',
-        severity: 'warning',
-        entity_type: 'delivery_order',
-        entity_id: selectedDeliveryOrderId,
-        context: { productId: currentProduct.id, warehouseId }
-      });
-    }
-    if (generation !== sessionGeneration) return;
-
-    set({
-      loading: false,
-      loadingMessage: null,
-      currentPhysicalStock: physicalStock,
-      currentQuantity: physicalStock === 0 ? 0 : 1
     });
   },
 
@@ -1232,7 +1198,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       selectedDeliveryOrder,
       registeredExitsCache,
       targetOrderItemId,
-      currentPhysicalStock,
       warehouseCandidates,
       currentProduct,
       currentSerials,
@@ -1290,17 +1255,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const existingItem = exitItems.find(sameLine);
     const totalQuantityInExit = (existingItem?.quantity || 0) + quantity;
 
-    // Stock físico: conocido desde el escaneo; si no se pudo consultar, el RPC valida al registrar.
-    const physicalStock = existingItem?.physicalStock ?? currentPhysicalStock ?? null;
-    if (physicalStock !== null && totalQuantityInExit > physicalStock) {
-      const warehouseName =
-        selectedDeliveryOrder.items.find((item) => item.warehouse_id === warehouseId)?.warehouse_name ||
-        'la bodega';
-      const error = `Stock físico insuficiente en ${warehouseName}. Disponible: ${physicalStock}, en esta salida: ${totalQuantityInExit}`;
-      set({ error });
-      return { ok: false, error };
-    }
-
     const { maxCart } = computeKeyAllowance(
       selectedDeliveryOrder,
       registeredExitsCache[targetOrderId] || {},
@@ -1308,7 +1262,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       warehouseId,
       groupKey
     );
-    const cap = physicalStock !== null ? Math.min(maxCart, physicalStock) : maxCart;
+    // El tope es lo pendiente en la orden: las unidades ya quedaron separadas al crearla.
+    const cap = maxCart;
     const availableStock = Math.max(cap - totalQuantityInExit, 0);
 
     const key = groupedKey(product.id, warehouseId, groupKey);
@@ -1318,10 +1273,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     const updatedItems = existingItem
       ? exitItems.map((item) =>
           sameLine(item)
-            ? { ...item, quantity: item.quantity + quantity, availableStock, physicalStock, serials: [...(item.serials ?? []), ...serials] }
+            ? { ...item, quantity: item.quantity + quantity, availableStock, serials: [...(item.serials ?? []), ...serials] }
             : item
         )
-      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, physicalStock, serials, groupKey, targetOrderId }];
+      : [...exitItems, { product, quantity, barcode, availableStock, warehouseId, serials, groupKey, targetOrderId }];
 
     set({ exitItems: updatedItems, scannedItemsProgress: newProgress, error: null });
     get().resetCurrentScan();
@@ -1390,7 +1345,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       item.warehouseId,
       groupKey
     );
-    const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
+    const cap = maxCart;
     const key = groupedKey(item.product.id, item.warehouseId, groupKey);
     const newProgress = new Map(scannedItemsProgress);
     newProgress.set(key, (scannedItemsProgress.get(key) || 0) + item.quantity);
@@ -1445,12 +1400,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       return;
     }
 
-    if (item.physicalStock != null && quantity > item.physicalStock) {
-      set({ error: `Stock físico insuficiente. Disponible en bodega: ${item.physicalStock}` });
-      return;
-    }
-
-    const cap = item.physicalStock != null ? Math.min(maxCart, item.physicalStock) : maxCart;
+    const cap = maxCart;
     const key = groupedKey(item.product.id, item.warehouseId, groupKey);
     const newProgress = new Map(scannedItemsProgress);
     const newValue = Math.max(0, (scannedItemsProgress.get(key) || 0) + (quantity - item.quantity));
@@ -1844,7 +1794,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      currentPhysicalStock: null,
       targetOrderItemId: null,
       currentGroupKey: null,
       warehouseCandidates: [],
@@ -1881,7 +1830,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      currentPhysicalStock: null,
       targetOrderItemId: null,
       currentGroupKey: null,
       warehouseCandidates: [],
@@ -1907,7 +1855,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      currentPhysicalStock: null,
       targetOrderItemId: null,
       currentGroupKey: null,
       warehouseCandidates: [],
@@ -1964,7 +1911,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      currentPhysicalStock: null,
       targetOrderItemId: null,
       currentGroupKey: null,
       warehouseCandidates: [],
@@ -1987,7 +1933,6 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       serialChecking: false,
       currentQuantity: 1,
       currentAvailableStock: 0,
-      currentPhysicalStock: null,
       targetOrderItemId: null,
       currentGroupKey: null,
       warehouseCandidates: [],

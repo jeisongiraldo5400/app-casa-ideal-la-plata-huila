@@ -276,12 +276,14 @@ export function ExitScanningWorkspace() {
       item.warehouseId === store.warehouseId &&
       (item.groupKey || OWN_GROUP) === (store.currentGroupKey || OWN_GROUP),
   )?.quantity || 0;
-  const reviewMax = store.currentPhysicalStock === null ? store.currentAvailableStock : Math.min(store.currentAvailableStock, store.currentPhysicalStock);
-  const reviewOutOfStock = Boolean(store.warehouseId) && !store.loading && store.currentPhysicalStock === 0;
+  // El tope es lo pendiente en la orden. El stock de la bodega no manda aquí:
+  // al crear la orden esas unidades ya se separaron y por eso warehouse_stock
+  // las descontó. Mirarlo otra vez las restaba dos veces y dejaba sin despachar
+  // una orden con mercancía apartada.
+  const reviewMax = store.currentAvailableStock;
   const reviewValid =
     Boolean(store.warehouseId) &&
     !store.loading &&
-    !reviewOutOfStock &&
     store.currentQuantity > 0 &&
     store.currentQuantity <= reviewMax &&
     store.currentSerials.length <= store.currentQuantity &&
@@ -352,7 +354,7 @@ export function ExitScanningWorkspace() {
               quantityCaption="Cantidad de esta salida"
               canDecrease={item.item.quantity > 1}
               canIncrease={Boolean(item.item.availableStock)}
-              note={!item.item.availableStock ? (item.item.physicalStock != null && item.item.quantity >= item.item.physicalStock ? 'Sin más stock físico en esta bodega' : 'Sin más unidades pendientes en la orden') : null}
+              note={!item.item.availableStock ? 'Sin más unidades pendientes en la orden' : null}
               onDecrease={() => store.updateProductQuantity(item.index, item.item.quantity - 1)}
               onIncrease={() => store.updateProductQuantity(item.index, item.item.quantity + 1)}
               onRemove={() => removeSessionItem(item)}
@@ -453,7 +455,7 @@ export function ExitScanningWorkspace() {
           visible={reviewing && !serialScannerOpen}
           product={{ name: store.currentProduct.name, sku: store.currentProduct.sku || null, barcode: store.currentScannedBarcode || store.currentProduct.barcode || '' }}
           subtitle={store.warehouseCandidates.length > 1 && !store.warehouseId ? 'Elige la bodega y confirma la cantidad' : 'Confirma la cantidad antes de agregar'}
-          showQuantity={Boolean(store.warehouseId) && !reviewOutOfStock}
+          showQuantity={Boolean(store.warehouseId)}
           quantityLabel="Cantidad para agregar"
           quantity={store.currentQuantity}
           maxQuantity={reviewMax}
@@ -473,12 +475,10 @@ export function ExitScanningWorkspace() {
             warehouseName={reviewWarehouseName}
             groupLabel={reviewGroupLabel}
             pending={store.currentAvailableStock}
-            physicalStock={store.currentPhysicalStock}
-            stockLoading={store.loading}
             alreadyInSession={alreadyInSession}
             onSelectCandidate={(candidate) => { setReviewError(null); void store.selectScanWarehouse(candidate.warehouseId, candidate.groupKey); }}
           />
-          {store.warehouseId && !reviewOutOfStock ? (
+          {store.warehouseId ? (
             <SerialsField
               serials={store.currentSerials}
               quantity={store.currentQuantity}
@@ -549,15 +549,13 @@ function SectionHeaderRow({ title }: { title: string }) {
   );
 }
 
-function ExitReviewDetails({ candidates, selectedWarehouseId, selectedGroupKey, warehouseName, groupLabel, pending, physicalStock, stockLoading, alreadyInSession, onSelectCandidate }: {
+function ExitReviewDetails({ candidates, selectedWarehouseId, selectedGroupKey, warehouseName, groupLabel, pending, alreadyInSession, onSelectCandidate }: {
   candidates: ScanWarehouseCandidate[];
   selectedWarehouseId: string | null;
   selectedGroupKey: string | null;
   warehouseName: string;
   groupLabel: string | null;
   pending: number;
-  physicalStock: number | null;
-  stockLoading: boolean;
   alreadyInSession: number;
   onSelectCandidate: (candidate: ScanWarehouseCandidate) => void;
 }) {
@@ -565,7 +563,6 @@ function ExitReviewDetails({ candidates, selectedWarehouseId, selectedGroupKey, 
   const colors = getColors(isDark);
   const needsChoice = candidates.length > 1;
   const hasWarehouse = Boolean(selectedWarehouseId);
-  const outOfStock = hasWarehouse && !stockLoading && physicalStock === 0;
   // Con varias candidatas del mismo grupo la elección es solo de bodega; si hay más de un
   // grupo (propios vs. OE de cliente) también se elige a qué orden se registra.
   const multiGroup = new Set(candidates.map((candidate) => candidate.groupKey)).size > 1;
@@ -611,18 +608,17 @@ function ExitReviewDetails({ candidates, selectedWarehouseId, selectedGroupKey, 
         </View>
       )}
 
+      {/*
+        No se muestra el stock de la bodega: al crear la orden esas unidades
+        quedaron separadas y warehouse_stock ya las descontó, así que aparecería
+        en cero justo cuando sí hay mercancía apartada. Lo que manda es lo
+        pendiente en la orden.
+      */}
       {hasWarehouse ? (
         <View style={styles.metrics}>
           <FlowMetric label="Pendiente" value={pending} primary />
-          <FlowMetric label="Stock en bodega" value={stockLoading ? '…' : physicalStock === null ? '—' : physicalStock} warning={outOfStock} />
           <FlowMetric label="Ya agregado" value={alreadyInSession} warning={alreadyInSession > 0} />
         </View>
-      ) : null}
-      {hasWarehouse && !stockLoading && physicalStock === null ? (
-        <Text style={[styles.detailsHint, { color: colors.text.secondary, textAlign: 'center' }]}>No se pudo consultar el stock físico; se validará al registrar la salida.</Text>
-      ) : null}
-      {outOfStock ? (
-        <Text style={[styles.detailsWarning, { color: colors.error.main }]}>Sin stock físico en {warehouseName}. {needsChoice ? 'Elige otra bodega o revisa el inventario.' : 'Revisa el inventario antes de continuar.'}</Text>
       ) : null}
       {hasWarehouse && alreadyInSession > 0 ? (
         <Text style={[styles.detailsWarning, { color: colors.warning.main }]}>Ya tienes {alreadyInSession} de este producto en esta salida; la cantidad se sumará.</Text>

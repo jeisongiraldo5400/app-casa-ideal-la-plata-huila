@@ -77,7 +77,6 @@ function seedReview(quantity = 2) {
     currentScannedBarcode: '770123',
     currentQuantity: quantity,
     currentAvailableStock: 5,
-    currentPhysicalStock: 10,
     warehouseId: 'warehouse-1',
     targetOrderItemId: 'item-1',
   });
