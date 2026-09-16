@@ -225,21 +225,21 @@ describe('scanBarcode: resolución de bodega y stock físico', () => {
     expect(progress?.totalRequired).toBe(6);
   });
 
-  it('selectScanWarehouse fija la bodega elegida, la línea FIFO de esa bodega y consulta su stock', async () => {
+  it('selectScanWarehouse fija la bodega elegida y la línea FIFO de esa bodega', async () => {
     seed(multiWarehouseOrder);
     await useExitsStore.getState().scanBarcode('770123');
-    mockFetchWarehouseStock.mockResolvedValue(4);
 
     await useExitsStore.getState().selectScanWarehouse('warehouse-2');
 
     const state = useExitsStore.getState();
-    expect(mockFetchWarehouseStock).toHaveBeenCalledWith('product-1', 'warehouse-2');
     expect(state.warehouseId).toBe('warehouse-2');
     expect(state.targetOrderItemId).toBe('item-2');
     expect(state.currentAvailableStock).toBe(2);
-    expect(state.currentPhysicalStock).toBe(4);
     expect(state.currentQuantity).toBe(1);
     expect(state.loading).toBe(false);
+    // El stock de la bodega ya no se consulta: las unidades quedaron separadas
+    // al crear la orden y warehouse_stock las descontó entonces.
+    expect(mockFetchWarehouseStock).not.toHaveBeenCalled();
   });
 
   it('con una sola bodega se resuelve sola y el pendiente es el agregado de todas sus líneas', async () => {
@@ -251,48 +251,39 @@ describe('scanBarcode: resolución de bodega y stock físico', () => {
     expect(state.warehouseId).toBe('warehouse-1');
     expect(state.targetOrderItemId).toBe('item-1');
     expect(state.currentAvailableStock).toBe(6);
-    expect(state.currentPhysicalStock).toBe(10);
-    expect(mockFetchWarehouseStock).toHaveBeenCalledWith('product-1', 'warehouse-1');
+    expect(mockFetchWarehouseStock).not.toHaveBeenCalled();
   });
 
-  it('sin stock físico deja la cantidad en 0 y rechaza agregar', async () => {
+  // Regresión: la bodega aparece en cero porque la propia orden ya reservó las
+  // unidades. Bloquear la salida por ese cero dejaba mercancía apartada sin
+  // poder despacharse (OE-2026-3402 en ALMACEN CRISTINA, 16/09/2026).
+  it('despacha aunque la bodega figure en cero: las unidades están separadas', async () => {
     seed(singleWarehouseOrder);
     mockFetchWarehouseStock.mockResolvedValue(0);
 
     await useExitsStore.getState().scanBarcode('770123');
-    expect(useExitsStore.getState().currentQuantity).toBe(0);
+    expect(useExitsStore.getState().currentQuantity).toBe(1);
 
     const result = await useExitsStore.getState().addProductToExit(product, 1, '770123');
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('Stock físico insuficiente');
-    expect(useExitsStore.getState().exitItems).toHaveLength(0);
+    expect(result).toEqual({ ok: true, error: null });
+    expect(useExitsStore.getState().exitItems).toHaveLength(1);
   });
 
-  it('el stock físico acota la cantidad aunque la orden tenga más pendiente', async () => {
+  it('el tope es lo pendiente en la orden, no el stock de la bodega', async () => {
     seed(singleWarehouseOrder);
     mockFetchWarehouseStock.mockResolvedValue(2);
     await useExitsStore.getState().scanBarcode('770123');
 
-    const rejected = await useExitsStore.getState().addProductToExit(product, 3, '770123');
-    expect(rejected.ok).toBe(false);
-    expect(rejected.error).toContain('Disponible: 2');
-
-    const accepted = await useExitsStore.getState().addProductToExit(product, 2, '770123');
+    // La orden tiene 6 pendientes: se pueden agregar aunque la bodega diga 2.
+    const accepted = await useExitsStore.getState().addProductToExit(product, 5, '770123');
     expect(accepted).toEqual({ ok: true, error: null });
     expect(useExitsStore.getState().exitItems[0]).toEqual(
-      expect.objectContaining({ quantity: 2, warehouseId: 'warehouse-1', physicalStock: 2, availableStock: 0 })
+      expect.objectContaining({ quantity: 5, warehouseId: 'warehouse-1', availableStock: 1 })
     );
-  });
 
-  it('si la consulta de stock falla, sigue con el pendiente de la orden', async () => {
-    seed(singleWarehouseOrder);
-    mockFetchWarehouseStock.mockRejectedValue(new Error('network'));
-
-    await useExitsStore.getState().scanBarcode('770123');
-
-    expect(useExitsStore.getState().currentPhysicalStock).toBeNull();
-    const result = await useExitsStore.getState().addProductToExit(product, 5, '770123');
-    expect(result.ok).toBe(true);
+    // Pasarse de lo pendiente sí se rechaza.
+    const rejected = await useExitsStore.getState().addProductToExit(product, 2, '770123');
+    expect(rejected.ok).toBe(false);
   });
 
   it('un fallo de red al buscar el producto no se reporta como "código no registrado"', async () => {
@@ -413,7 +404,7 @@ describe('selectDeliveryOrder: cambio de destinatario durante la carga', () => {
 });
 
 describe('finalizeExit: autorización y sincronización', () => {
-  const exitItem: ExitItem = { product, quantity: 2, barcode: '770123', warehouseId: 'warehouse-1', physicalStock: 5 };
+  const exitItem: ExitItem = { product, quantity: 2, barcode: '770123', warehouseId: 'warehouse-1' };
 
   beforeEach(() => {
     jest.clearAllMocks();

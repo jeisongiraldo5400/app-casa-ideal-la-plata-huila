@@ -257,7 +257,6 @@ describe('ExitScanningWorkspace', () => {
       currentScannedBarcode: '770123',
       currentQuantity: 1,
       currentAvailableStock: 3,
-      currentPhysicalStock: 5,
       warehouseId: 'warehouse-1',
       targetOrderItemId: 'item-1',
       addCurrentSerial,
