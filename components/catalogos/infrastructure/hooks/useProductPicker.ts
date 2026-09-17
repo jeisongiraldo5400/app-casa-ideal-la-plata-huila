@@ -117,6 +117,10 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
       if (pendingIds.has(productId)) return;
       const shouldAdd = !selected.has(productId);
 
+      // Invalidar ya, no solo al terminar: si el usuario vuelve al Detalle con
+      // la escritura en curso, la caché no puede pasar por fresca. Al terminar
+      // se invalida otra vez para que la pantalla enfocada recargue.
+      invalidateCatalogCache(catalogId);
       setPendingIds((current) => new Set(current).add(productId));
       setSelected((current) => {
         const next = new Set(current);
@@ -170,7 +174,7 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
         });
         Alert.alert('No se pudo actualizar la selección', errorMessage(caught));
       } finally {
-        // Detalle y Compartir deben recargar la selección al volver (también si falló a medias).
+        // Detalle y Compartir recargan la selección definitiva (también si falló a medias).
         invalidateCatalogCache(catalogId);
         setPendingIds((current) => {
           const next = new Set(current);

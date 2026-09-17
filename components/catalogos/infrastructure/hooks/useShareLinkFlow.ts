@@ -2,13 +2,16 @@ import { useCallback, useMemo, useState } from 'react';
 import { errorMessage } from '@/lib/errorMessage';
 import { evaluateCatalogReadiness, type CatalogReadiness } from '@/lib/catalogos/readiness';
 import { summarizeSectionProducts } from '@/lib/catalogos/sectionCounts';
+import { collectSelectionIds } from '@/lib/catalogos/snapshot';
 import { buildMagazineUrl, catalogSiteUrl, expiresAtFromHours } from '@/lib/catalogos/shareLinks';
 import type { PrivateCatalogDetail } from '@/lib/catalogos/types';
 import { hasErrors, validateShareLinkInput, type ShareLinkErrors } from '@/lib/catalogos/validators';
-import { shareLinkByWhatsApp } from '../../utils/shareActions';
+import { waitForModalDismissal } from '../../utils/modalTransition';
+import { shareLinkByWhatsApp, type WhatsAppOutcome } from '../../utils/shareActions';
 import { buildShareMessage } from '../../utils/shareMessages';
 import { createCatalogShareLink, reissueCatalogShareLink } from '../services/catalogShareLinksService';
-import { buildCatalogSnapshot, type SnapshotProgress } from '../services/catalogSnapshotService';
+import { buildCatalogSnapshot, type KnownListing, type SnapshotProgress } from '../services/catalogSnapshotService';
+import { getPrivateCatalog } from '../services/catalogsService';
 import { generateShareToken } from '../services/shareTokenService';
 import { invalidateCatalogCache } from '../store/catalogosStore';
 import type { CategoryPreviewLookup, ProductLookup } from './useCatalogDetail';
@@ -19,9 +22,14 @@ export type ShareLinkResult = {
   expiresAt: string;
   /** `true` cuando viene de «Reemitir». */
   reissued: boolean;
+  /** Cómo se intentó enviar por WhatsApp al generarlo; `null` si no se intentó. */
+  whatsApp: WhatsAppOutcome | null;
 };
 
-/** `whatsapp`: al terminar abre WhatsApp con el mensaje; `none`: muestra la hoja para copiar o abrir. */
+/**
+ * `whatsapp`: al terminar abre WhatsApp con el mensaje; `none`: no lo abre.
+ * En los dos casos queda la hoja con el enlace para copiarlo o abrirlo.
+ */
 export type ShareLinkDelivery = 'whatsapp' | 'none';
 
 export type CreateShareLinkRequest = { label: string; hours: number; delivery: ShareLinkDelivery };
@@ -38,7 +46,11 @@ export type ShareLinkFlowState = {
   reissueError: string | null;
   result: ShareLinkResult | null;
   create: (input: CreateShareLinkRequest) => Promise<boolean>;
-  reissue: (shareLinkId: string, label: string, hours: number) => Promise<boolean>;
+  /**
+   * `onSuccess` corre en cuanto el servidor confirma, ANTES de mostrar el
+   * resultado: ahí se cierra la hoja de Reemitir (iOS no apila modales).
+   */
+  reissue: (shareLinkId: string, label: string, hours: number, options?: { onSuccess?: () => void }) => Promise<boolean>;
   clearReissueError: () => void;
   dismissResult: () => void;
 };
@@ -63,6 +75,21 @@ export function previewReadiness(
   );
 }
 
+/** Solo lo cargado que sigue en la selección actual se reutiliza en el snapshot. */
+function knownForSelection(detail: PrivateCatalogDetail, products: ProductLookup, categories: CategoryPreviewLookup): KnownListing {
+  const { productIds, categoryIds } = collectSelectionIds(detail.sections);
+  return {
+    products: new Map(productIds.flatMap((productId) => {
+      const product = products.get(productId);
+      return product ? [[productId, product] as const] : [];
+    })),
+    categories: new Map(categoryIds.flatMap((categoryId) => {
+      const preview = categories.get(categoryId);
+      return preview ? [[categoryId, preview] as const] : [];
+    })),
+  };
+}
+
 export function useShareLinkFlow(
   detail: PrivateCatalogDetail | null,
   products: ProductLookup,
@@ -79,12 +106,13 @@ export function useShareLinkFlow(
 
   const readiness = useMemo(() => previewReadiness(detail, products, categories), [detail, products, categories]);
   const siteConfigured = catalogSiteUrl() !== null;
+  const catalogId = detail?.id ?? null;
 
   const refreshAfterMutation = useCallback(async () => {
-    if (!detail) return;
-    invalidateCatalogCache(detail.id);
+    if (!catalogId) return;
+    invalidateCatalogCache(catalogId);
     await reload();
-  }, [detail, reload]);
+  }, [catalogId, reload]);
 
   const create = useCallback(
     async ({ label, hours, delivery }: CreateShareLinkRequest) => {
@@ -97,11 +125,15 @@ export function useShareLinkFlow(
       setSubmitError(null);
       setProgress(null);
       try {
+        // La caché puede ser de antes de un cambio (otra pantalla, otro
+        // dispositivo): la edición se congela con la selección de ahora.
+        const fresh = await getPrivateCatalog(detail.id);
+        if (!fresh) throw new Error('El catálogo ya no está disponible. Puede que se haya archivado.');
         // Los productos sueltos y las categorías pequeñas ya cargadas no se vuelven a pedir.
-        const snapshot = await buildCatalogSnapshot(detail, { known: { products, categories }, onProgress: setProgress });
+        const snapshot = await buildCatalogSnapshot(fresh, { known: knownForSelection(fresh, products, categories), onProgress: setProgress });
         const token = await generateShareToken();
         const created = await createCatalogShareLink({
-          catalogId: detail.id,
+          catalogId: fresh.id,
           snapshot,
           token: token.token,
           tokenHash: token.tokenHash,
@@ -109,10 +141,11 @@ export function useShareLinkFlow(
           label,
           expiresAt: expiresAtFromHours(hours),
         });
-        const next: ShareLinkResult = { url: buildMagazineUrl(token.token), label: label.trim(), expiresAt: created.expiresAt, reissued: false };
-        // Sin WhatsApp (o si no abre) queda la hoja con Copiar / Abrir.
-        const sent = delivery === 'whatsapp' && (await shareLinkByWhatsApp(buildShareMessage({ url: next.url, label: next.label })));
-        if (!sent) setResult(next);
+        const url = buildMagazineUrl(token.token);
+        const trimmedLabel = label.trim();
+        const whatsApp = delivery === 'whatsapp' ? await shareLinkByWhatsApp(buildShareMessage({ url, label: trimmedLabel })) : null;
+        // Siempre queda el enlace a mano: abrir WhatsApp no garantiza que se haya enviado.
+        setResult({ url, label: trimmedLabel, expiresAt: created.expiresAt, reissued: false, whatsApp });
         await refreshAfterMutation();
         return true;
       } catch (caught) {
@@ -127,7 +160,7 @@ export function useShareLinkFlow(
   );
 
   const reissue = useCallback(
-    async (shareLinkId: string, label: string, hours: number) => {
+    async (shareLinkId: string, label: string, hours: number, { onSuccess }: { onSuccess?: () => void } = {}) => {
       const validation = validateShareLinkInput({ label, hours });
       if (validation.hours) {
         setReissueError(validation.hours);
@@ -144,7 +177,12 @@ export function useShareLinkFlow(
           tokenHint: token.tokenHint,
           expiresAt: expiresAtFromHours(hours),
         });
-        setResult({ url: buildMagazineUrl(token.token), label, expiresAt: reissued.expiresAt, reissued: true });
+        const next: ShareLinkResult = { url: buildMagazineUrl(token.token), label, expiresAt: reissued.expiresAt, reissued: true, whatsApp: null };
+        // Primero se cierra la hoja de Reemitir y se espera a que se retire:
+        // en iOS el resultado no se mostraría sobre ella.
+        onSuccess?.();
+        await waitForModalDismissal();
+        setResult(next);
         await refreshAfterMutation();
         return true;
       } catch (caught) {

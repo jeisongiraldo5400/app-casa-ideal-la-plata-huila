@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useCatalogAccess } from './useCatalogAccess';
@@ -45,8 +45,13 @@ export type CatalogDetailState = {
  * catálogo ajeno la RLS devuelve los enlaces que uno mismo entregó —nunca los
  * de un compañero, porque la etiqueta es el nombre de su cliente— y el RPC
  * acepta crear enlaces nuevos (migración 20260930120000).
+ *
+ * Con `refreshWhenStale` (por defecto) la pantalla enfocada también recarga
+ * cuando otra parte invalida el catálogo (p. ej. termina una escritura que
+ * empezó en Productos). Productos lo apaga: sus propios cambios no deben
+ * recargarla en cada toque.
  */
-export function useCatalogDetail(id: string | undefined): CatalogDetailState {
+export function useCatalogDetail(id: string | undefined, { refreshWhenStale = true }: { refreshWhenStale?: boolean } = {}): CatalogDetailState {
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
   const access = useCatalogAccess();
@@ -59,6 +64,8 @@ export function useCatalogDetail(id: string | undefined): CatalogDetailState {
   const [notFound, setNotFound] = useState(false);
   // Una respuesta que llega con la pantalla ya fuera de foco no toca su estado.
   const focused = useRef(true);
+  const [isFocused, setIsFocused] = useState(false);
+  const stale = entry?.stale ?? false;
 
   const load = useCallback(
     async (force: boolean) => {
@@ -90,12 +97,20 @@ export function useCatalogDetail(id: string | undefined): CatalogDetailState {
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
+      setIsFocused(true);
       void load(false);
       return () => {
         focused.current = false;
+        setIsFocused(false);
       };
     }, [load])
   );
+
+  // Invalidado mientras se ve (la carga en curso, si la hay, ya se descartó).
+  // Sin `force`: si otra pantalla ya lanzó la recarga, se comparte.
+  useEffect(() => {
+    if (refreshWhenStale && isFocused && stale) void load(false);
+  }, [refreshWhenStale, isFocused, stale, load]);
 
   const setDetail = useCallback(
     (updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => {

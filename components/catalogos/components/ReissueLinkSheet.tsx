@@ -14,6 +14,7 @@ interface ReissueLinkSheetProps {
   /** Fallo del último intento; se pinta aquí porque el modal tapa la pantalla. */
   error: string | null;
   onClose: () => void;
+  /** Al confirmar el servidor, quien llama cierra la hoja antes de mostrar la URL nueva. */
   onConfirm: (link: CatalogShareLink, hours: number) => Promise<boolean>;
 }
 
@@ -41,7 +42,7 @@ export function ReissueLinkSheet({ link, busy, error, onClose, onConfirm }: Reis
           <Button title="Cancelar" variant="outline" onPress={onClose} disabled={busy} style={styles.secondary} />
           <Button
             title="Reemitir"
-            onPress={() => void onConfirm(link, Number(hours)).then((ok) => ok && onClose())}
+            onPress={() => void onConfirm(link, Number(hours))}
             loading={busy}
             style={styles.primary}
           />

@@ -17,3 +17,4 @@ export { ShareLinksPanel } from './components/ShareLinksPanel';
 export { ReissueLinkSheet } from './components/ReissueLinkSheet';
 export { ArchiveCatalogButton } from './components/ArchiveCatalogButton';
 export { WebOnlyNotice } from './components/WebOnlyNotice';
+export { CATALOGS_TAB_HREF, leaveCatalog, openCreatedCatalog } from './utils/catalogNavigation';

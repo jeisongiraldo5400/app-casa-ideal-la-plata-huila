@@ -5,7 +5,7 @@ import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { ActionBar, Button, Card, Input, ScreenErrorBoundary, ScreenState } from '@/components/ui';
-import { useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
+import { openCreatedCatalog, useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import { createPrivateCatalog } from '@/components/catalogos/infrastructure/services/catalogsService';
 import { errorMessage } from '@/lib/errorMessage';
 import { hasErrors, validateCreateCatalog, type CreateCatalogErrors } from '@/lib/catalogos/validators';
@@ -48,10 +48,11 @@ function CatalogoCreateInner() {
     try {
       const { id } = await createPrivateCatalog({ internalTitle });
       invalidateCatalog(id);
+      // La pestaña no se desmonta: la próxima vez debe abrir limpia.
       setInternalTitle('');
-      // Directo al selector, con el detalle debajo para que «atrás» lleve al catálogo.
-      router.replace(`/catalogo/${id}` as never);
-      router.push(`/catalogo/${id}/productos` as never);
+      setErrors({});
+      // Directo al selector, con el detalle y la lista debajo para que «atrás» los recorra.
+      openCreatedCatalog(router, id);
     } catch (caught) {
       setSubmitError(errorMessage(caught, 'No fue posible crear el catálogo.'));
     } finally {

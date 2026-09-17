@@ -150,6 +150,50 @@ describe('useCatalogDetail', () => {
     await waitFor(() => expect(second.result.current.loading).toBe(false));
   });
 
+  it('recarga si el catálogo se invalida mientras la pantalla está enfocada', async () => {
+    mockedGet.mockResolvedValue(detail('vendedor-1'));
+    const { result } = renderHook(() => useCatalogDetail('cat-1'));
+    await waitFor(() => expect(result.current.detail).not.toBeNull());
+    expect(mockedGet).toHaveBeenCalledTimes(1);
+
+    // P. ej. termina una escritura que empezó en Productos.
+    act(() => useCatalogosStore.getState().invalidateCatalog('cat-1'));
+    await waitFor(() => expect(mockedGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(useCatalogosStore.getState().details['cat-1']?.stale).toBe(false));
+    expect(mockedGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('con refreshWhenStale apagado no recarga por una invalidación', async () => {
+    mockedGet.mockResolvedValue(detail('vendedor-1'));
+    const { result } = renderHook(() => useCatalogDetail('cat-1', { refreshWhenStale: false }));
+    await waitFor(() => expect(result.current.detail).not.toBeNull());
+
+    act(() => useCatalogosStore.getState().invalidateCatalog('cat-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockedGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('una carga descartada por una invalidación no marca el catálogo como inexistente', async () => {
+    let resolveFirst: (value: PrivateCatalogDetail) => void = () => undefined;
+    mockedGet.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)));
+    mockedGet.mockResolvedValue(detail('vendedor-1'));
+    const { result } = renderHook(() => useCatalogDetail('cat-1', { refreshWhenStale: false }));
+    await waitFor(() => expect(mockedGet).toHaveBeenCalledTimes(1));
+
+    // Sin caché todavía: la carga en curso queda descartada.
+    act(() => useCatalogosStore.getState().invalidateCatalog('cat-1'));
+    await act(async () => {
+      resolveFirst(detail('vendedor-1'));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.notFound).toBe(false);
+    expect(result.current.detail).not.toBeNull();
+    expect(mockedGet).toHaveBeenCalledTimes(2);
+  });
+
   it('de las categorías completas solo pide la muestra de miniaturas y su total', async () => {
     const withCategory = detail('vendedor-1');
     withCategory.sections = [

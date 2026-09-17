@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
@@ -37,6 +37,11 @@ function CatalogoCompartirInner() {
   const flow = useShareLinkFlow(detail, products, categories, reload);
   const [reissueTarget, setReissueTarget] = useState<CatalogShareLink | null>(null);
   const screenOptions = { title: 'Compartir', headerLeft: () => <BackButton /> };
+  const clearReissueError = flow.clearReissueError;
+  const closeReissue = useCallback(() => {
+    clearReissueError();
+    setReissueTarget(null);
+  }, [clearReissueError]);
 
   if (loading && !detail) {
     return (
@@ -155,11 +160,9 @@ function CatalogoCompartirInner() {
         link={reissueTarget}
         busy={flow.reissuingId !== null}
         error={flow.reissueError}
-        onClose={() => {
-          flow.clearReissueError();
-          setReissueTarget(null);
-        }}
-        onConfirm={(link, hours) => flow.reissue(link.id, link.label, hours)}
+        onClose={closeReissue}
+        // La hoja se cierra en cuanto el servidor confirma; la URL nueva se muestra después (iOS no apila modales).
+        onConfirm={(link, hours) => flow.reissue(link.id, link.label, hours, { onSuccess: closeReissue })}
       />
     </View>
   );

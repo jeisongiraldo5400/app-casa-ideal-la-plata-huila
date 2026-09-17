@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Button, Card, Input, OptionPickerField } from '@/components/ui';
@@ -22,18 +22,26 @@ interface ShareLinkCreateFormProps {
 
 export const SHARE_LINK_DURATION_OPTIONS = SHARE_LINK_DURATIONS.map((duration) => ({ value: String(duration.hours), label: duration.label }));
 
-/** Acción principal: generar y abrir WhatsApp en un toque. «Solo generar» deja la hoja para copiar o abrir. */
+/** Acción principal: generar y abrir WhatsApp en un toque. «Solo generar» no lo abre; en ambos queda la hoja para copiar o abrir. */
 export function ShareLinkCreateForm({ disabled, creating, progress, errors, submitError, notice, onCreate }: ShareLinkCreateFormProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [label, setLabel] = useState('');
   const [hours, setHours] = useShareLinkHours();
   const [delivery, setDelivery] = useState<ShareLinkDelivery>('whatsapp');
+  // `creating` llega un render tarde: dos toques seguidos generarían dos enlaces.
+  const submitting = useRef(false);
 
   const submit = async (next: ShareLinkDelivery) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setDelivery(next);
-    const ok = await onCreate({ label, hours: Number(hours), delivery: next });
-    if (ok) setLabel('');
+    try {
+      const ok = await onCreate({ label, hours: Number(hours), delivery: next });
+      if (ok) setLabel('');
+    } finally {
+      submitting.current = false;
+    }
   };
 
   const progressLabel =

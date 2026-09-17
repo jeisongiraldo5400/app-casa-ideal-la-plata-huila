@@ -72,6 +72,8 @@ describe('listPrivateCatalogs', () => {
     const list = await listPrivateCatalogs('user-1');
     expect(builders.catalogs.is).toHaveBeenCalledWith('archived_at', null);
     expect(builders.catalogs.order).toHaveBeenCalledWith('updated_at', { ascending: false });
+    // `updated_at` cambia con cada mutación: el id desempata entre páginas.
+    expect(builders.catalogs.order).toHaveBeenCalledWith('id');
     expect(list).toHaveLength(1);
     expect(list[0].isOwner).toBe(true);
     expect(list[0].scope).toBe('own');
@@ -146,6 +148,45 @@ describe('getPrivateCatalog', () => {
     builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
     await getPrivateCatalog('cat-1');
     expect((builders.catalog_share_links.select.mock.calls[0][0] as string).split(',')).toContain('token');
+  });
+
+  it('pagina categorías, elementos y enlaces más allá del tope de 1000 filas, con orden estable', async () => {
+    builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
+    const itemRow = (index: number) => ({
+      id: `item-${index}`,
+      catalog_id: 'cat-1',
+      section_id: 'sec-1',
+      item_type: 'product',
+      reference_id: `p-${index}`,
+      is_featured: false,
+      sort_order: index,
+    });
+    const pages = [Array.from({ length: POSTGREST_PAGE_SIZE }, (_, index) => itemRow(index)), [itemRow(POSTGREST_PAGE_SIZE)]];
+    const items = makeBuilder({ data: [], error: null });
+    (items as unknown as { then: unknown }).then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({ data: pages.shift() ?? [], error: null }).then(resolve);
+    builders.catalog_items = items;
+    builders.catalog_sections = makeBuilder({
+      data: [{ id: 'sec-1', catalog_id: 'cat-1', title: 'Productos', kicker: null, body: null, image_url: null, sort_order: 0 }],
+      error: null,
+    });
+
+    const detail = await getPrivateCatalog('cat-1');
+
+    expect(items.range).toHaveBeenCalledWith(0, POSTGREST_PAGE_SIZE - 1);
+    expect(items.range).toHaveBeenCalledWith(POSTGREST_PAGE_SIZE, 2 * POSTGREST_PAGE_SIZE - 1);
+    expect(items.order).toHaveBeenCalledWith('id');
+    expect(detail?.sections[0].items).toHaveLength(POSTGREST_PAGE_SIZE + 1);
+    for (const table of ['catalog_sections', 'catalog_share_links', 'catalog_versions']) {
+      expect(builders[table].range).toHaveBeenCalledWith(0, POSTGREST_PAGE_SIZE - 1);
+      expect(builders[table].order).toHaveBeenCalledWith('id');
+    }
+  });
+
+  it('propaga el fallo de una consulta hija con su mensaje', async () => {
+    builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
+    builders.catalog_items = makeBuilder({ data: null, error: { message: 'boom' } });
+    await expect(getPrivateCatalog('cat-1')).rejects.toThrow('No fue posible cargar los productos seleccionados: boom');
   });
 
   it('carga capítulos y elementos ordenados por sort_order', async () => {

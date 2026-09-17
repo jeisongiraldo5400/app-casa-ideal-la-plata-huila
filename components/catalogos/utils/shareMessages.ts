@@ -19,6 +19,12 @@ export function buildShareMessage({ url, label }: ShareMessageInput): string {
   return `${recipient ? `Hola ${recipient}. ` : ''}Te comparto este catálogo de Casa Ideal: ${url}`;
 }
 
+/** Abre la app de WhatsApp directamente (falla si no está instalada). */
+export function buildWhatsAppAppUrl(message: string): string {
+  return `whatsapp://send?text=${encodeURIComponent(message)}`;
+}
+
+/** Alternativa web: el navegador la abre siempre, esté o no la app. */
 export function buildWhatsAppUrl(message: string): string {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }

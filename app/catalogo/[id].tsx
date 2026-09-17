@@ -12,6 +12,7 @@ import {
   CatalogTextsSheet,
   ShareLinkRow,
   WebOnlyNotice,
+  leaveCatalog,
   useCatalogDetail,
   useCatalogSummary,
   useCatalogosStore,
@@ -172,7 +173,7 @@ function CatalogoDetailInner() {
               internalTitle={detail.internalTitle}
               onArchived={() => {
                 removeFromList(detail.id);
-                router.back();
+                leaveCatalog(router);
               }}
             />
           </View>

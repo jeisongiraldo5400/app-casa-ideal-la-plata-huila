@@ -59,13 +59,19 @@ export async function listPublicCatalogProductsByIds(productIds: readonly string
  * snapshot para expandir selecciones de tipo «categoría».
  */
 export async function listAllPublicCatalogProductsInCategory(categoryId: string): Promise<PublicCatalogListingItem[]> {
-  const items: PublicCatalogListingItem[] = [];
+  // Por `productId`: si el listado cambia entre páginas (paginación por
+  // desplazamiento), una ficha puede repetirse en dos páginas.
+  const byProductId = new Map<string, PublicCatalogListingItem>();
+  let fetched = 0;
   for (let page = 1; page <= MAX_CATEGORY_PAGES; page += 1) {
     const result = await listPublicCatalogProducts({ categoryId, page, pageSize: CATEGORY_PAGE_SIZE });
-    items.push(...result.items);
-    if (items.length >= result.totalCount || result.items.length === 0) break;
+    for (const item of result.items) {
+      if (!byProductId.has(item.productId)) byProductId.set(item.productId, item);
+    }
+    fetched += result.items.length;
+    if (fetched >= result.totalCount || result.items.length === 0) break;
   }
-  return items;
+  return [...byProductId.values()];
 }
 
 /**
@@ -151,13 +157,21 @@ async function getProductDetailsBatch(slugs: readonly string[]): Promise<Map<str
   }
   if (error) throw new Error(`No fue posible cargar las fichas: ${error.message}`);
   // El RPC devuelve el slug real de la ficha y compara sin mayúsculas: se
-  // indexa por el slug tal como se pidió.
-  const requested = new Map(slugs.map((slug) => [slug.toLowerCase(), slug] as const));
+  // indexa por cada slug tal como se pidió (dos pedidos que solo difieren en
+  // mayúsculas reciben la misma ficha, como en el web).
+  const requested = new Map<string, string[]>();
+  for (const slug of slugs) {
+    const key = slug.toLowerCase();
+    const bucket = requested.get(key);
+    if (!bucket) requested.set(key, [slug]);
+    else if (!bucket.includes(slug)) bucket.push(slug);
+  }
   const bySlug = new Map<string, PublicCatalogProductDetail>();
   for (const row of (data ?? []) as unknown as ProductDetailBatchRow[]) {
-    const slug = requested.get(row.slug.toLowerCase());
-    if (!slug || !row.detail || typeof row.detail !== 'object') continue;
-    bySlug.set(slug, mapPublicCatalogProductDetail({ ...row.detail, stockQuantity: Number(row.detail.stockQuantity ?? 0) }));
+    const asked = requested.get(row.slug.toLowerCase());
+    if (!asked || !row.detail || typeof row.detail !== 'object') continue;
+    const productDetail = mapPublicCatalogProductDetail({ ...row.detail, stockQuantity: Number(row.detail.stockQuantity ?? 0) });
+    for (const slug of asked) bySlug.set(slug, productDetail);
   }
   return bySlug;
 }

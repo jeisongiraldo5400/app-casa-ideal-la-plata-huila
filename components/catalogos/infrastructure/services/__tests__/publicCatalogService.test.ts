@@ -82,6 +82,19 @@ describe('listAllPublicCatalogProductsInCategory', () => {
     expect(mockRpc.mock.calls[1][1]).toMatchObject({ page: 2, page_size: 100 });
   });
 
+  it('no repite una ficha que se corrió de página entre dos consultas', async () => {
+    const page1 = Array.from({ length: 100 }, (_, index) => listingRow(index, 150));
+    // La página 2 repite la última ficha de la 1 (se publicó otra antes de ella).
+    const page2 = Array.from({ length: 50 }, (_, index) => listingRow(99 + index, 150));
+    mockRpc.mockResolvedValueOnce({ data: page1, error: null }).mockResolvedValueOnce({ data: page2, error: null });
+
+    const items = await listAllPublicCatalogProductsInCategory('cat-1');
+
+    expect(items).toHaveLength(149);
+    expect(new Set(items.map((item) => item.productId)).size).toBe(149);
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+  });
+
   it('corta cuando una página vuelve vacía', async () => {
     mockRpc.mockResolvedValueOnce({ data: [], error: null });
     await expect(listAllPublicCatalogProductsInCategory('cat-1')).resolves.toEqual([]);
@@ -171,6 +184,14 @@ describe('getPublicCatalogProductDetails', () => {
     expect(result.get('b')?.stockQuantity).toBe(0);
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('get_public_catalog_products_detail', { p_slugs: ['a', 'b', 'c'] });
+  });
+
+  it('slugs que solo difieren en mayúsculas reciben la misma ficha', async () => {
+    mockRpc.mockResolvedValueOnce({ data: [{ slug: 'Sofa-Cama', detail: { ...rawDetail('sofa-cama'), stockQuantity: '2' } }], error: null });
+    const result = await getPublicCatalogProductDetails(['Sofa-Cama', 'sofa-cama', 'SOFA-CAMA']);
+    expect([...result.keys()]).toEqual(['Sofa-Cama', 'sofa-cama', 'SOFA-CAMA']);
+    expect(result.get('sofa-cama')?.stockQuantity).toBe(2);
+    expect(result.get('SOFA-CAMA')).toBe(result.get('Sofa-Cama'));
   });
 
   it('sin el RPC por lote vuelve a ficha y existencias por slug', async () => {

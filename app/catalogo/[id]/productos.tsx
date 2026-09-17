@@ -24,7 +24,8 @@ function CatalogoProductosGate() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, loading, error, notFound, isOwner, canShare, reload } = useCatalogDetail(id);
+  // La selección vive en el selector: sus propias escrituras no recargan esta pantalla.
+  const { detail, loading, error, notFound, isOwner, canShare, reload } = useCatalogDetail(id, { refreshWhenStale: false });
   const screenOptions = { title: 'Productos', headerLeft: () => <BackButton /> };
 
   if (loading && !detail) {

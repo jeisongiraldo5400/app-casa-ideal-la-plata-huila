@@ -14,7 +14,11 @@ interface ShareLinkResultSheetProps {
   onClose: () => void;
 }
 
-/** Recibo del enlace creado con «Solo generar» o reemitido: copiar y abrir primero, luego enviarlo. */
+/**
+ * Recibo del enlace creado o reemitido: copiar y abrir primero, luego enviarlo.
+ * También aparece tras «Generar y enviar», porque abrir WhatsApp no garantiza
+ * que el mensaje haya salido.
+ */
 export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLinkResultSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -36,6 +40,11 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
       title={result.reissued ? 'Enlace reemitido' : 'Enlace listo'}
       subtitle={`${result.label ? `Para ${result.label} · ` : ''}Vence el ${formatCatalogDateTime(result.expiresAt)}`}
       footer={<Button title="Listo" variant="outline" onPress={onClose} style={styles.done} />}>
+      {result.whatsApp === 'app' || result.whatsApp === 'web' ? (
+        <Text style={[styles.hint, { color: colors.text.secondary }]}>
+          Se abrió WhatsApp con el mensaje. Si no alcanzaste a enviarlo, cópialo o compártelo desde aquí.
+        </Text>
+      ) : null}
       <View style={[styles.urlBox, { backgroundColor: colors.surface.sunken }]}>
         <Text selectable style={[styles.url, { color: colors.text.primary }]}>
           {result.url}
@@ -61,6 +70,7 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
 const styles = StyleSheet.create({
   urlBox: { borderRadius: Radius.control, padding: Spacing.md },
   url: { ...Typography.bodySmall },
+  hint: { ...Typography.caption },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   action: { flex: 1 },
   done: { flex: 1 },

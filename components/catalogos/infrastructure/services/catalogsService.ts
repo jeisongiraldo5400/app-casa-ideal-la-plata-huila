@@ -5,6 +5,7 @@ import type { PrivateCatalogDetail, PrivateCatalogListItem } from '@/lib/catalog
 import type { CatalogRow, ItemRow, SectionRow, ShareLinkRow, ShareLinkSummaryRow, VersionRow } from '../database';
 
 type VersionNumberRow = Pick<VersionRow, 'id' | 'version_number'>;
+type ShareLinkDetailRow = ShareLinkSummaryRow & Pick<ShareLinkRow, 'token'>;
 type PostgrestPage<T> = { data: T[] | null; error: { message: string } | null };
 
 /** Tope de filas que PostgREST devuelve por petición. */
@@ -123,26 +124,50 @@ export async function listPrivateCatalogs(viewerId: string): Promise<PrivateCata
   );
 }
 
+/**
+ * Detalle con categorías, elementos, enlaces y versiones. Todo lo que cuelga
+ * del catálogo se pagina con orden estable (PostgREST corta en 1000 filas).
+ */
 export async function getPrivateCatalog(id: string): Promise<PrivateCatalogDetail | null> {
-  const [catalog, sections, items, links, versions] = await Promise.all([
-    supabase.from('catalogs').select(CATALOG_COLUMNS).eq('id', id).maybeSingle(),
-    supabase.from('catalog_sections').select('*').eq('catalog_id', id).order('sort_order'),
-    supabase.from('catalog_items').select('*').eq('catalog_id', id).order('sort_order'),
-    supabase.from('catalog_share_links').select(LINK_DETAIL_COLUMNS).eq('catalog_id', id).order('created_at', { ascending: false }),
-    supabase.from('catalog_versions').select('id,version_number').eq('catalog_id', id),
+  const catalogRequest = supabase.from('catalogs').select(CATALOG_COLUMNS).eq('id', id).maybeSingle();
+  const childrenRequest = Promise.all([
+    fetchAllPages<SectionRow>(
+      (from, to) => supabase.from('catalog_sections').select('*').eq('catalog_id', id).order('sort_order').order('id').range(from, to),
+      'No fue posible cargar las categorías'
+    ),
+    fetchAllPages<ItemRow>(
+      (from, to) => supabase.from('catalog_items').select('*').eq('catalog_id', id).order('sort_order').order('id').range(from, to),
+      'No fue posible cargar los productos seleccionados'
+    ),
+    fetchAllPages<ShareLinkDetailRow>(
+      (from, to) =>
+        supabase
+          .from('catalog_share_links')
+          .select(LINK_DETAIL_COLUMNS)
+          .eq('catalog_id', id)
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(from, to),
+      'No fue posible cargar los enlaces'
+    ),
+    fetchAllPages<VersionNumberRow>(
+      (from, to) => supabase.from('catalog_versions').select('id,version_number').eq('catalog_id', id).order('id').range(from, to),
+      'No fue posible cargar las versiones'
+    ),
   ]);
+  // Si el catálogo no existe, un fallo de las demás consultas no debe quedar sin manejar.
+  childrenRequest.catch(() => undefined);
+
+  const catalog = await catalogRequest;
   if (catalog.error) throw new Error(`No fue posible cargar el catálogo: ${catalog.error.message}`);
   if (!catalog.data) return null;
-  if (sections.error) throw new Error(`No fue posible cargar las categorías: ${sections.error.message}`);
-  if (items.error) throw new Error(`No fue posible cargar los productos seleccionados: ${items.error.message}`);
-  if (links.error) throw new Error(`No fue posible cargar los enlaces: ${links.error.message}`);
-  if (versions.error) throw new Error(`No fue posible cargar las versiones: ${versions.error.message}`);
+  const [sections, items, links, versions] = await childrenRequest;
 
-  const versionsById = versionNumbers(versions.data as VersionNumberRow[] | null);
+  const versionsById = versionNumbers(versions);
   return {
     ...mapCatalogRow(catalog.data as unknown as CatalogRow),
-    sections: mapSections((sections.data ?? []) as SectionRow[], (items.data ?? []) as ItemRow[]),
-    shareLinks: ((links.data ?? []) as unknown as ShareLinkRow[]).map((row) => mapShareLink(row, versionsById)),
+    sections: mapSections(sections, items),
+    shareLinks: links.map((row) => mapShareLink(row, versionsById)),
   };
 }
 

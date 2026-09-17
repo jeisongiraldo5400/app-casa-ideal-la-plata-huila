@@ -7,6 +7,8 @@ const mockCreateLink = jest.fn();
 const mockReissueLink = jest.fn();
 const mockWhatsApp = jest.fn();
 const mockInvalidate = jest.fn();
+const mockGetCatalog = jest.fn();
+const mockWaitForDismissal = jest.fn();
 
 jest.mock('../../services/catalogSnapshotService', () => ({ buildCatalogSnapshot: (...args: unknown[]) => mockBuildSnapshot(...args) }));
 jest.mock('../../services/catalogShareLinksService', () => ({
@@ -18,6 +20,8 @@ jest.mock('../../services/shareTokenService', () => ({
 }));
 jest.mock('../../../utils/shareActions', () => ({ shareLinkByWhatsApp: (...args: unknown[]) => mockWhatsApp(...args) }));
 jest.mock('../../store/catalogosStore', () => ({ invalidateCatalogCache: (...args: unknown[]) => mockInvalidate(...args) }));
+jest.mock('../../services/catalogsService', () => ({ getPrivateCatalog: (...args: unknown[]) => mockGetCatalog(...args) }));
+jest.mock('../../../utils/modalTransition', () => ({ waitForModalDismissal: () => mockWaitForDismissal() }));
 
 const previousSite = process.env.EXPO_PUBLIC_CATALOG_SITE_URL;
 
@@ -54,15 +58,33 @@ beforeEach(() => {
   mockBuildSnapshot.mockResolvedValue({ schemaVersion: 1 });
   mockCreateLink.mockResolvedValue({ shareLinkId: 'l-1', expiresAt: '2026-09-20T00:00:00Z' });
   mockReissueLink.mockResolvedValue({ shareLinkId: 'l-2', expiresAt: '2026-09-20T00:00:00Z' });
-  mockWhatsApp.mockResolvedValue(true);
+  mockWhatsApp.mockResolvedValue('app');
+  mockGetCatalog.mockImplementation(async () => catalog());
+  mockWaitForDismissal.mockResolvedValue(undefined);
 });
 
 afterAll(() => {
   process.env.EXPO_PUBLIC_CATALOG_SITE_URL = previousSite;
 });
 
+function productSection(productIds: string[]) {
+  return {
+    id: 's-1',
+    title: 'Sala',
+    kicker: null,
+    body: null,
+    imageUrl: null,
+    sortOrder: 0,
+    items: productIds.map((productId, index) => ({ id: `i-${index}`, itemType: 'product' as const, referenceId: productId, isFeatured: false, sortOrder: index })),
+  };
+}
+
+function listing(productId: string) {
+  return { productId } as never;
+}
+
 describe('useShareLinkFlow.create', () => {
-  it('reutiliza lo cargado, abre WhatsApp con el mensaje del web y no muestra la hoja', async () => {
+  it('abre WhatsApp con el mensaje del web y aun así deja la hoja con el enlace', async () => {
     const reload = jest.fn(async () => undefined);
     const { result } = renderHook(() => useShareLinkFlow(catalog(), products, categories, reload));
 
@@ -70,21 +92,21 @@ describe('useShareLinkFlow.create', () => {
       await expect(result.current.create({ label: 'Ana', hours: 24, delivery: 'whatsapp' })).resolves.toBe(true);
     });
 
-    expect(mockBuildSnapshot.mock.calls[0][1]).toMatchObject({ known: { products, categories } });
     expect(mockWhatsApp).toHaveBeenCalledWith('Hola Ana. Te comparto este catálogo de Casa Ideal: https://catalogo.test/c/tok');
-    expect(result.current.result).toBeNull();
+    // Abrir WhatsApp no garantiza el envío: el enlace queda a mano.
+    expect(result.current.result).toMatchObject({ url: 'https://catalogo.test/c/tok', whatsApp: 'app', reissued: false });
     expect(mockInvalidate).toHaveBeenCalledWith('cat-1');
     expect(reload).toHaveBeenCalled();
   });
 
-  it('si WhatsApp no abre, deja la hoja para copiar el enlace', async () => {
-    mockWhatsApp.mockResolvedValueOnce(false);
+  it('si WhatsApp no abre, la hoja lo refleja', async () => {
+    mockWhatsApp.mockResolvedValueOnce('unavailable');
     const { result } = renderHook(() => useShareLinkFlow(catalog(), products, categories, jest.fn(async () => undefined)));
 
     await act(async () => {
       await result.current.create({ label: '', hours: 24, delivery: 'whatsapp' });
     });
-    expect(result.current.result?.url).toBe('https://catalogo.test/c/tok');
+    expect(result.current.result).toMatchObject({ url: 'https://catalogo.test/c/tok', whatsApp: 'unavailable' });
   });
 
   it('«Solo generar» no abre WhatsApp y muestra la hoja', async () => {
@@ -94,20 +116,73 @@ describe('useShareLinkFlow.create', () => {
       await result.current.create({ label: '', hours: 24, delivery: 'none' });
     });
     expect(mockWhatsApp).not.toHaveBeenCalled();
-    expect(result.current.result).toMatchObject({ reissued: false, url: 'https://catalogo.test/c/tok' });
+    expect(result.current.result).toMatchObject({ reissued: false, url: 'https://catalogo.test/c/tok', whatsApp: null });
+  });
+
+  it('congela la selección leída al generar, no la de la caché, y solo reutiliza lo que sigue seleccionado', async () => {
+    const cached = catalog({ sections: [productSection(['p-viejo', 'p-comun'])] });
+    const fresh = catalog({ sections: [productSection(['p-comun', 'p-nuevo'])] });
+    mockGetCatalog.mockResolvedValueOnce(fresh);
+    const known = new Map([
+      ['p-viejo', listing('p-viejo')],
+      ['p-comun', listing('p-comun')],
+    ]);
+    const { result } = renderHook(() => useShareLinkFlow(cached, known, categories, jest.fn(async () => undefined)));
+
+    await act(async () => {
+      await result.current.create({ label: '', hours: 24, delivery: 'none' });
+    });
+
+    expect(mockGetCatalog).toHaveBeenCalledWith('cat-1');
+    const [snapshotDetail, options] = mockBuildSnapshot.mock.calls[0];
+    expect(snapshotDetail).toBe(fresh);
+    expect([...options.known.products.keys()]).toEqual(['p-comun']);
+  });
+
+  it('si el catálogo ya no existe al generar, no crea el enlace', async () => {
+    mockGetCatalog.mockResolvedValueOnce(null);
+    const { result } = renderHook(() => useShareLinkFlow(catalog(), products, categories, jest.fn(async () => undefined)));
+
+    await act(async () => {
+      await expect(result.current.create({ label: '', hours: 24, delivery: 'none' })).resolves.toBe(false);
+    });
+    expect(mockCreateLink).not.toHaveBeenCalled();
+    expect(result.current.submitError).toContain('ya no está disponible');
   });
 });
 
 describe('useShareLinkFlow.reissue', () => {
+  it('cierra la hoja de Reemitir y espera a que se retire antes de mostrar la URL nueva', async () => {
+    const order: string[] = [];
+    const onSuccess = jest.fn(() => order.push('cerrar'));
+    mockWaitForDismissal.mockImplementationOnce(async () => {
+      order.push('esperar');
+    });
+    const reload = jest.fn(async () => {
+      order.push('recargar');
+    });
+    const { result } = renderHook(() => useShareLinkFlow(catalog(), products, categories, reload));
+
+    await act(async () => {
+      await expect(result.current.reissue('l-1', 'Ana', 24, { onSuccess })).resolves.toBe(true);
+    });
+
+    expect(order).toEqual(['cerrar', 'esperar', 'recargar']);
+    expect(result.current.result).toMatchObject({ reissued: true, url: 'https://catalogo.test/c/tok', label: 'Ana' });
+  });
+
   it('guarda el error aparte para pintarlo dentro de la hoja', async () => {
     mockReissueLink.mockRejectedValueOnce(new Error('El enlace ya fue revocado'));
+    const onSuccess = jest.fn();
     const { result } = renderHook(() => useShareLinkFlow(catalog(), products, categories, jest.fn(async () => undefined)));
 
     await act(async () => {
-      await expect(result.current.reissue('l-1', 'Ana', 24)).resolves.toBe(false);
+      await expect(result.current.reissue('l-1', 'Ana', 24, { onSuccess })).resolves.toBe(false);
     });
+    expect(onSuccess).not.toHaveBeenCalled();
     expect(result.current.reissueError).toBe('El enlace ya fue revocado');
     expect(result.current.submitError).toBeNull();
+    expect(result.current.result).toBeNull();
 
     act(() => result.current.clearReissueError());
     expect(result.current.reissueError).toBeNull();

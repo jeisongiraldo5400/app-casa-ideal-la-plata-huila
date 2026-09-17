@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { Alert, Linking, Share } from 'react-native';
 import { errorMessage } from '@/lib/errorMessage';
-import { buildWhatsAppUrl } from './shareMessages';
+import { buildWhatsAppAppUrl, buildWhatsAppUrl } from './shareMessages';
 
 // Acciones nativas del enlace. Ninguna registra la URL en consola ni en
 // Sentry: el token es el acceso del cliente.
@@ -15,20 +15,29 @@ export async function shareLinkMessage(message: string, title: string): Promise<
   }
 }
 
-/** `true` si WhatsApp se abrió; si no, ya avisó al usuario. */
-export async function shareLinkByWhatsApp(message: string): Promise<boolean> {
-  const url = buildWhatsAppUrl(message);
+/** `app`: se abrió WhatsApp; `web`: se abrió wa.me en el navegador; `unavailable`: no se abrió nada (ya se avisó). */
+export type WhatsAppOutcome = 'app' | 'web' | 'unavailable';
+
+/**
+ * Intenta primero la app (`whatsapp://`) y, si no abre, `wa.me`. No se
+ * consulta `canOpenURL`: para `https` siempre responde que sí (lo abre el
+ * navegador) y para `whatsapp://` exigiría declarar el esquema en la build
+ * nativa; `openURL` ya rechaza cuando nadie puede abrir la URL.
+ */
+export async function shareLinkByWhatsApp(message: string): Promise<WhatsAppOutcome> {
   try {
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) {
-      Alert.alert('WhatsApp no disponible', 'No se encontró WhatsApp en este dispositivo. Usa «Compartir» para enviarlo por otro medio.');
-      return false;
-    }
-    await Linking.openURL(url);
-    return true;
-  } catch (caught) {
-    Alert.alert('No se pudo abrir WhatsApp', errorMessage(caught));
-    return false;
+    await Linking.openURL(buildWhatsAppAppUrl(message));
+    return 'app';
+  } catch {
+    // Sin la app: se intenta la versión web.
+  }
+  try {
+    await Linking.openURL(buildWhatsAppUrl(message));
+    return 'web';
+  } catch {
+    // El error de `openURL` incluye la URL (con el token): no se muestra.
+    Alert.alert('No se pudo abrir WhatsApp', 'Usa «Copiar» o «Compartir» para enviarlo por otro medio.');
+    return 'unavailable';
   }
 }
 
