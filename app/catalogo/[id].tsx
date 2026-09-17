@@ -4,7 +4,7 @@ import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { ActionCard, BackButton, Button, Card, HeroActionCard, Metric, ScreenErrorBoundary, ScreenState, SectionHeader } from '@/components/ui';
+import { ActionBar, ActionCard, BackButton, Button, Card, Metric, ScreenErrorBoundary, ScreenState, SectionHeader } from '@/components/ui';
 import {
   ArchiveCatalogButton,
   CatalogHeaderCard,
@@ -17,6 +17,7 @@ import {
   useCatalogosStore,
 } from '@/components/catalogos';
 import { pluralize } from '@/lib/catalogos/labels';
+import { countCatalogProducts } from '@/lib/catalogos/sectionCounts';
 
 const RECENT_LINKS = 3;
 
@@ -35,7 +36,8 @@ function CatalogoDetailInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail } = useCatalogDetail(id);
+  const { detail, products, categories, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail } =
+    useCatalogDetail(id);
   const summary = useCatalogSummary(detail);
   const removeFromList = useCatalogosStore((state) => state.removeFromList);
   const [editingTexts, setEditingTexts] = useState(false);
@@ -79,7 +81,9 @@ function CatalogoDetailInner() {
   }
 
   const productItems = detail.sections.flatMap((section) => section.items.filter((item) => item.itemType === 'product'));
-  const publishedCount = productItems.filter((item) => products.has(item.referenceId)).length;
+  // Cuenta también las categorías completas (su total viene con la muestra de miniaturas).
+  const publishedCount = countCatalogProducts(detail.sections, products, categories);
+  const shareTo = `/catalogo/${detail.id}/compartir`;
   const scope = isOwner ? 'own' : detail.visibility === 'organization' ? 'organization' : 'shared';
   const recentLinks = detail.shareLinks.slice(0, RECENT_LINKS);
 
@@ -107,14 +111,6 @@ function CatalogoDetailInner() {
         </Card>
 
         <View style={styles.section}>
-          {canShare ? (
-            <HeroActionCard
-              title="Compartir con un cliente"
-              subtitle={summary && summary.summary.activeLinkCount > 0 ? pluralize(summary.summary.activeLinkCount, 'enlace activo', 'enlaces activos') : 'Genera un enlace privado'}
-              icon="send"
-              onPress={() => router.push(`/catalogo/${detail.id}/compartir` as never)}
-            />
-          ) : null}
           {isOwner ? (
             <>
               <View style={styles.actionGrid}>
@@ -143,7 +139,7 @@ function CatalogoDetailInner() {
               onAction={isOwner ? () => router.push(`/catalogo/${detail.id}/productos` as never) : undefined}
             />
           ) : (
-            <CatalogSectionsSummary sections={detail.sections} products={products} />
+            <CatalogSectionsSummary sections={detail.sections} products={products} categories={categories} />
           )}
         </View>
 
@@ -153,7 +149,7 @@ function CatalogoDetailInner() {
               title={isOwner ? 'Enlaces' : 'Tus enlaces'}
               action={
                 detail.shareLinks.length > 0 ? (
-                  <Button title="Ver todos" variant="ghost" size="sm" onPress={() => router.push(`/catalogo/${detail.id}/compartir` as never)} />
+                  <Button title="Ver todos" variant="ghost" size="sm" onPress={() => router.push(shareTo as never)} />
                 ) : undefined
               }
             />
@@ -183,6 +179,17 @@ function CatalogoDetailInner() {
         ) : null}
       </ScrollView>
 
+      {canShare ? (
+        <ActionBar>
+          <Button
+            title="Compartir con un cliente"
+            icon="send"
+            onPress={() => router.push(shareTo as never)}
+            style={styles.primary}
+          />
+        </ActionBar>
+      ) : null}
+
       {isOwner ? (
         <CatalogTextsSheet
           visible={editingTexts}
@@ -206,4 +213,5 @@ const styles = StyleSheet.create({
   notice: { ...Typography.metadata },
   readOnly: { ...Typography.caption },
   links: { gap: Spacing.md },
+  primary: { flex: 1 },
 });

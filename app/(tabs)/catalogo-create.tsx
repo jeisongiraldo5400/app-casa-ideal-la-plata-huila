@@ -5,7 +5,7 @@ import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { ActionBar, Button, Card, Input, ScreenErrorBoundary, ScreenState } from '@/components/ui';
-import { useCatalogAccess } from '@/components/catalogos';
+import { useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import { createPrivateCatalog } from '@/components/catalogos/infrastructure/services/catalogsService';
 import { errorMessage } from '@/lib/errorMessage';
 import { hasErrors, validateCreateCatalog, type CreateCatalogErrors } from '@/lib/catalogos/validators';
@@ -25,6 +25,7 @@ function CatalogoCreateInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const access = useCatalogAccess();
+  const invalidateCatalog = useCatalogosStore((state) => state.invalidateCatalog);
   const [internalTitle, setInternalTitle] = useState('');
   const [errors, setErrors] = useState<CreateCatalogErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -46,7 +47,11 @@ function CatalogoCreateInner() {
     setSubmitError(null);
     try {
       const { id } = await createPrivateCatalog({ internalTitle });
+      invalidateCatalog(id);
+      setInternalTitle('');
+      // Directo al selector, con el detalle debajo para que «atrás» lleve al catálogo.
       router.replace(`/catalogo/${id}` as never);
+      router.push(`/catalogo/${id}/productos` as never);
     } catch (caught) {
       setSubmitError(errorMessage(caught, 'No fue posible crear el catálogo.'));
     } finally {
@@ -60,7 +65,7 @@ function CatalogoCreateInner() {
         <Card style={styles.card}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Empieza con un nombre</Text>
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Después eliges las categorías, agregas productos y generas el enlace para el cliente. La apariencia se ajusta después si la necesitas.
+            Luego eliges los productos y lo envías al cliente.
           </Text>
           <Input
             label="¿Cómo quieres llamar este catálogo?"
@@ -71,12 +76,13 @@ function CatalogoCreateInner() {
             maxLength={120}
             autoFocus
             returnKeyType="next"
+            onSubmitEditing={() => void submit()}
           />
           {submitError ? <Text style={[styles.error, { color: colors.error.main }]}>{submitError}</Text> : null}
         </Card>
       </ScrollView>
       <ActionBar>
-        <Button title="Empezar catálogo" icon="auto-stories" onPress={() => void submit()} loading={saving} style={styles.primary} />
+        <Button title="Crear y elegir productos" icon="auto-stories" onPress={() => void submit()} loading={saving} style={styles.primary} />
       </ActionBar>
     </View>
   );

@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { BackButton, Pagination, ScreenErrorBoundary, ScreenState, SearchField } from '@/components/ui';
+import { ActionBar, BackButton, Button, Pagination, ScreenErrorBoundary, ScreenState, SearchField } from '@/components/ui';
 import { CategoryFilterField, ProductPickerRow, useCatalogDetail, useProductPicker } from '@/components/catalogos';
 import type { CatalogSection } from '@/lib/catalogos/types';
 import { pluralize } from '@/lib/catalogos/labels';
@@ -23,7 +24,7 @@ function CatalogoProductosGate() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, loading, error, notFound, isOwner, reload } = useCatalogDetail(id);
+  const { detail, loading, error, notFound, isOwner, canShare, reload } = useCatalogDetail(id);
   const screenOptions = { title: 'Productos', headerLeft: () => <BackButton /> };
 
   if (loading && !detail) {
@@ -60,14 +61,32 @@ function CatalogoProductosGate() {
       </View>
     );
   }
-  return <ProductPicker catalogId={detail.id} sections={detail.sections} />;
+  return <ProductPicker catalogId={detail.id} sections={detail.sections} canShare={canShare} />;
 }
 
-function ProductPicker({ catalogId, sections }: { catalogId: string; sections: CatalogSection[] }) {
+type ProductPickerProps = { catalogId: string; sections: CatalogSection[]; canShare: boolean };
+
+function ProductPicker({ catalogId, sections, canShare }: ProductPickerProps) {
+  const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const picker = useProductPicker(catalogId, sections);
+  const [finishing, setFinishing] = useState(false);
   const screenOptions = { title: 'Productos', headerLeft: () => <BackButton /> };
+  const categoryCount = sections.reduce((total, section) => total + section.items.filter((item) => item.itemType === 'category').length, 0);
+  const selectedCount = picker.selected.size;
+
+  // Espera las escrituras en cola para que Compartir cargue la selección definitiva.
+  const finish = async () => {
+    setFinishing(true);
+    try {
+      await picker.flush();
+    } finally {
+      setFinishing(false);
+    }
+    if (canShare) router.push(`/catalogo/${catalogId}/compartir` as never);
+    else router.back();
+  };
 
   const renderBody = () => {
     if (picker.loading && picker.items.length === 0) return <ScreenState loading title="Buscando fichas…" variant="inline" />;
@@ -107,6 +126,16 @@ function ProductPicker({ catalogId, sections }: { catalogId: string; sections: C
         {renderBody()}
         <Pagination page={picker.page} pageSize={picker.pageSize} total={picker.totalCount} onChange={picker.setPage} itemLabel="fichas" />
       </ScrollView>
+      <ActionBar>
+        <Button
+          title={canShare ? `Listo · Compartir (${selectedCount})` : 'Listo'}
+          icon={canShare ? 'send' : 'check'}
+          onPress={() => void finish()}
+          loading={finishing}
+          disabled={canShare && selectedCount === 0 && categoryCount === 0}
+          style={styles.primary}
+        />
+      </ActionBar>
     </View>
   );
 }
@@ -118,4 +147,5 @@ const styles = StyleSheet.create({
   filters: { gap: Spacing.md },
   count: { ...Typography.metadata, textAlign: 'right' },
   list: { gap: Spacing.md },
+  primary: { flex: 1 },
 });

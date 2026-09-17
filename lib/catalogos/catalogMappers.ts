@@ -1,4 +1,4 @@
-import type { CatalogRow, ItemRow, SectionRow, ShareLinkRow } from '@/components/catalogos/infrastructure/database';
+import type { CatalogRow, ItemRow, SectionRow, ShareLinkSummaryRow } from '@/components/catalogos/infrastructure/database';
 import { summarizeShareLinks } from './shareLinks';
 import type { CatalogSection, CatalogShareLink, PrivateCatalog, PrivateCatalogListItem } from './types';
 
@@ -46,10 +46,11 @@ export function mapSections(sectionRows: readonly SectionRow[], itemRows: readon
   }));
 }
 
-export function mapShareLink(row: ShareLinkRow, versionNumbers: ReadonlyMap<string, number>): CatalogShareLink {
+/** Sin `token` (el listado no lo pide) el enlace queda como no recuperable. */
+export function mapShareLink(row: ShareLinkSummaryRow & { token?: string | null }, versionNumbers: ReadonlyMap<string, number>): CatalogShareLink {
   return {
     id: row.id,
-    token: row.token,
+    token: row.token ?? null,
     label: row.label,
     tokenHint: row.token_hint,
     versionNumber: versionNumbers.get(row.catalog_version_id) ?? 1,

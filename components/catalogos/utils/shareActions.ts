@@ -15,17 +15,20 @@ export async function shareLinkMessage(message: string, title: string): Promise<
   }
 }
 
-export async function shareLinkByWhatsApp(message: string): Promise<void> {
+/** `true` si WhatsApp se abrió; si no, ya avisó al usuario. */
+export async function shareLinkByWhatsApp(message: string): Promise<boolean> {
   const url = buildWhatsAppUrl(message);
   try {
     const supported = await Linking.canOpenURL(url);
     if (!supported) {
       Alert.alert('WhatsApp no disponible', 'No se encontró WhatsApp en este dispositivo. Usa «Compartir» para enviarlo por otro medio.');
-      return;
+      return false;
     }
     await Linking.openURL(url);
+    return true;
   } catch (caught) {
     Alert.alert('No se pudo abrir WhatsApp', errorMessage(caught));
+    return false;
   }
 }
 

@@ -4,6 +4,7 @@ import {
   catalogShareLinkStatus,
   expiresAtFromHours,
   isShareLinkShareable,
+  parseStoredShareLinkHours,
   summarizeShareLinks,
 } from '../shareLinks';
 import type { CatalogShareLink } from '../types';
@@ -115,5 +116,18 @@ describe('expiresAtFromHours y buildMagazineUrl', () => {
     delete process.env.EXPO_PUBLIC_CATALOG_SITE_URL;
     expect(() => buildMagazineUrl('abc123')).toThrow('EXPO_PUBLIC_CATALOG_SITE_URL');
     process.env.EXPO_PUBLIC_CATALOG_SITE_URL = previous;
+  });
+});
+
+describe('parseStoredShareLinkHours', () => {
+  it('recupera una vigencia ofrecida', () => {
+    expect(parseStoredShareLinkHours('24')).toBe(24);
+    expect(parseStoredShareLinkHours('720')).toBe(720);
+  });
+
+  it('usa 7 días si no hay nada guardado o el valor no es una opción', () => {
+    for (const stored of [null, undefined, '', 'abc', '5', '9999']) {
+      expect(parseStoredShareLinkHours(stored)).toBe(168);
+    }
   });
 });

@@ -6,6 +6,7 @@ import type { Json } from '@/types/database.types';
 // devuelve PostgREST; los services hacen el narrowing. Copia de
 // `catalogo-casa-ideal/src/features/private-catalogs/database.ts`.
 
+/** `archived_at` no se selecciona: los listados ya filtran los archivados. */
 export type CatalogRow = {
   id: string;
   owner_id: string;
@@ -23,7 +24,7 @@ export type CatalogRow = {
   show_contact: boolean;
   created_at: string;
   updated_at: string;
-  archived_at: string | null;
+  archived_at?: string | null;
 };
 
 export type SectionRow = {
@@ -65,6 +66,9 @@ export type ShareLinkRow = {
   last_viewed_at: string | null;
   view_count: number;
 };
+
+/** Columnas de `catalog_share_links` que pide el listado (sin token ni hash). */
+export type ShareLinkSummaryRow = Omit<ShareLinkRow, 'token' | 'token_hash' | 'created_by'>;
 
 export type VersionRow = {
   id: string;

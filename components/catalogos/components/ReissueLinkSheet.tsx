@@ -1,26 +1,31 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Button, ModalSheet, OptionPickerField } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { DEFAULT_SHARE_LINK_HOURS, SHARE_LINK_DURATIONS } from '@/lib/catalogos/shareLinks';
 import type { CatalogShareLink } from '@/lib/catalogos/types';
+import { useShareLinkHours } from '../infrastructure/hooks/useShareLinkHours';
 import { shareLinkRecipient } from '../utils/shareMessages';
+import { SHARE_LINK_DURATION_OPTIONS } from './ShareLinkCreateForm';
 
 interface ReissueLinkSheetProps {
   link: CatalogShareLink | null;
   busy: boolean;
+  /** Fallo del último intento; se pinta aquí porque el modal tapa la pantalla. */
+  error: string | null;
   onClose: () => void;
   onConfirm: (link: CatalogShareLink, hours: number) => Promise<boolean>;
 }
 
-const DURATION_OPTIONS = SHARE_LINK_DURATIONS.map((duration) => ({ value: String(duration.hours), label: duration.label }));
-
-/** Emite un token nuevo sobre la misma versión congelada; el enlace anterior sigue vivo hasta que venza. */
-export function ReissueLinkSheet({ link, busy, onClose, onConfirm }: ReissueLinkSheetProps) {
+/**
+ * Emite un token nuevo sobre la misma versión congelada. Desde la migración
+ * 20261010130000 el RPC además REVOCA el enlace anterior: la URL vieja deja
+ * de funcionar en el acto, y la hoja lo advierte antes de confirmar.
+ */
+export function ReissueLinkSheet({ link, busy, error, onClose, onConfirm }: ReissueLinkSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [hours, setHours] = useState(String(DEFAULT_SHARE_LINK_HOURS));
+  const [hours, setHours] = useShareLinkHours();
   if (!link) return null;
   const recipient = shareLinkRecipient(link.label);
 
@@ -43,17 +48,23 @@ export function ReissueLinkSheet({ link, busy, onClose, onConfirm }: ReissueLink
         </>
       }>
       <Text style={[styles.hint, { color: colors.text.secondary }]}>
-        El cliente verá exactamente la misma edición que se le entregó (versión {link.versionNumber}), con una URL y una vigencia nuevas.
+        El cliente verá la misma edición (versión {link.versionNumber}) con una URL y una vigencia nuevas.
       </Text>
+      <Text style={[styles.hint, { color: colors.warning.dark }]}>La URL anterior dejará de funcionar.</Text>
       <OptionPickerField
         value={hours}
-        onValueChange={(value) => setHours(value || String(DEFAULT_SHARE_LINK_HOURS))}
-        options={DURATION_OPTIONS}
+        onValueChange={setHours}
+        options={SHARE_LINK_DURATION_OPTIONS}
         placeholder="Vigencia"
         modalTitle="Vigencia del enlace"
         colors={colors}
         disabled={busy}
       />
+      {error ? (
+        <Text style={[styles.hint, { color: colors.error.main }]} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      ) : null}
     </ModalSheet>
   );
 }

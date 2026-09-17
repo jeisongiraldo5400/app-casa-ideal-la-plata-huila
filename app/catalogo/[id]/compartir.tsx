@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
@@ -29,11 +29,12 @@ export default function CatalogoCompartirScreen() {
 
 function CatalogoCompartirInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, products, loading, error, notFound, isOwner, canShare, reload } = useCatalogDetail(id);
+  const { detail, products, categories, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload } = useCatalogDetail(id);
   const summary = useCatalogSummary(detail);
-  const flow = useShareLinkFlow(detail, products, reload);
+  const flow = useShareLinkFlow(detail, products, categories, reload);
   const [reissueTarget, setReissueTarget] = useState<CatalogShareLink | null>(null);
   const screenOptions = { title: 'Compartir', headerLeft: () => <BackButton /> };
 
@@ -55,7 +56,14 @@ function CatalogoCompartirInner() {
           {notFound ? (
             <ScreenState icon="search-off" title="No se encontró el catálogo" />
           ) : (
-            <ScreenState tone="error" title="No se pudo cargar el catálogo" description={error ?? undefined} actionLabel="Reintentar" onAction={() => void reload()} />
+            <ScreenState
+              tone="error"
+              icon={isNetworkFailure ? 'cloud-off' : 'inbox'}
+              title={isNetworkFailure ? 'Sin conexión' : 'No se pudo cargar el catálogo'}
+              description={isNetworkFailure ? 'Los catálogos requieren internet.' : (error ?? undefined)}
+              actionLabel="Reintentar"
+              onAction={() => void reload()}
+            />
           )}
         </View>
       </View>
@@ -83,13 +91,28 @@ function CatalogoCompartirInner() {
   }
 
   const blocked = flow.readiness.blockers.length > 0;
+  // El trigger deja en «organization» los catálogos que crea un admin; el primer
+  // enlace los saca de borrador y desde ahí los ve todo el equipo.
+  const publishesToTeam = isOwner && detail.visibility === 'organization' && detail.status === 'draft';
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
       <Stack.Screen options={screenOptions} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {error ? (
+          <Text style={[styles.notice, { color: colors.warning.dark }]} accessibilityLiveRegion="polite">
+            No se pudo actualizar. Mostrando la última versión cargada.
+          </Text>
+        ) : null}
         {blocked ? (
-          <ScreenState tone="warning" icon="playlist-add-check" title="Aún no se puede compartir" description={flow.readiness.blockers.join(' ')} />
+          <ScreenState
+            tone="warning"
+            icon="playlist-add-check"
+            title="Aún no se puede compartir"
+            description={flow.readiness.blockers.join(' ')}
+            actionLabel={isOwner ? 'Elegir productos' : undefined}
+            onAction={isOwner ? () => router.push(`/catalogo/${detail.id}/productos` as never) : undefined}
+          />
         ) : flow.readiness.warnings.length > 0 ? (
           <Card variant="muted">
             <Text style={[styles.warning, { color: colors.text.primary }]}>{flow.readiness.warnings.join(' ')}</Text>
@@ -106,6 +129,7 @@ function CatalogoCompartirInner() {
           progress={flow.progress}
           errors={flow.errors}
           submitError={flow.submitError}
+          notice={publishesToTeam ? 'Al crear el enlace, todo el equipo podrá ver este catálogo.' : null}
           onCreate={flow.create}
         />
 
@@ -130,7 +154,11 @@ function CatalogoCompartirInner() {
       <ReissueLinkSheet
         link={reissueTarget}
         busy={flow.reissuingId !== null}
-        onClose={() => setReissueTarget(null)}
+        error={flow.reissueError}
+        onClose={() => {
+          flow.clearReissueError();
+          setReissueTarget(null);
+        }}
         onConfirm={(link, hours) => flow.reissue(link.id, link.label, hours)}
       />
     </View>
@@ -144,4 +172,5 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.md },
   warning: { ...Typography.bodySmall },
   ready: { ...Typography.caption },
+  notice: { ...Typography.metadata },
 });

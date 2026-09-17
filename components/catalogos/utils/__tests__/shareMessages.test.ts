@@ -1,36 +1,18 @@
 import { buildShareMessage, buildWhatsAppUrl, shareLinkRecipient } from '../shareMessages';
 
 describe('buildShareMessage', () => {
-  it('incluye la URL dentro del mensaje (Android ignora el campo `url` de Share)', () => {
-    const message = buildShareMessage({
-      publicTitle: 'Lavadoras Casa Ideal',
-      url: 'https://catalogo.test/c/abc123',
-      expiresAt: '2026-09-08T12:00:00.000Z',
-    });
-    expect(message).toContain('https://catalogo.test/c/abc123');
-    expect(message).toContain('Lavadoras Casa Ideal');
-    expect(message).toContain('Disponible hasta el');
+  it('usa el mismo texto que el web e incluye la URL (Android ignora el campo `url` de Share)', () => {
+    expect(buildShareMessage({ url: 'https://catalogo.test/c/abc123' })).toBe('Te comparto este catálogo de Casa Ideal: https://catalogo.test/c/abc123');
   });
 
   it('saluda al destinatario solo cuando se proporciona', () => {
-    const message = buildShareMessage({
-      publicTitle: 'Sala moderna',
-      url: 'https://catalogo.test/c/abc123',
-      expiresAt: '2026-09-08T12:00:00.000Z',
-      label: 'Carlos',
-    });
-    expect(message).toContain('Hola Carlos.');
+    expect(buildShareMessage({ url: 'https://x/c/t', label: ' Ana ' })).toBe('Hola Ana. Te comparto este catálogo de Casa Ideal: https://x/c/t');
   });
 
   it('no saluda a nadie cuando el nombre está vacío o son solo espacios', () => {
     for (const label of ['', '   ', null, undefined]) {
-      const message = buildShareMessage({
-        publicTitle: 'Sala moderna',
-        url: 'https://catalogo.test/c/abc123',
-        expiresAt: '2026-09-08T12:00:00.000Z',
-        label,
-      });
-      expect(message.startsWith('Te comparto el catálogo')).toBe(true);
+      const message = buildShareMessage({ url: 'https://catalogo.test/c/abc123', label });
+      expect(message.startsWith('Te comparto este catálogo')).toBe(true);
       expect(message).not.toContain('Hola');
     }
   });

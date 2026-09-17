@@ -14,7 +14,7 @@ interface ShareLinkResultSheetProps {
   onClose: () => void;
 }
 
-/** Recibo del enlace recién creado o reemitido, con las acciones para entregarlo. */
+/** Recibo del enlace creado con «Solo generar» o reemitido: copiar y abrir primero, luego enviarlo. */
 export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLinkResultSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -27,7 +27,7 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
   }, [copied]);
 
   if (!result) return null;
-  const message = buildShareMessage({ publicTitle, url: result.url, expiresAt: result.expiresAt, label: result.label });
+  const message = buildShareMessage({ url: result.url, label: result.label });
 
   return (
     <ModalSheet
@@ -42,18 +42,17 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
         </Text>
       </View>
       <View style={styles.actions}>
-        <Button title="Compartir" icon="share" onPress={() => void shareLinkMessage(message, publicTitle)} style={styles.action} />
-        <Button title="WhatsApp" icon="chat" variant="secondary" onPress={() => void shareLinkByWhatsApp(message)} style={styles.action} />
-      </View>
-      <View style={styles.actions}>
         <Button
           title={copied ? 'Copiado' : 'Copiar'}
           icon={copied ? 'check' : 'content-copy'}
-          variant="outline"
           onPress={() => void copyLinkToClipboard(result.url).then(setCopied)}
           style={styles.action}
         />
         <Button title="Abrir" icon="open-in-new" variant="outline" onPress={() => void openLinkInBrowser(result.url)} style={styles.action} />
+      </View>
+      <View style={styles.actions}>
+        <Button title="WhatsApp" icon="chat" variant="outline" onPress={() => void shareLinkByWhatsApp(message)} style={styles.action} />
+        <Button title="Compartir" icon="share" variant="outline" onPress={() => void shareLinkMessage(message, publicTitle)} style={styles.action} />
       </View>
     </ModalSheet>
   );

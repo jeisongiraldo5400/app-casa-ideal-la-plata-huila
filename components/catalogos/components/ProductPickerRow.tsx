@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/components/theme';
-import { IconButton, ListCard } from '@/components/ui';
+import { IconButton, ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import type { PublicCatalogListingItem } from '@/lib/catalogos/publicCatalogTypes';
 import { CatalogProductThumb } from './CatalogProductThumb';
@@ -19,7 +19,10 @@ export function ProductPickerRow({ item, selected, pending, onToggle }: ProductP
   const meta = [item.categoryName, item.brandName].filter(Boolean).join(' · ');
 
   return (
-    <ListCard onPress={onToggle} disabled={pending} accessibilityLabel={`${item.displayName}, ${selected ? 'en el catálogo' : 'no seleccionado'}`}>
+    <ListCard
+      onPress={onToggle}
+      disabled={pending}
+      accessibilityLabel={`${item.displayName}${item.stockQuantity === 0 ? ', agotado' : ''}, ${selected ? 'en el catálogo' : 'no seleccionado'}`}>
       <View style={styles.row}>
         <CatalogProductThumb uri={item.coverImageUrl} size={64} recyclingKey={item.productId} />
         <View style={styles.copy}>
@@ -30,6 +33,12 @@ export function ProductPickerRow({ item, selected, pending, onToggle }: ProductP
             <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
               {meta}
             </Text>
+          ) : null}
+          {/* Solo la señal de agotado, como el selector web: la cantidad nunca se muestra. */}
+          {item.stockQuantity === 0 ? (
+            <View style={styles.badge}>
+              <StatusChip label="Agotado" tone="error" />
+            </View>
           ) : null}
         </View>
         <IconButton
@@ -49,4 +58,5 @@ const styles = StyleSheet.create({
   copy: { flex: 1, gap: 2 },
   name: { ...Typography.bodyStrong },
   meta: { ...Typography.caption },
+  badge: { flexDirection: 'row', marginTop: Spacing.xs },
 });

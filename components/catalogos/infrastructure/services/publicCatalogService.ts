@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { CATEGORY_PAGE_SIZE, MAX_CATEGORY_PAGES, PICKER_PAGE_SIZE } from '@/lib/catalogos/constants';
+import { mapWithConcurrency } from '@/lib/catalogos/asyncPool';
+import { CATEGORY_PAGE_SIZE, DETAIL_CONCURRENCY, MAX_CATEGORY_PAGES, PICKER_PAGE_SIZE } from '@/lib/catalogos/constants';
 import {
   mapPublicCatalogCategoryRow,
   mapPublicCatalogListingRow,
@@ -16,7 +17,8 @@ import type {
 } from '@/lib/catalogos/publicCatalogTypes';
 
 // Fichas publicadas de la biblioteca. Los RPC son SECURITY DEFINER y solo
-// exponen fichas `published` sobre productos activos; nunca sku ni stock.
+// exponen fichas `published` sobre productos activos; nunca sku. Las
+// existencias solo sirven para marcar «Agotado»: la cantidad no se muestra.
 
 export type ListPublicCatalogProductsParams = {
   search?: string;
@@ -66,12 +68,98 @@ export async function listAllPublicCatalogProductsInCategory(categoryId: string)
   return items;
 }
 
-/** Ficha completa por slug; null si no existe o no está publicada. */
+/**
+ * Primeras fichas de una categoría y su total, para las miniaturas del
+ * detalle. Si `items.length >= totalCount` la lista está completa y el
+ * snapshot puede reutilizarla sin volver a pedirla.
+ */
+export async function listPublicCatalogCategoryPreview(categoryId: string, limit: number): Promise<PublicCatalogListingResult> {
+  return listPublicCatalogProducts({ categoryId, page: 1, pageSize: limit });
+}
+
+/**
+ * Ficha completa por slug, con sus existencias; null si no existe o no está
+ * publicada. Misma semántica que `getPublicCatalogProductBySlug` del web
+ * (`catalog-public/queries.server.ts`): el stock se pide aparte y se
+ * incrusta como `stockQuantity`.
+ */
 export async function getPublicCatalogProductBySlug(slug: string): Promise<PublicCatalogProductDetail | null> {
-  const { data, error } = await supabase.rpc('get_public_catalog_product', { product_slug: slug });
-  if (error) throw new Error(`No fue posible cargar la ficha: ${error.message}`);
+  const [product, stock] = await Promise.all([
+    supabase.rpc('get_public_catalog_product', { product_slug: slug }),
+    supabase.rpc('get_public_catalog_product_stock', { product_slug: slug }),
+  ]);
+  if (product.error) throw new Error(`No fue posible cargar la ficha: ${product.error.message}`);
+  const data = product.data as unknown;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  return mapPublicCatalogProductDetail(data as unknown as PublicCatalogProductDetailRaw);
+  if (stock.error) throw new Error(`No fue posible cargar la disponibilidad del producto: ${stock.error.message}`);
+  return mapPublicCatalogProductDetail({
+    ...(data as PublicCatalogProductDetailRaw),
+    stockQuantity: Number(stock.data ?? 0),
+  });
+}
+
+export type ProductDetailsProgress = { resolved: number; total: number };
+
+/**
+ * Fichas completas (con existencias) de varios slugs, indexadas por slug.
+ * Los slugs sin ficha publicada no aparecen en el resultado.
+ *
+ * Es el ÚNICO punto por el que el móvil pide detalles de fichas: hoy son
+ * dos RPC por slug con concurrencia acotada; cuando exista el RPC por lote
+ * (`get_public_catalog_products_detail`) basta con cambiar el cuerpo de esta
+ * función.
+ */
+export async function getPublicCatalogProductDetails(
+  slugs: readonly string[],
+  onProgress?: (progress: ProductDetailsProgress) => void
+): Promise<Map<string, PublicCatalogProductDetail>> {
+  const unique = [...new Set(slugs)];
+  let resolved = 0;
+  onProgress?.({ resolved, total: unique.length });
+  const chunks: string[][] = [];
+  for (let index = 0; index < unique.length; index += DETAIL_BATCH_SIZE) {
+    chunks.push(unique.slice(index, index + DETAIL_BATCH_SIZE));
+  }
+  const bySlug = new Map<string, PublicCatalogProductDetail>();
+  const batches = await mapWithConcurrency(chunks, DETAIL_CONCURRENCY, async (chunk) => {
+    const batch = await getProductDetailsBatch(chunk);
+    resolved += chunk.length;
+    onProgress?.({ resolved, total: unique.length });
+    return batch;
+  });
+  for (const batch of batches) {
+    for (const [slug, productDetail] of batch) bySlug.set(slug, productDetail);
+  }
+  return bySlug;
+}
+
+/** Tope del RPC por lote (acepta hasta 200 slugs). */
+const DETAIL_BATCH_SIZE = 100;
+
+type ProductDetailBatchRow = { slug: string; detail: PublicCatalogProductDetailRaw | null };
+
+/**
+ * Un lote con `get_public_catalog_products_detail` (migración
+ * 20261108120000): una llamada en vez de dos por ficha. Si la base aún no la
+ * tiene, vuelve al camino de dos RPC por slug.
+ */
+async function getProductDetailsBatch(slugs: readonly string[]): Promise<Map<string, PublicCatalogProductDetail>> {
+  const { data, error } = await supabase.rpc('get_public_catalog_products_detail', { p_slugs: [...slugs] });
+  if (error?.code === 'PGRST202') {
+    const details = await mapWithConcurrency(slugs, DETAIL_CONCURRENCY, async (slug) => [slug, await getPublicCatalogProductBySlug(slug)] as const);
+    return new Map(details.filter((entry): entry is readonly [string, PublicCatalogProductDetail] => entry[1] !== null));
+  }
+  if (error) throw new Error(`No fue posible cargar las fichas: ${error.message}`);
+  // El RPC devuelve el slug real de la ficha y compara sin mayúsculas: se
+  // indexa por el slug tal como se pidió.
+  const requested = new Map(slugs.map((slug) => [slug.toLowerCase(), slug] as const));
+  const bySlug = new Map<string, PublicCatalogProductDetail>();
+  for (const row of (data ?? []) as unknown as ProductDetailBatchRow[]) {
+    const slug = requested.get(row.slug.toLowerCase());
+    if (!slug || !row.detail || typeof row.detail !== 'object') continue;
+    bySlug.set(slug, mapPublicCatalogProductDetail({ ...row.detail, stockQuantity: Number(row.detail.stockQuantity ?? 0) }));
+  }
+  return bySlug;
 }
 
 /** Categorías con al menos una ficha publicada. */

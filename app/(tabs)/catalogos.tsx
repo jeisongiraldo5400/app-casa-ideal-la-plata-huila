@@ -4,7 +4,7 @@ import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
+import { Button, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { CatalogListCard, useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import {
   CATALOG_LIST_FILTERS,
@@ -36,6 +36,7 @@ function CatalogosScreenInner() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<CatalogListFilter>('all');
 
+  // Al volver a la pestaña solo se recarga si pasaron 30 s o hubo cambios.
   useFocusEffect(
     useCallback(() => {
       if (access.canAccessCatalogs) void fetchList();
@@ -44,9 +45,10 @@ function CatalogosScreenInner() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchList();
+    await fetchList({ force: true });
     setRefreshing(false);
   };
+  const openCreate = () => router.navigate('/(tabs)/catalogo-create' as never);
 
   const normalizedQuery = normalizeCatalogQuery(query);
   const filtered = useMemo(
@@ -75,7 +77,7 @@ function CatalogosScreenInner() {
           title={offline ? 'Sin conexión' : 'No se pudieron cargar los catálogos'}
           description={offline ? 'Los catálogos requieren internet. Revisa la conexión e inténtalo de nuevo.' : error}
           actionLabel="Reintentar"
-          onAction={() => void fetchList()}
+          onAction={() => void fetchList({ force: true })}
         />
       );
     }
@@ -99,30 +101,32 @@ function CatalogosScreenInner() {
         title="Aún no hay catálogos"
         description={access.canManageCatalog ? 'Crea el primero y compártelo con un cliente por enlace.' : 'Cuando el equipo publique catálogos aparecerán aquí.'}
         actionLabel={access.canManageCatalog ? 'Nuevo catálogo' : undefined}
-        onAction={access.canManageCatalog ? () => router.navigate('/(tabs)/catalogo-create' as never) : undefined}
+        onAction={access.canManageCatalog ? openCreate : undefined}
       />
     );
   };
 
   const header = (
     <View style={styles.header}>
-      {access.canManageCatalog ? (
-        <HeroActionCard
-          compact
-          title="Nuevo catálogo"
-          subtitle="Elige productos y comparte por enlace"
-          icon="auto-stories"
-          onPress={() => router.navigate('/(tabs)/catalogo-create' as never)}
+      <View style={styles.searchRow}>
+        <SearchField
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar catálogo"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          containerStyle={styles.search}
         />
-      ) : null}
-      <SearchField value={query} onChangeText={setQuery} placeholder="Buscar por nombre o título" autoCapitalize="none" autoCorrect={false} returnKeyType="search" />
+        {access.canManageCatalog ? <Button title="Nuevo" icon="add" size="sm" onPress={openCreate} accessibilityLabel="Nuevo catálogo" /> : null}
+      </View>
       <SegmentedControl items={CATALOG_LIST_FILTERS} value={filter} onChange={(value) => setFilter(value as CatalogListFilter)} />
       {error && list.length > 0 ? (
         <Text style={[styles.notice, { color: colors.warning.dark }]} accessibilityLiveRegion="polite">
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {!initialLoading && list.length > 0 ? (
+      {!initialLoading && hasFilters && list.length > 0 ? (
         <Text style={[styles.count, { color: colors.text.secondary }]}>
           {filtered.length} de {list.length} catálogo{list.length === 1 ? '' : 's'}
         </Text>
@@ -152,6 +156,8 @@ const styles = StyleSheet.create({
   centered: { justifyContent: 'center', padding: Spacing.xl },
   content: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
   header: { gap: Spacing.md, marginBottom: Spacing.lg },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  search: { flex: 1 },
   notice: { ...Typography.metadata },
   count: { ...Typography.metadata, textAlign: 'right' },
   separator: { height: Spacing.md },

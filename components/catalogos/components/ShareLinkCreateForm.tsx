@@ -3,8 +3,10 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Button, Card, Input, OptionPickerField } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { DEFAULT_SHARE_LINK_HOURS, SHARE_LINK_DURATIONS } from '@/lib/catalogos/shareLinks';
+import { SHARE_LINK_DURATIONS } from '@/lib/catalogos/shareLinks';
 import type { ShareLinkErrors } from '@/lib/catalogos/validators';
+import type { CreateShareLinkRequest, ShareLinkDelivery } from '../infrastructure/hooks/useShareLinkFlow';
+import { useShareLinkHours } from '../infrastructure/hooks/useShareLinkHours';
 import type { SnapshotProgress } from '../infrastructure/services/catalogSnapshotService';
 
 interface ShareLinkCreateFormProps {
@@ -13,50 +15,54 @@ interface ShareLinkCreateFormProps {
   progress: SnapshotProgress | null;
   errors: ShareLinkErrors;
   submitError: string | null;
-  onCreate: (input: { label: string; hours: number }) => Promise<boolean>;
+  /** Aviso de una línea bajo el título (p. ej. que el catálogo se publicará al equipo). */
+  notice?: string | null;
+  onCreate: (input: CreateShareLinkRequest) => Promise<boolean>;
 }
 
-const DURATION_OPTIONS = SHARE_LINK_DURATIONS.map((duration) => ({ value: String(duration.hours), label: duration.label }));
+export const SHARE_LINK_DURATION_OPTIONS = SHARE_LINK_DURATIONS.map((duration) => ({ value: String(duration.hours), label: duration.label }));
 
-export function ShareLinkCreateForm({ disabled, creating, progress, errors, submitError, onCreate }: ShareLinkCreateFormProps) {
+/** Acción principal: generar y abrir WhatsApp en un toque. «Solo generar» deja la hoja para copiar o abrir. */
+export function ShareLinkCreateForm({ disabled, creating, progress, errors, submitError, notice, onCreate }: ShareLinkCreateFormProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [label, setLabel] = useState('');
-  const [hours, setHours] = useState(String(DEFAULT_SHARE_LINK_HOURS));
+  const [hours, setHours] = useShareLinkHours();
+  const [delivery, setDelivery] = useState<ShareLinkDelivery>('whatsapp');
 
-  const submit = async () => {
-    const ok = await onCreate({ label, hours: Number(hours) });
+  const submit = async (next: ShareLinkDelivery) => {
+    setDelivery(next);
+    const ok = await onCreate({ label, hours: Number(hours), delivery: next });
     if (ok) setLabel('');
   };
 
   const progressLabel =
-    creating && progress && progress.total > 0
-      ? `Preparando la edición… ${progress.resolved}/${progress.total}`
-      : creating
-        ? 'Preparando la edición…'
-        : 'Generar enlace';
+    progress && progress.total > 0 ? `Preparando la edición… ${progress.resolved}/${progress.total}` : 'Preparando la edición…';
 
   return (
     <Card style={styles.card}>
       <Text style={[styles.title, { color: colors.text.primary }]}>Nuevo enlace</Text>
-      <Text style={[styles.hint, { color: colors.text.secondary }]}>
-        Cada enlace congela la edición tal como está hoy. Puedes escribir para quién es o dejarlo vacío.
-      </Text>
+      <Text style={[styles.hint, { color: colors.text.secondary }]}>Congela la edición de hoy. El nombre es opcional.</Text>
+      {notice ? <Text style={[styles.hint, { color: colors.warning.dark }]}>{notice}</Text> : null}
       <Input
-        label="Para quién es (opcional)"
+        label="Para quién es"
         value={label}
         onChangeText={setLabel}
         error={errors.label}
         placeholder="Ej. Familia Pérez"
         maxLength={120}
         editable={!creating}
+        returnKeyType="send"
+        onSubmitEditing={() => {
+          if (!disabled && !creating) void submit('whatsapp');
+        }}
       />
       <View style={styles.field}>
         <Text style={[styles.label, { color: colors.text.primary }]}>Vigencia</Text>
         <OptionPickerField
           value={hours}
-          onValueChange={(value) => setHours(value || String(DEFAULT_SHARE_LINK_HOURS))}
-          options={DURATION_OPTIONS}
+          onValueChange={setHours}
+          options={SHARE_LINK_DURATION_OPTIONS}
           placeholder="Vigencia"
           modalTitle="Vigencia del enlace"
           colors={colors}
@@ -64,8 +70,32 @@ export function ShareLinkCreateForm({ disabled, creating, progress, errors, subm
         />
         {errors.hours ? <Text style={[styles.error, { color: colors.error.main }]}>{errors.hours}</Text> : null}
       </View>
-      {submitError ? <Text style={[styles.error, { color: colors.error.main }]}>{submitError}</Text> : null}
-      <Button title={progressLabel} icon="link" onPress={() => void submit()} loading={creating} disabled={disabled || creating} />
+      {submitError ? (
+        <Text style={[styles.error, { color: colors.error.main }]} accessibilityLiveRegion="polite">
+          {submitError}
+        </Text>
+      ) : null}
+      {creating ? (
+        <Text style={[styles.hint, { color: colors.text.secondary }]} accessibilityLiveRegion="polite">
+          {progressLabel}
+        </Text>
+      ) : null}
+      <Button
+        title="Generar y enviar por WhatsApp"
+        icon="chat"
+        onPress={() => void submit('whatsapp')}
+        loading={creating && delivery === 'whatsapp'}
+        disabled={disabled || creating}
+      />
+      <Button
+        title="Solo generar"
+        icon="link"
+        variant="ghost"
+        size="sm"
+        onPress={() => void submit('none')}
+        loading={creating && delivery === 'none'}
+        disabled={disabled || creating}
+      />
     </Card>
   );
 }

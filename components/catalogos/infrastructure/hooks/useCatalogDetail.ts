@@ -1,23 +1,27 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useCatalogAccess } from './useCatalogAccess';
 import { errorMessage } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
-import { fetchProfileNames } from '@/lib/profileNames';
-import { collectSelectionIds } from '@/lib/catalogos/snapshot';
 import { catalogDisplayStatus, summarizeShareLinks } from '@/lib/catalogos/shareLinks';
 import type { PublicCatalogListingItem } from '@/lib/catalogos/publicCatalogTypes';
+import type { CategoryPreview } from '@/lib/catalogos/sectionCounts';
 import type { PrivateCatalogDetail } from '@/lib/catalogos/types';
-import { getPrivateCatalog } from '../services/catalogsService';
-import { listAllPublicCatalogProductsInCategory, listPublicCatalogProductsByIds } from '../services/publicCatalogService';
+import { useCatalogosStore } from '../store/catalogosStore';
 
 export type ProductLookup = ReadonlyMap<string, PublicCatalogListingItem>;
+export type CategoryPreviewLookup = ReadonlyMap<string, CategoryPreview>;
+
+const EMPTY_PRODUCTS: ProductLookup = new Map();
+const EMPTY_CATEGORIES: CategoryPreviewLookup = new Map();
 
 export type CatalogDetailState = {
   detail: PrivateCatalogDetail | null;
-  /** Fichas publicadas de los productos seleccionados, por `productId`. */
+  /** Fichas publicadas de los productos sueltos, por `productId`. */
   products: ProductLookup;
+  /** Muestra y total de fichas de cada categoría completa, por `categoryId`. */
+  categories: CategoryPreviewLookup;
   ownerName: string | null;
   loading: boolean;
   error: string | null;
@@ -26,13 +30,16 @@ export type CatalogDetailState = {
   isOwner: boolean;
   /** Puede entregar enlaces de este catálogo, sea suyo o compartido. */
   canShare: boolean;
+  /** Recarga ignorando la caché. */
   reload: () => Promise<void>;
   /** Actualiza el detalle en memoria (p. ej. tras guardar textos) sin refetch. */
   setDetail: (updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => void;
 };
 
 /**
- * Carga el catálogo con sus categorías, productos y enlaces.
+ * Catálogo con sus categorías, productos y enlaces, desde la caché compartida
+ * del store: al volver a la pantalla solo se recarga si pasaron más de 30 s
+ * o si hubo una mutación (`invalidateCatalog`).
  *
  * Editar sigue siendo cosa del dueño (`isOwner`), pero compartir no: en un
  * catálogo ajeno la RLS devuelve los enlaces que uno mismo entregó —nunca los
@@ -41,66 +48,82 @@ export type CatalogDetailState = {
  */
 export function useCatalogDetail(id: string | undefined): CatalogDetailState {
   const { user } = useAuth();
+  const viewerId = user?.id ?? null;
   const access = useCatalogAccess();
-  const [detail, setDetailState] = useState<PrivateCatalogDetail | null>(null);
-  const [products, setProducts] = useState<ProductLookup>(new Map());
-  const [ownerName, setOwnerName] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const entry = useCatalogosStore((state) => (id ? state.details[id] : undefined));
+  const loadDetail = useCatalogosStore((state) => state.loadDetail);
+  const patchDetail = useCatalogosStore((state) => state.patchDetail);
+  const [loading, setLoading] = useState(!entry);
   const [error, setError] = useState<string | null>(null);
   const [isNetworkFailure, setIsNetworkFailure] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // Una respuesta que llega con la pantalla ya fuera de foco no toca su estado.
+  const focused = useRef(true);
 
-  const reload = useCallback(async () => {
-    if (!id) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const loaded = await getPrivateCatalog(id);
-      if (!loaded) {
+  const load = useCallback(
+    async (force: boolean) => {
+      if (!id) {
         setNotFound(true);
-        setDetailState(null);
+        setLoading(false);
         return;
       }
-      setNotFound(false);
-      setDetailState(loaded);
+      setLoading(true);
+      setError(null);
+      setIsNetworkFailure(false);
+      try {
+        const loaded = await loadDetail(id, viewerId, { force });
+        if (!focused.current) return;
+        setNotFound(loaded === null);
+      } catch (caught) {
+        if (!focused.current) return;
+        setError(errorMessage(caught, 'No se pudo cargar el catálogo'));
+        setIsNetworkFailure(isNetworkError(caught));
+      } finally {
+        if (focused.current) setLoading(false);
+      }
+    },
+    [id, viewerId, loadDetail]
+  );
 
-      const { productIds, categoryIds } = collectSelectionIds(loaded.sections);
-      const [listing, categoryListings, names] = await Promise.all([
-        listPublicCatalogProductsByIds(productIds),
-        Promise.all(categoryIds.map((categoryId) => listAllPublicCatalogProductsInCategory(categoryId))),
-        loaded.ownerId !== user?.id ? fetchProfileNames([loaded.ownerId]) : Promise.resolve(null),
-      ]);
-      const allProducts = [...listing, ...categoryListings.flat()];
-      setProducts(new Map(allProducts.map((item) => [item.productId, item])));
-      setOwnerName(names ? (names.get(loaded.ownerId) ?? null) : null);
-    } catch (caught) {
-      setError(errorMessage(caught, 'No se pudo cargar el catálogo'));
-      setIsNetworkFailure(isNetworkError(caught));
-    } finally {
-      setLoading(false);
-    }
-  }, [id, user?.id]);
+  const reload = useCallback(() => load(true), [load]);
 
   useFocusEffect(
     useCallback(() => {
-      void reload();
-    }, [reload])
+      focused.current = true;
+      void load(false);
+      return () => {
+        focused.current = false;
+      };
+    }, [load])
   );
 
-  const setDetail = useCallback((updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => {
-    setDetailState((current) => (current ? updater(current) : current));
-  }, []);
+  const setDetail = useCallback(
+    (updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => {
+      if (id) patchDetail(id, updater);
+    },
+    [id, patchDetail]
+  );
 
-  const isOwner = useMemo(() => Boolean(detail && user && detail.ownerId === user.id), [detail, user]);
+  const detail = notFound ? null : (entry?.detail ?? null);
+  const isOwner = useMemo(() => Boolean(detail && viewerId && detail.ownerId === viewerId), [detail, viewerId]);
   // Si el detalle cargó, la RLS ya confirmó que puede verlo; lo único que falta
   // comprobar es el permiso de entregar enlaces.
   const canShare = Boolean(detail) && access.canCreateShareLink;
 
-  return { detail, products, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail };
+  return {
+    detail,
+    products: entry?.products ?? EMPTY_PRODUCTS,
+    categories: entry?.categories ?? EMPTY_CATEGORIES,
+    ownerName: entry?.ownerName ?? null,
+    loading,
+    error,
+    isNetworkFailure,
+    notFound,
+    isOwner,
+    canShare,
+    reload,
+    setDetail,
+  };
 }
 
 /** Resumen de enlaces y estado visible, con un solo `now` por render. */
