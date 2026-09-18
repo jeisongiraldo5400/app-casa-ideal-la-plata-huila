@@ -21,7 +21,7 @@ import {
     fetchDeliveryOrderSerials,
     serialMatchesQuery,
 } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
-import { fetchDeliveryOrderItems } from '../infrastructure/services/deliveryOrderItemsService';
+import { fetchDeliveryOrderItemsForViewing } from '../infrastructure/services/deliveryOrderItemsService';
 import { DeliveryOrderItem } from '../types';
 
 type SerialsByLine = Record<string, DeliveryOrderSerialRecord[]>;
@@ -32,9 +32,10 @@ interface DeliveryOrderProductsModalProps {
     orderId: string;
     orderNumber: string;
     /**
-     * Origen de los productos. Por defecto lee la tabla con RLS, que sólo
-     * responde a quien administra o creó la orden; las pantallas donde el
-     * usuario apenas tiene la orden asignada inyectan el RPC autorizado.
+     * Origen de los productos. Por defecto va por el RPC de consulta, que
+     * responde a cualquier sesión y cae a la tabla con RLS mientras la
+     * migración no exista; las pantallas donde el usuario tiene la orden
+     * asignada inyectan el RPC autorizado del flujo de salidas.
      */
     loadItems?: (orderId: string) => Promise<DeliveryOrderItem[]>;
     /**
@@ -49,7 +50,7 @@ export function DeliveryOrderProductsModal({
     onClose,
     orderId,
     orderNumber,
-    loadItems = fetchDeliveryOrderItems,
+    loadItems = fetchDeliveryOrderItemsForViewing,
     loadSerials = fetchDeliveryOrderSerials,
 }: DeliveryOrderProductsModalProps) {
     const insets = useSafeAreaInsets();
