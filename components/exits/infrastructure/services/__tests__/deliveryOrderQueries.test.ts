@@ -45,6 +45,7 @@ function fakePostgrest(tables: Record<string, Row[]>, options: { failOn?: (call:
         return chain;
       },
       order: () => chain,
+      returns: () => chain,
       range: (from: number, to: number) => {
         range = [from, to];
         return Promise.resolve(run());
@@ -113,9 +114,9 @@ describe('consultas de órdenes de entrega con miles de ids', () => {
   it('fetchDeliveredTotalsByOrder con 1200 órdenes suma por orden sin perder filas', async () => {
     const orderIds = Array.from({ length: 1200 }, (_, i) => uuid('o', i));
     const items = orderIds.flatMap((orderId) => [
-      { delivery_order_id: orderId, delivered_quantity: 2, deleted_at: null },
-      { delivery_order_id: orderId, delivered_quantity: 3, deleted_at: null },
-      { delivery_order_id: orderId, delivered_quantity: 50, deleted_at: '2026-09-01T00:00:00Z' },
+      { delivery_order_id: orderId, quantity: 2, delivered_quantity: 2, returned_quantity: 0, deleted_at: null },
+      { delivery_order_id: orderId, quantity: 4, delivered_quantity: 3, returned_quantity: 0, deleted_at: null },
+      { delivery_order_id: orderId, quantity: 50, delivered_quantity: 50, returned_quantity: 0, deleted_at: '2026-09-01T00:00:00Z' },
     ]);
     const inCalls = fakePostgrest({ delivery_order_items: items });
 
@@ -124,6 +125,20 @@ describe('consultas de órdenes de entrega con miles de ids', () => {
     expect(totals.size).toBe(1200);
     expect([...totals.values()].every((total) => total === 5)).toBe(true);
     expect(inCalls.every((call) => call.values.length <= 150)).toBe(true);
+  });
+
+  it('fetchDeliveredTotalsByOrder cuenta lo devuelto como resuelto y no pasa de lo pedido', async () => {
+    const orderId = uuid('o', 1);
+    fakePostgrest({
+      delivery_order_items: [
+        // Una unidad devuelta: `delivered_quantity` bajó, pero la línea está cerrada.
+        { delivery_order_id: orderId, quantity: 3, delivered_quantity: 2, returned_quantity: 1, deleted_at: null },
+        // Nunca por encima de lo pedido aunque los contadores vengan inflados.
+        { delivery_order_id: orderId, quantity: 2, delivered_quantity: 2, returned_quantity: 2, deleted_at: null },
+      ],
+    });
+
+    await expect(fetchDeliveredTotalsByOrder([orderId])).resolves.toEqual(new Map([[orderId, 5]]));
   });
 
   it('sin ids no consulta', async () => {

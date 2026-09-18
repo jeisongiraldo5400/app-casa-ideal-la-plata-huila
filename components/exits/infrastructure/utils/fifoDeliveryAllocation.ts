@@ -1,4 +1,5 @@
 import { compositeKey, groupedKey } from '@/components/exits/infrastructure/utils/compositeKey';
+import { resolvedDeliveryQuantity } from '@/components/purchase-orders/domain/deliveryOrderItem';
 
 export type FifoAllocatableLine = {
   id: string;
@@ -6,6 +7,8 @@ export type FifoAllocatableLine = {
   warehouse_id: string;
   quantity: number;
   db_delivered_quantity: number;
+  /** Devuelto por el cliente (delivery_order_items.returned_quantity). 0 si falta. */
+  db_returned_quantity?: number;
   created_at: string;
   /** Grupo de la línea (`'own'` u OE hija). Ausente equivale a `'own'`. */
   group_key?: string;
@@ -27,17 +30,25 @@ export function sortLinesFifo<T extends FifoAllocatableLine>(lines: T[]): T[] {
 }
 
 /**
- * Total delivered for a (product, warehouse) group on this order:
- * reconciles sum of DB row delivered_quantity with inventory_exits aggregate, capped by total ordered qty.
+ * Unidades ya resueltas de un (producto, bodega) en esta orden: lo entregado más
+ * lo devuelto por el cliente, con tope en lo pedido.
+ *
+ * Se toma además como piso lo que ya salió de bodega (`inventory_exits` no
+ * canceladas): una salida no se borra al devolver, así que aunque la base
+ * todavía no tenga `returned_quantity` una unidad devuelta nunca se vuelve a
+ * ofrecer para despachar. Con la migración aplicada ambos números coinciden.
  */
 export function aggregateRegisteredTotalForGroup(
   lines: FifoAllocatableLine[],
   exitTotalRaw: number
 ): number {
-  const sumDb = lines.reduce((s, l) => s + (l.db_delivered_quantity || 0), 0);
+  const sumResolved = lines.reduce(
+    (s, l) => s + resolvedDeliveryQuantity(l.quantity || 0, l.db_delivered_quantity || 0, l.db_returned_quantity || 0),
+    0
+  );
   const sumQty = lines.reduce((s, l) => s + (l.quantity || 0), 0);
   if (sumQty <= 0) return 0;
-  return Math.min(Math.max(sumDb, exitTotalRaw), sumQty);
+  return Math.min(Math.max(sumResolved, exitTotalRaw), sumQty);
 }
 
 /**

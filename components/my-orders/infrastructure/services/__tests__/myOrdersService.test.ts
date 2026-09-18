@@ -115,6 +115,8 @@ describe('myOrdersService', () => {
         warehouse_name: 'Principal',
         quantity: 5,
         delivered_quantity: 2,
+        returned_quantity: 0,
+        resolved_quantity: 2,
         pending_quantity: 3,
         is_complete: false,
         notes: 'Entregar con base',

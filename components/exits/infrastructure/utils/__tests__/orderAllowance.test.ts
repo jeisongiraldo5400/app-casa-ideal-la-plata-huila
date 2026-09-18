@@ -15,6 +15,7 @@ function line(overrides: Partial<DeliveryOrderItem>): DeliveryOrderItem {
     delivered_quantity: 0,
     pending_quantity: 1,
     db_delivered_quantity: 0,
+    db_returned_quantity: 0,
     created_at: '2026-09-10T10:00:00.000Z',
     source_delivery_order_id: null,
     group_key: 'own',
@@ -79,6 +80,35 @@ describe('computeKeyAllowance', () => {
 
     expect(allowance.totalDelivered).toBe(3);
     expect(allowance.maxCart).toBe(1);
+  });
+
+  it('una unidad devuelta no se puede volver a despachar contra la orden', () => {
+    // OE-2026-3161: 3 pedidas, 2 entregadas y 1 devuelta. `delivered_quantity`
+    // bajó a 2 al devolver, pero la unidad devuelta ya salió de bodega.
+    const deliveryOrder = order([line({ quantity: 3, db_delivered_quantity: 2, db_returned_quantity: 1 })]);
+
+    // Con la migración aplicada basta la línea: sin caché de salidas el cupo ya es 0.
+    const sinCache = computeKeyAllowance(deliveryOrder, {}, 'product-1', 'warehouse-1');
+    expect(sinCache.totalDelivered).toBe(3);
+    expect(sinCache.maxCart).toBe(0);
+
+    // Y con las salidas registradas (que no se borran al devolver) sigue en 0.
+    const conCache = computeKeyAllowance(
+      deliveryOrder,
+      { [compositeKey('product-1', 'warehouse-1')]: 3 },
+      'product-1',
+      'warehouse-1',
+    );
+    expect(conCache.maxCart).toBe(0);
+  });
+
+  it('con devolución parcial deja cupo solo para lo que falta de verdad', () => {
+    const deliveryOrder = order([line({ quantity: 5, db_delivered_quantity: 2, db_returned_quantity: 1 })]);
+
+    const allowance = computeKeyAllowance(deliveryOrder, {}, 'product-1', 'warehouse-1');
+
+    expect(allowance.totalDelivered).toBe(3);
+    expect(allowance.maxCart).toBe(2);
   });
 
   it('el caché de otra bodega no descuenta cupo', () => {

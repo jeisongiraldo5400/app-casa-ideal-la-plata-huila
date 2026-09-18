@@ -65,14 +65,21 @@ function AllOrdersScreenInner() {
           }}
         />
       </View>
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.primary.main} />}>
-        {activeTab === 'purchase'
-          ? <AllOrdersList searchQuery={searchQuery} />
-          : <AllDeliveryOrdersList searchQuery={searchQuery} refreshTrigger={deliveryRefreshKey} />}
-      </ScrollView>
+      {/* Las órdenes de entrega se pintan en una FlatList que pagina al llegar
+          al final y trae su propio «deslizar para actualizar», así que no puede
+          ir dentro de este ScrollView. Las de compra siguen igual. */}
+      {activeTab === 'purchase' ? (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.primary.main} />}>
+          <AllOrdersList searchQuery={searchQuery} />
+        </ScrollView>
+      ) : (
+        <View style={[styles.content, styles.contentContainer]}>
+          <AllDeliveryOrdersList searchQuery={searchQuery} refreshTrigger={deliveryRefreshKey} />
+        </View>
+      )}
     </View>
   );
 }

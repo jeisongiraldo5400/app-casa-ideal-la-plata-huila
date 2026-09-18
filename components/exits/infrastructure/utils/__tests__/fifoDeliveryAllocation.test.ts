@@ -38,6 +38,23 @@ describe('fifoDeliveryAllocation', () => {
     expect(aggregateRegisteredTotalForGroup(lines, 99)).toBe(5);
   });
 
+  it('aggregateRegisteredTotalForGroup cuenta lo devuelto como resuelto', () => {
+    // 3 pedidas, 2 entregadas y 1 devuelta: la línea está resuelta aunque la
+    // base ya no tenga salidas que reconciliar.
+    const lines = [line({ id: '1', quantity: 3, db_delivered_quantity: 2, db_returned_quantity: 1 })];
+    expect(aggregateRegisteredTotalForGroup(lines, 0)).toBe(3);
+    expect(aggregateRegisteredTotalForGroup(lines, 3)).toBe(3);
+  });
+
+  it('una unidad devuelta no queda pendiente de escanear', () => {
+    const items = [line({ id: 'unica', quantity: 3, db_delivered_quantity: 2, db_returned_quantity: 1 })];
+    const totals = buildRegisteredTotalsByKey(items, {});
+
+    const progress = computeFifoProgressByItemId(items, { [groupedKey('p1', 'w1', 'own')]: totals[compositeKey('p1', 'w1')] }, new Map());
+
+    expect(progress.get('unica')).toEqual({ registered: 3, sessionScanned: 0, pending: 0 });
+  });
+
   it('computeFifoProgressByItemId allocates registered and session oldest-first', () => {
     const items = [
       line({ id: 'old', quantity: 3, created_at: '2026-01-01T00:00:00.000Z' }),

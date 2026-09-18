@@ -1,5 +1,6 @@
 import { OWN_GROUP_KEY, compositeKey, groupedKey } from '@/components/exits/infrastructure/utils/compositeKey';
 import { targetOrderIdForGroup } from '@/components/exits/infrastructure/utils/deliveryGroups';
+import { resolvedDeliveryQuantity } from '@/components/purchase-orders/domain/deliveryOrderItem';
 import type { DeliveryOrder, DeliveryOrderItem } from '@/components/exits/infrastructure/store/exitsStore';
 
 export type KeyAllowance = {
@@ -29,9 +30,13 @@ export function computeKeyAllowance(
       (item.group_key ?? OWN_GROUP_KEY) === groupKey
   );
   const totalRequired = lines.reduce((sum, item) => sum + item.quantity, 0);
-  const sumDbDelivered = lines.reduce((sum, item) => sum + item.db_delivered_quantity, 0);
+  // Resuelto = entregado + devuelto: lo devuelto no se puede volver a despachar.
+  const sumResolved = lines.reduce(
+    (sum, item) => sum + resolvedDeliveryQuantity(item.quantity, item.db_delivered_quantity, item.db_returned_quantity),
+    0
+  );
   const cacheTotal = cacheSlice[compositeKey(productId, warehouseId)] ?? 0;
-  const totalDelivered = Math.min(Math.max(sumDbDelivered, cacheTotal), totalRequired);
+  const totalDelivered = Math.min(Math.max(sumResolved, cacheTotal), totalRequired);
   return {
     lines,
     totalRequired,

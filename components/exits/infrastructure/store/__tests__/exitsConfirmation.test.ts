@@ -47,6 +47,7 @@ const order: DeliveryOrder = {
       delivered_quantity: 0,
       pending_quantity: 3,
       db_delivered_quantity: 0,
+      db_returned_quantity: 0,
       created_at: '2026-08-21T10:00:00.000Z',
       source_delivery_order_id: null,
       group_key: 'own',

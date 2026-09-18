@@ -21,7 +21,7 @@ import {
     fetchDeliveryOrderSerials,
     serialMatchesQuery,
 } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
-import { fetchDeliveryOrderItems } from '../infrastructure/services/deliveryOrderItemsService';
+import { fetchDeliveryOrderItemsForViewing } from '../infrastructure/services/deliveryOrderItemsService';
 import { DeliveryOrderItem } from '../types';
 
 type SerialsByLine = Record<string, DeliveryOrderSerialRecord[]>;
@@ -32,9 +32,10 @@ interface DeliveryOrderProductsModalProps {
     orderId: string;
     orderNumber: string;
     /**
-     * Origen de los productos. Por defecto lee la tabla con RLS, que sólo
-     * responde a quien administra o creó la orden; las pantallas donde el
-     * usuario apenas tiene la orden asignada inyectan el RPC autorizado.
+     * Origen de los productos. Por defecto va por el RPC de consulta, que
+     * responde a cualquier sesión y cae a la tabla con RLS mientras la
+     * migración no exista; las pantallas donde el usuario tiene la orden
+     * asignada inyectan el RPC autorizado del flujo de salidas.
      */
     loadItems?: (orderId: string) => Promise<DeliveryOrderItem[]>;
     /**
@@ -49,7 +50,7 @@ export function DeliveryOrderProductsModal({
     onClose,
     orderId,
     orderNumber,
-    loadItems = fetchDeliveryOrderItems,
+    loadItems = fetchDeliveryOrderItemsForViewing,
     loadSerials = fetchDeliveryOrderSerials,
 }: DeliveryOrderProductsModalProps) {
     const insets = useSafeAreaInsets();
@@ -117,15 +118,19 @@ export function DeliveryOrderProductsModal({
     const visibleItems = filteredItems.slice(0, visibleCount);
     const hasMoreItems = filteredItems.length > visibleCount;
 
-    // Calcular totales
+    // Calcular totales. El avance se mide en unidades resueltas (entregadas +
+    // devueltas): si el cliente devolvió una unidad es porque ya se la habían
+    // entregado, así que la línea queda cerrada y la orden puede darse por completa.
     const totals = useMemo(() => {
         const total_items = items.length;
         const completed_items = items.filter(i => i.is_complete).length;
         const pending_items = total_items - completed_items;
         const total_quantity = items.reduce((sum, i) => sum + i.quantity, 0);
         const delivered_quantity = items.reduce((sum, i) => sum + i.delivered_quantity, 0);
+        const returned_quantity = items.reduce((sum, i) => sum + i.returned_quantity, 0);
+        const resolved_quantity = items.reduce((sum, i) => sum + i.resolved_quantity, 0);
         const pending_quantity = items.reduce((sum, i) => sum + i.pending_quantity, 0);
-        const progress = total_quantity > 0 ? (delivered_quantity / total_quantity) * 100 : 0;
+        const progress = total_quantity > 0 ? (resolved_quantity / total_quantity) * 100 : 0;
 
         return {
             total_items,
@@ -133,6 +138,8 @@ export function DeliveryOrderProductsModal({
             pending_items,
             total_quantity,
             delivered_quantity,
+            returned_quantity,
+            resolved_quantity,
             pending_quantity,
             progress,
         };
@@ -212,9 +219,19 @@ export function DeliveryOrderProductsModal({
                                         Pendientes
                                     </Text>
                                 </View>
+                                {totals.returned_quantity > 0 && (
+                                    <View style={styles.statItem}>
+                                        <Text style={[styles.statValue, { color: colors.info.main }]}>
+                                            {totals.returned_quantity}
+                                        </Text>
+                                        <Text style={[styles.statLabel, { color: colors.text.secondary }]}>
+                                            Devueltas
+                                        </Text>
+                                    </View>
+                                )}
                                 <View style={styles.statItem}>
                                     <Text style={[styles.statValue, { color: colors.text.primary }]}>
-                                        {totals.delivered_quantity}/{totals.total_quantity}
+                                        {totals.resolved_quantity}/{totals.total_quantity}
                                     </Text>
                                     <Text style={[styles.statLabel, { color: colors.text.secondary }]}>
                                         Unidades
@@ -279,7 +296,7 @@ export function DeliveryOrderProductsModal({
                                             styles.itemCard,
                                             { borderColor: colors.divider, backgroundColor: colors.background.paper },
                                             item.is_complete && { borderColor: colors.success.main, backgroundColor: colors.success.main + '10' },
-                                            !item.is_complete && item.delivered_quantity > 0 && { borderColor: colors.warning.main, backgroundColor: colors.warning.main + '10' },
+                                            !item.is_complete && item.resolved_quantity > 0 && { borderColor: colors.warning.main, backgroundColor: colors.warning.main + '10' },
                                         ]}
                                     >
                                         <View style={styles.itemHeader}>
@@ -329,7 +346,7 @@ export function DeliveryOrderProductsModal({
                                             <View style={styles.itemStatus}>
                                                 {item.is_complete ? (
                                                     <MaterialIcons name="check-circle" size={32} color={colors.success.main} />
-                                                ) : item.delivered_quantity > 0 ? (
+                                                ) : item.resolved_quantity > 0 ? (
                                                     <MaterialIcons name="pending" size={32} color={colors.warning.main} />
                                                 ) : (
                                                     <MaterialIcons name="radio-button-unchecked" size={32} color={colors.text.secondary} />
@@ -354,6 +371,16 @@ export function DeliveryOrderProductsModal({
                                                     {item.delivered_quantity}
                                                 </Text>
                                             </View>
+                                            {item.returned_quantity > 0 && (
+                                                <View style={[styles.quantityBox, { backgroundColor: colors.info.main + '15' }]}>
+                                                    <Text style={[styles.quantityLabel, { color: colors.text.secondary }]}>
+                                                        Devuelto
+                                                    </Text>
+                                                    <Text style={[styles.quantityValue, { color: colors.info.main }]}>
+                                                        {item.returned_quantity}
+                                                    </Text>
+                                                </View>
+                                            )}
                                             <View style={[styles.quantityBox, { backgroundColor: colors.warning.main + '15' }]}>
                                                 <Text style={[styles.quantityLabel, { color: colors.text.secondary }]}>
                                                     Pendiente

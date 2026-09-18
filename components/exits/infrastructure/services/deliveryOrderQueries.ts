@@ -1,5 +1,14 @@
 import { buildRegisteredTotalsByKey } from '@/components/exits/infrastructure/utils/fifoDeliveryAllocation';
 import { compositeKey } from '@/components/exits/infrastructure/utils/compositeKey';
+// Servicio a servicio: la compuerta y la regla de "resuelto" viven en órdenes de
+// entrega y las comparten todas las pantallas; se importan por su ruta directa
+// para no arrastrar más módulo del necesario.
+import { pendingDeliveryQuantity, resolvedDeliveryQuantity } from '@/components/purchase-orders/domain/deliveryOrderItem';
+import {
+  readReturnedQuantity,
+  returnedQuantityGate,
+  withReturnedQuantity,
+} from '@/components/purchase-orders/infrastructure/services/returnedQuantityColumn';
 import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
@@ -25,6 +34,8 @@ export type DeliveryOrderItemQueryRow = Pick<
 > & {
   /** Opcional: la columna existe desde la migración de notas por producto. */
   notes?: string | null;
+  /** Opcional: la columna llega con la migración de devoluciones. 0 si falta. */
+  returned_quantity?: number | null;
   /** Solo en copias de OE hijas dentro de una remisión (migración de remisiones mixtas). */
   source_order_number?: string | null;
   source_customer_name?: string | null;
@@ -41,6 +52,19 @@ type AuthorizedItemRow = Database['public']['Functions']['get_authorized_deliver
   source_order_number?: string | null;
   source_customer_name?: string | null;
   source_order_status?: string | null;
+  returned_quantity?: number | null;
+};
+
+/**
+ * Fila de la consulta de respaldo con RLS. Se declara a mano porque el `select`
+ * ya no es una cadena literal: lleva `returned_quantity` solo si la base la tiene.
+ */
+type DeliveryOrderItemDetailRow = Pick<
+  Database['public']['Tables']['delivery_order_items']['Row'],
+  'id' | 'product_id' | 'warehouse_id' | 'quantity' | 'delivered_quantity' | 'created_at' | 'deleted_at' | 'source_delivery_order_id'
+> & {
+  notes?: string | null;
+  returned_quantity?: number | null;
 };
 
 const DELIVERY_ORDER_ITEM_DETAIL_SELECT = `
@@ -72,6 +96,7 @@ export async function fetchSelectableDeliveryOrderItems(
         warehouse_id: item.warehouse_id,
         quantity: item.quantity,
         delivered_quantity: item.delivered_quantity,
+        returned_quantity: readReturnedQuantity(item),
         created_at: item.created_at,
         deleted_at: null,
         source_delivery_order_id: item.source_delivery_order_id ?? null,
@@ -90,22 +115,23 @@ export async function fetchSelectableDeliveryOrderItems(
     return { data: [], error: rpcResult.error };
   }
 
-  let itemResult = await supabase
-    .from('delivery_order_items')
-    .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
-    .eq('delivery_order_id', orderId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
+  const readItemsBy = (column: 'delivery_order_id' | 'source_delivery_order_id') =>
+    returnedQuantityGate.run((withColumn) =>
+      supabase
+        .from('delivery_order_items')
+        .select(withReturnedQuantity(DELIVERY_ORDER_ITEM_DETAIL_SELECT, withColumn))
+        .eq(column, orderId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .returns<DeliveryOrderItemDetailRow[]>(),
+    );
+
+  let itemResult = await readItemsBy('delivery_order_id');
   if (itemResult.error) return { data: [], error: itemResult.error };
 
   if (!itemResult.data?.length) {
     // Algunas órdenes de cliente llegan copiadas dentro de una remisión: la clave confiable es source_delivery_order_id.
-    itemResult = await supabase
-      .from('delivery_order_items')
-      .select(DELIVERY_ORDER_ITEM_DETAIL_SELECT)
-      .eq('source_delivery_order_id', orderId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true });
+    itemResult = await readItemsBy('source_delivery_order_id');
     if (itemResult.error) return { data: [], error: itemResult.error };
   }
 
@@ -210,23 +236,41 @@ export function groupExitsByOrder(exits: InventoryExitRow[], cancelledIds: Set<s
   return byOrder;
 }
 
-/** Suma de delivered_quantity (fuente de verdad en BD) por orden. Lanza si la consulta falla. */
+type DeliveredTotalsRow = {
+  delivery_order_id: string;
+  quantity: number | null;
+  delivered_quantity: number | null;
+  returned_quantity?: number | null;
+};
+
+/**
+ * Unidades resueltas por orden (entregado + devuelto, con tope en lo pedido de cada
+ * línea). Es la fuente de verdad en BD. Lanza si la consulta falla.
+ */
 export async function fetchDeliveredTotalsByOrder(orderIds: string[]): Promise<Map<string, number>> {
   const totals = new Map<string, number>();
   if (orderIds.length === 0) return totals;
-  const data = await fetchInChunks(
-    orderIds,
-    (chunk) =>
-      supabase
-        .from('delivery_order_items')
-        .select('delivery_order_id, delivered_quantity')
-        .in('delivery_order_id', chunk)
-        .is('deleted_at', null)
-        .order('id', { ascending: true }),
-    { pageSize: IN_FILTER_PAGE_SIZE }
+  const data = await returnedQuantityGate.run((withColumn) =>
+    fetchInChunks(
+      orderIds,
+      (chunk) =>
+        supabase
+          .from('delivery_order_items')
+          .select(withReturnedQuantity('delivery_order_id, quantity, delivered_quantity', withColumn))
+          .in('delivery_order_id', chunk)
+          .is('deleted_at', null)
+          .order('id', { ascending: true })
+          .returns<DeliveredTotalsRow[]>(),
+      { pageSize: IN_FILTER_PAGE_SIZE }
+    )
   );
   data.forEach((item) => {
-    totals.set(item.delivery_order_id, (totals.get(item.delivery_order_id) || 0) + (item.delivered_quantity || 0));
+    const resolved = resolvedDeliveryQuantity(
+      Number(item.quantity) || 0,
+      Number(item.delivered_quantity) || 0,
+      readReturnedQuantity(item)
+    );
+    totals.set(item.delivery_order_id, (totals.get(item.delivery_order_id) || 0) + resolved);
   });
   return totals;
 }
@@ -237,6 +281,8 @@ export type CustomerOrderItemRow = {
   warehouse_id: string;
   quantity: number;
   delivered_quantity: number | null;
+  /** Ausente mientras la migración de devoluciones no esté aplicada. */
+  returned_quantity?: number | null;
   deleted_at: string | null;
   product: Pick<Product, 'id' | 'name' | 'barcode' | 'sku' | 'deleted_at'> | null;
 };
@@ -245,29 +291,31 @@ export type CustomerOrderRow = DeliveryOrderRow & { items: CustomerOrderItemRow[
 
 /** Órdenes pendientes de un cliente con sus líneas activas. Lanza si la consulta falla. */
 export async function fetchPendingCustomerOrders(customerId: string): Promise<CustomerOrderRow[]> {
-  const { data, error } = await supabase
-    .from('delivery_orders')
-    .select(
-      `
+  const { data, error } = await returnedQuantityGate.run((withColumn) =>
+    supabase
+      .from('delivery_orders')
+      .select(
+        `
       *,
       items:delivery_order_items!fk_delivery_order_item_order!inner(
         id,
         product_id,
         warehouse_id,
         quantity,
-        delivered_quantity,
+        delivered_quantity,${withColumn ? '\n        returned_quantity,' : ''}
         deleted_at,
         product:products!inner(id, name, barcode, sku, deleted_at)
       )
     `
-    )
-    .eq('customer_id', customerId)
-    .eq('status', 'pending')
-    .is('deleted_at', null)
-    .is('items.deleted_at', null)
-    .is('items.product.deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(50);
+      )
+      .eq('customer_id', customerId)
+      .eq('status', 'pending')
+      .is('deleted_at', null)
+      .is('items.deleted_at', null)
+      .is('items.product.deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(50)
+  );
   if (error) throw error;
   // El select con pistas de relación (!fk_...) no lo infiere el generador de tipos.
   return (data || []) as unknown as CustomerOrderRow[];
@@ -314,6 +362,7 @@ export function buildRegisteredTotalsByOrder(
         warehouse_id: line.warehouse_id,
         quantity: Number(line.quantity) || 0,
         db_delivered_quantity: Number(line.delivered_quantity) || 0,
+        db_returned_quantity: readReturnedQuantity(line),
         created_at: line.created_at || EPOCH_ISO,
       }));
     const totals = buildRegisteredTotalsByKey(groupLines, Object.fromEntries(exitsByOrder.get(targetId) || []));
@@ -345,8 +394,14 @@ export async function loadRegisteredTotalsForSelectedOrder(
   const exitsByOrder = groupExitsByOrder(exits, cancelledExitIds);
 
   const totalsByOrder = buildRegisteredTotalsByOrder(orderId, activeLines, exitsByOrder);
+  // Una línea queda cerrada cuando lo entregado más lo devuelto cubre lo pedido.
   const completed = activeLines.every(
-    (line) => (Number(line.delivered_quantity) || 0) >= (Number(line.quantity) || 0)
+    (line) =>
+      pendingDeliveryQuantity(
+        Number(line.quantity) || 0,
+        Number(line.delivered_quantity) || 0,
+        readReturnedQuantity(line)
+      ) === 0
   );
   return { totalsByOrder, completed };
 }
