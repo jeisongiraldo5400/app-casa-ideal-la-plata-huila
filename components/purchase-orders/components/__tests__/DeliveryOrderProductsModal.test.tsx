@@ -40,14 +40,14 @@ const serialsByLine = {
   ],
 };
 
-function renderModal(loadSerials: jest.Mock) {
+function renderModal(loadSerials: jest.Mock, loadedItems = items) {
   return render(
     <DeliveryOrderProductsModal
       visible
       onClose={jest.fn()}
       orderId="order-1"
       orderNumber="OE-1"
-      loadItems={jest.fn().mockResolvedValue(items)}
+      loadItems={jest.fn().mockResolvedValue(loadedItems)}
       loadSerials={loadSerials}
     />,
   );
@@ -83,5 +83,53 @@ describe('DeliveryOrderProductsModal · seriales', () => {
     expect(screen.getByText('Lavadora')).toBeTruthy();
     expect(screen.queryByText(/Seriales \(/)).toBeNull();
     expect(screen.queryByText('Reintentar')).toBeNull();
+  });
+});
+
+describe('DeliveryOrderProductsModal · devoluciones', () => {
+  /** OE-2026-3161: 3 productos de 1 unidad, uno devuelto por el cliente. */
+  const conDevolucion = [
+    toDeliveryOrderItem({
+      id: 'item-1', product_id: 'p1', product_name: 'Nevera', product_sku: null, product_barcode: null,
+      warehouse_id: 'w1', warehouse_name: 'Principal', quantity: 1, delivered_quantity: 1,
+    }),
+    toDeliveryOrderItem({
+      id: 'item-2', product_id: 'p2', product_name: 'Lavadora', product_sku: null, product_barcode: null,
+      warehouse_id: 'w1', warehouse_name: 'Principal', quantity: 1, delivered_quantity: 1,
+    }),
+    toDeliveryOrderItem({
+      id: 'item-3', product_id: 'p3', product_name: 'Estufa', product_sku: null, product_barcode: null,
+      warehouse_id: 'w1', warehouse_name: 'Principal', quantity: 1, delivered_quantity: 0, returned_quantity: 1,
+    }),
+  ];
+
+  it('muestra la unidad devuelta como Devuelto y da la orden por completa', async () => {
+    const screen = renderModal(jest.fn().mockResolvedValue({}), conDevolucion);
+
+    await waitFor(() => expect(screen.getByText('Estufa')).toBeTruthy());
+
+    // La unidad devuelta se ve como devuelta, no como si nunca hubiera salido.
+    expect(screen.getByText('Devuelto')).toBeTruthy();
+    expect(screen.getByText('Devueltas')).toBeTruthy();
+
+    // Resumen: 3 completados, 0 pendientes, 3/3 unidades y 100 %.
+    expect(screen.getByText('Completados')).toBeTruthy();
+    expect(screen.getByText('Pendientes')).toBeTruthy();
+    // El único «3» suelto es el contador de completados.
+    expect(screen.getAllByText('3')).toHaveLength(1);
+    expect(screen.getByText('3/3')).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(screen.getAllByText('check-circle')).toHaveLength(3);
+    expect(screen.queryByText('radio-button-unchecked')).toBeNull();
+  });
+
+  it('sin devoluciones no aparece ninguna caja de devueltos', async () => {
+    const screen = renderModal(jest.fn().mockResolvedValue({}));
+
+    await waitFor(() => expect(screen.getByText('Nevera')).toBeTruthy());
+
+    expect(screen.queryByText('Devuelto')).toBeNull();
+    expect(screen.queryByText('Devueltas')).toBeNull();
+    expect(screen.getByText('1/3')).toBeTruthy();
   });
 });

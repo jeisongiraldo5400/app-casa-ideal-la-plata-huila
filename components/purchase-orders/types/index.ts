@@ -10,6 +10,10 @@ export interface DeliveryOrderItem {
   warehouse_name: string | null;
   quantity: number;
   delivered_quantity: number;
+  /** Unidades que el cliente devolvió; cuentan como resueltas, no como pendientes. */
+  returned_quantity: number;
+  /** `delivered_quantity + returned_quantity`, con tope en `quantity`. */
+  resolved_quantity: number;
   pending_quantity: number;
   is_complete: boolean;
   /** Nota por producto capturada en la web. */

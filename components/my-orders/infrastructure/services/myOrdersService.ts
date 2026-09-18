@@ -95,6 +95,7 @@ export async function fetchAssignedDeliveryOrderItems(orderId: string): Promise<
       warehouse_name: row.warehouse?.name ?? null,
       quantity: row.quantity,
       delivered_quantity: row.delivered_quantity,
+      returned_quantity: row.returned_quantity ?? 0,
       notes: row.notes,
       source_delivery_order_id: row.source_delivery_order_id,
       source_order_number: row.source_order_number,

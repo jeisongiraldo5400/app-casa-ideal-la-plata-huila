@@ -1,4 +1,4 @@
-import { toDeliveryOrderItem } from '../deliveryOrderItem';
+import { pendingDeliveryQuantity, resolvedDeliveryQuantity, toDeliveryOrderItem } from '../deliveryOrderItem';
 
 const baseSource = {
   id: 'item-1',
@@ -59,6 +59,43 @@ describe('toDeliveryOrderItem', () => {
     expect(item.quantity).toBe(7);
     expect(item.delivered_quantity).toBe(0);
     expect(item.pending_quantity).toBe(7);
+  });
+
+  it('cierra la línea cuando lo devuelto completa lo entregado', () => {
+    // Caso real de OE-2026-3161: 3 unidades, 2 entregadas y 1 devuelta por el
+    // cliente. La devuelta ya salió de bodega, así que la línea está resuelta.
+    const item = toDeliveryOrderItem({ ...baseSource, quantity: 3, delivered_quantity: 2, returned_quantity: 1 });
+
+    expect(item.delivered_quantity).toBe(2);
+    expect(item.returned_quantity).toBe(1);
+    expect(item.resolved_quantity).toBe(3);
+    expect(item.pending_quantity).toBe(0);
+    expect(item.is_complete).toBe(true);
+  });
+
+  it('con devolución parcial sigue quedando lo que falta por entregar', () => {
+    const item = toDeliveryOrderItem({ ...baseSource, quantity: 10, delivered_quantity: 4, returned_quantity: 2 });
+
+    expect(item.resolved_quantity).toBe(6);
+    expect(item.pending_quantity).toBe(4);
+    expect(item.is_complete).toBe(false);
+  });
+
+  it('trata la columna ausente o nula como cero devuelto', () => {
+    const sinColumna = toDeliveryOrderItem({ ...baseSource, quantity: 3, delivered_quantity: 2 });
+    const nula = toDeliveryOrderItem({ ...baseSource, quantity: 3, delivered_quantity: 2, returned_quantity: null });
+
+    expect(sinColumna.returned_quantity).toBe(0);
+    expect(sinColumna.pending_quantity).toBe(1);
+    expect(nula.returned_quantity).toBe(0);
+    expect(nula.pending_quantity).toBe(1);
+  });
+
+  it('nunca cuenta más de lo pedido aunque los contadores vengan inflados', () => {
+    expect(resolvedDeliveryQuantity(3, 3, 3)).toBe(3);
+    expect(pendingDeliveryQuantity(3, 3, 3)).toBe(0);
+    expect(resolvedDeliveryQuantity(3, -1, -1)).toBe(0);
+    expect(pendingDeliveryQuantity(3, 0, 0)).toBe(3);
   });
 
   it('rellena los datos ausentes del producto y descarta notas vacías', () => {

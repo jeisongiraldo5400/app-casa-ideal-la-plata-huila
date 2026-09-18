@@ -35,6 +35,8 @@ import {
   fetchActiveProfiles,
   searchCustomersByTerm,
 } from '@/components/exits/infrastructure/services/exitsService';
+import { resolvedDeliveryQuantity } from '@/components/purchase-orders/domain/deliveryOrderItem';
+import { readReturnedQuantity } from '@/components/purchase-orders/infrastructure/services/returnedQuantityColumn';
 import {
   MAX_SERIAL_LENGTH,
   checkExitSerialAvailability,
@@ -136,6 +138,12 @@ export interface DeliveryOrderItem {
   pending_quantity: number;
   /** Valor en BD por fila (delivery_order_items.delivered_quantity). */
   db_delivered_quantity: number;
+  /**
+   * Devuelto por el cliente (delivery_order_items.returned_quantity). Cuenta como
+   * resuelto: esa unidad ya salió de bodega y no se despacha otra vez. 0 mientras
+   * la migración que crea la columna no esté aplicada.
+   */
+  db_returned_quantity: number;
   created_at: string;
   /** Nota por producto capturada en la web al crear/editar la orden. */
   notes?: string | null;
@@ -552,7 +560,14 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         let totalDelivered = 0;
         const totalQuantity = activeItems.reduce((sum, item) => {
           const key = compositeKey(item.product_id, item.warehouse_id);
-          const bestEstimate = Math.max(orderExits.get(key) || 0, item.delivered_quantity || 0);
+          // Resuelto = entregado + devuelto; las salidas ya registradas son el piso
+          // mientras la columna de devoluciones no exista en la base.
+          const resolved = resolvedDeliveryQuantity(
+            item.quantity,
+            item.delivered_quantity || 0,
+            readReturnedQuantity(item)
+          );
+          const bestEstimate = Math.max(orderExits.get(key) || 0, resolved);
           totalDelivered += Math.min(bestEstimate, item.quantity);
           return sum + item.quantity;
         }, 0);
@@ -618,6 +633,8 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         (exitsByOrder.get(order.id) || new Map<string, number>()).forEach((quantity) => {
           totalFromExits += quantity;
         });
+        // `dbDeliveredByOrder` ya trae entregado + devuelto por orden; las salidas
+        // registradas son el piso mientras la columna de devoluciones no exista.
         const bestEstimate = Math.max(totalFromExits, dbDeliveredByOrder.get(order.id) || 0);
         return {
           id: order.id,
@@ -716,6 +733,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         warehouse_id: item.warehouse_id,
         quantity: Number(item.quantity) || 0,
         db_delivered_quantity: Number(item.delivered_quantity) || 0,
+        db_returned_quantity: readReturnedQuantity(item),
         created_at: item.created_at || EPOCH_ISO,
         group_key: groupKeyOf(item.source_delivery_order_id)
       }));
@@ -753,6 +771,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             delivered_quantity: fp.registered,
             pending_quantity: fp.pending,
             db_delivered_quantity: Number(item.delivered_quantity) || 0,
+            db_returned_quantity: readReturnedQuantity(item),
             created_at: item.created_at || EPOCH_ISO,
             notes: item.notes?.trim() || null,
             source_delivery_order_id: item.source_delivery_order_id ?? null,

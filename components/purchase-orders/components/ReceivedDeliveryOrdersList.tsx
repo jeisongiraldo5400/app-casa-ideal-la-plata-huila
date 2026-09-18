@@ -12,6 +12,12 @@ import {
     View,
 } from 'react-native';
 import { DeliveryOrder } from '../types';
+import { resolvedDeliveryQuantity } from '../domain/deliveryOrderItem';
+import {
+  readReturnedQuantity,
+  returnedQuantityGate,
+  withReturnedQuantity,
+} from '../infrastructure/services/returnedQuantityColumn';
 import { DeliveryOrderCard } from './DeliveryOrderCard';
 
 export function ReceivedDeliveryOrdersList() {
@@ -102,12 +108,14 @@ export function ReceivedDeliveryOrdersList() {
         
         for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
           const batch = orderIds.slice(i, i + BATCH_SIZE);
-          const { data: itemsData, error: itemsError } = await supabase
-            .from('delivery_order_items')
-            .select('delivery_order_id, quantity, delivered_quantity')
-            .in('delivery_order_id', batch)
-            .is('deleted_at', null);
-          
+          const { data: itemsData, error: itemsError } = await returnedQuantityGate.run((withColumn) =>
+            supabase
+              .from('delivery_order_items')
+              .select(withReturnedQuantity('delivery_order_id, quantity, delivered_quantity', withColumn))
+              .in('delivery_order_id', batch)
+              .is('deleted_at', null),
+          );
+
           if (itemsError) {
             console.error('Error loading delivery order items batch:', itemsError);
           } else {
@@ -139,10 +147,16 @@ export function ReceivedDeliveryOrdersList() {
             const stats = statsByOrder.get(orderId)!;
             stats.total_items += 1;
             stats.total_quantity += item.quantity || 0;
-            if (item.delivered_quantity > 0) {
+            // Misma regla que el resto: lo devuelto ya salió de bodega y cuenta.
+            const resolved = resolvedDeliveryQuantity(
+              item.quantity || 0,
+              item.delivered_quantity || 0,
+              readReturnedQuantity(item),
+            );
+            if (resolved > 0) {
               stats.delivered_items += 1;
             }
-            stats.delivered_quantity += item.delivered_quantity || 0;
+            stats.delivered_quantity += resolved;
           });
 
           // Combinar datos de órdenes con estadísticas

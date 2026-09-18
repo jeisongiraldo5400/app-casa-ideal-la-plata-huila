@@ -15,6 +15,12 @@ import {
   View,
 } from "react-native";
 import { DeliveryOrder } from "../types";
+import { resolvedDeliveryQuantity } from "../domain/deliveryOrderItem";
+import {
+  readReturnedQuantity,
+  returnedQuantityGate,
+  withReturnedQuantity,
+} from "../infrastructure/services/returnedQuantityColumn";
 import {
   EMPTY_DELIVERY_LOCATION_FILTER,
   countActiveLocationFilters,
@@ -72,54 +78,30 @@ async function buildDeliveryOrdersFromTableRows(
   // «Cargar más» amplía la lista sin tope: lotes de ids cortos (la URL de PostgREST
   // falla con cientos de UUID) y páginas (cada respuesta trae como mucho max-rows filas).
   // Si un lote falla se lanza: antes se ignoraba y la tarjeta mostraba avances en 0.
-  const allItemsData: any[] = await fetchInChunks(
-    orderIds,
-    (chunk) =>
-      supabase
-        .from("delivery_order_items")
-        .select("delivery_order_id, product_id, quantity, delivered_quantity")
-        .in("delivery_order_id", chunk)
-        .is("deleted_at", null)
-        .order("id", { ascending: true }),
-    { pageSize: IN_FILTER_PAGE_SIZE },
+  //
+  // Antes esta lista reconciliaba con `inventory_exits` porque `delivered_quantity`
+  // no se actualizaba. Hoy sí lo mantiene la base y esa reconciliación daba por
+  // entregada una unidad devuelta (la salida no se borra al devolver), así que la
+  // lista contaba distinto que el modal y que «Mis órdenes». Ahora se lee solo la
+  // línea, con la regla común: resuelto = entregado + devuelto, tope lo pedido.
+  const allItemsData: any[] = await returnedQuantityGate.run((withColumn) =>
+    fetchInChunks(
+      orderIds,
+      (chunk) =>
+        supabase
+          .from("delivery_order_items")
+          .select(
+            withReturnedQuantity(
+              "delivery_order_id, quantity, delivered_quantity",
+              withColumn,
+            ),
+          )
+          .in("delivery_order_id", chunk)
+          .is("deleted_at", null)
+          .order("id", { ascending: true }),
+      { pageSize: IN_FILTER_PAGE_SIZE },
+    ),
   );
-
-  const allExitsData: any[] = await fetchInChunks(
-    orderIds,
-    (chunk) =>
-      supabase
-        .from("inventory_exits")
-        .select("id, delivery_order_id, product_id, quantity")
-        .in("delivery_order_id", chunk)
-        .order("id", { ascending: true }),
-    { pageSize: IN_FILTER_PAGE_SIZE },
-  );
-
-  // Solo las cancelaciones de estas salidas: leer la tabla completa se cortaba en
-  // max-rows filas y las cancelaciones más recientes dejaban de descontarse.
-  const cancellations = await fetchInChunks(
-    allExitsData.map((exit: any) => exit.id),
-    (chunk) =>
-      supabase
-        .from("inventory_exit_cancellations")
-        .select("inventory_exit_id")
-        .in("inventory_exit_id", chunk)
-        .is("deleted_at", null),
-  );
-  const cancelledExitIds = new Set(
-    cancellations.map((c) => c.inventory_exit_id),
-  );
-
-  const exitsByOrderProduct = new Map<string, number>();
-  allExitsData.forEach((exit: any) => {
-    if (cancelledExitIds.has(exit.id)) return;
-    if (!exit.delivery_order_id || !exit.product_id) return;
-    const key = `${exit.delivery_order_id}:${exit.product_id}`;
-    exitsByOrderProduct.set(
-      key,
-      (exitsByOrderProduct.get(key) || 0) + (exit.quantity || 0),
-    );
-  });
 
   const statsByOrder = new Map<
     string,
@@ -146,18 +128,16 @@ async function buildDeliveryOrdersFromTableRows(
     const itemQuantity = item.quantity || 0;
     stats.total_quantity += itemQuantity;
 
-    const fromDB = item.delivered_quantity || 0;
-    const exitKey = `${orderId}:${item.product_id}`;
-    const fromExits = exitsByOrderProduct.get(exitKey) || 0;
-    const reconciledDelivered = Math.min(
-      Math.max(fromExits, fromDB),
+    const resolved = resolvedDeliveryQuantity(
       itemQuantity,
+      item.delivered_quantity || 0,
+      readReturnedQuantity(item),
     );
 
-    if (reconciledDelivered >= itemQuantity && itemQuantity > 0) {
+    if (resolved >= itemQuantity && itemQuantity > 0) {
       stats.delivered_items += 1;
     }
-    stats.delivered_quantity += reconciledDelivered;
+    stats.delivered_quantity += resolved;
   });
 
   const ordersWithStats = ordersData.map((order: any) => {

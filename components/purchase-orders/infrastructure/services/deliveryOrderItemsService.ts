@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { toDeliveryOrderItem } from '../../domain/deliveryOrderItem';
 import { DeliveryOrderItem } from '../../types';
+import { readReturnedQuantity, returnedQuantityGate, withReturnedQuantity } from './returnedQuantityColumn';
 
 const DELIVERY_ORDER_ITEMS_SELECT = `
   id,
@@ -20,6 +21,8 @@ interface DeliveryOrderItemRow {
   warehouse_id: string | null;
   quantity: number | null;
   delivered_quantity: number | null;
+  /** Ausente mientras la migración de devoluciones no esté aplicada. */
+  returned_quantity?: number | null;
   notes: string | null;
   product: { name: string | null; sku: string | null; barcode: string | null } | null;
   warehouse: { name: string | null } | null;
@@ -32,13 +35,15 @@ interface DeliveryOrderItemRow {
  * autorizado (ver `myOrdersService`).
  */
 export async function fetchDeliveryOrderItems(orderId: string): Promise<DeliveryOrderItem[]> {
-  const { data, error } = await supabase
-    .from('delivery_order_items')
-    .select(DELIVERY_ORDER_ITEMS_SELECT)
-    .eq('delivery_order_id', orderId)
-    .is('deleted_at', null)
-    .is('product.deleted_at', null)
-    .returns<DeliveryOrderItemRow[]>();
+  const { data, error } = await returnedQuantityGate.run((withColumn) =>
+    supabase
+      .from('delivery_order_items')
+      .select(withReturnedQuantity(DELIVERY_ORDER_ITEMS_SELECT, withColumn))
+      .eq('delivery_order_id', orderId)
+      .is('deleted_at', null)
+      .is('product.deleted_at', null)
+      .returns<DeliveryOrderItemRow[]>(),
+  );
 
   if (error) throw new Error(error.message || 'No fue posible cargar los productos de la orden.');
 
@@ -53,6 +58,7 @@ export async function fetchDeliveryOrderItems(orderId: string): Promise<Delivery
       warehouse_name: row.warehouse?.name ?? null,
       quantity: row.quantity,
       delivered_quantity: row.delivered_quantity,
+      returned_quantity: readReturnedQuantity(row),
       notes: row.notes,
     }),
   );
