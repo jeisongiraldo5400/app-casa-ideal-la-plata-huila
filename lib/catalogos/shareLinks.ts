@@ -11,6 +11,12 @@ export const SHARE_LINK_DURATIONS = [
 ] as const;
 
 export const DEFAULT_SHARE_LINK_HOURS = 168;
+
+/** Vigencia guardada en el dispositivo → una de las ofrecidas, o 7 días si no sirve. */
+export function parseStoredShareLinkHours(stored: string | null | undefined): number {
+  const hours = Number(stored);
+  return SHARE_LINK_DURATIONS.some((duration) => duration.hours === hours) ? hours : DEFAULT_SHARE_LINK_HOURS;
+}
 export const MIN_SHARE_LINK_HOURS = 1;
 export const MAX_SHARE_LINK_HOURS = 720;
 

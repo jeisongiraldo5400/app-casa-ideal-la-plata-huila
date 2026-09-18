@@ -1,6 +1,7 @@
 import { mapWithConcurrency } from '@/lib/catalogos/asyncPool';
-import { CATEGORY_CONCURRENCY, DETAIL_CONCURRENCY } from '@/lib/catalogos/constants';
-import type { PublicCatalogListingItem, PublicCatalogProductDetail } from '@/lib/catalogos/publicCatalogTypes';
+import { CATEGORY_CONCURRENCY } from '@/lib/catalogos/constants';
+import type { PublicCatalogListingItem } from '@/lib/catalogos/publicCatalogTypes';
+import { isCompletePreview, type CategoryPreview } from '@/lib/catalogos/sectionCounts';
 import {
   buildListingIndex,
   buildMagazineSnapshot,
@@ -10,53 +11,67 @@ import {
 } from '@/lib/catalogos/snapshot';
 import type { MagazineSnapshot, PrivateCatalogDetail } from '@/lib/catalogos/types';
 import {
-  getPublicCatalogProductBySlug,
+  getPublicCatalogProductDetails,
   listAllPublicCatalogProductsInCategory,
   listPublicCatalogProductsByIds,
+  type ProductDetailsProgress,
 } from './publicCatalogService';
 
-export type SnapshotProgress = { resolved: number; total: number };
+export type SnapshotProgress = ProductDetailsProgress;
+
+/** Fichas del listado que la pantalla ya tiene cargadas; se reutilizan en vez de volver a pedirlas. */
+export type KnownListing = {
+  /** Productos sueltos con ficha publicada, por `productId`. */
+  products?: ReadonlyMap<string, PublicCatalogListingItem>;
+  /** Muestras de categorías completas; solo se reutilizan las que traen todas las fichas. */
+  categories?: ReadonlyMap<string, CategoryPreview>;
+};
+
+export type AnalyzeSnapshotOptions = {
+  known?: KnownListing;
+  /** Alimenta el texto «Preparando la edición… n/N». */
+  onProgress?: (progress: SnapshotProgress) => void;
+};
 
 /**
- * Materializa la edición en el dispositivo con los mismos RPC que el web:
- * productos sueltos por id (una llamada), categorías paginadas, y luego la
- * ficha completa de cada slug distinto. `onProgress` alimenta el texto
- * «Preparando la edición… n/N».
+ * Materializa la edición en el dispositivo con los mismos RPC que el web.
+ * Del listado solo se pide lo que falta (productos sueltos no cargados y
+ * categorías sin muestra completa); el detalle de cada slug distinto se
+ * resuelve siempre, fresco, con `getPublicCatalogProductDetails`.
  */
 export async function analyzeCatalogSnapshot(
   detail: PrivateCatalogDetail,
-  onProgress?: (progress: SnapshotProgress) => void
+  { known, onProgress }: AnalyzeSnapshotOptions = {}
 ): Promise<SnapshotAnalysis> {
   const { productIds, categoryIds } = collectSelectionIds(detail.sections);
+  const knownProducts = known?.products;
+  const knownCategories = known?.categories;
 
-  const [products, categories] = await Promise.all([
-    listPublicCatalogProductsByIds(productIds),
+  const missingProductIds = productIds.filter((productId) => !knownProducts?.has(productId));
+  const reusedCategories: (readonly [string, PublicCatalogListingItem[]])[] = [];
+  const missingCategoryIds: string[] = [];
+  for (const categoryId of categoryIds) {
+    const preview = knownCategories?.get(categoryId);
+    if (isCompletePreview(preview)) reusedCategories.push([categoryId, [...preview.items]]);
+    else missingCategoryIds.push(categoryId);
+  }
+
+  const [fetchedProducts, fetchedCategories] = await Promise.all([
+    listPublicCatalogProductsByIds(missingProductIds),
     mapWithConcurrency(
-      categoryIds,
+      missingCategoryIds,
       CATEGORY_CONCURRENCY,
       async (categoryId) => [categoryId, await listAllPublicCatalogProductsInCategory(categoryId)] as const
     ),
   ]);
 
-  const index = buildListingIndex(
-    products as PublicCatalogListingItem[],
-    categories as readonly (readonly [string, PublicCatalogListingItem[]])[]
-  );
-  const slugs = collectSelectedSlugs(detail.sections, index);
-
-  let resolved = 0;
-  onProgress?.({ resolved, total: slugs.length });
-  const details = await mapWithConcurrency(slugs, DETAIL_CONCURRENCY, async (slug) => {
-    const productDetail = await getPublicCatalogProductBySlug(slug);
-    resolved += 1;
-    onProgress?.({ resolved, total: slugs.length });
-    return [slug, productDetail] as const;
+  const reusedProducts = productIds.flatMap((productId) => {
+    const product = knownProducts?.get(productId);
+    return product ? [product] : [];
   });
-
-  const detailBySlug = new Map<string, PublicCatalogProductDetail>();
-  for (const [slug, productDetail] of details) {
-    if (productDetail) detailBySlug.set(slug, productDetail);
-  }
+  const index = buildListingIndex([...reusedProducts, ...fetchedProducts], [...reusedCategories, ...fetchedCategories]);
+  const slugs = collectSelectedSlugs(detail.sections, index);
+  const detailBySlug = await getPublicCatalogProductDetails(slugs, onProgress);
 
   return buildMagazineSnapshot({
     catalog: detail,
@@ -68,11 +83,8 @@ export async function analyzeCatalogSnapshot(
 }
 
 /** Snapshot listo para congelar. Lanza con los motivos si aún no se puede publicar. */
-export async function buildCatalogSnapshot(
-  detail: PrivateCatalogDetail,
-  onProgress?: (progress: SnapshotProgress) => void
-): Promise<MagazineSnapshot> {
-  const { snapshot, blockers } = await analyzeCatalogSnapshot(detail, onProgress);
+export async function buildCatalogSnapshot(detail: PrivateCatalogDetail, options: AnalyzeSnapshotOptions = {}): Promise<MagazineSnapshot> {
+  const { snapshot, blockers } = await analyzeCatalogSnapshot(detail, options);
   if (blockers.length > 0) throw new Error(blockers.join(' '));
   return snapshot;
 }

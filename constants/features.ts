@@ -12,7 +12,8 @@
  * (`app/(tabs)/catalogo-create.tsx`) y las pantallas de detalle de
  * `app/catalogo/**`.
  *
- * Se oculta para esta versión de la app móvil: no aparece en el menú de inicio,
+ * En la rama `catalogos` está encendido para probar el módulo contra el proyecto
+ * de pruebas. En `main` sigue apagado: con `false` no aparece en el menú de inicio,
  * las rutas no se registran en los layouts y, si alguien llega por enlace
  * profundo o escribiendo la ruta, la pantalla redirige al inicio sin pedir
  * datos de catálogos.
@@ -24,4 +25,4 @@
 // El tipo es `boolean` a propósito (y no el literal `false`): así TypeScript
 // sigue revisando las dos ramas de cada `if` y el día que se ponga en `true`
 // no hay nada más que cambiar.
-export const CATALOGOS_HABILITADOS: boolean = false;
+export const CATALOGOS_HABILITADOS: boolean = true;

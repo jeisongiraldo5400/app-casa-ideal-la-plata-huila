@@ -35,6 +35,7 @@ const listingItem: PublicCatalogListingItem = {
   slug: 'sofa-lino',
   displayName: 'Sofá de lino',
   shortDescription: null,
+  stockQuantity: 2,
   categoryId: 'cat-sala',
   categoryName: 'Sala',
   brandName: null,

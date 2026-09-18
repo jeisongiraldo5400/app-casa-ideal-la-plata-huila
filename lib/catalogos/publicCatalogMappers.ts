@@ -26,6 +26,8 @@ export type PublicCatalogListingRow = {
   slug: string;
   display_name: string;
   short_description: string | null;
+  /** `numeric` en SQL: PostgREST puede entregarlo como número o como texto. */
+  stock_quantity?: number | string | null;
   category_id: string | null;
   category_name: string | null;
   brand_name: string | null;
@@ -49,6 +51,8 @@ export type PublicCatalogProductDetailRaw = {
   marketingDescription: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  /** No viene en el jsonb: lo añade el service con `get_public_catalog_product_stock`. */
+  stockQuantity?: number | null;
   isFeatured: boolean;
   publishedAt: string | null;
   category: { id: string; name: string } | null;
@@ -145,6 +149,7 @@ export function mapPublicCatalogListingRow(row: PublicCatalogListingRow): Public
     slug: row.slug,
     displayName: row.display_name,
     shortDescription: row.short_description,
+    stockQuantity: Number(row.stock_quantity ?? 0),
     categoryId: row.category_id,
     categoryName: row.category_name,
     brandName: row.brand_name,
@@ -240,6 +245,7 @@ export function mapPublicCatalogProductDetail(raw: PublicCatalogProductDetailRaw
     marketingDescription: raw.marketingDescription,
     seoTitle: raw.seoTitle,
     seoDescription: raw.seoDescription,
+    stockQuantity: raw.stockQuantity ?? 0,
     isFeatured: raw.isFeatured,
     publishedAt: raw.publishedAt,
     category: raw.category,

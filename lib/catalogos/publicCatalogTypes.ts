@@ -10,6 +10,8 @@ export type PublicCatalogListingItem = {
   slug: string;
   displayName: string;
   shortDescription: string | null;
+  /** Existencias agregadas en las bodegas. Nunca se muestra la cantidad: solo «Agotado» cuando es 0. */
+  stockQuantity: number;
   categoryId: string | null;
   categoryName: string | null;
   brandName: string | null;
@@ -116,6 +118,12 @@ export type PublicCatalogProductDetail = {
   marketingDescription: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  /**
+   * Existencias agregadas en las bodegas (`get_public_catalog_product_stock`).
+   * Opcional como en el web: los snapshots viejos no lo traen y la revista
+   * solo muestra «Producto agotado» cuando vale 0.
+   */
+  stockQuantity?: number | null;
   isFeatured: boolean;
   publishedAt: string | null;
   category: { id: string; name: string } | null;

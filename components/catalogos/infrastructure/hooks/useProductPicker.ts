@@ -7,6 +7,7 @@ import type { CatalogSection } from '@/lib/catalogos/types';
 import { toggleCatalogProduct } from '../services/catalogItemsService';
 import { getPrivateCatalog } from '../services/catalogsService';
 import { listPublicCatalogCategories, listPublicCatalogProducts } from '../services/publicCatalogService';
+import { invalidateCatalogCache } from '../store/catalogosStore';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -37,6 +38,8 @@ export type ProductPickerState = {
   selected: ReadonlySet<string>;
   pendingIds: ReadonlySet<string>;
   toggle: (item: PublicCatalogListingItem) => Promise<void>;
+  /** Espera a que terminen las escrituras pendientes (antes de ir a Compartir). */
+  flush: () => Promise<void>;
   reload: () => Promise<void>;
 };
 
@@ -114,6 +117,10 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
       if (pendingIds.has(productId)) return;
       const shouldAdd = !selected.has(productId);
 
+      // Invalidar ya, no solo al terminar: si el usuario vuelve al Detalle con
+      // la escritura en curso, la caché no puede pasar por fresca. Al terminar
+      // se invalida otra vez para que la pantalla enfocada recargue.
+      invalidateCatalogCache(catalogId);
       setPendingIds((current) => new Set(current).add(productId));
       setSelected((current) => {
         const next = new Set(current);
@@ -167,6 +174,8 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
         });
         Alert.alert('No se pudo actualizar la selección', errorMessage(caught));
       } finally {
+        // Detalle y Compartir recargan la selección definitiva (también si falló a medias).
+        invalidateCatalogCache(catalogId);
         setPendingIds((current) => {
           const next = new Set(current);
           next.delete(productId);
@@ -176,6 +185,8 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
     },
     [catalogId, pendingIds, selected]
   );
+
+  const flush = useCallback(() => writeQueue.current, []);
 
   const selectedView = useMemo<ReadonlySet<string>>(() => selected, [selected]);
 
@@ -195,6 +206,7 @@ export function useProductPicker(catalogId: string, initialSections: readonly Ca
     selected: selectedView,
     pendingIds,
     toggle,
+    flush,
     reload,
   };
 }

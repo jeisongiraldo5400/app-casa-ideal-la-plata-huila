@@ -6,17 +6,19 @@ import { Card, StatusChip } from '@/components/ui';
 import { IconSize, Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { SECTION_THUMB_LIMIT } from '@/lib/catalogos/constants';
 import { pluralize } from '@/lib/catalogos/labels';
+import { summarizeSectionProducts } from '@/lib/catalogos/sectionCounts';
 import type { CatalogSection } from '@/lib/catalogos/types';
-import type { ProductLookup } from '../infrastructure/hooks/useCatalogDetail';
+import type { CategoryPreviewLookup, ProductLookup } from '../infrastructure/hooks/useCatalogDetail';
 import { CatalogProductThumb } from './CatalogProductThumb';
 
 interface CatalogSectionsSummaryProps {
   sections: CatalogSection[];
   products: ProductLookup;
+  categories: CategoryPreviewLookup;
 }
 
 /** Categorías cerradas por defecto: se abre solo la fila que el usuario elige. */
-export function CatalogSectionsSummary({ sections, products }: CatalogSectionsSummaryProps) {
+export function CatalogSectionsSummary({ sections, products, categories }: CatalogSectionsSummaryProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -25,19 +27,9 @@ export function CatalogSectionsSummary({ sections, products }: CatalogSectionsSu
     <View style={styles.list}>
       {sections.map((section) => {
         const categoryItems = section.items.filter((item) => item.itemType === 'category');
-        const directProducts = section.items
-          .filter((item) => item.itemType === 'product')
-          .map((item) => products.get(item.referenceId))
-          .filter((product): product is NonNullable<typeof product> => Boolean(product));
-        const categoryProducts = [...products.values()].filter((product) =>
-          categoryItems.some((item) => item.referenceId === product.categoryId),
-        );
-        const published = [...new Map(
-          [...directProducts, ...categoryProducts].map((product) => [product.productId, product]),
-        ).values()];
-        const unpublished = section.items.filter((item) => item.itemType === 'product').length - directProducts.length;
+        const { visible: published, count, unpublished } = summarizeSectionProducts(section, products, categories);
         const visible = published.slice(0, SECTION_THUMB_LIMIT);
-        const hidden = published.length - visible.length;
+        const hidden = count - visible.length;
         const expanded = expandedId === section.id;
 
         return (
@@ -51,7 +43,7 @@ export function CatalogSectionsSummary({ sections, products }: CatalogSectionsSu
             >
               <View style={styles.headerText}>
                 <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>{section.title}</Text>
-                <Text style={[styles.count, { color: colors.text.secondary }]}>{pluralize(published.length, 'producto', 'productos')}</Text>
+                <Text style={[styles.count, { color: colors.text.secondary }]}>{pluralize(count, 'producto', 'productos')}</Text>
               </View>
               <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={IconSize.md} color={colors.text.secondary} />
             </Pressable>
@@ -62,7 +54,7 @@ export function CatalogSectionsSummary({ sections, products }: CatalogSectionsSu
                 {section.body ? <Text style={[styles.body, { color: colors.text.secondary }]}>{section.body}</Text> : null}
                 {categoryItems.length > 0 ? (
                   <View style={styles.chips}>
-                    {categoryItems.map((item) => <StatusChip key={item.id} label="Categoría" tone="info" icon="category" />)}
+                    {categoryItems.map((item) => <StatusChip key={item.id} label={categories.get(item.referenceId)?.items[0]?.categoryName ?? 'Categoría'} tone="info" icon="category" />)}
                   </View>
                 ) : null}
                 {visible.length > 0 ? (

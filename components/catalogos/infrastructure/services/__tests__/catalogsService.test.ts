@@ -3,17 +3,26 @@ type Builder = Record<string, jest.Mock>;
 const builders: Record<string, Builder> = {};
 const mockFrom = jest.fn((table: string) => builders[table]);
 const mockRpc = jest.fn();
+const mockGetSession = jest.fn();
 const mockGetUser = jest.fn();
 
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => mockFrom(table),
     rpc: (...args: unknown[]) => mockRpc(...args),
-    auth: { getUser: () => mockGetUser() },
+    auth: { getSession: () => mockGetSession(), getUser: () => mockGetUser() },
   },
 }));
 
-import { archiveOwnCatalog, createPrivateCatalog, getPrivateCatalog, listPrivateCatalogs, updateCatalogCoverText } from '../catalogsService';
+import {
+  archiveOwnCatalog,
+  createPrivateCatalog,
+  getPrivateCatalog,
+  IN_FILTER_BATCH_SIZE,
+  listPrivateCatalogs,
+  POSTGREST_PAGE_SIZE,
+  updateCatalogCoverText,
+} from '../catalogsService';
 
 const CATALOG_ROW = {
   id: 'cat-1',
@@ -37,7 +46,7 @@ const CATALOG_ROW = {
 
 function makeBuilder(result: { data: unknown; error: unknown }, terminals: string[] = []): Builder {
   const builder: Builder = {};
-  for (const method of ['select', 'eq', 'is', 'order', 'insert', 'update', 'delete', 'in']) {
+  for (const method of ['select', 'eq', 'is', 'order', 'insert', 'update', 'delete', 'in', 'range']) {
     builder[method] = jest.fn(() => builder);
   }
   for (const method of terminals) {
@@ -50,7 +59,7 @@ function makeBuilder(result: { data: unknown; error: unknown }, terminals: strin
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+  mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
   builders.catalogs = makeBuilder({ data: [CATALOG_ROW], error: null }, ['maybeSingle', 'single']);
   builders.catalog_share_links = makeBuilder({ data: [], error: null });
   builders.catalog_versions = makeBuilder({ data: [], error: null });
@@ -63,6 +72,8 @@ describe('listPrivateCatalogs', () => {
     const list = await listPrivateCatalogs('user-1');
     expect(builders.catalogs.is).toHaveBeenCalledWith('archived_at', null);
     expect(builders.catalogs.order).toHaveBeenCalledWith('updated_at', { ascending: false });
+    // `updated_at` cambia con cada mutación: el id desempata entre páginas.
+    expect(builders.catalogs.order).toHaveBeenCalledWith('id');
     expect(list).toHaveLength(1);
     expect(list[0].isOwner).toBe(true);
     expect(list[0].scope).toBe('own');
@@ -77,12 +88,105 @@ describe('listPrivateCatalogs', () => {
     builders.catalogs = makeBuilder({ data: null, error: { message: 'boom' } }, ['maybeSingle', 'single']);
     await expect(listPrivateCatalogs('user-1')).rejects.toThrow('No fue posible cargar los catálogos: boom');
   });
+
+  it('pide los enlaces solo de los catálogos listados y sin el token', async () => {
+    await listPrivateCatalogs('user-1');
+    const columns = builders.catalog_share_links.select.mock.calls[0][0] as string;
+    expect(columns.split(',')).not.toContain('token');
+    expect(columns).not.toContain('token_hash');
+    expect(builders.catalog_share_links.in).toHaveBeenCalledWith('catalog_id', ['cat-1']);
+    expect(builders.catalog_versions.in).toHaveBeenCalledWith('catalog_id', ['cat-1']);
+  });
+
+  it('sin catálogos no consulta enlaces ni versiones', async () => {
+    builders.catalogs = makeBuilder({ data: [], error: null });
+    await expect(listPrivateCatalogs('user-1')).resolves.toEqual([]);
+    expect(mockFrom).not.toHaveBeenCalledWith('catalog_share_links');
+    expect(mockFrom).not.toHaveBeenCalledWith('catalog_versions');
+  });
+
+  it('reparte los ids en lotes y pagina más allá del tope de 1000 filas', async () => {
+    const rows = Array.from({ length: IN_FILTER_BATCH_SIZE + 1 }, (_, index) => ({ ...CATALOG_ROW, id: `cat-${index}` }));
+    builders.catalogs = makeBuilder({ data: rows, error: null });
+    const fullPage = Array.from({ length: POSTGREST_PAGE_SIZE }, (_, index) => ({
+      id: `link-${index}`,
+      catalog_id: 'cat-0',
+      catalog_version_id: 'v-1',
+      label: '',
+      token_hint: 'abc',
+      expires_at: '2099-01-01T00:00:00Z',
+      revoked_at: null,
+      created_at: '2026-09-01T00:00:00Z',
+      first_viewed_at: null,
+      last_viewed_at: null,
+      view_count: 1,
+    }));
+    const pages = [fullPage, [fullPage[0]]];
+    const links = makeBuilder({ data: [], error: null });
+    (links as unknown as { then: unknown }).then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({ data: pages.shift() ?? [], error: null }).then(resolve);
+    builders.catalog_share_links = links;
+
+    const list = await listPrivateCatalogs('user-1');
+
+    expect(links.in).toHaveBeenCalledTimes(3);
+    expect((links.in.mock.calls[0][1] as string[]).length).toBe(IN_FILTER_BATCH_SIZE);
+    expect(links.range).toHaveBeenCalledWith(0, POSTGREST_PAGE_SIZE - 1);
+    expect(links.range).toHaveBeenCalledWith(POSTGREST_PAGE_SIZE, 2 * POSTGREST_PAGE_SIZE - 1);
+    expect(list.find((item) => item.id === 'cat-0')?.linkCount).toBe(POSTGREST_PAGE_SIZE + 1);
+    expect(list.find((item) => item.id === 'cat-0')?.shareLinks[0].token).toBeNull();
+  });
 });
 
 describe('getPrivateCatalog', () => {
   it('devuelve null cuando el catálogo no existe o no es visible', async () => {
     builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     await expect(getPrivateCatalog('cat-1')).resolves.toBeNull();
+  });
+
+  it('trae el token de los enlaces para poder reenviarlos', async () => {
+    builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
+    await getPrivateCatalog('cat-1');
+    expect((builders.catalog_share_links.select.mock.calls[0][0] as string).split(',')).toContain('token');
+  });
+
+  it('pagina categorías, elementos y enlaces más allá del tope de 1000 filas, con orden estable', async () => {
+    builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
+    const itemRow = (index: number) => ({
+      id: `item-${index}`,
+      catalog_id: 'cat-1',
+      section_id: 'sec-1',
+      item_type: 'product',
+      reference_id: `p-${index}`,
+      is_featured: false,
+      sort_order: index,
+    });
+    const pages = [Array.from({ length: POSTGREST_PAGE_SIZE }, (_, index) => itemRow(index)), [itemRow(POSTGREST_PAGE_SIZE)]];
+    const items = makeBuilder({ data: [], error: null });
+    (items as unknown as { then: unknown }).then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({ data: pages.shift() ?? [], error: null }).then(resolve);
+    builders.catalog_items = items;
+    builders.catalog_sections = makeBuilder({
+      data: [{ id: 'sec-1', catalog_id: 'cat-1', title: 'Productos', kicker: null, body: null, image_url: null, sort_order: 0 }],
+      error: null,
+    });
+
+    const detail = await getPrivateCatalog('cat-1');
+
+    expect(items.range).toHaveBeenCalledWith(0, POSTGREST_PAGE_SIZE - 1);
+    expect(items.range).toHaveBeenCalledWith(POSTGREST_PAGE_SIZE, 2 * POSTGREST_PAGE_SIZE - 1);
+    expect(items.order).toHaveBeenCalledWith('id');
+    expect(detail?.sections[0].items).toHaveLength(POSTGREST_PAGE_SIZE + 1);
+    for (const table of ['catalog_sections', 'catalog_share_links', 'catalog_versions']) {
+      expect(builders[table].range).toHaveBeenCalledWith(0, POSTGREST_PAGE_SIZE - 1);
+      expect(builders[table].order).toHaveBeenCalledWith('id');
+    }
+  });
+
+  it('propaga el fallo de una consulta hija con su mensaje', async () => {
+    builders.catalogs.maybeSingle.mockResolvedValueOnce({ data: CATALOG_ROW, error: null });
+    builders.catalog_items = makeBuilder({ data: null, error: { message: 'boom' } });
+    await expect(getPrivateCatalog('cat-1')).rejects.toThrow('No fue posible cargar los productos seleccionados: boom');
   });
 
   it('carga capítulos y elementos ordenados por sort_order', async () => {
@@ -121,8 +225,15 @@ describe('createPrivateCatalog', () => {
   });
 
   it('exige sesión', async () => {
-    mockGetUser.mockResolvedValueOnce({ data: { user: null } });
+    mockGetSession.mockResolvedValueOnce({ data: { session: null } });
     await expect(createPrivateCatalog({ internalTitle: 'Interno' })).rejects.toThrow('Sesión no válida');
+  });
+
+  it('toma el usuario de la sesión guardada, sin pedirlo al servidor', async () => {
+    builders.catalogs.single.mockResolvedValueOnce({ data: { id: 'nuevo' }, error: null });
+    await createPrivateCatalog({ internalTitle: 'Interno' });
+    expect(mockGetSession).toHaveBeenCalled();
+    expect(mockGetUser).not.toHaveBeenCalled();
   });
 });
 

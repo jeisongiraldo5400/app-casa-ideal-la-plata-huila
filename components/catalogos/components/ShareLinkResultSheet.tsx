@@ -14,7 +14,11 @@ interface ShareLinkResultSheetProps {
   onClose: () => void;
 }
 
-/** Recibo del enlace recién creado o reemitido, con las acciones para entregarlo. */
+/**
+ * Recibo del enlace creado o reemitido: copiar y abrir primero, luego enviarlo.
+ * También aparece tras «Generar y enviar», porque abrir WhatsApp no garantiza
+ * que el mensaje haya salido.
+ */
 export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLinkResultSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -27,7 +31,7 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
   }, [copied]);
 
   if (!result) return null;
-  const message = buildShareMessage({ publicTitle, url: result.url, expiresAt: result.expiresAt, label: result.label });
+  const message = buildShareMessage({ url: result.url, label: result.label });
 
   return (
     <ModalSheet
@@ -36,24 +40,28 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
       title={result.reissued ? 'Enlace reemitido' : 'Enlace listo'}
       subtitle={`${result.label ? `Para ${result.label} · ` : ''}Vence el ${formatCatalogDateTime(result.expiresAt)}`}
       footer={<Button title="Listo" variant="outline" onPress={onClose} style={styles.done} />}>
+      {result.whatsApp === 'app' || result.whatsApp === 'web' ? (
+        <Text style={[styles.hint, { color: colors.text.secondary }]}>
+          Se abrió WhatsApp con el mensaje. Si no alcanzaste a enviarlo, cópialo o compártelo desde aquí.
+        </Text>
+      ) : null}
       <View style={[styles.urlBox, { backgroundColor: colors.surface.sunken }]}>
         <Text selectable style={[styles.url, { color: colors.text.primary }]}>
           {result.url}
         </Text>
       </View>
       <View style={styles.actions}>
-        <Button title="Compartir" icon="share" onPress={() => void shareLinkMessage(message, publicTitle)} style={styles.action} />
-        <Button title="WhatsApp" icon="chat" variant="secondary" onPress={() => void shareLinkByWhatsApp(message)} style={styles.action} />
-      </View>
-      <View style={styles.actions}>
         <Button
           title={copied ? 'Copiado' : 'Copiar'}
           icon={copied ? 'check' : 'content-copy'}
-          variant="outline"
           onPress={() => void copyLinkToClipboard(result.url).then(setCopied)}
           style={styles.action}
         />
         <Button title="Abrir" icon="open-in-new" variant="outline" onPress={() => void openLinkInBrowser(result.url)} style={styles.action} />
+      </View>
+      <View style={styles.actions}>
+        <Button title="WhatsApp" icon="chat" variant="outline" onPress={() => void shareLinkByWhatsApp(message)} style={styles.action} />
+        <Button title="Compartir" icon="share" variant="outline" onPress={() => void shareLinkMessage(message, publicTitle)} style={styles.action} />
       </View>
     </ModalSheet>
   );
@@ -62,6 +70,7 @@ export function ShareLinkResultSheet({ result, publicTitle, onClose }: ShareLink
 const styles = StyleSheet.create({
   urlBox: { borderRadius: Radius.control, padding: Spacing.md },
   url: { ...Typography.bodySmall },
+  hint: { ...Typography.caption },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   action: { flex: 1 },
   done: { flex: 1 },

@@ -5403,6 +5403,13 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_public_catalog_products_detail: {
+        Args: { p_slugs: string[] }
+        Returns: {
+          detail: Json
+          slug: string
+        }[]
+      }
       get_purchase_orders_dashboard:
         | {
             Args: { page?: number; page_size?: number; search_term?: string }

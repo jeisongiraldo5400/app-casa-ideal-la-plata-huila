@@ -40,6 +40,11 @@ describe('mapPublicCatalogListingRow', () => {
     expect(result.coverImageUrl).toBe('https://catalog.example.supabase.co/storage/v1/object/public/catalog-images/cp-1/portada.jpg');
   });
 
+  it('convierte las existencias a número y usa 0 si faltan', () => {
+    expect(mapPublicCatalogListingRow({ ...listingRow, stock_quantity: '12' }).stockQuantity).toBe(12);
+    expect(mapPublicCatalogListingRow({ ...listingRow, stock_quantity: null }).stockQuantity).toBe(0);
+  });
+
   it('deja coverImageUrl en null sin portada', () => {
     expect(mapPublicCatalogListingRow({ ...listingRow, cover_bucket: null, cover_storage_path: null }).coverImageUrl).toBeNull();
   });
@@ -81,6 +86,11 @@ function buildRawDetail(overrides: Partial<PublicCatalogProductDetailRaw> = {}):
 }
 
 describe('mapPublicCatalogProductDetail', () => {
+  it('incluye stockQuantity como el web (0 si no llegó)', () => {
+    expect(mapPublicCatalogProductDetail(buildRawDetail({ stockQuantity: 5 })).stockQuantity).toBe(5);
+    expect(mapPublicCatalogProductDetail(buildRawDetail()).stockQuantity).toBe(0);
+  });
+
   it('trata los arrays null del jsonb como listas vacías', () => {
     const result = mapPublicCatalogProductDetail(buildRawDetail());
     expect(result.media).toEqual([]);
