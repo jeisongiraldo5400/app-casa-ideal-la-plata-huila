@@ -6,6 +6,7 @@ import {
   canOfferProntoPago,
   isProntoPagoBalanceChangedError,
   localProntoPagoPermission,
+  canOfferPago,
   negocioPagoErrorMessage,
   parseProntoPagoDiscount,
   prontoPagoBlockReason,
@@ -210,5 +211,33 @@ describe('disponibilidad', () => {
     expect(localProntoPagoPermission({ isAdmin: false, isGestorCobro: true, gestorCobroId: 'u1', userId: 'u1' })).toBe(true);
     expect(localProntoPagoPermission({ isAdmin: false, isGestorCobro: true, gestorCobroId: 'u2', userId: 'u1' })).toBe(false);
     expect(localProntoPagoPermission({ isAdmin: false, isGestorCobro: false, gestorCobroId: 'u1', userId: 'u1' })).toBe(false);
+  });
+});
+
+
+// Decisión del usuario (2026-09-22): sólo admin y gestor de cobro registran pagos.
+describe('canOfferPago', () => {
+  const vendedorDueno = localProntoPagoPermission({ isAdmin: false, isGestorCobro: false, gestorCobroId: 'g1', userId: 'v1' });
+  const gestorAsignado = localProntoPagoPermission({ isAdmin: false, isGestorCobro: true, gestorCobroId: 'g1', userId: 'g1' });
+  const gestorOtro = localProntoPagoPermission({ isAdmin: false, isGestorCobro: true, gestorCobroId: 'g1', userId: 'g2' });
+  const admin = localProntoPagoPermission({ isAdmin: true, isGestorCobro: false, gestorCobroId: null, userId: 'a1' });
+
+  it('el vendedor ya no ve «Registrar pago», aunque el negocio esté activo', () => {
+    expect(canOfferPago({ status: 'activo', allowed: vendedorDueno })).toBe(false);
+  });
+
+  it('admin y gestor asignado sí, en negocios activos o entregados', () => {
+    expect(canOfferPago({ status: 'activo', allowed: admin })).toBe(true);
+    expect(canOfferPago({ status: 'entregado', allowed: gestorAsignado })).toBe(true);
+  });
+
+  it('el gestor no asignado tampoco', () => {
+    expect(canOfferPago({ status: 'activo', allowed: gestorOtro })).toBe(false);
+  });
+
+  it('con permiso, sólo en estados que admiten pagos', () => {
+    expect(canOfferPago({ status: 'borrador', allowed: admin })).toBe(false);
+    expect(canOfferPago({ status: 'cerrado', allowed: admin })).toBe(false);
+    expect(canOfferPago({ status: undefined, allowed: admin })).toBe(false);
   });
 });
