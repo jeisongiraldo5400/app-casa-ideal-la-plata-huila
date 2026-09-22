@@ -34,6 +34,7 @@ import {
 import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { openPagoSupport } from '@/lib/uploadPagoSupport';
 import { useBluetoothPrinter } from '@/components/printing';
+import { errorMessage } from '@/lib/errorMessage';
 
 const BUSINESS_PAGE_SIZE = 15;
 
@@ -94,7 +95,7 @@ export function CollectionManagerPaymentsModal({
     setPage(1);
     fetchManagerBusinesses(managerId)
       .then(setBusinesses)
-      .catch((e) => Alert.alert('Error', e.message));
+      .catch((e) => Alert.alert('Error', errorMessage(e, 'No fue posible cargar los pagos')));
   }, [visible, managerId]);
 
   useEffect(() => {
@@ -111,7 +112,7 @@ export function CollectionManagerPaymentsModal({
       pageSize: 10,
     })
       .then(setData)
-      .catch((e) => Alert.alert('Error', e.message))
+      .catch((e) => Alert.alert('Error', errorMessage(e, 'No fue posible cargar los pagos')))
       .finally(() => setLoading(false));
   }, [visible, managerId, scope, businessId, dateFrom, dateTo, status, search, page]);
 
@@ -160,7 +161,7 @@ export function CollectionManagerPaymentsModal({
         });
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No fue posible compartir el recibo');
+      Alert.alert('Error', errorMessage(e, 'No fue posible compartir el recibo'));
     }
   };
 
@@ -207,7 +208,7 @@ export function CollectionManagerPaymentsModal({
           : `Se compartió ${fileName} sin cobros.`
       );
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No fue posible exportar el reporte');
+      Alert.alert('Error', errorMessage(e, 'No fue posible exportar el reporte'));
     } finally {
       setExporting(false);
     }

@@ -20,6 +20,7 @@ import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { errorMessage } from '@/lib/errorMessage';
 
 const PAGE_SIZE = 10;
 type Filters = CarteraFilterValues;
@@ -57,7 +58,7 @@ function CarteraScreenInner() {
       if(result.dashboard)setDashboard(result.dashboard);
     }catch(e:any){
       if(reset){setRows([]);setTotalCount(0);setFromCache(false);}
-      Alert.alert('Cartera',e.message||'No fue posible cargar la información');
+      Alert.alert('Cartera', errorMessage(e, 'No fue posible cargar la información'));
     }finally{setLoading(false);setLoadingMore(false);setRefreshing(false);}
   },[filters]);
   useFocusEffect(useCallback(()=>{void load(1,true);},[load]));

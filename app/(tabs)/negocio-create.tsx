@@ -86,7 +86,17 @@ import {
   resolveNegocioLocation,
   type NegocioLocation,
 } from '@/components/negocios/domain/negocioLocation';
-import { createCustomer, fetchCustomerSavedLocation, searchCustomersForNegocio } from '@/components/customers';
+import {
+  createCustomer,
+  fetchCustomerSavedLocation,
+  findCustomerByIdNumber,
+  isDuplicateCustomerIdNumber,
+  searchCustomersForNegocio,
+} from '@/components/customers';
+import { duplicateCustomerPrompt } from '@/components/customers/domain/duplicateCustomer';
+// Traductor común: la pantalla tenía una copia propia que devolvía el texto
+// crudo de la base («duplicate key value violates…») en todos sus avisos.
+import { errorMessage } from '@/lib/errorMessage';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import {
@@ -112,14 +122,6 @@ const WIZARD_STEPS = [
   { id: 3, label: 'Firma', icon: 'draw' },
 ];
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'object' && error && 'message' in error) {
-    const message = (error as { message: unknown }).message;
-    if (typeof message === 'string' && message.trim()) return message;
-  }
-  return fallback;
-}
 
 const localDateValue = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -730,6 +732,30 @@ function NegocioCreateScreenInner() {
       closeNewCustomerModal();
       Alert.alert('¡Éxito!', `Cliente ${data.name} creado y seleccionado.`);
     } catch (e: unknown) {
+      if (isDuplicateCustomerIdNumber(e)) {
+        const idNumber = newCustomerId.trim();
+        const existing = await findCustomerByIdNumber(idNumber);
+        const prompt = duplicateCustomerPrompt(existing, idNumber);
+        if (existing && prompt.canUse) {
+          const useExisting = () => {
+            const chosen = { id: existing.id, name: existing.name, id_number: existing.id_number };
+            if (pickingCodeudor) {
+              setCodeudor(chosen);
+              setPickingCodeudor(false);
+            } else {
+              setCustomer(chosen);
+            }
+            closeNewCustomerModal();
+          };
+          Alert.alert(prompt.title, prompt.message, [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Usar este cliente', onPress: useExisting },
+          ]);
+        } else {
+          Alert.alert(prompt.title, prompt.message);
+        }
+        return;
+      }
       Alert.alert('Error', errorMessage(e, 'No se pudo crear el cliente'));
     } finally {
       setCreatingCustomer(false);

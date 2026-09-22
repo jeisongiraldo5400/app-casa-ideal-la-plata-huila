@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { errorMessage } from '@/lib/errorMessage';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
@@ -85,7 +86,7 @@ function CollectionRouteDetailScreenInner() {
         Alert.alert('Listo', success);
       }
     }
-    catch (e: any) { Alert.alert('No se pudo completar la acción', e.message); }
+    catch (e: unknown) { Alert.alert('No se pudo completar la acción', errorMessage(e, 'No se pudo completar la acción')); }
     finally { setSaving(false); }
   };
 

@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { errorMessage } from '@/lib/errorMessage';
 
 const PAGE_SIZE = 20;
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
@@ -54,7 +55,7 @@ function CreateCollectionRouteScreenInner() {
       setTotal(result.totalCount);
       setPage(targetPage);
     } catch (e: any) {
-      Alert.alert('No fue posible cargar', e.message);
+      Alert.alert('No fue posible cargar', errorMessage(e, 'No fue posible cargar los datos'));
     } finally {
       setLoading(false);
     }
@@ -76,7 +77,7 @@ function CreateCollectionRouteScreenInner() {
       const routeId = await createCollectionRoute(selected.map((item) => item.negocio_id), localDateValue());
       router.replace(`/ruta-cobros/${routeId}` as any);
     } catch (e: any) {
-      Alert.alert('No se pudo crear la ruta', e.message);
+      Alert.alert('No se pudo crear la ruta', errorMessage(e, 'No se pudo crear la ruta'));
     } finally {
       setSaving(false);
     }
