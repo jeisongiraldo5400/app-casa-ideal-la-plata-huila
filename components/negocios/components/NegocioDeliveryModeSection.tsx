@@ -31,7 +31,7 @@ const MODE_OPTIONS: { id: NegocioDeliveryMode; label: string }[] = [
 
 /**
  * Destino de la orden de entrega que se crea al activar un negocio con origen
- * en bodega central: pendiente para retiro directo, o anidada en una remisión
+ * al sacar de bodegas: pendiente para retiro directo, o anidada en una remisión
  * `pending` elegida aquí.
  */
 export function NegocioDeliveryModeSection({

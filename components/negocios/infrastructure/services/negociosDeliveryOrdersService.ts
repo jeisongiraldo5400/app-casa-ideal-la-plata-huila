@@ -1,3 +1,4 @@
+import { sanitizeSearchTerm } from '@/components/exits/infrastructure/services/exitsService';
 import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { supabase } from '@/lib/supabase';
 import type { ProductWarehouseStock } from './negociosStockService';
@@ -23,6 +24,10 @@ export interface DeliveryOrderOption {
   customer_name: string | null;
   customer_id_number: string | null;
   assigned_user_name: string | null;
+  /** Ubicación de entrega de la orden: respaldo para la vivienda del negocio. */
+  municipio_id: string | null;
+  vereda_id: string | null;
+  delivery_address: string | null;
   items: DeliveryOrderItemOption[];
 }
 
@@ -124,6 +129,9 @@ export function toDeliveryOrderOption(
     status: string;
     customer_id?: string | null;
     negocio_id?: string | null;
+    municipio_id?: string | null;
+    vereda_id?: string | null;
+    delivery_address?: string | null;
     customer?: DeliveryOrderRelation<{
       id?: string;
       name?: string | null;
@@ -180,6 +188,9 @@ export function toDeliveryOrderOption(
     customer_name: customer?.name || null,
     customer_id_number: customer?.id_number || null,
     assigned_user_name: assignedUser?.full_name || null,
+    municipio_id: raw.municipio_id || null,
+    vereda_id: raw.vereda_id || null,
+    delivery_address: raw.delivery_address?.trim() || null,
     items,
   };
 }
@@ -193,33 +204,137 @@ export function formatDeliveryOrderOptionLabel(order: DeliveryOrderOption): stri
   return `#${order.order_number} · ${typeLabel} · ${party}`;
 }
 
-export async function fetchAvailableDeliveryOrders(): Promise<DeliveryOrderOption[]> {
-  const { data: orders, error } = await supabase
+/** Coincidencias que se muestran; se piden unas cuantas más porque una remisión
+ *  ya vendida entera se descarta al calcular lo disponible. */
+export const DELIVERY_ORDER_SEARCH_LIMIT = 20;
+const DELIVERY_ORDER_SEARCH_FETCH = 40;
+/** Clientes y asesores que se cruzan con el término; más ya no aporta. */
+const SEARCH_PARTY_LIMIT = 50;
+
+const DELIVERY_ORDER_ORIGIN_SELECT = `
+  id,
+  order_number,
+  created_at,
+  order_type,
+  status,
+  customer_id,
+  negocio_id,
+  municipio_id,
+  vereda_id,
+  delivery_address,
+  customer:customers!fk_delivery_order_customer(id, name, id_number),
+  assigned_user:profiles!fk_delivery_order_assigned_to_user(full_name),
+  items:delivery_order_items!fk_delivery_order_item_order(
+    id,
+    product_id,
+    warehouse_id,
+    quantity,
+    deleted_at,
+    product:products(name),
+    warehouse:warehouses(name)
+  )
+`;
+
+/** Unidades ya vendidas en negocios, por remisión, producto y bodega. */
+async function fetchRemissionSoldMap(remissionIds: string[]): Promise<Map<string, number>> {
+  if (remissionIds.length === 0) return new Map();
+  // En lotes para que la URL de PostgREST no supere el límite, y por páginas
+  // porque una remisión puede tener varios negocios.
+  try {
+    const soldItems = await fetchInChunks(
+      remissionIds,
+      (chunk) =>
+        supabase
+          .from('negocios')
+          .select('remission_id, source_delivery_order_id, negocio_items(product_id, warehouse_id, quantity)')
+          .in('remission_id', chunk)
+          .is('deleted_at', null)
+          .in('status', ['activo', 'entregado', 'cerrado'])
+          .order('id', { ascending: true }),
+      { pageSize: IN_FILTER_PAGE_SIZE }
+    );
+    return mapSoldQuantities(soldItems);
+  } catch {
+    try {
+      const fallbackSold = await fetchInChunks(
+        remissionIds,
+        (chunk) =>
+          supabase
+            .from('negocios')
+            .select('remission_id, negocio_items(product_id, warehouse_id, quantity)')
+            .in('remission_id', chunk)
+            .is('deleted_at', null)
+            .in('status', ['activo', 'entregado', 'cerrado'])
+            .order('id', { ascending: true }),
+        { pageSize: IN_FILTER_PAGE_SIZE }
+      );
+      return mapSoldQuantities(fallbackSold);
+    } catch (fallbackError: unknown) {
+      const message =
+        fallbackError && typeof fallbackError === 'object' && 'message' in fallbackError
+          ? String(fallbackError.message)
+          : '';
+      throw new Error(message || 'Error al calcular ventas de remisiones');
+    }
+  }
+}
+
+/** Ids de clientes y asesores cuyo nombre o documento contiene el término. */
+async function searchOrderParties(term: string): Promise<{ customerIds: string[]; userIds: string[] }> {
+  const [customers, users] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id')
+      .is('deleted_at', null)
+      .or(`name.ilike.%${term}%,id_number.ilike.%${term}%`)
+      .limit(SEARCH_PARTY_LIMIT),
+    supabase
+      .from('profiles')
+      .select('id')
+      .ilike('full_name', `%${term}%`)
+      .limit(SEARCH_PARTY_LIMIT),
+  ]);
+  const error = customers.error || users.error;
+  if (error) throw new Error(error.message || 'Error al buscar clientes');
+  return {
+    customerIds: (customers.data || []).map((row: { id: string }) => row.id),
+    userIds: (users.data || []).map((row: { id: string }) => row.id),
+  };
+}
+
+/**
+ * Órdenes de entrega que pueden ser origen de un negocio, buscadas en el servidor.
+ *
+ * Antes se traían todas al abrir el asistente, pero PostgREST corta en 1000
+ * filas: con más de 3000 órdenes, las anteriores a los últimos meses ni
+ * aparecían, y la pantalla esperaba a descargarlas con sus líneas. Ahora se
+ * piden sólo las coincidencias: por número de orden, por nombre o documento del
+ * cliente, o por el asesor de la remisión. Sin término, las más recientes.
+ */
+export async function searchAvailableDeliveryOrders(
+  searchTerm = '',
+  limit = DELIVERY_ORDER_SEARCH_LIMIT
+): Promise<DeliveryOrderOption[]> {
+  const term = sanitizeSearchTerm(searchTerm);
+
+  let query = supabase
     .from('delivery_orders')
-    .select(`
-      id,
-      order_number,
-      created_at,
-      order_type,
-      status,
-      customer_id,
-      negocio_id,
-      customer:customers!fk_delivery_order_customer(id, name, id_number),
-      assigned_user:profiles!fk_delivery_order_assigned_to_user(full_name),
-      items:delivery_order_items!fk_delivery_order_item_order(
-        id,
-        product_id,
-        warehouse_id,
-        quantity,
-        deleted_at,
-        product:products(name),
-        warehouse:warehouses(name)
-      )
-    `)
+    .select(DELIVERY_ORDER_ORIGIN_SELECT)
     .in('order_type', ['remission', 'customer'])
     .is('deleted_at', null)
-    .neq('status', 'cancelled')
-    .order('created_at', { ascending: false });
+    .neq('status', 'cancelled');
+
+  if (term) {
+    const { customerIds, userIds } = await searchOrderParties(term);
+    const clauses = [`order_number.ilike.%${term}%`];
+    if (customerIds.length) clauses.push(`customer_id.in.(${customerIds.join(',')})`);
+    if (userIds.length) clauses.push(`assigned_to_user_id.in.(${userIds.join(',')})`);
+    query = query.or(clauses.join(','));
+  }
+
+  const { data: orders, error } = await query
+    .order('created_at', { ascending: false })
+    .limit(Math.max(limit, DELIVERY_ORDER_SEARCH_FETCH));
 
   if (error) {
     throw new Error(error.message || 'Error al obtener órdenes de entrega');
@@ -228,53 +343,12 @@ export async function fetchAvailableDeliveryOrders(): Promise<DeliveryOrderOptio
   const remissionIds = (orders || [])
     .filter((o: { order_type: string }) => o.order_type === 'remission')
     .map((o: { id: string }) => o.id);
-
-  let soldMap = new Map<string, number>();
-  if (remissionIds.length > 0) {
-    // Son todas las remisiones no canceladas (históricas incluidas): en lotes para que la
-    // URL de PostgREST no supere el límite, y por páginas porque una remisión tiene varios negocios.
-    try {
-      const soldItems = await fetchInChunks(
-        remissionIds,
-        (chunk) =>
-          supabase
-            .from('negocios')
-            .select('remission_id, source_delivery_order_id, negocio_items(product_id, warehouse_id, quantity)')
-            .in('remission_id', chunk)
-            .is('deleted_at', null)
-            .in('status', ['activo', 'entregado', 'cerrado'])
-            .order('id', { ascending: true }),
-        { pageSize: IN_FILTER_PAGE_SIZE }
-      );
-      soldMap = mapSoldQuantities(soldItems);
-    } catch {
-      try {
-        const fallbackSold = await fetchInChunks(
-          remissionIds,
-          (chunk) =>
-            supabase
-              .from('negocios')
-              .select('remission_id, negocio_items(product_id, warehouse_id, quantity)')
-              .in('remission_id', chunk)
-              .is('deleted_at', null)
-              .in('status', ['activo', 'entregado', 'cerrado'])
-              .order('id', { ascending: true }),
-          { pageSize: IN_FILTER_PAGE_SIZE }
-        );
-        soldMap = mapSoldQuantities(fallbackSold);
-      } catch (fallbackError: unknown) {
-        const message =
-          fallbackError && typeof fallbackError === 'object' && 'message' in fallbackError
-            ? String(fallbackError.message)
-            : '';
-        throw new Error(message || 'Error al calcular ventas de remisiones');
-      }
-    }
-  }
+  const soldMap = await fetchRemissionSoldMap(remissionIds);
 
   return (orders || [])
     .map((row) => toDeliveryOrderOption(row as Parameters<typeof toDeliveryOrderOption>[0], soldMap))
-    .filter((row): row is DeliveryOrderOption => row !== null);
+    .filter((row): row is DeliveryOrderOption => row !== null)
+    .slice(0, limit);
 }
 
 /**

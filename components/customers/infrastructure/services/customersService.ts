@@ -38,6 +38,37 @@ export async function searchCustomersForNegocio(query: string): Promise<Customer
   }
 }
 
+/** Ubicación guardada del cliente (su vivienda). */
+export type CustomerSavedLocation = {
+  municipioId: string | null;
+  veredaId: string | null;
+  address: string | null;
+};
+
+/**
+ * Ubicación guardada del cliente. Sin conexión o si falla devuelve `null`: la
+ * usa el asistente de negocio sólo para rellenar campos vacíos, y no rellenarlos
+ * no debe impedir seguir.
+ */
+export async function fetchCustomerSavedLocation(customerId: string): Promise<CustomerSavedLocation | null> {
+  if (!customerId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('municipio_id, vereda_id, address')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      municipioId: data.municipio_id || null,
+      veredaId: data.vereda_id || null,
+      address: data.address?.trim() || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Ubicación del cliente: los tres niveles son opcionales. */
 export type CustomerLocationInput = {
   address?: string | null;
