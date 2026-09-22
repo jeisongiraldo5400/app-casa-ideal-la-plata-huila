@@ -157,7 +157,7 @@ describe('negociosStore.createAndActivate — origen y destino', () => {
         source_delivery_order_id: 'rem-1',
         target_remission_id: 'rem-target',
       })
-    ).rejects.toThrow(/origen en bodega central/);
+    ).rejects.toThrow(/origen «Sacar de bodegas»/);
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 

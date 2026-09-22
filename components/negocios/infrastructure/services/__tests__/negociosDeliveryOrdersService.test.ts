@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import {
+  DELIVERY_ORDER_SEARCH_LIMIT,
   deliveryOrderAvailabilityKey,
-  fetchAvailableDeliveryOrders,
   fetchPendingRemissions,
   fetchRemissionOriginProducts,
   formatPendingRemissionLabel,
@@ -11,6 +11,7 @@ import {
   mapSoldQuantities,
   negocioSkipsWarehouseStock,
   parseRemissionOriginRows,
+  searchAvailableDeliveryOrders,
   REMISSION_OWN_GROUP_LABEL,
   stockMapFromDeliveryOrder,
   toDeliveryOrderOption,
@@ -93,6 +94,9 @@ describe('origen de negocio desde orden de entrega', () => {
         created_at: '2026-08-13T00:00:00Z',
         order_type: 'customer',
         status: 'pending',
+        municipio_id: null,
+        vereda_id: null,
+        delivery_address: null,
         customer_id: 'c1',
         customer_name: 'Ana',
         customer_id_number: '1',
@@ -288,51 +292,149 @@ describe('grupos de origen de una remisión', () => {
   });
 });
 
-describe('fetchAvailableDeliveryOrders con muchas remisiones', () => {
-  beforeEach(() => jest.clearAllMocks());
+type Call = { table: string; method: string; args: unknown[] };
 
-  it('consulta las ventas de 1100 remisiones en lotes de 150 como máximo', async () => {
-    const remissions = Array.from({ length: 1100 }, (_, i) => ({
-      id: `rem-${i}`,
-      order_number: String(i),
-      created_at: '2026-09-01T00:00:00Z',
-      order_type: 'remission',
-      status: 'pending',
-      items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 5, deleted_at: null, product: { name: 'Base' }, warehouse: { name: 'Principal' } }],
-    }));
-    const inCalls: string[][] = [];
-
-    (supabase.from as jest.Mock).mockImplementation((table: string) => {
-      if (table === 'delivery_orders') {
-        const chain: Record<string, unknown> = {};
-        ['select', 'in', 'is', 'neq'].forEach((method) => { chain[method] = () => chain; });
-        chain.order = () => Promise.resolve({ data: remissions, error: null });
-        return chain;
-      }
-      let chunk: string[] = [];
-      const chain: Record<string, unknown> = {};
-      ['select', 'is', 'order'].forEach((method) => { chain[method] = () => chain; });
-      chain.in = (column: string, values: string[]) => {
-        if (column === 'remission_id') {
-          chunk = values;
-          inCalls.push(values);
-        }
+/**
+ * Cliente falso de supabase-js: registra cada llamada del builder y resuelve
+ * con lo que devuelva `respond(table)` al esperar la consulta.
+ */
+function mockSupabaseTables(respond: (table: string, calls: Call[]) => { data: unknown[]; error: null }) {
+  const calls: Call[] = [];
+  (supabase.from as jest.Mock).mockImplementation((table: string) => {
+    const own: Call[] = [];
+    const chain: Record<string, unknown> = {};
+    ['select', 'in', 'is', 'neq', 'or', 'ilike', 'order', 'limit', 'eq'].forEach((method) => {
+      chain[method] = (...args: unknown[]) => {
+        const call = { table, method, args };
+        calls.push(call);
+        own.push(call);
         return chain;
       };
-      // Cada remisión tiene un negocio que vendió 2 unidades.
-      chain.range = () =>
-        Promise.resolve({
-          data: chunk.map((id) => ({ remission_id: id, source_delivery_order_id: null, negocio_items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2 }] })),
-          error: null,
-        });
-      return chain;
+    });
+    chain.range = () => Promise.resolve(respond(table, own));
+    chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+      Promise.resolve(respond(table, own)).then(resolve, reject);
+    return chain;
+  });
+  return calls;
+}
+
+const customerOrder = (id: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  order_number: `OE-2026-${id}`,
+  created_at: '2026-09-01T00:00:00Z',
+  order_type: 'customer',
+  status: 'pending',
+  customer_id: `c-${id}`,
+  negocio_id: null,
+  municipio_id: 'la-plata',
+  vereda_id: null,
+  delivery_address: ' Calle 5 ',
+  customer: { id: `c-${id}`, name: 'Cliente', id_number: '123' },
+  items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2, deleted_at: null, product: { name: 'Base' }, warehouse: { name: 'Principal' } }],
+  ...extra,
+});
+
+describe('searchAvailableDeliveryOrders', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  // Antes se descargaban todas y PostgREST cortaba en 1000 filas: con más de
+  // 3000 órdenes, las antiguas nunca aparecían. Ahora se busca en el servidor.
+  it('sin término pide sólo las más recientes, con tope', async () => {
+    const calls = mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: [customerOrder('1')], error: null } : { data: [], error: null }
+    );
+
+    const options = await searchAvailableDeliveryOrders('');
+
+    const orderCalls = calls.filter((c) => c.table === 'delivery_orders');
+    expect(orderCalls.some((c) => c.method === 'or')).toBe(false);
+    expect(orderCalls.find((c) => c.method === 'limit')?.args[0]).toBeGreaterThanOrEqual(DELIVERY_ORDER_SEARCH_LIMIT);
+    expect(calls.some((c) => c.table === 'customers' || c.table === 'profiles')).toBe(false);
+    expect(options).toHaveLength(1);
+  });
+
+  it('con término busca por número de orden, cliente y asesor en el servidor', async () => {
+    const calls = mockSupabaseTables((table) => {
+      if (table === 'customers') return { data: [{ id: 'c-1' }, { id: 'c-2' }], error: null };
+      if (table === 'profiles') return { data: [{ id: 'u-9' }], error: null };
+      return { data: [customerOrder('1')], error: null };
     });
 
-    const options = await fetchAvailableDeliveryOrders();
+    await searchAvailableDeliveryOrders('3408');
 
-    expect(inCalls).toHaveLength(Math.ceil(1100 / 150));
-    expect(inCalls.every((values) => values.length <= 150)).toBe(true);
-    expect(options).toHaveLength(1100);
-    expect(options.every((option) => option.items[0]?.available_quantity === 3)).toBe(true);
+    const orFilter = calls.find((c) => c.table === 'delivery_orders' && c.method === 'or')?.args[0];
+    expect(orFilter).toBe('order_number.ilike.%3408%,customer_id.in.(c-1,c-2),assigned_to_user_id.in.(u-9)');
+    expect(calls.find((c) => c.table === 'customers' && c.method === 'or')?.args[0]).toBe(
+      'name.ilike.%3408%,id_number.ilike.%3408%'
+    );
+  });
+
+  it('sin clientes ni asesores que coincidan, busca sólo por número', async () => {
+    const calls = mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: [], error: null } : { data: [], error: null }
+    );
+
+    await searchAvailableDeliveryOrders('OE-2026');
+
+    expect(calls.find((c) => c.table === 'delivery_orders' && c.method === 'or')?.args[0]).toBe(
+      'order_number.ilike.%OE-2026%'
+    );
+  });
+
+  it('limpia el término antes de meterlo en el filtro', async () => {
+    const calls = mockSupabaseTables(() => ({ data: [], error: null }));
+
+    await searchAvailableDeliveryOrders('ana),status.eq.x%');
+
+    // Sin comas ni paréntesis, «status.eq» queda como texto buscado y no puede
+    // colarse como un filtro más: el .or() sigue teniendo una sola cláusula.
+    const orFilter = String(calls.find((c) => c.table === 'delivery_orders' && c.method === 'or')?.args[0]);
+    expect(orFilter).toBe('order_number.ilike.%ana status.eq.x%');
+  });
+
+  it('devuelve la ubicación de la orden para rellenar la del negocio', async () => {
+    mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: [customerOrder('1')], error: null } : { data: [], error: null }
+    );
+
+    const [option] = await searchAvailableDeliveryOrders('');
+
+    expect(option).toEqual(
+      expect.objectContaining({ municipio_id: 'la-plata', vereda_id: null, delivery_address: 'Calle 5' })
+    );
+  });
+
+  it('muestra como máximo el límite aunque el servidor devuelva más', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => customerOrder(String(i)));
+    mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: many, error: null } : { data: [], error: null }
+    );
+
+    expect(await searchAvailableDeliveryOrders('')).toHaveLength(DELIVERY_ORDER_SEARCH_LIMIT);
+  });
+
+  it('resta lo ya vendido de las remisiones del resultado', async () => {
+    const remission = {
+      ...customerOrder('r1'),
+      order_type: 'remission',
+      customer_id: null,
+      customer: null,
+      items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 5, deleted_at: null, product: { name: 'Base' }, warehouse: { name: 'Principal' } }],
+    };
+    mockSupabaseTables((table) => {
+      if (table === 'delivery_orders') return { data: [remission], error: null };
+      if (table === 'negocios') {
+        return {
+          data: [{ remission_id: 'r1', source_delivery_order_id: null, negocio_items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2 }] }],
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    });
+
+    const [option] = await searchAvailableDeliveryOrders('');
+
+    expect(option.items[0]?.available_quantity).toBe(3);
   });
 });

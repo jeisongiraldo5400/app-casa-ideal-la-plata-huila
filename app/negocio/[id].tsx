@@ -61,6 +61,7 @@ import { computeRemainingBalance, remainingAfterPago, summarizePagos } from '@/l
 import {
   canOfferProntoPago,
   localProntoPagoPermission,
+  canOfferPago,
   prontoPagoDecimalPlaces,
 } from '@/lib/negocios/prontoPago';
 import { canOfferVoidPago } from '@/lib/negocios/voidNegocioPago';
@@ -1272,7 +1273,6 @@ function NegocioDetailScreenInner() {
     );
   }
 
-  const canPay = ['activo', 'entregado'].includes(negocio.status);
   const canActivate = ['borrador', 'por_firmar'].includes(negocio.status);
   const canRegisterLateSignature = !fromLocal && canRegisterCustomerSignatureLater(negocio);
   const activationSignatureError = canActivate
@@ -1280,7 +1280,10 @@ function NegocioDetailScreenInner() {
     : null;
   // «Pagado» es dinero recibido; los descuentos por pronto pago van aparte.
   const { paid: totalPaid, discount: totalDiscount } = summarizePagos(pagos);
-  const prontoPagoAllowed =
+  // Registrar pagos (abonos y pronto pago) es de admin o del gestor de cobro
+  // asignado; el vendedor no, aunque sea el dueño (20261111120000). Es la misma
+  // regla en el servidor para los dos, así que se pregunta una sola vez.
+  const pagoAllowed =
     serverPagoPermissions.canRegisterProntoPago ??
     localProntoPagoPermission({
       isAdmin: isAdmin(),
@@ -1288,6 +1291,8 @@ function NegocioDetailScreenInner() {
       gestorCobroId: negocio.gestor_cobro_id,
       userId: user?.id,
     });
+  const prontoPagoAllowed = pagoAllowed;
+  const canPay = canOfferPago({ status: negocio.status, allowed: pagoAllowed });
   const showProntoPago = canOfferProntoPago({
     status: negocio.status,
     pendingBalance,

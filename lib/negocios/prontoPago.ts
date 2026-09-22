@@ -275,6 +275,16 @@ export function prontoPagoBlockReason(input: {
   return null;
 }
 
+/**
+ * «Registrar pago» se ofrece en negocios activos o entregados sólo a quien puede
+ * registrarlo: admin o gestor de cobro asignado. El vendedor ya no, aunque sea el
+ * dueño (20261111120000): antes el botón miraba sólo el estado y el servidor le
+ * habría rechazado el pago.
+ */
+export function canOfferPago(input: { status: string | null | undefined; allowed: boolean }): boolean {
+  return input.allowed && ['activo', 'entregado'].includes(String(input.status ?? ''));
+}
+
 /** El botón se ofrece en negocios activos o entregados con saldo, a quien tenga permiso. */
 export function canOfferProntoPago(input: {
   status: string | null | undefined;

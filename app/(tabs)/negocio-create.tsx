@@ -63,10 +63,8 @@ import {
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 import {
-  fetchAvailableDeliveryOrders,
   fetchPendingRemissions,
   fetchRemissionOriginProducts,
-  formatDeliveryOrderOptionLabel,
   stockMapFromDeliveryOrder,
   type DeliveryOrderItemOption,
   type DeliveryOrderOption,
@@ -78,7 +76,14 @@ import {
   type NegocioDeliveryMode,
 } from '@/components/negocios/components/NegocioDeliveryModeSection';
 import { NegocioOriginGroupsSection } from '@/components/negocios/components/NegocioOriginGroupsSection';
-import { createCustomer, searchCustomersForNegocio } from '@/components/customers';
+import { NegocioOriginOrderPicker } from '@/components/negocios/components/NegocioOriginOrderPicker';
+import { useOriginOrderSearch } from '@/components/negocios/infrastructure/hooks/useOriginOrderSearch';
+import {
+  clearAutoFilled,
+  resolveNegocioLocation,
+  type NegocioLocation,
+} from '@/components/negocios/domain/negocioLocation';
+import { createCustomer, fetchCustomerSavedLocation, searchCustomersForNegocio } from '@/components/customers';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import {
@@ -183,7 +188,7 @@ function NegocioCreateScreenInner() {
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
   const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderOption[]>([]);
+  const originOrderSearch = useOriginOrderSearch(originType === 'orden_entrega');
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
   /** Origen bodega: retiro directo o la OE viaja en una remisión pendiente. */
   const [deliveryMode, setDeliveryMode] = useState<NegocioDeliveryMode>('directo');
@@ -212,6 +217,8 @@ function NegocioCreateScreenInner() {
     setVeredaId('');
     setDireccion('');
     setItems([]);
+    autoFilledLocationRef.current = null;
+    originOrderSearch.setQuery('');
     setStockByProduct({});
     setDownPayments([]);
     setSellerId('');
@@ -244,7 +251,7 @@ function NegocioCreateScreenInner() {
     let cancelled = false;
     (async () => {
       try {
-        const [, d, m, v, orders, sellers, cachedName, pending] = await Promise.all([
+        const [, d, m, v, sellers, cachedName, pending] = await Promise.all([
           fetchCreditSettings(),
         supabase
           .from('departamentos')
@@ -264,7 +271,6 @@ function NegocioCreateScreenInner() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .order('nombre'),
-        fetchAvailableDeliveryOrders().catch(() => [] as DeliveryOrderOption[]),
         fetchSellerOptions().catch(() => [] as SellerOption[]),
         getCachedProfileName().catch(() => null),
         fetchPendingRemissions().catch(() => [] as PendingRemissionOption[]),
@@ -276,7 +282,6 @@ function NegocioCreateScreenInner() {
           setDepartamentos(d.data || []);
           setMunicipios(m.data || []);
           setVeredas(v.data || []);
-          setDeliveryOrders(orders || []);
           setPendingRemissions(pending || []);
           setSellerOptions(
             withCurrentUserOption(
@@ -294,6 +299,52 @@ function NegocioCreateScreenInner() {
     })();
     return () => { cancelled = true; };
   }, [fetchCreditSettings, initialDataReload, user?.id, user?.email]);
+
+  // Ubicación siempre al día: el relleno automático llega tras una consulta y
+  // no debe pisar lo que se escribió mientras tanto.
+  const locationRef = useRef({ departamentoId, municipioId, veredaId, direccion });
+  locationRef.current = { departamentoId, municipioId, veredaId, direccion };
+  /** Lo último que se rellenó solo: al cambiar de cliente se reemplaza. */
+  const autoFilledLocationRef = useRef<NegocioLocation | null>(null);
+
+  /**
+   * Al fijarse el cliente —por búsqueda, al crearlo, al elegir una orden de
+   * entrega o un grupo de remisión— se rellena la ubicación con su vivienda
+   * guardada y, si no tiene, con la de la orden de cliente elegida. Antes nunca
+   * se rellenaba y el asistente se quedaba pidiendo departamento y municipio.
+   */
+  useEffect(() => {
+    const customerId = customer?.id;
+    if (!customerId) return;
+    const orderLocation =
+      selectedDeliveryOrder?.order_type === 'customer' && selectedDeliveryOrder.customer_id === customerId
+        ? {
+            municipioId: selectedDeliveryOrder.municipio_id,
+            veredaId: selectedDeliveryOrder.vereda_id,
+            address: selectedDeliveryOrder.delivery_address,
+          }
+        : null;
+    let cancelled = false;
+    (async () => {
+      const saved = await fetchCustomerSavedLocation(customerId);
+      if (cancelled) return;
+      const current = locationRef.current;
+      const next = resolveNegocioLocation({
+        current: clearAutoFilled(current, autoFilledLocationRef.current),
+        customer: saved,
+        order: orderLocation,
+        municipios,
+      });
+      autoFilledLocationRef.current = next;
+      if (next.departamentoId !== current.departamentoId) setDepartamentoId(next.departamentoId);
+      if (next.municipioId !== current.municipioId) setMunicipioId(next.municipioId);
+      if (next.veredaId !== current.veredaId) setVeredaId(next.veredaId);
+      if (next.direccion !== current.direccion) setDireccion(next.direccion);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customer?.id, selectedDeliveryOrder, municipios]);
 
   useEffect(() => {
     const query = customerQuery.trim();
@@ -806,7 +857,7 @@ function NegocioCreateScreenInner() {
             </Text>
             <View style={styles.rowWrap}>
               {([
-                { id: 'bodega' as const, label: 'Bodega central' },
+                { id: 'bodega' as const, label: 'Sacar de bodegas' },
                 { id: 'orden_entrega' as const, label: 'Orden de entrega existente' },
               ]).map((option) => (
                 <Pressable
@@ -866,60 +917,32 @@ function NegocioCreateScreenInner() {
               />
             )}
             {originType === 'orden_entrega' && (
-              <View style={{ gap: 6 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
-                  Orden de entrega *
-                </Text>
-                {deliveryOrders.length === 0 ? (
-                  <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-                    No hay órdenes con productos disponibles.
-                  </Text>
-                ) : (
-                  deliveryOrders.map((order) => {
-                    const selected = selectedDeliveryOrder?.id === order.id;
-                    return (
-                      <Pressable
-                        key={order.id}
-                        onPress={() => {
-                          setSelectedDeliveryOrder(order);
-                          setSelectedOriginGroup(null);
-                          setItems([]);
-                          if (order.order_type === 'customer' && order.customer_id) {
-                            setCustomer({
-                              id: order.customer_id,
-                              name: order.customer_name || 'Cliente',
-                              id_number: order.customer_id_number || '',
-                            });
-                          }
-                        }}
-                        style={[
-                          styles.selectedCard,
-                          {
-                            backgroundColor: selected
-                              ? colors.primary.main + '12'
-                              : colors.background.paper,
-                            borderColor: selected ? colors.primary.main : colors.divider,
-                          },
-                        ]}
-                      >
-                        <MaterialIcons
-                          name={selected ? 'check-circle' : 'local-shipping'}
-                          size={22}
-                          color={selected ? colors.primary.main : colors.text.secondary}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.selectedCardTitle, { color: colors.text.primary }]}>
-                            {formatDeliveryOrderOptionLabel(order)}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: colors.text.secondary }}>
-                            {order.items?.length || 0} producto(s) disponible(s)
-                          </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                )}
-              </View>
+              <NegocioOriginOrderPicker
+                query={originOrderSearch.query}
+                onQueryChange={originOrderSearch.setQuery}
+                orders={originOrderSearch.orders}
+                loading={originOrderSearch.loading}
+                error={originOrderSearch.error}
+                selectedOrder={selectedDeliveryOrder}
+                onSelect={(order) => {
+                  setSelectedDeliveryOrder(order);
+                  setSelectedOriginGroup(null);
+                  setItems([]);
+                  if (order.order_type === 'customer' && order.customer_id) {
+                    setCustomer({
+                      id: order.customer_id,
+                      name: order.customer_name || 'Cliente',
+                      id_number: order.customer_id_number || '',
+                    });
+                  }
+                }}
+                onClearSelection={() => {
+                  setSelectedDeliveryOrder(null);
+                  setSelectedOriginGroup(null);
+                  setItems([]);
+                }}
+                colors={colors}
+              />
             )}
             {originIsRemission && (
               <NegocioOriginGroupsSection

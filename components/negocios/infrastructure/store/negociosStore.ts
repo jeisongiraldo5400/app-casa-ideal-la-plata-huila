@@ -313,7 +313,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
     if (!isValidDateValue(input.deal_date)) throw new Error('Fecha del negocio inválida');
     if (input.target_remission_id && negocioSkipsWarehouseStock(input)) {
-      throw new Error('Enviar en remisión solo aplica a negocios con origen en bodega central');
+      throw new Error('Enviar en remisión solo aplica a negocios con origen «Sacar de bodegas»');
     }
     validateNegocioItemsInput(input.items);
     const signatureError = sellerSignatureRequiredError(
