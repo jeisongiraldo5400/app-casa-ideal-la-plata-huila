@@ -2,6 +2,7 @@ import {
   negocioSaveBlockedBySignature,
   canRegisterCustomerSignatureLater,
   sellerSignatureRequiredError,
+  signatureLoadWarning,
 } from '../negocioSignatureRules';
 
 describe('sellerSignatureRequiredError', () => {
@@ -57,5 +58,23 @@ describe('negocioSaveBlockedBySignature', () => {
   it('no bloquea cuando alguna firma existe', () => {
     expect(negocioSaveBlockedBySignature('uid/n1/cliente.png', null)).toBeNull();
     expect(negocioSaveBlockedBySignature(null, 'data:image/png;base64,AAA')).toBeNull();
+  });
+});
+
+// Producción, 2026-09-22: el negocio 20260011 abría un modal «No se pudo
+// autorizar la firma: Object not found» y la pantalla quedaba vacía.
+describe('signatureLoadWarning', () => {
+  it('sin fallos no avisa nada', () => {
+    expect(signatureLoadWarning([])).toBeNull();
+  });
+
+  it('nombra la firma que faltó', () => {
+    expect(signatureLoadWarning(['vendedor'])).toBe('No se pudo mostrar la firma del vendedor.');
+  });
+
+  it('enumera varias', () => {
+    expect(signatureLoadWarning(['cliente', 'fiador', 'vendedor'])).toBe(
+      'No se pudieron mostrar las firmas del cliente, del fiador y del vendedor.'
+    );
   });
 });

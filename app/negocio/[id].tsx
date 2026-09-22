@@ -56,6 +56,7 @@ import {
 import {
   canRegisterCustomerSignatureLater,
   sellerSignatureRequiredError,
+  signatureLoadWarning,
 } from '@/lib/negocioSignatureRules';
 import { computeRemainingBalance, remainingAfterPago, summarizePagos } from '@/lib/negocios/negocioBalance';
 import {
@@ -265,6 +266,16 @@ function NegocioDetailScreenInner() {
       setSignaturesDirty(false);
       setLateCustomerSignature('');
 
+      // Una firma que no se puede autorizar (borrada del almacenamiento o sin
+      // permiso) no puede dejar el negocio sin abrir: se anota y se sigue.
+      const signatureFailures: string[] = [];
+      const signatureUrl = (label: string, stored: string | null | undefined) =>
+        resolveNegocioSignatureUrl(stored).catch((signatureError) => {
+          console.warn(`No se pudo autorizar la firma del ${label}`, signatureError);
+          signatureFailures.push(label);
+          return null;
+        });
+
       const [
         itemsRes,
         cuotasRes,
@@ -312,9 +323,9 @@ function NegocioDetailScreenInner() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
-        resolveNegocioSignatureUrl(n.customer_signature_url),
-        resolveNegocioSignatureUrl(n.guarantor_signature_url),
-        resolveNegocioSignatureUrl(n.seller_signature_url),
+        signatureUrl('cliente', n.customer_signature_url),
+        signatureUrl('fiador', n.guarantor_signature_url),
+        signatureUrl('vendedor', n.seller_signature_url),
       ]);
 
       const sectionErrors = [
@@ -407,9 +418,13 @@ function NegocioDetailScreenInner() {
       }
       // mark_cuotas_en_mora exige can_manage_collection_for_negocio; un usuario
       // que solo puede ver el negocio recibe "Sin permiso" y no es un fallo real.
-      if (moraError && !/sin permiso/i.test(moraError.message || '')) {
-        setLoadWarning('No fue posible actualizar automáticamente las cuotas en mora.');
-      }
+      const warnings = [
+        moraError && !/sin permiso/i.test(moraError.message || '')
+          ? 'No fue posible actualizar automáticamente las cuotas en mora.'
+          : null,
+        signatureLoadWarning(signatureFailures),
+      ].filter((warning): warning is string => Boolean(warning));
+      if (warnings.length) setLoadWarning(warnings.join(' '));
     } catch (e: any) {
       let message = e?.message || 'No se pudo cargar';
       if (isNetworkError(e) && canUseLocalDb()) {

@@ -40,6 +40,19 @@ export function negocioSaveBlockedBySignature(
     : null;
 }
 
+/**
+ * Aviso cuando alguna firma no se pudo autorizar. Antes, una firma borrada del
+ * almacenamiento o sin permiso («Object not found») cortaba la carga del
+ * negocio entero y dejaba la pantalla vacía tras un modal de error: las firmas
+ * son un dato más del contrato y no pueden impedir ver el negocio.
+ */
+export function signatureLoadWarning(labels: string[]): string | null {
+  if (!labels.length) return null;
+  return labels.length === 1
+    ? `No se pudo mostrar la firma del ${labels[0]}.`
+    : `No se pudieron mostrar las firmas del ${labels.slice(0, -1).join(', del ')} y del ${labels[labels.length - 1]}.`;
+}
+
 const LATE_CUSTOMER_SIGNATURE_STATUSES = new Set(['activo', 'entregado']);
 
 /**
