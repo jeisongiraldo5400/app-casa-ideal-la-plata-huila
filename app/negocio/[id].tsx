@@ -60,6 +60,7 @@ import {
 import { computeRemainingBalance, remainingAfterPago, summarizePagos } from '@/lib/negocios/negocioBalance';
 import {
   canOfferProntoPago,
+  localPagoPermission,
   localProntoPagoPermission,
   canOfferPago,
   prontoPagoDecimalPlaces,
@@ -134,7 +135,7 @@ function NegocioDetailScreenInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
   const { user } = useAuth();
-  const { isAdmin, isGestorCobro } = useUserRoles();
+  const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   const [sellerSheetOpen, setSellerSheetOpen] = useState(false);
@@ -1280,18 +1281,19 @@ function NegocioDetailScreenInner() {
     : null;
   // «Pagado» es dinero recibido; los descuentos por pronto pago van aparte.
   const { paid: totalPaid, discount: totalDiscount } = summarizePagos(pagos);
-  // Registrar pagos (abonos y pronto pago) es de admin o del gestor de cobro
-  // asignado; el vendedor no, aunque sea el dueño (20261111120000). Es la misma
-  // regla en el servidor para los dos, así que se pregunta una sola vez.
-  const pagoAllowed =
-    serverPagoPermissions.canRegisterProntoPago ??
-    localProntoPagoPermission({
-      isAdmin: isAdmin(),
-      isGestorCobro: isGestorCobro(),
-      gestorCobroId: negocio.gestor_cobro_id,
-      userId: user?.id,
-    });
-  const prontoPagoAllowed = pagoAllowed;
+  // Abonos: admin, gestor de cobro asignado o recaudador (cualquier negocio).
+  // Pronto pago: admin o gestor asignado. El vendedor no, aunque sea el dueño
+  // (20261111120000 y 20261113120000).
+  const localPermissionInput = {
+    isAdmin: isAdmin(),
+    isGestorCobro: isGestorCobro(),
+    isRecaudador: isRecaudador(),
+    gestorCobroId: negocio.gestor_cobro_id,
+    userId: user?.id,
+  };
+  const pagoAllowed = serverPagoPermissions.canRegisterPago ?? localPagoPermission(localPermissionInput);
+  const prontoPagoAllowed =
+    serverPagoPermissions.canRegisterProntoPago ?? localProntoPagoPermission(localPermissionInput);
   const canPay = canOfferPago({ status: negocio.status, allowed: pagoAllowed });
   const showProntoPago = canOfferProntoPago({
     status: negocio.status,
