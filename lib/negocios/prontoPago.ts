@@ -299,8 +299,25 @@ export function canOfferProntoPago(input: {
 }
 
 /**
+ * Permiso local (sin red) para abonos, igual que `can_register_negocio_pago`:
+ * admin, gestor de cobro asignado o recaudador, que cobra en cualquier negocio
+ * (20261113120000). Solo decide si se muestra el botón.
+ */
+export function localPagoPermission(input: {
+  isAdmin: boolean;
+  isGestorCobro: boolean;
+  isRecaudador: boolean;
+  gestorCobroId: string | null | undefined;
+  userId: string | null | undefined;
+}): boolean {
+  if (input.isRecaudador) return true;
+  return localProntoPagoPermission(input);
+}
+
+/**
  * Permiso local (sin red), igual que `can_register_negocio_pronto_pago`: admin o
- * gestor de cobro asignado. Solo decide si se muestra el botón (deshabilitado).
+ * gestor de cobro asignado. El recaudador no. Solo decide si se muestra el
+ * botón (deshabilitado).
  */
 export function localProntoPagoPermission(input: {
   isAdmin: boolean;

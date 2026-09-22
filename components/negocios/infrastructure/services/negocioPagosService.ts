@@ -8,24 +8,30 @@ import type { ProntoPagoRpcCall } from '@/lib/negocios/prontoPago';
  */
 
 export type NegocioPagoPermissions = {
+  /** Abonos: admin, gestor asignado o recaudador (`can_register_negocio_pago`). */
+  canRegisterPago: boolean;
+  /** Pronto pago: admin o gestor asignado; el recaudador no. */
   canRegisterProntoPago: boolean;
   canVoidPago: boolean;
 };
 
 /**
- * Permisos del usuario sobre los pagos del negocio (admin o gestor de cobro
- * asignado). Un servidor sin la migración del pronto pago responde que la
+ * Permisos del usuario sobre los pagos del negocio. Abonos: admin, gestor de
+ * cobro asignado o recaudador. Pronto pago y anulación: admin o gestor
+ * asignado (20261113120000). Un servidor sin la migración del pronto pago responde que la
  * función no existe: se trata como sin permiso y la acción no se muestra.
  * Los errores de red se propagan para que la pantalla use el permiso local.
  */
 export async function fetchNegocioPagoPermissions(negocioId: string): Promise<NegocioPagoPermissions> {
-  const [register, voidPago] = await Promise.all([
+  const [pago, register, voidPago] = await Promise.all([
+    supabase.rpc('can_register_negocio_pago', { p_negocio_id: negocioId }),
     supabase.rpc('can_register_negocio_pronto_pago', { p_negocio_id: negocioId }),
     supabase.rpc('can_void_negocio_pago', { p_negocio_id: negocioId }),
   ]);
-  const networkError = [register.error, voidPago.error].find((error) => error && isNetworkError(error));
+  const networkError = [pago.error, register.error, voidPago.error].find((error) => error && isNetworkError(error));
   if (networkError) throw networkError;
   return {
+    canRegisterPago: !pago.error && pago.data === true,
     canRegisterProntoPago: !register.error && register.data === true,
     canVoidPago: !voidPago.error && voidPago.data === true,
   };

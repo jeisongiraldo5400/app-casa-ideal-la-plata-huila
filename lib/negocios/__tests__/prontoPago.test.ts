@@ -5,6 +5,7 @@ import {
   buildProntoPagoSummary,
   canOfferProntoPago,
   isProntoPagoBalanceChangedError,
+  localPagoPermission,
   localProntoPagoPermission,
   canOfferPago,
   negocioPagoErrorMessage,
@@ -239,5 +240,34 @@ describe('canOfferPago', () => {
     expect(canOfferPago({ status: 'borrador', allowed: admin })).toBe(false);
     expect(canOfferPago({ status: 'cerrado', allowed: admin })).toBe(false);
     expect(canOfferPago({ status: undefined, allowed: admin })).toBe(false);
+  });
+});
+
+// Decisión del usuario (2026-09-22): el recaudador cobra en todos los negocios,
+// sin pronto pago (20261113120000).
+describe('localPagoPermission', () => {
+  const base = { isAdmin: false, isGestorCobro: false, isRecaudador: false, gestorCobroId: 'g1', userId: 'r1' };
+
+  it('el recaudador registra abonos en cualquier negocio, con o sin gestor', () => {
+    expect(localPagoPermission({ ...base, isRecaudador: true })).toBe(true);
+    expect(localPagoPermission({ ...base, isRecaudador: true, gestorCobroId: null })).toBe(true);
+  });
+
+  it('pero no hace pronto pago', () => {
+    const { isRecaudador: _ignored, ...sinRol } = { ...base, isRecaudador: true };
+    expect(localPagoPermission({ ...sinRol, isRecaudador: true })).toBe(true);
+    expect(localProntoPagoPermission(sinRol)).toBe(false);
+  });
+
+  it('para los demás roles, abono y pronto pago siguen la misma regla', () => {
+    const casos = [
+      { ...base, isAdmin: true },
+      { ...base, isGestorCobro: true, userId: 'g1' },
+      { ...base, isGestorCobro: true, userId: 'g2' },
+      base,
+    ];
+    for (const caso of casos) {
+      expect(localPagoPermission(caso)).toBe(localProntoPagoPermission(caso));
+    }
   });
 });

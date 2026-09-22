@@ -6,15 +6,17 @@ import {
 
 export type NegocioPagoPermissionsState = {
   /** null mientras no se sabe (cargando, sin red o detalle local). */
+  canRegisterPago: boolean | null;
   canRegisterProntoPago: boolean | null;
   canVoidPago: boolean | null;
 };
 
-const UNKNOWN: NegocioPagoPermissionsState = { canRegisterProntoPago: null, canVoidPago: null };
+const UNKNOWN: NegocioPagoPermissionsState = { canRegisterPago: null, canRegisterProntoPago: null, canVoidPago: null };
 
 /**
- * Consulta en el servidor si el usuario puede registrar pronto pago y anular
- * pagos en el negocio (`can_register_negocio_pronto_pago` / `can_void_negocio_pago`).
+ * Consulta en el servidor si el usuario puede registrar abonos, pronto pago y
+ * anular pagos en el negocio (`can_register_negocio_pago`,
+ * `can_register_negocio_pronto_pago` y `can_void_negocio_pago`).
  * Solo con conexión; `reloadKey` fuerza la consulta tras recargar el detalle
  * (p. ej. si cambió el gestor asignado).
  */

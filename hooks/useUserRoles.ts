@@ -137,6 +137,11 @@ export function useUserRoles() {
     return hasRole('gestor de cobro');
   };
 
+  /** Cobra en todos los negocios sin tenerlos asignados (20261113120000). */
+  const isRecaudador = (): boolean => {
+    return hasRole('recaudador');
+  };
+
   /** Módulo de catálogos: admin, catalog_admin, catalog_editor o catalog_seller. */
   const canAccessCatalogs = (): boolean => {
     return hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? ''));
@@ -160,6 +165,7 @@ export function useUserRoles() {
     isBodeguero,
     isVendedor,
     isGestorCobro,
+    isRecaudador,
     canAccessCatalogs,
     canMarkOrderAsReceived,
     preferSellerWorkspace,

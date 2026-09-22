@@ -24,10 +24,12 @@ function HomeScreenInner() {
   const router = useRouter();
   const { user } = useAuth();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
-  const { isAdmin, isVendedor, isGestorCobro, canAccessCatalogs } = useUserRoles();
+  const { isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
   const [now, setNow] = useState(new Date());
-  const showCommercialSection = isAdmin() || isVendedor() || isGestorCobro();
-  const canCreateNegocio = showCommercialSection;
+  const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
+  // El recaudador sólo consulta y cobra: ve Negocios y Cartera, no crea negocios
+  // ni entra a Clientes.
+  const showCommercialSection = canCreateNegocio || isRecaudador();
   const userName = user?.email?.split('@')[0]?.replace(/[._-]/g, ' ') || 'usuario';
 
   useEffect(() => {
@@ -91,7 +93,9 @@ function HomeScreenInner() {
               {isVendedor() ? (
                 <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => router.navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
               ) : null}
-              <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => router.navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
+              {canCreateNegocio ? (
+                <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => router.navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
+              ) : null}
             </View>
             {isGestorCobro() ? (
               <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} />
