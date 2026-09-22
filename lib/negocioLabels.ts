@@ -66,14 +66,15 @@ export function labelCuotaStatus(status: string) {
 
 /**
  * Código legible de negocio.
- * Nuevos: YYYYNNN (ej. 2026001). Históricos: consecutivo corto (1, 2, …).
+ * Nuevos: año + 4 dígitos (ej. 20260007). De 2026001 a 2026006: año + 3 dígitos,
+ * el formato anterior. Históricos: consecutivo corto (1, 2, …). Nada se renumera.
  */
 export function formatNegocioCodigo(numero: number | null | undefined): string {
   if (numero == null || Number.isNaN(Number(numero))) return "—";
   return String(numero);
 }
 
-/** Etiqueta de UI: "Negocio 2026001" */
+/** Etiqueta de UI: "Negocio 20260007" */
 export function labelNegocioCodigo(numero: number | null | undefined): string {
   return `Negocio ${formatNegocioCodigo(numero)}`;
 }
