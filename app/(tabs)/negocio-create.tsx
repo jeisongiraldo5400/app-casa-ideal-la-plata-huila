@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import { useTheme } from '@/components/theme';
@@ -77,6 +78,8 @@ import {
 } from '@/components/negocios/components/NegocioDeliveryModeSection';
 import { NegocioOriginGroupsSection } from '@/components/negocios/components/NegocioOriginGroupsSection';
 import { NegocioOriginOrderPicker } from '@/components/negocios/components/NegocioOriginOrderPicker';
+import { NegocioDraftBanner } from '@/components/negocios/components/NegocioDraftBanner';
+import { hasNegocioDraft, negocioDraftSummary } from '@/components/negocios/domain/negocioDraft';
 import { useOriginOrderSearch } from '@/components/negocios/infrastructure/hooks/useOriginOrderSearch';
 import {
   clearAutoFilled,
@@ -299,6 +302,41 @@ function NegocioCreateScreenInner() {
     })();
     return () => { cancelled = true; };
   }, [fetchCreditSettings, initialDataReload, user?.id, user?.email]);
+
+  /**
+   * La pantalla es una pestaña y sigue viva al salir. Si se sale con un negocio
+   * a medias, al volver se pregunta si continuar o empezar de nuevo: antes se
+   * podía arrancar un negocio «nuevo» con el cliente y los productos del
+   * anterior sin darse cuenta.
+   */
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const hasDraft = hasNegocioDraft({
+    step,
+    customerId: customer?.id,
+    itemsCount: items.length,
+    selectedOrderId: selectedDeliveryOrder?.id,
+    direccion,
+  });
+  const hasDraftRef = useRef(hasDraft);
+  hasDraftRef.current = hasDraft;
+  const leftWithDraftRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (leftWithDraftRef.current && hasDraftRef.current) {
+        setShowDraftBanner(true);
+        scrollRef.current?.scrollTo({ y: 0, animated: false });
+      }
+      return () => {
+        leftWithDraftRef.current = hasDraftRef.current;
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!hasDraft) setShowDraftBanner(false);
+  }, [hasDraft]);
 
   // Ubicación siempre al día: el relleno automático llega tras una consulta y
   // no debe pisar lo que se escribió mientras tanto.
@@ -846,10 +884,26 @@ function NegocioCreateScreenInner() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
       >
+        {showDraftBanner && hasDraft && (
+          <NegocioDraftBanner
+            summary={negocioDraftSummary({
+              customerName: customer?.name,
+              stepLabel: WIZARD_STEPS[step]?.label ?? 'Cliente',
+              itemsCount: items.length,
+            })}
+            onContinue={() => setShowDraftBanner(false)}
+            onRestart={() => {
+              setShowDraftBanner(false);
+              resetForm();
+            }}
+            colors={colors}
+          />
+        )}
         {step === 0 && (
           <View style={styles.block}>
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
