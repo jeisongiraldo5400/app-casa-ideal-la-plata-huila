@@ -103,8 +103,28 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .amount { flex-direction: column; align-items: flex-start; }
 }
 @media print {
-  body { padding: 0; background: #fff; }
-  .receipt { max-width: none; border-radius: 0; }
+  body { padding: 0; background: #fff; color: #000; font-size: 11px; }
+  .receipt { max-width: 95mm; margin: 0 auto; border: 1px solid #000; border-radius: 6px; padding: 10px 12px 8px; }
+  .brand { padding-bottom: 6px; border-bottom: 1px solid #000; }
+  .logo { height: 30px; filter: grayscale(1); }
+  .company { color: #000; font-size: 8px; }
+  .title { margin: 8px 0 6px; }
+  .eyebrow { color: #000; font-size: 8px; }
+  .title h1 { color: #000; font-size: 14px; }
+  .status, .status-ok, .status-void, .status-pending { padding: 1px 6px; background: none; color: #000; border: 1px solid #000; font-size: 8px; }
+  .void-banner { margin: 0 0 6px; padding: 3px; background: none; color: #000; border: 1px solid #000; border-radius: 3px; font-size: 9px; }
+  .amount, .is-voided .amount { padding: 6px 0; border-radius: 0; background: none; color: #000; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+  .amount span { font-size: 9px; opacity: 1; }
+  .amount strong { font-size: 16px; }
+  .fields { gap: 0 12px; margin-top: 4px; }
+  .field { padding: 3px 0; border-bottom: 1px dotted #999; }
+  .field span { color: #333; font-size: 7px; }
+  .field strong { color: #000; font-size: 10px; }
+  .balance { margin-top: 6px; padding: 5px 8px; border: 1px solid #000; border-radius: 3px; background: none; }
+  .balance span, .balance strong { color: #000; }
+  .balance strong { font-size: 12px; }
+  .foot { margin-top: 6px; padding-top: 5px; border-top: 1px solid #000; color: #333; font-size: 7px; }
+  .watermark { color: rgba(0, 0, 0, 0.08); font-size: 48px; letter-spacing: 4px; }
 }
 `;
 
