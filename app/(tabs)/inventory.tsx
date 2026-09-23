@@ -1,3 +1,4 @@
+import { CategoryFilter } from '@/components/inventory/components/CategoryFilter';
 import { InventoryList } from '@/components/inventory/components/InventoryList';
 import { SearchBar } from '@/components/inventory/components/SearchBar';
 import { WarehouseFilter } from '@/components/inventory/components/WarehouseFilter';
@@ -43,6 +44,7 @@ function InventoryScreenInner() {
                 : 'Existencias disponibles por bodega'}
             />
             <WarehouseFilter />
+            <CategoryFilter />
             <SearchBar />
           </>
         )}

@@ -29,10 +29,18 @@ interface InventoryLoadOptions {
   warehouseId?: string | null;
 }
 
+/** Categoría para el filtro del listado. */
+export interface ProductCategory {
+  id: string;
+  name: string;
+}
+
 interface InventoryState {
   inventory: InventoryItem[];
   warehouses: Warehouse[];
+  categories: ProductCategory[];
   selectedWarehouseId: string | null;
+  selectedCategoryId: string | null;
   loading: boolean;
   refreshing: boolean;
   loadingMore: boolean;
@@ -44,9 +52,11 @@ interface InventoryState {
   totalCount: number;
   hasMore: boolean;
   loadWarehouses: () => Promise<void>;
+  loadCategories: () => Promise<void>;
   loadInventory: (options?: InventoryLoadOptions) => Promise<void>;
   refreshInventory: () => Promise<void>;
   setSelectedWarehouse: (warehouseId: string | null) => void;
+  setSelectedCategory: (categoryId: string | null) => void;
   setSearchQuery: (query: string) => void;
   loadNextPage: () => Promise<void>;
   clearError: () => void;
@@ -57,7 +67,9 @@ let latestInventoryRequestId = 0;
 export const useInventoryStore = create<InventoryState>((set, get) => ({
   inventory: [],
   warehouses: [],
+  categories: [],
   selectedWarehouseId: null,
+  selectedCategoryId: null,
   loading: false,
   refreshing: false,
   loadingMore: false,
@@ -95,7 +107,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   loadInventory: async (options = {}) => {
-    const { searchQuery, pageSize, selectedWarehouseId } = get();
+    const { searchQuery, pageSize, selectedWarehouseId, selectedCategoryId } = get();
     const page = options.page ?? 1;
     const append = options.append ?? false;
     const refreshing = options.refreshing ?? false;
@@ -118,6 +130,9 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         search_term: searchQuery || null,
         include_deleted: false,
         ...(targetWarehouseId ? { p_warehouse_id: targetWarehouseId } : {}),
+        // El filtro por categoría lo resuelve el servidor (20261119120000):
+        // la lista está paginada y filtrarla aquí daría resultados a medias.
+        ...(selectedCategoryId ? { p_category_id: selectedCategoryId } : {}),
       });
 
       if (requestId !== latestInventoryRequestId) return;
@@ -245,17 +260,48 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   setSearchQuery: (query) => {
     if (query === get().searchQuery) return;
     latestInventoryRequestId += 1;
+    // La lista NO se vacía: se deja lo anterior a la vista hasta que llegue el
+    // resultado nuevo. Vaciarla en cada tecla hacía que la pantalla parpadeara
+    // entre «No se encontraron productos» y los resultados, y el teclado se
+    // sentía trabado.
     set({
       searchQuery: query,
-      inventory: [],
       currentPage: 1,
-      totalCount: 0,
       hasMore: false,
       loading: false,
       refreshing: false,
       loadingMore: false,
       error: null,
     });
+  },
+
+  setSelectedCategory: (categoryId) => {
+    if (categoryId === get().selectedCategoryId) return;
+    latestInventoryRequestId += 1;
+    set({
+      selectedCategoryId: categoryId,
+      currentPage: 1,
+      hasMore: false,
+      error: null,
+    });
+    void get().loadInventory({ page: 1 });
+  },
+
+  loadCategories: async () => {
+    if (get().categories.length > 0) return;
+    try {
+      const { data, error } = await supabase
+        .from('category')
+        .select('id, name')
+        .is('deleted_at', null)
+        .order('name');
+      if (error) throw error;
+      set({ categories: (data || []) as ProductCategory[] });
+    } catch (error) {
+      // Sin categorías el filtro no se muestra; el listado sigue funcionando.
+      console.warn('No se pudieron cargar las categorías', error);
+      set({ categories: [] });
+    }
   },
 
   loadNextPage: async () => {

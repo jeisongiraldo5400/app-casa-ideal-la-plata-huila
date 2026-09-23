@@ -98,8 +98,9 @@ describe('InventoryList progressive loading', () => {
     expect(state.refreshInventory).toHaveBeenCalledTimes(1);
   });
 
-  it('espera 300 ms antes de consultar una búsqueda nueva', () => {
-    jest.useFakeTimers();
+  // La espera de teclas vive ahora en SearchBar: aquí el término ya llega
+  // asentado, así que la lista consulta enseguida.
+  it('consulta en cuanto cambia el término ya asentado', () => {
     const loadInventory = jest.fn(async () => undefined);
     mockUseInventory.mockReturnValue(inventoryState({ loadInventory, searchQuery: '' }));
     const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
@@ -108,9 +109,6 @@ describe('InventoryList progressive loading', () => {
     mockUseInventory.mockReturnValue(inventoryState({ loadInventory, searchQuery: 'silla' }));
     screen.rerender(<InventoryList header={<Text>Inventario</Text>} />);
 
-    act(() => jest.advanceTimersByTime(299));
-    expect(loadInventory).toHaveBeenCalledTimes(1);
-    act(() => jest.advanceTimersByTime(1));
     expect(loadInventory).toHaveBeenCalledTimes(2);
   });
 });

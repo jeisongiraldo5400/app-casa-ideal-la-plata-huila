@@ -44,11 +44,9 @@ export function InventoryList({ header }: InventoryListProps) {
       return;
     }
 
-    const timeout = setTimeout(() => {
-      void loadInventory({ page: 1 });
-    }, 300);
-
-    return () => clearTimeout(timeout);
+    // Sin espera aquí: el buscador ya aguarda a que el usuario termine de
+    // escribir (SearchBar) y este efecto solo reacciona al término ya asentado.
+    void loadInventory({ page: 1 });
   }, [loadInventory, searchQuery]);
 
   const getWarehouseNames = (stockByWarehouse: InventoryItem['stock_by_warehouse']): string => {
