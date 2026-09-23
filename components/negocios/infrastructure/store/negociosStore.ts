@@ -177,6 +177,17 @@ const isValidDateValue = (value: string) => {
 const SIN_COINCIDENCIAS = 'id.eq.00000000-0000-0000-0000-000000000000';
 
 /**
+ * Columnas del listado de negocios (lo comparten «Negocios» y «Mis negocios»).
+ *
+ * Los tres embebidos de `delivery_orders` traen la orden del negocio y la de
+ * origen en la MISMA consulta, sin una consulta extra por fila. Hay que nombrar
+ * la llave foránea porque `negocios` apunta cuatro veces a `delivery_orders`
+ * (orden, remisión, origen y remisión destino) y PostgREST no sabría cuál es.
+ */
+const NEGOCIO_LIST_SELECT =
+  '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at), delivery_order:delivery_orders!negocios_delivery_order_id_fkey(order_number), remission:delivery_orders!negocios_remission_id_fkey(order_number), source_delivery_order:delivery_orders!negocios_source_delivery_order_id_fkey(order_number)';
+
+/**
  * Filtro de PostgREST para buscar negocios en el servidor.
  *
  * El número se resuelve con `search_negocio_ids_by_numero` (encuentra «003» en
@@ -221,9 +232,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       // `negocios` no tiene columna remaining_balance: se deriva de las cuotas.
       let query = supabase
         .from('negocios')
-        .select(
-          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
-        )
+        .select(NEGOCIO_LIST_SELECT)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -262,9 +271,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     try {
       let query = supabase
         .from('negocios')
-        .select(
-          '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
-        )
+        .select(NEGOCIO_LIST_SELECT)
         .is('deleted_at', null)
         .eq('seller_id', sellerId)
         .order('created_at', { ascending: false })
