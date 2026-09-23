@@ -88,10 +88,15 @@ import {
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalDb,
+  deleteRejectedPagoLocal,
   fetchNegocioDetailFromLocal,
+  listRejectedPagosFromLocal,
   queuePagoSupportUpload,
   registerPagoOffline,
+  registerPagoWithFallback,
+  type RejectedPagoRow,
 } from '@/lib/offline/repositories/offlineRepository';
+import { RejectedPagoCard } from '@/components/offline/RejectedPagoCard';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
@@ -127,6 +132,9 @@ function NegocioDetailScreenInner() {
   const [items, setItems] = useState<any[]>([]);
   const [cuotas, setCuotas] = useState<any[]>([]);
   const [pagos, setPagos] = useState<any[]>([]);
+  /** Pagos que el servidor no aceptó y siguen guardados en el teléfono. */
+  const [rejectedPagos, setRejectedPagos] = useState<RejectedPagoRow[]>([]);
+  const [deletingRejectedId, setDeletingRejectedId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerMeta, setCustomerMeta] = useState<any>({});
   const [codeudorMeta, setCodeudorMeta] = useState<any>({});
@@ -222,9 +230,12 @@ function NegocioDetailScreenInner() {
       setLoadError(null);
       setSignaturesDirty(false);
       setLateCustomerSignature('');
-      setItems([]);
+      // Los productos ahora sí bajan en el pull (20261122120000): la tarjeta se
+      // pinta con lo descargado en vez de ocultarse.
+      setItems(local.items);
       setCuotas(local.cuotas);
       setPagos(local.pagos);
+      setRejectedPagos(local.rejectedPagos);
       setInstallmentPage(0);
       setPaymentPage(0);
       setCustomerName(local.customer.name || '');
@@ -234,7 +245,9 @@ function NegocioDetailScreenInner() {
       setGuarantorSignature('');
       setSellerSignature('');
       setCodeudorMeta(local.codeudor || {});
-      setSellerName('');
+      // El nombre del vendedor viaja resuelto en el pull: antes la pantalla
+      // decía «Sin asignar» sin señal aunque el negocio sí tuviera vendedor.
+      setSellerName(local.negocio.seller_name || '');
       setOrderNumber(null);
       setOriginOrderNumber(null);
       setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));
@@ -358,6 +371,10 @@ function NegocioDetailScreenInner() {
         payment_method_name: pago.payment_method?.name ?? null,
         cierre_numero: cierre?.numero ?? null,
       }));
+      // Un pago rechazado solo existe en el teléfono: el servidor nunca lo
+      // devuelve, así que se lee aparte para que no desaparezca de la pantalla
+      // al recuperar la conexión.
+      setRejectedPagos(canUseLocalDb() ? await listRejectedPagosFromLocal(id).catch(() => []) : []);
       // Los pagos se pintan antes de resolver los nombres: el autor es un dato
       // decorativo y su consulta (tabla `profiles`, sujeta a RLS) no puede
       // dejar la lista de pagos sin actualizar si falla.
@@ -604,11 +621,14 @@ function NegocioDetailScreenInner() {
     paymentMethodName: string | null;
     /** Pronto pago: el saldo queda en 0 y el ticket lleva pendiente y descuento. */
     prontoPago?: { discountAmount: number; discountReason: string | null; expectedTotal: number };
+    /** El pago salió de la cola sin conexión: el recibo lleva la leyenda. */
+    pendingConfirmation?: boolean;
   }) => {
     if (!negocio) return false;
     return printPaymentIfReady({
       receiptNumber: input.receiptNumber,
       status: 'emitido',
+      pendingConfirmation: input.pendingConfirmation,
       paidAt: input.paidAt,
       amount: input.amount,
       physicalReceiptNumber: input.physicalReceiptNumber,
@@ -726,10 +746,13 @@ function NegocioDetailScreenInner() {
     }
     try {
       setSaving(true);
-      paymentIdempotencyKey.current ||= createIdempotencyKey();
+      // La clave y la fecha se fijan una sola vez por intento: si el cobro se
+      // reintenta (o cae al camino sin conexión) el servidor lo reconoce como
+      // el mismo pago y no lo duplica.
+      const idempotencyKey = (paymentIdempotencyKey.current ||= createIdempotencyKey());
       paymentPaidAt.current ||= new Date().toISOString();
       const paidAt = paymentPaidAt.current;
-      try {
+      const registerOnline = async () => {
         const call = buildRegisterPagoRpcCall({
           negocioId: negocio.id,
           routeStopId: routeStopId || null,
@@ -737,7 +760,7 @@ function NegocioDetailScreenInner() {
           paidAt,
           receiptNumber: payReceipt || null,
           notes: null,
-          idempotencyKey: paymentIdempotencyKey.current,
+          idempotencyKey,
           // Obligatorio en el servidor desde 20261018130000: sin él, el RPC rechaza el cobro.
           paymentMethodId: payMethodId,
         });
@@ -797,16 +820,23 @@ function NegocioDetailScreenInner() {
         let physicalReceiptNumber = payReceipt || null;
         let persistedPaidAt = paidAt;
         if (pagoId) {
-          const { data: pagoRow } = await supabase
-            .from('negocio_pagos')
-            .select('virtual_receipt_number, receipt_number, paid_at')
-            .eq('id', pagoId)
-            .maybeSingle();
-          if (pagoRow?.virtual_receipt_number) {
-            receiptNumber = pagoRow.virtual_receipt_number;
-            physicalReceiptNumber = pagoRow.receipt_number;
+          try {
+            const { data: pagoRow } = await supabase
+              .from('negocio_pagos')
+              .select('virtual_receipt_number, receipt_number, paid_at')
+              .eq('id', pagoId)
+              .maybeSingle();
+            if (pagoRow?.virtual_receipt_number) {
+              receiptNumber = pagoRow.virtual_receipt_number;
+              physicalReceiptNumber = pagoRow.receipt_number;
+            }
+            if (pagoRow?.paid_at) persistedPaidAt = pagoRow.paid_at;
+          } catch {
+            // El servidor ya aceptó el pago. Si la consulta del consecutivo se
+            // corta por tiempo, el recibo sale como «Provisional»: propagar el
+            // error haría caer el cobro al camino sin conexión y se guardaría
+            // una segunda copia del mismo pago.
           }
-          if (pagoRow?.paid_at) persistedPaidAt = pagoRow.paid_at;
         }
         const printed = await printReceiptAfterPago({
           receiptNumber,
@@ -828,8 +858,9 @@ function NegocioDetailScreenInner() {
         } else {
           notifyPagoResult('Listo', successBody, printed);
         }
-      } catch (onlineError: any) {
-        if (!isNetworkError(onlineError) || !canUseLocalDb()) throw onlineError;
+      };
+
+      const registerOffline = async () => {
         const offlineResult = await registerPagoOffline({
           negocioId: negocio.id,
           amount,
@@ -837,7 +868,7 @@ function NegocioDetailScreenInner() {
           receiptNumber: payReceipt || null,
           paymentMethodId: payMethodId,
           paymentMethodName: paymentMethodLabel,
-          idempotencyKey: paymentIdempotencyKey.current,
+          idempotencyKey,
           routeStopId: routeStopId || null,
           supportFile: paySupportFile,
           registeredBy: registeredByName,
@@ -860,15 +891,25 @@ function NegocioDetailScreenInner() {
           amount,
           physicalReceiptNumber: payReceipt || null,
           paymentMethodName: paymentMethodLabel,
+          // El recibo sale con la leyenda «PENDIENTE DE CONFIRMACIÓN».
+          pendingConfirmation: true,
         });
         notifyPagoResult(
           'Pago guardado sin conexión',
           offlineResult.supportWarning
-            ? `Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.\n\nSoporte: ${offlineResult.supportWarning}`
-            : 'Se sincronizará cuando haya red. El recibo quedará provisional hasta confirmarse.',
+            ? `Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.\n\nSoporte: ${offlineResult.supportWarning}`
+            : 'Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.',
           printed
         );
-      }
+      };
+
+      // Sin red conocida no se intenta el servidor: con señal débil la petición
+      // tarda todo el tiempo límite antes de fallar y el cobrador espera de más.
+      await registerPagoWithFallback({
+        online: useSyncStore.getState().online,
+        registerOnline,
+        registerOffline,
+      });
     } catch (e: any) {
       Alert.alert('Error', errorMessage(e, 'No se pudo registrar'));
     } finally {
@@ -971,6 +1012,9 @@ function NegocioDetailScreenInner() {
     discountAmount: pago.discount_amount == null ? null : Number(pago.discount_amount),
     discountReason: pago.discount_reason ?? null,
     expectedTotal: pago.expected_total == null ? null : Number(pago.expected_total),
+    // Solo lo traen las filas locales todavía en la cola; los pagos que vienen
+    // del servidor ya están confirmados y reimprimen sin leyenda.
+    pendingConfirmation: Boolean(pago.pending_confirmation),
   });
 
   const shareReceipt = async (pago: any) => {
@@ -1022,6 +1066,37 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
     });
+  };
+
+  /**
+   * Borrar un pago no aceptado es siempre decisión de la persona: el cliente ya
+   * tiene un recibo impreso en la mano, así que se pide confirmación expresa.
+   */
+  const confirmDeleteRejectedPago = (pago: RejectedPagoRow) => {
+    Alert.alert(
+      'Eliminar el pago del teléfono',
+      `Se borrará el registro de ${formatCOP(Number(pago.amount))} que el servidor no aceptó. El cliente puede tener el recibo impreso: avise a la oficina antes de continuar.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setDeletingRejectedId(pago.id);
+              try {
+                await deleteRejectedPagoLocal(pago.id);
+                setRejectedPagos((current) => current.filter((row) => row.id !== pago.id));
+              } catch (error: any) {
+                Alert.alert('Error', errorMessage(error, 'No se pudo eliminar el pago'));
+              } finally {
+                setDeletingRejectedId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
   };
 
   const printNegocioTicket = async () => {
@@ -1436,8 +1511,8 @@ function NegocioDetailScreenInner() {
           </Card>
         ) : null}
 
-        {/* El detalle local no incluye ítems ni subtotal de productos. */}
-        {!fromLocal ? <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} /> : null}
+        {/* Sin señal el subtotal sale de la suma de los ítems descargados. */}
+        <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} />
 
         {/* La orden del negocio y de dónde salió la mercancía. Sin conexión no
             se conoce el origen y la tarjeta se omite. */}
@@ -1581,6 +1656,29 @@ function NegocioDetailScreenInner() {
               ))}
             </View>
             <Pagination page={paymentPage} pageSize={TABLE_PAGE_SIZE} total={pagos.length} onChange={setPaymentPage} itemLabel="pagos" />
+          </View>
+        ) : null}
+
+        {rejectedPagos.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Pagos no aceptados"
+              hint={`${rejectedPagos.length} registro${rejectedPagos.length === 1 ? '' : 's'}`}
+            />
+            <Text style={[styles.helper, { color: colors.text.secondary }]}>
+              Estos pagos se tomaron en el teléfono y el servidor no los aceptó. No suman al saldo y
+              se quedan aquí hasta que usted los elimine.
+            </Text>
+            <View style={styles.list}>
+              {rejectedPagos.map((pago) => (
+                <RejectedPagoCard
+                  key={pago.id}
+                  pago={pago}
+                  deleting={deletingRejectedId === pago.id}
+                  onDelete={() => confirmDeleteRejectedPago(pago)}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
 

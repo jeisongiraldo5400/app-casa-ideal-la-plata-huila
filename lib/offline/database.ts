@@ -15,6 +15,16 @@ import { modelClasses } from './models';
 
 let database: Database | null = null;
 let currentUserId: string | null = null;
+/**
+ * Cambia cada vez que la base se abre, se cierra o se vacía. Las cachés en
+ * memoria (p. ej. el directorio de clientes) la usan para no servir datos del
+ * usuario anterior tras un cambio de sesión o un borrado.
+ */
+let generation = 0;
+
+export function databaseGeneration() {
+  return generation;
+}
 
 function createAdapter(dbName: string) {
   if (Platform.OS === 'web') {
@@ -56,12 +66,14 @@ export async function openDatabaseForUser(userId: string): Promise<Database> {
   const adapter = createAdapter(`casa_ideal_${userId}`);
   database = new Database({ adapter, modelClasses: modelClasses as never });
   currentUserId = userId;
+  generation += 1;
   return database;
 }
 
 export async function closeDatabase() {
   database = null;
   currentUserId = null;
+  generation += 1;
 }
 
 export async function resetDatabase() {
@@ -69,4 +81,5 @@ export async function resetDatabase() {
   await database.write(async () => {
     await database!.unsafeResetDatabase();
   });
+  generation += 1;
 }

@@ -2,6 +2,7 @@ import {
   ExitSerialRecord,
   fetchExitSerialsByExitId,
 } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
+import { errorMessage } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database.types';
 import { create } from 'zustand';
@@ -79,8 +80,10 @@ export const useExitsListStore = create<ExitsListState>((set, get) => ({
       if (loadId !== latestLoadId) return;
 
       if (error) {
+        // El mensaje se guarda ya traducido: la lista lo muestra tal cual y el
+        // usuario no lee "TypeError: Network request failed".
         console.error('Error loading exits:', error);
-        set({ exits: [], loading: false, error: error.message });
+        set({ exits: [], loading: false, totalCount: 0, hasMore: false, error: errorMessage(error, 'No se pudieron cargar las salidas') });
         return;
       }
 
@@ -132,7 +135,7 @@ export const useExitsListStore = create<ExitsListState>((set, get) => ({
     } catch (error: any) {
       if (loadId !== latestLoadId) return;
       console.error('Error loading exits (catch):', error);
-      set({ exits: [], loading: false, error: error.message || 'Error al cargar las salidas' });
+      set({ exits: [], loading: false, totalCount: 0, hasMore: false, error: errorMessage(error, 'No se pudieron cargar las salidas') });
     }
   },
 

@@ -3,7 +3,13 @@
  * el outbox, en un único batch. Lo que viaje en el payload es lo que llega al
  * RPC al sincronizar (método y sitio de pago incluidos).
  */
-import { registerPagoOffline } from '../offlineRepository';
+import {
+  deleteRejectedPagoLocal,
+  fetchNegocioDetailFromLocal,
+  listRejectedPagosFromLocal,
+  registerPagoOffline,
+  registerPagoWithFallback,
+} from '../offlineRepository';
 
 type Op = { op: 'create' | 'update'; table?: string; id?: string; changes: Record<string, unknown> };
 
@@ -217,5 +223,131 @@ describe('registerPagoOffline', () => {
 
     await expect(registerPagoOffline(baseInput)).rejects.toThrow(/No hay cuotas descargadas/);
     expect(mockBatch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * El caso real de campo: con señal débil la petición puede tardar el tiempo
+ * límite completo antes de fallar. Si el estado de conexión ya dice que no hay
+ * red, el cobro se guarda directo en el teléfono sin tocar el servidor.
+ */
+describe('registerPagoWithFallback', () => {
+  it('sin red guarda sin conexión y no intenta el servidor', async () => {
+    const registerOnline = jest.fn(async () => 'servidor');
+    const registerOffline = jest.fn(async () => 'local');
+
+    const result = await registerPagoWithFallback({
+      online: false,
+      registerOnline,
+      registerOffline,
+    });
+
+    expect(result).toBe('local');
+    expect(registerOnline).not.toHaveBeenCalled();
+    expect(registerOffline).toHaveBeenCalledTimes(1);
+  });
+
+  it('con red intenta el servidor primero', async () => {
+    const registerOnline = jest.fn(async () => 'servidor');
+    const registerOffline = jest.fn(async () => 'local');
+
+    await expect(
+      registerPagoWithFallback({ online: true, registerOnline, registerOffline })
+    ).resolves.toBe('servidor');
+    expect(registerOffline).not.toHaveBeenCalled();
+  });
+
+  it('si la petición no llega (tiempo límite) cae al camino sin conexión', async () => {
+    const registerOnline = jest.fn(async () => {
+      throw new Error('La red no respondió a tiempo.');
+    });
+    const registerOffline = jest.fn(async () => 'local');
+
+    await expect(
+      registerPagoWithFallback({ online: true, registerOnline, registerOffline })
+    ).resolves.toBe('local');
+  });
+
+  it('un rechazo del servidor se propaga: no se guarda una copia local', async () => {
+    const registerOnline = jest.fn(async () => {
+      throw new Error('El valor supera el saldo');
+    });
+    const registerOffline = jest.fn(async () => 'local');
+
+    await expect(
+      registerPagoWithFallback({ online: true, registerOnline, registerOffline })
+    ).rejects.toThrow('El valor supera el saldo');
+    expect(registerOffline).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tras un rechazo el pago sigue en el teléfono: se muestra aparte (no suma al
+ * saldo) y solo desaparece cuando la persona lo elimina a propósito.
+ */
+describe('pagos rechazados guardados en el teléfono', () => {
+  const destroyPermanently = jest.fn();
+
+  function pagoRow(fields: Record<string, unknown>) {
+    return { ...mockRecord('negocio_pagos', fields), destroyPermanently };
+  }
+
+  beforeEach(() => {
+    destroyPermanently.mockReset();
+    seed();
+    mockTables.customers = [mockRecord('customers', { id: 'cli-1', name: 'Ana', idNumber: '1', phone: null })];
+    mockTables.negocios = [
+      mockRecord('negocios', {
+        id: 'neg-1', numero: 20260001, status: 'activo', dealDate: null, totalCredit: 300_000,
+        remainingBalance: 300_000, customerId: 'cli-1', codeudorCustomerId: null, direccion: null,
+        municipioId: null, municipioName: null, sellerId: null, gestorCobroId: null,
+      }),
+    ];
+    mockTables.negocio_pagos = [
+      pagoRow({
+        id: 'pago-ok', negocioId: 'neg-1', amount: 50_000, paidAt: '2026-09-20T10:00:00.000Z',
+        receiptNumber: 'R-1', receiptStatus: 'emitido', rowSyncStatus: 'synced',
+      }),
+      pagoRow({
+        id: 'pago-en-cola', negocioId: 'neg-1', amount: 40_000, paidAt: '2026-09-21T10:00:00.000Z',
+        receiptNumber: 'R-2', receiptStatus: 'emitido', rowSyncStatus: 'pending',
+      }),
+      pagoRow({
+        id: 'pago-rechazado', negocioId: 'neg-1', amount: 30_000, paidAt: '2026-09-22T10:00:00.000Z',
+        receiptNumber: 'R-3', receiptStatus: 'emitido', rowSyncStatus: 'rejected',
+        rejectedReason: 'El valor supera el saldo', rejectedAt: 1_700_000_000_000,
+        paymentMethodName: 'Efectivo', createdByName: 'Gestor Uno',
+      }),
+    ];
+  });
+
+  it('el detalle separa el rechazado y marca el que sigue en la cola', async () => {
+    const detail = await fetchNegocioDetailFromLocal('neg-1');
+
+    expect(detail?.pagos.map((pago) => pago.id)).toEqual(['pago-en-cola', 'pago-ok']);
+    expect(detail?.pagos.find((pago) => pago.id === 'pago-en-cola')?.pending_confirmation).toBe(true);
+    expect(detail?.pagos.find((pago) => pago.id === 'pago-ok')?.pending_confirmation).toBe(false);
+    expect(detail?.rejectedPagos).toEqual([
+      {
+        id: 'pago-rechazado',
+        negocioId: 'neg-1',
+        amount: 30_000,
+        paidAt: '2026-09-22T10:00:00.000Z',
+        receiptNumber: 'R-3',
+        paymentMethodName: 'Efectivo',
+        createdByName: 'Gestor Uno',
+        rejectedReason: 'El valor supera el saldo',
+        rejectedAt: 1_700_000_000_000,
+      },
+    ]);
+  });
+
+  it('solo se borra el pago rechazado, y solo cuando se pide', async () => {
+    expect((await listRejectedPagosFromLocal('neg-1')).map((pago) => pago.id)).toEqual(['pago-rechazado']);
+    expect(await deleteRejectedPagoLocal('pago-en-cola')).toBe(false);
+    expect(destroyPermanently).not.toHaveBeenCalled();
+
+    expect(await deleteRejectedPagoLocal('pago-rechazado')).toBe(true);
+    expect(destroyPermanently).toHaveBeenCalledTimes(1);
   });
 });

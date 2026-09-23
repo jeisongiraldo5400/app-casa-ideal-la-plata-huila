@@ -59,7 +59,7 @@ import { NegocioDatePicker } from '@/components/negocios/components/NegocioDateP
 import { NegocioCreditSummary } from '@/components/negocios/components/NegocioCreditSummary';
 import {
   availableQtyForItem,
-  fetchStockForProducts,
+  fetchStockForProductsWithSource,
   formatNegocioMoneyInput,
   itemsHaveValidStock,
   type ProductWarehouseStock,
@@ -104,6 +104,14 @@ import {
   searchProductsForNegocio,
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { canUseLocalDb } from '@/lib/offline/repositories/offlineRepository';
+import {
+  fetchLocationCatalogsFromLocal,
+  localCatalogPulledAt,
+} from '@/lib/offline/repositories/catalogRepository';
+import { ensureCatalogForOffline, formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 type Customer = {
   id: string;
@@ -150,6 +158,11 @@ function NegocioCreateScreenInner() {
   const frequencyInitializedRef = useRef(false);
   const [loadingInitialData, setLoadingInitialData] = useState(true);
   const [initialDataError, setInitialDataError] = useState('');
+  /** Los catálogos salieron del teléfono (última descarga), no del servidor. */
+  const [usingLocalData, setUsingLocalData] = useState(false);
+  /** Momento de la última descarga del catálogo de producto. */
+  const [catalogPulledAt, setCatalogPulledAt] = useState<number | null>(null);
+  const online = useSyncStore((state) => state.online);
   const [initialDataReload, setInitialDataReload] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -169,6 +182,8 @@ function NegocioCreateScreenInner() {
   const [stockByProduct, setStockByProduct] = useState<
     Record<string, ProductWarehouseStock[]>
   >({});
+  /** Las existencias mostradas salieron de la última descarga, no del servidor. */
+  const [stockFromLocal, setStockFromLocal] = useState(false);
   /** Abonos iniciales pactados (vacío = sin cuota inicial). */
   const [downPayments, setDownPayments] = useState<DownPaymentRow[]>([]);
   /** '' = usuario actual. */
@@ -256,6 +271,9 @@ function NegocioCreateScreenInner() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Con señal se aprovecha para dejar el catálogo de producto al día; sin
+      // ella no hace nada y el asistente trabaja con la última descarga.
+      void ensureCatalogForOffline().catch(() => undefined);
       try {
         const [, d, m, v, sellers, cachedName, pending] = await Promise.all([
           fetchCreditSettings(),
@@ -295,16 +313,73 @@ function NegocioCreateScreenInner() {
               user?.id ? { id: user.id, name: cachedName || user.email || null } : null
             )
           );
+          setUsingLocalData(false);
           setInitialDataError('');
         }
       } catch (error: unknown) {
-        if (!cancelled) setInitialDataError(errorMessage(error, 'No fue posible cargar los datos requeridos'));
+        // Sin señal el asistente ya no se queda bloqueado en el primer paso:
+        // los departamentos, municipios y veredas salen de la última descarga
+        // (la configuración de crédito la resuelve el store por su cuenta).
+        if (!isNetworkError(error) || !canUseLocalDb()) {
+          if (!cancelled) setInitialDataError(errorMessage(error, 'No fue posible cargar los datos requeridos'));
+          return;
+        }
+        try {
+          const [locales, cachedName, sellers] = await Promise.all([
+            fetchLocationCatalogsFromLocal(),
+            getCachedProfileName().catch(() => null),
+            // Sin red devuelve los perfiles descargados; el resultado de la
+            // tanda anterior se perdió al rechazar la primera promesa.
+            fetchSellerOptions().catch(() => [] as SellerOption[]),
+          ]);
+          if (cancelled) return;
+          if (!locales.departamentos.length || !locales.municipios.length) {
+            setInitialDataError(
+              'Sin conexión y sin datos descargados. Conéctese y pulse «Descargar información» para poder crear negocios sin señal.'
+            );
+            return;
+          }
+          setDepartamentos(locales.departamentos);
+          setMunicipios(locales.municipios);
+          setVeredas(locales.veredas);
+          setPendingRemissions([]);
+          setSellerOptions(
+            withCurrentUserOption(
+              sellers || [],
+              user?.id ? { id: user.id, name: cachedName || user.email || null } : null
+            )
+          );
+          setUsingLocalData(true);
+          setInitialDataError('');
+        } catch (localError: unknown) {
+          if (!cancelled) {
+            setInitialDataError(errorMessage(localError, 'No fue posible cargar los datos requeridos'));
+          }
+        }
       } finally {
         if (!cancelled) setLoadingInitialData(false);
       }
     })();
     return () => { cancelled = true; };
   }, [fetchCreditSettings, initialDataReload, user?.id, user?.email]);
+
+  // Hora de la última descarga del catálogo: es la fecha de las existencias
+  // que se ven sin señal, y la pantalla la dice en vez de dejarlo a la fe.
+  useEffect(() => {
+    let cancelled = false;
+    void localCatalogPulledAt()
+      .then((value) => {
+        if (!cancelled) setCatalogPulledAt(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initialDataReload, loadingInitialData]);
+
+  /** Sin señal (o con datos locales): nada de lo que se ve es definitivo. */
+  const sinRed = !online || usingLocalData;
+  const ultimaDescarga = formatLastDownloadTime(catalogPulledAt);
 
   /**
    * La pantalla es una pestaña y sigue viva al salir. Si se sale con un negocio
@@ -367,6 +442,8 @@ function NegocioCreateScreenInner() {
         : null;
     let cancelled = false;
     (async () => {
+      // Sin señal devuelve null (no lanza): el vendedor elige la ubicación a
+      // mano y el paso sigue funcionando.
       const saved = await fetchCustomerSavedLocation(customerId);
       if (cancelled) return;
       const current = locationRef.current;
@@ -488,9 +565,11 @@ function NegocioCreateScreenInner() {
     }
 
     let cancelled = false;
-    fetchStockForProducts(productIds)
-      .then((map) => {
-        if (!cancelled) setStockByProduct(map);
+    fetchStockForProductsWithSource(productIds)
+      .then(({ stock, fromLocal }) => {
+        if (cancelled) return;
+        setStockByProduct(stock);
+        setStockFromLocal(fromLocal);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -810,7 +889,23 @@ function NegocioCreateScreenInner() {
         guarantor_signature_data_url: guarantorSignature || undefined,
         seller_signature_data_url: sellerSignature || undefined,
         activate,
+        // Para poder pintar el negocio pendiente sin volver a preguntar.
+        customer_name: customer.name,
+        seller_name:
+          sellerOptions.find((option) => option.id === effectiveSellerId)?.full_name ?? null,
+        municipio_name: municipios.find((m) => m.id === municipioId)?.nombre ?? null,
       });
+      if (result?.queued) {
+        // Sin señal no hay número ni confirmación: se dice tal cual, y el
+        // negocio queda en «Cambios sin sincronizar» hasta que suba.
+        resetForm();
+        Alert.alert(
+          'Guardado en el teléfono',
+          'El negocio quedó guardado sin conexión y se enviará solo cuando vuelva la señal. Todavía NO tiene número: lo asigna el servidor al confirmarlo, y podría rechazarlo (por ejemplo, si ya no hay existencias). Podrá activarlo desde su ficha cuando esté confirmado.',
+          [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
+        );
+        return;
+      }
       const fromDeliveryOrder = originType === 'orden_entrega';
       const sentByRemission = Boolean(originPayload.target_remission_id);
       const remissionLabel = targetRemission?.order_number || 'la remisión';
@@ -855,6 +950,22 @@ function NegocioCreateScreenInner() {
           >
             <Text style={{ color: colors.primary.main, fontWeight: '700' }}>Reintentar</Text>
           </TouchableOpacity>
+        </View>
+      ) : null}
+      {/* Sin señal: lo que se ve es la última descarga y nada es definitivo
+          hasta que el servidor confirme el negocio. */}
+      {sinRed && !initialDataError && !loadingInitialData ? (
+        <View style={{ padding: 12, backgroundColor: colors.warning.main + '18' }} testID="negocio-create-sin-red">
+          <Text style={{ color: colors.text.primary, fontWeight: '700', textAlign: 'center' }}>
+            Sin conexión · negocio pendiente de confirmar
+          </Text>
+          <Text style={{ color: colors.text.secondary, fontSize: 12, textAlign: 'center', marginTop: 2 }}>
+            {ultimaDescarga
+              ? `Se está trabajando con los datos de la última descarga (${ultimaDescarga}). `
+              : 'Se está trabajando con los datos descargados. '}
+            El negocio se guarda en el teléfono y se envía solo al volver la señal; el número lo
+            asigna el servidor.
+          </Text>
         </View>
       ) : null}
       {/* Wizard Steps Header */}
@@ -1286,6 +1397,23 @@ function NegocioCreateScreenInner() {
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
               2. Selección de Productos
             </Text>
+            {/* Lo que se ve como disponible no es el stock de ahora: es el de
+                la última descarga. El servidor lo vuelve a mirar al activar. */}
+            {(stockFromLocal || sinRed) && originType === 'bodega' ? (
+              <View
+                style={{ padding: 10, borderRadius: 8, backgroundColor: colors.warning.main + '18' }}
+                testID="negocio-create-stock-local"
+              >
+                <Text style={{ color: colors.text.primary, fontSize: 12, fontWeight: '700' }}>
+                  Existencias de la última descarga
+                  {ultimaDescarga ? ` (${ultimaDescarga})` : ''}
+                </Text>
+                <Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 2 }}>
+                  Puede que en la bodega ya no esté lo que aquí aparece. El stock real se comprueba
+                  en el servidor cuando se active el negocio.
+                </Text>
+              </View>
+            ) : null}
             {originType === 'orden_entrega' ? (
               <View style={{ gap: 8 }}>
                 <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
@@ -1676,17 +1804,28 @@ function NegocioCreateScreenInner() {
                 minimumFontScale={0.85}
                 style={{ color: colors.text.primary, fontWeight: '600', fontSize: 13 }}
               >
-                Guardar borrador
+                {sinRed ? 'Guardar sin señal' : 'Guardar borrador'}
               </Text>
             </TouchableOpacity>
+            {/* Activar descuenta stock y crea la orden de entrega: eso sólo
+                puede decidirlo el servidor, así que sin señal se deshabilita y
+                el negocio se guarda firmado para activarlo después. */}
             <TouchableOpacity
               style={[
                 styles.footerBtnPrimary,
                 styles.footerBtnCompact,
                 { backgroundColor: colors.primary.main },
-                saveBlockedReason ? { opacity: 0.45 } : null,
+                saveBlockedReason || sinRed ? { opacity: 0.45 } : null,
               ]}
-              onPress={() => submit(true)}
+              onPress={() => {
+                if (sinRed) {
+                  return Alert.alert(
+                    'Sin conexión',
+                    'Activar el negocio descuenta existencias y crea la orden de entrega, y eso necesita servidor. Guárdelo ahora y actívelo desde su ficha cuando vuelva la señal.'
+                  );
+                }
+                submit(true);
+              }}
               disabled={Boolean(saveBlockedReason)}
               accessibilityRole="button"
               accessibilityState={{ disabled: Boolean(saveBlockedReason) }}

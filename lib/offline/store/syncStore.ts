@@ -1,4 +1,20 @@
 import { create } from 'zustand';
+import { PULL_CURSOR_OVERLAP_MS } from '../sync/types';
+
+/**
+ * Hora aproximada de la última descarga a partir del cursor guardado en
+ * `sync_meta.last_pulled_at`. El cursor se escribe con un solape hacia atrás
+ * (`PULL_CURSOR_OVERLAP_MS`) para no perder filas, así que se le devuelve ese
+ * margen. `null` si nunca se descargó o si el valor no es una fecha.
+ */
+export function lastSyncedAtFromCursor(
+  cursor: string | null | undefined,
+  overlapMs = PULL_CURSOR_OVERLAP_MS
+): number | null {
+  if (!cursor) return null;
+  const parsed = Date.parse(cursor);
+  return Number.isNaN(parsed) ? null : parsed + overlapMs;
+}
 
 export type SyncEngineStatus = 'idle' | 'syncing' | 'offline' | 'error';
 
@@ -23,6 +39,14 @@ interface SyncState {
   setLastError: (lastError: string | null) => void;
   setLocked: (locked: boolean) => void;
   setQueueVisible: (queueVisible: boolean) => void;
+  /**
+   * Siembra la hora de la última descarga al arrancar. `lastSyncedAt` solo
+   * vivía en memoria: al reiniciar la app sin señal, todos los «última
+   * descarga HH:MM» desaparecían aunque los datos locales siguieran ahí.
+   * No pisa un valor ya presente (una sincronización de esta sesión es más
+   * reciente que el cursor guardado).
+   */
+  hydrateLastSyncedAt: (cursor: string | null | undefined) => void;
 }
 
 export const useSyncStore = create<SyncState>((set) => ({
@@ -44,4 +68,8 @@ export const useSyncStore = create<SyncState>((set) => ({
   setLastError: (lastError) => set({ lastError }),
   setLocked: (locked) => set({ locked }),
   setQueueVisible: (queueVisible) => set({ queueVisible }),
+  hydrateLastSyncedAt: (cursor) =>
+    set((state) =>
+      state.lastSyncedAt ? state : { lastSyncedAt: lastSyncedAtFromCursor(cursor) }
+    ),
 }));

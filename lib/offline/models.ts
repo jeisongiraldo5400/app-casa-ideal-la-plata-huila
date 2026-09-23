@@ -7,6 +7,11 @@ export class Customer extends Model {
   @field('id_number') idNumber!: string;
   @field('phone') phone!: string | null;
   @field('seller_id') sellerId!: string | null;
+  @field('phone_secondary') phoneSecondary!: string | null;
+  @field('email') email!: string | null;
+  @field('address') address!: string | null;
+  @field('municipio_id') municipioId!: string | null;
+  @field('vereda_id') veredaId!: string | null;
   @field('sync_status') rowSyncStatus!: string;
   @field('local_updated_at') localUpdatedAt!: number;
   @field('server_updated_at') serverUpdatedAt!: number | null;
@@ -26,6 +31,28 @@ export class Negocio extends Model {
   @field('municipio_name') municipioName!: string | null;
   @field('seller_id') sellerId!: string | null;
   @field('gestor_cobro_id') gestorCobroId!: string | null;
+  /** Nombre del vendedor ya resuelto por el servidor (null en filas anteriores a v8). */
+  @field('seller_name') sellerName!: string | null;
+  @field('gestor_cobro_name') gestorCobroName!: string | null;
+  /** Motivo con el que el servidor rechazó el negocio creado sin señal. */
+  @field('rejected_reason') rejectedReason!: string | null;
+  @field('rejected_at') rejectedAt!: number | null;
+  /** 'synced' | 'pending' (creado sin señal, sin confirmar) | 'rejected'. */
+  @field('sync_status') rowSyncStatus!: string;
+  @field('server_updated_at') serverUpdatedAt!: number | null;
+}
+
+export class NegocioItem extends Model {
+  static table = 'negocio_items';
+  @field('negocio_id') negocioId!: string;
+  @field('product_id') productId!: string;
+  @field('product_name') productName!: string | null;
+  @field('product_sku') productSku!: string | null;
+  @field('warehouse_id') warehouseId!: string | null;
+  @field('description') description!: string | null;
+  @field('quantity') quantity!: number;
+  @field('unit_price') unitPrice!: number;
+  @field('subtotal') subtotal!: number;
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }
@@ -64,6 +91,10 @@ export class NegocioPago extends Model {
   @field('discount_reason') discountReason!: string | null;
   /** Pendiente total que liquidó el pronto pago (= amount + discount_amount). */
   @field('expected_total') expectedTotal!: number | null;
+  /** Motivo con el que el servidor rechazó el pago (solo si `rowSyncStatus` es 'rejected'). */
+  @field('rejected_reason') rejectedReason!: string | null;
+  @field('rejected_at') rejectedAt!: number | null;
+  /** 'synced' | 'pending' | 'rejected' (local: el servidor no aceptó el pago). */
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;
 }
@@ -111,6 +142,73 @@ export class CatalogPaymentMethod extends Model {
 export class CatalogMunicipio extends Model {
   static table = 'catalog_municipios';
   @field('nombre') nombre!: string;
+  @field('is_active') isActive!: boolean;
+  @field('departamento_id') departamentoId!: string | null;
+}
+
+export class CatalogVereda extends Model {
+  static table = 'catalog_veredas';
+  @field('nombre') nombre!: string;
+  @field('municipio_id') municipioId!: string;
+  @field('is_active') isActive!: boolean;
+}
+
+export class CatalogDepartamento extends Model {
+  static table = 'catalog_departamentos';
+  @field('nombre') nombre!: string;
+  @field('is_active') isActive!: boolean;
+}
+
+/**
+ * Catálogo de producto de la última descarga (v9). Se baja aparte del resto
+ * del paquete porque pesa: ver `catalogPull.ts`.
+ */
+export class CatalogProduct extends Model {
+  static table = 'catalog_products';
+  @field('name') name!: string;
+  @field('sku') sku!: string | null;
+  @field('barcode') barcode!: string | null;
+  @field('category_id') categoryId!: string | null;
+  @field('brand_id') brandId!: string | null;
+  @field('status') status!: boolean;
+  @field('server_updated_at') serverUpdatedAt!: number | null;
+}
+
+export class CatalogWarehouse extends Model {
+  static table = 'catalog_warehouses';
+  @field('name') name!: string;
+  @field('city') city!: string | null;
+  @field('is_active') isActive!: boolean;
+}
+
+/** Existencias de la última descarga; nunca son las de este instante. */
+export class CatalogWarehouseStock extends Model {
+  static table = 'catalog_warehouse_stock';
+  @field('product_id') productId!: string;
+  @field('warehouse_id') warehouseId!: string;
+  @field('quantity') quantity!: number;
+  @field('server_updated_at') serverUpdatedAt!: number | null;
+}
+
+/** Usuario de la plataforma; el id de la fila es el id del perfil. */
+export class Profile extends Model {
+  static table = 'profiles';
+  @field('full_name') fullName!: string | null;
+  @field('email') email!: string | null;
+}
+
+/** Fila activa de `credit_settings`; se guarda una sola. */
+export class CreditSettingsRecord extends Model {
+  static table = 'credit_settings';
+  @field('formula_type') formulaType!: string;
+  @field('interest_rate_monthly_pct') interestRateMonthlyPct!: number;
+  @field('rounding_unit') roundingUnit!: number;
+  @field('late_fee_rate_pct') lateFeeRatePct!: number;
+  @field('money_decimal_places') moneyDecimalPlaces!: number;
+  @field('min_installments') minInstallments!: number;
+  @field('max_installments') maxInstallments!: number;
+  @field('default_frequency') defaultFrequency!: string;
+  @field('legal_text') legalText!: string | null;
   @field('is_active') isActive!: boolean;
 }
 
@@ -163,12 +261,20 @@ export class FileUpload extends Model {
 export const modelClasses = [
   Customer,
   Negocio,
+  NegocioItem,
   NegocioCuota,
   NegocioPago,
   CollectionRouteRecord,
   CollectionRouteStopRecord,
   CatalogMunicipio,
+  CatalogVereda,
+  CatalogDepartamento,
   CatalogPaymentMethod,
+  CatalogProduct,
+  CatalogWarehouse,
+  CatalogWarehouseStock,
+  Profile,
+  CreditSettingsRecord,
   UserProfileCache,
   ReportSnapshot,
   SyncOutboxItem,

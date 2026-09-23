@@ -12,12 +12,13 @@ import {
 } from '../models';
 import { deleteLocalPagoSupportFile } from '../security/localFiles';
 import { parseOutboxPayload } from './outbox';
-import type {
-  AttachPagoSupportPayload,
-  CreateCustomerPayload,
-  OptimisticSnapshot,
-  OutboxPayloadBase,
-  RegisterPagoPayload,
+import {
+  REJECTED_ROW_SYNC_STATUS,
+  type AttachPagoSupportPayload,
+  type CreateCustomerPayload,
+  type OptimisticSnapshot,
+  type OutboxPayloadBase,
+  type RegisterPagoPayload,
 } from './types';
 
 /**
@@ -153,10 +154,15 @@ export async function prepareReleaseSnapshot(
   }
 }
 
+/** Texto que acompaña al pago rechazado cuando el servidor no dio motivo. */
+export const DEFAULT_REJECTED_PAGO_REASON = 'El servidor no aceptó el pago';
+
 /**
- * Deshace el efecto local de un comando rechazado definitivamente. Para pagos
- * también elimina la fila optimista y marca como fallidos los soportes que
- * dependían de él. Devuelve operaciones listas para `database.batch`.
+ * Deshace el efecto local de un comando rechazado definitivamente (cuotas y
+ * saldo vuelven a como estaban). El pago NO se borra: el cliente ya se llevó el
+ * recibo impreso, así que la fila queda marcada como rechazada con el motivo y
+ * solo una acción explícita de la persona la elimina. Devuelve operaciones
+ * listas para `database.batch`.
  */
 export async function prepareRevertCommand(
   database: Database,
@@ -171,7 +177,13 @@ export async function prepareRevertCommand(
     const pagoLocalId = String((payload as RegisterPagoPayload).pagoLocalId || '');
     if (pagoLocalId) {
       const pago = await findOrNull<NegocioPago>(database, 'negocio_pagos', pagoLocalId);
-      if (pago && pago.rowSyncStatus === 'pending') changes.add(pago.prepareDestroyPermanently());
+      if (pago && pago.rowSyncStatus !== 'synced') {
+        changes.update(pago, (row) => {
+          row.rowSyncStatus = REJECTED_ROW_SYNC_STATUS;
+          row.rejectedReason = reason || DEFAULT_REJECTED_PAGO_REASON;
+          row.rejectedAt = Date.now();
+        });
+      }
       await prepareFailPagoSupport(
         database,
         pagoLocalId,
@@ -276,6 +288,10 @@ export async function prepareReconcileRegisteredPago(
           row.discountAmount = local.discountAmount;
           row.discountReason = local.discountReason;
           row.expectedTotal = local.expectedTotal;
+          // El pago quedó confirmado: si la fila local venía de un rechazo
+          // anterior (reintento del usuario), la copia nace sin esa marca.
+          row.rejectedReason = null;
+          row.rejectedAt = null;
           row.rowSyncStatus = 'synced';
           row.serverUpdatedAt = null;
         })

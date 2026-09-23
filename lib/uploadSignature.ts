@@ -1,8 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { createIdempotencyKey } from '@/lib/idempotency';
+import { requireLocalUserId } from '@/lib/offline/security/localSession';
 import { validateTransparentPng } from '@/lib/signaturePng';
+import type { NegocioSignatureRole } from '@/lib/offline/sync/types';
 
-const BUCKET = 'negocios-firmas';
+export const NEGOCIO_SIGNATURE_BUCKET = 'negocios-firmas';
+const BUCKET = NEGOCIO_SIGNATURE_BUCKET;
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
@@ -70,13 +73,35 @@ export function isNewLocalSignature(value: string | null | undefined): boolean {
 }
 
 /**
+ * Ruta dentro del bucket de firmas. Se calcula aparte para poder decidirla
+ * ANTES de subir: el negocio encolado sin señal guarda esa ruta en su
+ * `p_negocio`, y el hash de idempotencia del servidor no puede cambiar entre
+ * reintentos.
+ */
+export function negocioSignaturePath(input: {
+  userId: string;
+  negocioId: string;
+  role: NegocioSignatureRole;
+  /** Sufijo único; se genera uno si no se pasa. */
+  suffix?: string;
+  ext?: string;
+}): string {
+  const suffix = input.suffix || createIdempotencyKey();
+  return `${input.userId}/${input.negocioId}/${input.role}-${suffix}.${input.ext || 'png'}`;
+}
+
+/**
  * Sube firma a Storage privado y devuelve su ruta persistente.
  */
 export async function uploadNegocioSignature(
   dataUrlOrRemote: string | null | undefined,
   opts: {
     negocioId: string;
-    role: 'cliente' | 'fiador' | 'vendedor';
+    role: NegocioSignatureRole;
+    /** Ruta ya decidida (firma encolada sin señal). */
+    path?: string;
+    /** Con ruta fija, un reintento debe poder pisar lo ya subido. */
+    upsert?: boolean;
   }
 ): Promise<string | null> {
   const raw = dataUrlOrRemote?.trim();
@@ -114,18 +139,19 @@ export async function uploadNegocioSignature(
         ? 'webp'
         : 'png';
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError || !user) throw new Error('Sesión no válida para subir la firma');
-  const path = `${user.id}/${opts.negocioId}/${opts.role}-${createIdempotencyKey()}.${ext}`;
+  // Sesión local: `auth.getUser()` pide red y aquí la firma puede estar
+  // subiéndose justo cuando la señal acaba de volver (o desde la cola).
+  const userId = await requireLocalUserId().catch(() => null);
+  if (!userId) throw new Error('Sesión no válida para subir la firma');
+  const path = opts.path || negocioSignaturePath({ userId, negocioId: opts.negocioId, role: opts.role, ext });
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
     .upload(path, bytes, {
       contentType: mime,
-      upsert: false,
+      // Reintento de una firma encolada: la ruta es la misma y el contenido
+      // también, así que pisarla es lo correcto (y no rompe la idempotencia).
+      upsert: Boolean(opts.upsert),
       cacheControl: '3600',
     });
 

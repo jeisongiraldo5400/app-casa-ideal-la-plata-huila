@@ -13,7 +13,7 @@ import {
   normalizeCatalogQuery,
   type CatalogListFilter,
 } from '@/lib/catalogos/catalogListFilters';
-import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { isOfflineError } from '@/lib/errorMessage';
 
 export default function CatalogosScreen() {
   // Módulo oculto en esta versión: ni siquiera se monta la pantalla, así que no
@@ -69,7 +69,9 @@ function CatalogosScreenInner() {
   const renderEmpty = () => {
     if (initialLoading) return <ScreenState loading title="Cargando catálogos…" variant="inline" />;
     if (error && list.length === 0) {
-      const offline = isNetworkError(error);
+      // `error` ya viene traducido por el store: `isNetworkError` buscaba las
+      // palabras en inglés y este estado nunca se mostraba.
+      const offline = isOfflineError(error);
       return (
         <ScreenState
           tone="error"

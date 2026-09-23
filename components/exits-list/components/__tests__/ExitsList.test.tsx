@@ -6,11 +6,13 @@ import { ExitsList } from '../ExitsList';
 const mockLoadExits = jest.fn();
 let mockExits: ExitListItem[] = [];
 let mockSearchQuery = '';
+let mockError: string | null = null;
 
 jest.mock('@/components/exits-list/infrastructure/hooks/useExitsList', () => ({
   useExitsList: () => ({
     exits: mockExits,
     loading: false,
+    error: mockError,
     searchQuery: mockSearchQuery,
     hasMore: false,
     loadNextPage: jest.fn(),
@@ -57,6 +59,7 @@ describe('ExitsList · seriales', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearchQuery = '';
+    mockError = null;
   });
 
   it('muestra los seriales de cada salida y marca los liberados con su motivo', () => {
@@ -93,5 +96,38 @@ describe('ExitsList · seriales', () => {
     expect(screen.getByText('Nevera No Frost')).toBeTruthy();
     expect(screen.queryByTestId('exit-serial-chips')).toBeNull();
     expect(screen.queryByText(/S\/N/)).toBeNull();
+  });
+});
+
+describe('ExitsList · fallos de carga', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSearchQuery = '';
+    mockError = null;
+    mockExits = [];
+  });
+
+  it('sin conexión avisa y ofrece reintentar, no «No hay salidas registradas»', () => {
+    mockError = 'Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.';
+
+    const screen = render(<ExitsList />);
+
+    expect(screen.getByText('Sin conexión')).toBeTruthy();
+    expect(screen.getByText('Reintentar')).toBeTruthy();
+    expect(screen.queryByText('No hay salidas registradas')).toBeNull();
+  });
+
+  it('otro fallo muestra el mensaje traducido del store', () => {
+    mockError = 'No tiene permiso para realizar esta acción sobre las salidas de inventario.';
+
+    const screen = render(<ExitsList />);
+
+    expect(screen.getByText('No se pudieron cargar las salidas')).toBeTruthy();
+    expect(screen.getByText('No tiene permiso para realizar esta acción sobre las salidas de inventario.')).toBeTruthy();
+  });
+
+  it('sin error y sin filas sigue diciendo que no hay salidas', () => {
+    const screen = render(<ExitsList />);
+    expect(screen.getByText('No hay salidas registradas')).toBeTruthy();
   });
 });

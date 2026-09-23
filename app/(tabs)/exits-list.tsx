@@ -19,7 +19,7 @@ export default function ExitsListScreen() {
 }
 
 function ExitsListScreenInner() {
-  const { loadExits, loading, exits } = useExitsList();
+  const { loadExits, loading, exits, error } = useExitsList();
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
 
@@ -35,6 +35,10 @@ function ExitsListScreenInner() {
   };
 
   const totalItems = exits.reduce((sum, item) => sum + item.quantity, 0);
+  // Con la consulta caída no hay "0 registros" que contar: no se sabe cuántos hay.
+  const subtitle = error && exits.length === 0
+    ? 'No se pudo consultar el historial'
+    : `${exits.length} registros · ${totalItems} unidades despachadas`;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background.default }]} edges={['top']}>
@@ -44,7 +48,7 @@ function ExitsListScreenInner() {
       refreshControl={
         <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
       }>
-      <ScreenHeader icon="local-shipping" iconColor={colors.error.main} title="Salidas" subtitle={`${exits.length} registros · ${totalItems} unidades despachadas`} />
+      <ScreenHeader icon="local-shipping" iconColor={colors.error.main} title="Salidas" subtitle={subtitle} />
 
       <ExitsSearchBar />
 

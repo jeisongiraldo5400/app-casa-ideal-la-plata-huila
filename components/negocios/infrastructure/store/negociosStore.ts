@@ -7,6 +7,13 @@ import {
   canUseLocalDb,
   fetchNegociosListFromLocal,
 } from '@/lib/offline/repositories/offlineRepository';
+import { fetchCreditSettingsFromLocal } from '@/lib/offline/repositories/catalogRepository';
+import { requireLocalUserId } from '@/lib/offline/security/localSession';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
+import {
+  enqueueNegocioCreateOffline,
+  negocioLaneFor,
+} from '@/lib/offline/sync/negocioCreateCommand';
 import {
   calculateCredit,
   type CreditCalcResult,
@@ -31,6 +38,7 @@ import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
   validateNegocioItemsStock,
+  validateNegocioItemsStockLocal,
 } from '../services/negociosStockService';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { negocioSkipsWarehouseStock } from '../services/negociosDeliveryOrdersService';
@@ -90,8 +98,22 @@ interface NegociosState {
     guarantor_signature_data_url?: string;
     seller_signature_data_url?: string;
     activate: boolean;
-  }) => Promise<{ numero: number; id: string } | null>;
+    /** Nombre del cliente y del vendedor, para pintar el negocio pendiente sin red. */
+    customer_name?: string;
+    seller_name?: string | null;
+    municipio_name?: string | null;
+  }) => Promise<CreateNegocioResult | null>;
 }
+
+/**
+ * Resultado de crear un negocio. Sin señal no hay número (lo asigna el
+ * servidor) y el negocio queda `queued`: en la cola, pendiente de confirmar.
+ */
+export type CreateNegocioResult = {
+  id: string;
+  numero: number | null;
+  queued: boolean;
+};
 
 export type CreateNegocioInput = Parameters<NegociosState['createAndActivate']>[0];
 
@@ -185,7 +207,9 @@ const SIN_COINCIDENCIAS = 'id.eq.00000000-0000-0000-0000-000000000000';
  * (orden, remisión, origen y remisión destino) y PostgREST no sabría cuál es.
  */
 const NEGOCIO_LIST_SELECT =
-  '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at), delivery_order:delivery_orders!negocios_delivery_order_id_fkey(order_number), remission:delivery_orders!negocios_remission_id_fkey(order_number), source_delivery_order:delivery_orders!negocios_source_delivery_order_id_fkey(order_number)';
+  // `id_number`: la búsqueda por documento la resuelve el servidor, pero el
+  // filtro local de la lista descartaba el resultado por no tener el dato.
+  '*, customer:customers!negocios_customer_id_fkey(name, id_number), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at), delivery_order:delivery_orders!negocios_delivery_order_id_fkey(order_number), remission:delivery_orders!negocios_remission_id_fkey(order_number), source_delivery_order:delivery_orders!negocios_source_delivery_order_id_fkey(order_number)';
 
 /**
  * Filtro de PostgREST para buscar negocios en el servidor.
@@ -304,16 +328,31 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   },
 
   fetchCreditSettings: async () => {
-    const { data, error } = await supabase
-      .from('credit_settings')
-      .select('*')
-      .is('deleted_at', null)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw new Error(`No fue posible cargar la configuración de crédito: ${error.message}`);
+    let data: Record<string, any> | null = null;
+    try {
+      const response = await supabase
+        .from('credit_settings')
+        .select('*')
+        .is('deleted_at', null)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (response.error) {
+        throw new Error(`No fue posible cargar la configuración de crédito: ${response.error.message}`);
+      }
+      data = response.data;
+    } catch (error) {
+      // Sin señal se usa la configuración de la última descarga: sin ella el
+      // asistente ni siquiera abría, y es un dato que cambia muy de vez en cuando.
+      if (!isNetworkError(error) || !canUseLocalDb()) throw error;
+      data = await fetchCreditSettingsFromLocal();
+      if (!data) {
+        throw new Error(
+          'Sin conexión y sin configuración de crédito descargada. Conéctese y pulse «Descargar información».'
+        );
+      }
+    }
     if (!data) throw new Error('No existe una configuración de crédito activa');
 
     const formulaType = data.formula_type as CreditSettingsInput['formula_type'];
@@ -351,10 +390,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
 
   createAndActivate: async (input) => {
     await get().fetchCreditSettings();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) throw new Error('Sesión no válida');
+    // Sesión local: `auth.getUser()` pide red y sin señal tumbaba la creación
+    // entera antes de validar nada.
+    const userId = await requireLocalUserId();
     if (!input.customer_id) throw new Error('Seleccione un cliente');
     if (!input.municipio_id) throw new Error('Seleccione un municipio');
     if (!input.direccion.trim()) throw new Error('Ingrese la dirección del negocio');
@@ -390,8 +428,16 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     );
     if (planError) throw new Error(planError);
 
+    // Sin señal el stock que se puede mirar es el de la última descarga, y no
+    // es una promesa: el servidor vuelve a mirarlo al activar el negocio.
+    const offline = !useSyncStore.getState().online && canUseLocalDb();
     if (!negocioSkipsWarehouseStock(input)) {
-      const stockCheck = await validateNegocioItemsStock(input.items);
+      const stockCheck = offline
+        ? await validateNegocioItemsStockLocal(input.items)
+        : await validateNegocioItemsStock(input.items).catch(async (error) => {
+            if (!isNetworkError(error) || !canUseLocalDb()) throw error;
+            return validateNegocioItemsStockLocal(input.items);
+          });
       if (!stockCheck.ok) {
         throw new Error(stockCheck.message);
       }
@@ -406,12 +452,12 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     });
 
     const requestFingerprint = createRequestFingerprint(input);
-    let request = pendingCreateRequests.get(requestFingerprint);
-    if (!request) {
-      request = {
+    const request: PendingCreateRequest =
+      pendingCreateRequests.get(requestFingerprint) ?? {
         draftId: createIdempotencyKey(),
         idempotencyKey: createIdempotencyKey(),
       };
+    if (!pendingCreateRequests.has(requestFingerprint)) {
       pendingCreateRequests.set(requestFingerprint, request);
       if (pendingCreateRequests.size > 20) {
         const oldestKey = pendingCreateRequests.keys().next().value;
@@ -419,6 +465,104 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
+    if (!sameFormulaSnapshot(request.formulaSnapshot, calc.formulaSnapshot)) {
+      request.formulaSnapshot = calc.formulaSnapshot;
+    }
+
+    // Argumentos del RPC, idénticos con red y sin ella (las firmas se añaden
+    // después): el servidor hashea `p_negocio` contra la clave de idempotencia,
+    // así que este objeto no puede cambiar entre intentos.
+    const negocioArgs = {
+      deal_date: input.deal_date,
+      municipio_id: input.municipio_id,
+      vereda_id: input.vereda_id || null,
+      direccion: input.direccion.trim(),
+      customer_id: input.customer_id,
+      codeudor_customer_id: input.codeudor_customer_id || null,
+      seller_id: input.seller_id || userId,
+      remission_id: input.remission_id || null,
+      source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
+      target_remission_id: input.target_remission_id || null,
+      products_subtotal: calc.productsSubtotal,
+      interest_amount: calc.interestAmount,
+      total_credit: calc.totalCredit,
+      down_payment: calc.downPayment,
+      down_payment_date: schedule[0]?.due_date ?? null,
+      down_payment_schedule: schedule,
+      financed_amount: calc.financedAmount,
+      installments_count: calc.installmentsCount,
+      installment_amount: calc.installmentAmount,
+      frequency: input.frequency,
+      first_due_date: calc.installmentsCount > 0 ? input.first_due_date || null : null,
+      formula_snapshot: request.formulaSnapshot,
+      notes: input.notes || null,
+    };
+    const itemsArgs = input.items.map((item) => ({
+      ...item,
+      subtotal: item.unit_price * item.quantity,
+    }));
+
+    /**
+     * Sin señal: el negocio queda en la cola con sus firmas delante y se
+     * enviará solo al volver la red. Nunca se activa aquí (activar mueve
+     * stock), así que sale como borrador firmado, «pendiente de confirmar».
+     */
+    const queueOffline = async (activate: boolean): Promise<CreateNegocioResult> => {
+      const activeRequest = request;
+      const lane = await negocioLaneFor(activeRequest.draftId, [
+        input.customer_id,
+        input.codeudor_customer_id || null,
+      ]);
+      await enqueueNegocioCreateOffline({
+        negocioId: activeRequest.draftId,
+        idempotencyKey: activeRequest.idempotencyKey,
+        activate,
+        negocio: negocioArgs,
+        items: itemsArgs,
+        lane,
+        signatures: [
+          // Si un intento con red ya subió la firma, se reutiliza su ruta: el
+          // hash de idempotencia no puede cambiar entre intentos.
+          { role: 'cliente', value: activeRequest.signatureUrls?.customer || input.customer_signature_data_url },
+          { role: 'fiador', value: activeRequest.signatureUrls?.guarantor || input.guarantor_signature_data_url },
+          { role: 'vendedor', value: activeRequest.signatureUrls?.seller || input.seller_signature_data_url },
+        ],
+        local: {
+          dealDate: input.deal_date,
+          totalCredit: calc.totalCredit,
+          customerId: input.customer_id,
+          customerName: input.customer_name || 'Cliente',
+          codeudorCustomerId: input.codeudor_customer_id || null,
+          direccion: input.direccion.trim(),
+          municipioId: input.municipio_id,
+          municipioName: input.municipio_name ?? null,
+          sellerId: input.seller_id || userId,
+          sellerName: input.seller_name ?? null,
+        },
+      });
+      pendingCreateRequests.delete(requestFingerprint);
+      return { id: activeRequest.draftId, numero: null, queued: true };
+    };
+
+    // Empezando sin señal nunca se activa: activar descuenta stock y crea la
+    // orden de entrega, y eso sólo puede hacerlo el servidor con los datos de
+    // hoy. El negocio queda firmado y «pendiente de confirmar»; se activa
+    // después desde su ficha, ya con red.
+    if (offline) return queueOffline(false);
+
+    try {
+      return await createOnServer();
+    } catch (error) {
+      // La red se cayó en mitad del guardado: en vez de perder la venta, se
+      // encola. Aquí sí se conserva `activate`: el RPC pudo llegar al servidor
+      // y el reenvío debe ser idéntico, o la clave de idempotencia se
+      // rechazaría por «datos diferentes».
+      if (isNetworkError(error) && canUseLocalDb()) return queueOffline(input.activate);
+      throw error;
+    }
+
+    /** Camino con red de siempre: sube firmas, llama al RPC y recarga la lista. */
+    async function createOnServer(): Promise<CreateNegocioResult> {
     if (!request.signatureUrls) {
       request.signaturePromise ??= Promise.all([
         uploadNegocioSignature(input.customer_signature_data_url, { negocioId: request.draftId, role: 'cliente' }),
@@ -433,49 +577,24 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
-    if (!sameFormulaSnapshot(request.formulaSnapshot, calc.formulaSnapshot)) {
-      request.formulaSnapshot = calc.formulaSnapshot;
-    }
-
     const { data: negocioId, error } = await supabase.rpc('create_negocio', {
       p_negocio_id: request.draftId,
       p_idempotency_key: request.idempotencyKey,
       p_activate: input.activate,
       p_negocio: {
-        deal_date: input.deal_date,
-        municipio_id: input.municipio_id,
-        vereda_id: input.vereda_id || null,
-        direccion: input.direccion.trim(),
-        customer_id: input.customer_id,
-        codeudor_customer_id: input.codeudor_customer_id || null,
-        seller_id: input.seller_id || user.id,
-        remission_id: input.remission_id || null,
-        source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
-        target_remission_id: input.target_remission_id || null,
-        products_subtotal: calc.productsSubtotal,
-        interest_amount: calc.interestAmount,
-        total_credit: calc.totalCredit,
-        down_payment: calc.downPayment,
-        down_payment_date: schedule[0]?.due_date ?? null,
-        down_payment_schedule: schedule,
-        financed_amount: calc.financedAmount,
-        installments_count: calc.installmentsCount,
-        installment_amount: calc.installmentAmount,
-        frequency: input.frequency,
-        first_due_date: calc.installmentsCount > 0 ? input.first_due_date || null : null,
-        formula_snapshot: request.formulaSnapshot,
+        ...negocioArgs,
         customer_signature_url: request.signatureUrls.customer,
         guarantor_signature_url: request.signatureUrls.guarantor,
         seller_signature_url: request.signatureUrls.seller,
-        notes: input.notes || null,
       } as unknown as Json,
-      p_items: input.items.map((item) => ({
-        ...item,
-        subtotal: item.unit_price * item.quantity,
-      })) as unknown as Json,
+      p_items: itemsArgs as unknown as Json,
     });
     let createdId: string | null = negocioId ?? null;
     if (error || !createdId) {
+      // Sin red la petición no llegó: no se borran las firmas ya subidas ni se
+      // suelta la clave de idempotencia, porque el negocio se va a encolar con
+      // exactamente los mismos datos.
+      if (isNetworkError(error)) throw toUserError(error, 'No se pudo crear el negocio');
       // El RPC pudo completarse en servidor aunque el cliente no recibiera la
       // respuesta (timeout): si el negocio existe, se trata como éxito.
       const { data: persisted } = await supabase
@@ -517,6 +636,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     kickNotificationDispatch();
 
     await get().fetchList();
-    return { numero: negocio.numero, id: negocio.id };
+    return { numero: negocio.numero, id: negocio.id, queued: false };
+    }
   },
 }));

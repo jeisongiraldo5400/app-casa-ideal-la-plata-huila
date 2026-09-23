@@ -1,4 +1,11 @@
 import { supabase } from '@/lib/supabase';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import {
+  canUseLocalCatalog,
+  hasLocalCatalog,
+  stockForProductFromLocal,
+  stockForProductsFromLocal,
+} from '@/lib/offline/repositories/catalogRepository';
 
 export type ProductWarehouseStock = {
   warehouse_id: string;
@@ -43,37 +50,72 @@ export function aggregateNegocioStockItems(items: NegocioStockItem[]): NegocioSt
 export async function fetchProductWarehouseStock(
   productId: string
 ): Promise<ProductWarehouseStock[]> {
-  const { data, error } = await supabase
-    .from('warehouse_stock')
-    .select('warehouse_id, quantity, warehouse:warehouses(name)')
-    .eq('product_id', productId)
-    .gt('quantity', 0)
-    .order('quantity', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('warehouse_stock')
+      .select('warehouse_id, quantity, warehouse:warehouses(name)')
+      .eq('product_id', productId)
+      .gt('quantity', 0)
+      .order('quantity', { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data || []).map((row: any) => ({
+      warehouse_id: row.warehouse_id,
+      warehouse_name: row.warehouse?.name ?? 'Bodega',
+      quantity: Number(row.quantity) || 0,
+    }));
+  } catch (error) {
+    // Sin señal se usan las existencias de la última descarga. La pantalla lo
+    // advierte: puede que en la bodega ya no quede lo que aquí se ve.
+    if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
+    if (!(await hasLocalCatalog())) throw error;
+    return stockForProductFromLocal(productId);
   }
+}
 
-  return (data || []).map((row: any) => ({
-    warehouse_id: row.warehouse_id,
-    warehouse_name: row.warehouse?.name ?? 'Bodega',
-    quantity: Number(row.quantity) || 0,
-  }));
+/**
+ * Existencias de varios productos, diciendo de dónde salieron: `fromLocal`
+ * significa «esto es lo de la última descarga», y la pantalla lo muestra.
+ */
+export async function fetchStockForProductsWithSource(
+  productIds: string[]
+): Promise<{ stock: Record<string, ProductWarehouseStock[]>; fromLocal: boolean }> {
+  const uniqueIds = [...new Set(productIds.filter(Boolean))];
+  if (!uniqueIds.length) return { stock: {}, fromLocal: false };
+
+  try {
+    const entries = await Promise.all(
+      uniqueIds.map(async (productId) => {
+        const { data, error } = await supabase
+          .from('warehouse_stock')
+          .select('warehouse_id, quantity, warehouse:warehouses(name)')
+          .eq('product_id', productId)
+          .gt('quantity', 0)
+          .order('quantity', { ascending: false });
+        if (error) throw new Error(error.message);
+        const rows = (data || []).map((row: any) => ({
+          warehouse_id: row.warehouse_id,
+          warehouse_name: row.warehouse?.name ?? 'Bodega',
+          quantity: Number(row.quantity) || 0,
+        }));
+        return [productId, rows] as const;
+      })
+    );
+    return { stock: Object.fromEntries(entries), fromLocal: false };
+  } catch (error) {
+    if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
+    if (!(await hasLocalCatalog())) throw error;
+    return { stock: await stockForProductsFromLocal(uniqueIds), fromLocal: true };
+  }
 }
 
 export async function fetchStockForProducts(
   productIds: string[]
 ): Promise<Record<string, ProductWarehouseStock[]>> {
-  const uniqueIds = [...new Set(productIds.filter(Boolean))];
-  if (!uniqueIds.length) return {};
-
-  const entries = await Promise.all(
-    uniqueIds.map(async (productId) =>
-      [productId, await fetchProductWarehouseStock(productId)] as const
-    )
-  );
-
-  return Object.fromEntries(entries);
+  return (await fetchStockForProductsWithSource(productIds)).stock;
 }
 
 export function reservedQtyInItems(
@@ -198,6 +240,36 @@ export async function validateNegocioItemsStock(
     }
   }
 
+  return { ok: true };
+}
+
+/**
+ * Misma validación contra las existencias de la última descarga. Es lo único
+ * que se puede comprobar sin señal, y NO es una promesa: el servidor vuelve a
+ * mirar el stock real cuando el negocio sale de la cola y puede rechazarlo.
+ */
+export async function validateNegocioItemsStockLocal(
+  items: NegocioStockItem[]
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const aggregated = aggregateNegocioStockItems(items);
+  const stock = await stockForProductsFromLocal(aggregated.map((item) => item.product_id));
+  for (const item of aggregated) {
+    const row = (stock[item.product_id] || []).find(
+      (candidate) => candidate.warehouse_id === item.warehouse_id
+    );
+    const available = Number(row?.quantity ?? 0);
+    const productName = item.description || 'Producto';
+    const warehouseName = row?.warehouse_name || 'la bodega seleccionada';
+    if (available < item.quantity) {
+      return {
+        ok: false,
+        message:
+          available === 0
+            ? `Según la última descarga no hay stock de "${productName}" en ${warehouseName}.`
+            : `Según la última descarga sólo hay ${available} de "${productName}" en ${warehouseName} y se piden ${item.quantity}.`,
+      };
+    }
+  }
   return { ok: true };
 }
 

@@ -89,12 +89,15 @@ export function CustomersScreen() {
       );
     }
     if (list.fromCache) {
+      // Desde la v7 del paquete, la descarga trae el directorio completo, así
+      // que estar vacío ya no significa «solo tienes los de tus negocios»:
+      // significa que aún no se ha descargado nada en este teléfono.
       return (
         <ScreenState
           variant="inline"
           icon="cloud-off"
-          title="Sin datos locales"
-          description="Descarga los datos para consultar clientes sin conexión."
+          title="Sin conexión"
+          description="No hay clientes en la última descarga. Conéctate y pulsa «Descargar información» para tener el directorio en el teléfono."
         >
           <DownloadDataButton variant="cta" />
         </ScreenState>
@@ -153,7 +156,7 @@ export function CustomersScreen() {
 
       {list.fromCache ? (
         <Text style={[styles.notice, { color: colors.warning.main }]}>
-          {formatLocalDataLabel(lastSyncedAt)} · Sin conexión: se muestran los clientes descargados.
+          {formatLocalDataLabel(lastSyncedAt)} · Sin conexión: se muestran los clientes de la última descarga.
         </Text>
       ) : null}
       {list.error && list.customers.length > 0 ? (

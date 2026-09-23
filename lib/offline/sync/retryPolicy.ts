@@ -16,8 +16,17 @@ export type OutboxStatus =
 
 export type RetryDecision = 'retry' | 'network' | 'fail' | 'conflict';
 
-const MAX_ATTEMPTS = 8;
-const BACKOFF_MS = [1000, 4000, 15000, 60000, 120000, 300000, 300000, 300000];
+/**
+ * Un error transitorio (servidor caído un rato, 502 de un proxy) no puede
+ * volverse terminal en unos minutos: al agotarse los intentos el cobro se da
+ * por no enviado y el cliente ya se llevó el recibo impreso. Con 20 intentos y
+ * el último escalón de una hora, la cola insiste algo más de medio día antes de
+ * pedir ayuda a la persona.
+ */
+const MAX_ATTEMPTS = 20;
+const BACKOFF_MS = [
+  1000, 4000, 15000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000,
+];
 /** Espera antes de volver a probar tras un fallo de red (no consume intentos). */
 export const NETWORK_RETRY_DELAY_MS = 15000;
 
@@ -30,7 +39,9 @@ export function nextRetryAt(attempts: number, now = Date.now()): number {
 }
 
 export function isNetworkErrorMessage(message: string): boolean {
-  return /network|fetch|failed to connect|internet|offline|timeout|timed out|socket|econn|load failed/i.test(
+  // `abort` y «no respondió a tiempo»: petición cortada por el tiempo límite
+  // del cliente de Supabase; no llegó al servidor.
+  return /network|fetch|failed to connect|internet|offline|timeout|timed out|socket|econn|load failed|abort|no respondi[óo] a tiempo/i.test(
     message
   );
 }

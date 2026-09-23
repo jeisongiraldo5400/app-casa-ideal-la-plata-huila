@@ -3,6 +3,9 @@ export type LocalCustomerRow = {
   name: string;
   idNumber: string | null;
   phone: string | null;
+  /** Contacto de la ficha, descargado desde la v8 del esquema local. */
+  email?: string | null;
+  address?: string | null;
 };
 
 export type LocalNegocioRow = {
@@ -19,6 +22,23 @@ export type LocalNegocioRow = {
   municipioName: string | null;
   sellerId: string | null;
   gestorCobroId?: string | null;
+  /** Nombres ya resueltos en el pull; null en filas anteriores a la v8. */
+  sellerName?: string | null;
+  gestorCobroName?: string | null;
+};
+
+/** Producto de un negocio guardado en el teléfono. */
+export type LocalNegocioItemRow = {
+  id: string;
+  negocioId: string;
+  productId: string;
+  productName: string | null;
+  productSku: string | null;
+  warehouseId: string | null;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
 };
 
 export type LocalCuotaRow = {
@@ -59,8 +79,11 @@ export type LocalNegocioListItem = {
   total_credit: number;
   remaining_balance: number;
   customer_id: string;
-  customer: { name: string };
+  /** `id_number` para poder buscar por documento sin señal, igual que en línea. */
+  customer: { name: string; id_number: string | null };
   installments_count: number | null;
+  /** Se deriva de las cuotas locales; antes iba en null y «En mora» salía vacío. */
+  has_mora: boolean;
   delivery_order_id: string | null;
   seller_id: string | null;
 };
@@ -79,6 +102,11 @@ export type LocalNegocioDetail = {
     municipio_id: string | null;
     seller_id: string | null;
     gestor_cobro_id: string | null;
+    /** Nombres resueltos en el pull; la pantalla ya no tiene que preguntar a `profiles`. */
+    seller_name: string | null;
+    gestor_cobro_name: string | null;
+    /** Suma de los subtotales locales, para la tarjeta de productos. */
+    products_subtotal: number;
     delivery_order_id: null;
     customer_signature_url: null;
     guarantor_signature_url: null;
@@ -89,16 +117,26 @@ export type LocalNegocioDetail = {
     name: string;
     id_number: string | null;
     phone: string | null;
-    email: null;
-    address: null;
+    email: string | null;
+    address: string | null;
   };
   codeudor: {
     name: string;
     id_number: string | null;
     phone: string | null;
-    email: null;
-    address: null;
+    email: string | null;
+    address: string | null;
   } | null;
+  /** Productos del negocio; vacío si el pull todavía no los trajo. */
+  items: Array<{
+    id: string;
+    quantity: number;
+    description: string | null;
+    product_id: string;
+    unit_price: number;
+    subtotal: number;
+    product: { name: string | null; sku: string | null };
+  }>;
   cuotas: Array<{
     id: string;
     negocio_id: string;
@@ -152,20 +190,33 @@ export function mapNegociosListFromLocal(
   cuotas: LocalCuotaRow[]
 ): LocalNegocioListItem[] {
   const customerById = new Map(customers.map((row) => [row.id, row]));
+  // Un índice por negocio evita recorrer todas las cuotas por cada fila: con el
+  // directorio completo descargado la lista pasó a ser larga de verdad.
+  const cuotasByNegocio = new Map<string, LocalCuotaRow[]>();
+  for (const cuota of cuotas) {
+    const current = cuotasByNegocio.get(cuota.negocioId);
+    if (current) current.push(cuota);
+    else cuotasByNegocio.set(cuota.negocioId, [cuota]);
+  }
   return [...negocios]
     .sort((a, b) => b.numero - a.numero)
     .map((negocio) => {
       const customer = customerById.get(negocio.customerId);
+      const relatedCuotas = cuotasByNegocio.get(negocio.id) || [];
+      // Mismo criterio que en línea (`negociosStore`): basta una cuota en mora.
+      // Las anuladas no cuentan ni para el filtro ni para el número de cuotas.
+      const vigentes = relatedCuotas.filter((cuota) => cuota.status !== 'anulada');
       return {
         id: negocio.id,
         numero: negocio.numero,
         status: negocio.status,
         deal_date: negocio.dealDate,
         total_credit: negocio.totalCredit,
-        remaining_balance: remainingForNegocio(negocio, cuotas),
+        remaining_balance: remainingForNegocio(negocio, relatedCuotas),
         customer_id: negocio.customerId,
-        customer: { name: customer?.name || 'Cliente' },
-        installments_count: null,
+        customer: { name: customer?.name || 'Cliente', id_number: customer?.idNumber || null },
+        installments_count: vigentes.length || null,
+        has_mora: relatedCuotas.some((cuota) => cuota.status === 'mora'),
         delivery_order_id: null,
         seller_id: negocio.sellerId,
       };
@@ -177,6 +228,7 @@ export function mapNegocioDetailFromLocal(input: {
   customers: LocalCustomerRow[];
   cuotas: LocalCuotaRow[];
   pagos: LocalPagoRow[];
+  items?: LocalNegocioItemRow[];
 }): LocalNegocioDetail {
   const customerById = new Map(input.customers.map((row) => [row.id, row]));
   const customer = customerById.get(input.negocio.customerId);
@@ -189,6 +241,7 @@ export function mapNegocioDetailFromLocal(input: {
   const relatedPagos = input.pagos
     .filter((pago) => pago.negocioId === input.negocio.id)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  const relatedItems = (input.items || []).filter((item) => item.negocioId === input.negocio.id);
 
   return {
     negocio: {
@@ -204,6 +257,9 @@ export function mapNegocioDetailFromLocal(input: {
       municipio_id: input.negocio.municipioId,
       seller_id: input.negocio.sellerId,
       gestor_cobro_id: input.negocio.gestorCobroId ?? null,
+      seller_name: input.negocio.sellerName ?? null,
+      gestor_cobro_name: input.negocio.gestorCobroName ?? null,
+      products_subtotal: relatedItems.reduce((sum, item) => sum + item.subtotal, 0),
       delivery_order_id: null,
       customer_signature_url: null,
       guarantor_signature_url: null,
@@ -217,18 +273,28 @@ export function mapNegocioDetailFromLocal(input: {
       name: customer?.name || 'Cliente',
       id_number: customer?.idNumber || null,
       phone: customer?.phone || null,
-      email: null,
-      address: null,
+      email: customer?.email ?? null,
+      address: customer?.address ?? null,
     },
     codeudor: codeudor
       ? {
           name: codeudor.name,
           id_number: codeudor.idNumber,
           phone: codeudor.phone,
-          email: null,
-          address: null,
+          email: codeudor.email ?? null,
+          address: codeudor.address ?? null,
         }
       : null,
+    items: relatedItems.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+      description: item.description,
+      product_id: item.productId,
+      unit_price: item.unitPrice,
+      subtotal: item.subtotal,
+      // La bodega no se descarga por nombre: la tarjeta la pinta como «—».
+      product: { name: item.productName, sku: item.productSku },
+    })),
     cuotas: relatedCuotas.map((cuota) => ({
       id: cuota.id,
       negocio_id: cuota.negocioId,

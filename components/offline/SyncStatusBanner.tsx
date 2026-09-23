@@ -29,7 +29,12 @@ export function SyncStatusBanner() {
 
   let label: string;
   if (!online) {
-    label = pendingLabel ? `Sin conexión · ${pendingLabel}` : 'Sin conexión · usando datos locales';
+    // No se promete "usando datos locales": solo negocios, cartera y clientes
+    // con negocio se guardan en el teléfono; inventario y órdenes no tienen ni
+    // una fila local, así que la franja no puede prometer datos que no existen.
+    label = pendingLabel
+      ? `Sin conexión · ${pendingLabel}`
+      : 'Sin conexión · algunas pantallas no tendrán datos';
     if (failedLabel) label += ` · ${failedLabel}`;
   } else if (status === 'syncing') {
     label = 'Sincronizando…';

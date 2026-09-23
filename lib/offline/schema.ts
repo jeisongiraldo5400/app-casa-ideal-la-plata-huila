@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 6,
+  version: 9,
   tables: [
     tableSchema({
       name: 'customers',
@@ -11,6 +11,13 @@ export const schema = appSchema({
         { name: 'phone', type: 'string', isOptional: true },
         // Vendedor al que pertenece el cliente; alimenta la pestaña "Mis clientes" sin conexión.
         { name: 'seller_id', type: 'string', isOptional: true, isIndexed: true },
+        // Contacto y ubicación (v8): la ficha del cliente los pintaba vacíos sin
+        // señal aunque el cliente sí los tuviera guardados.
+        { name: 'phone_secondary', type: 'string', isOptional: true },
+        { name: 'email', type: 'string', isOptional: true },
+        { name: 'address', type: 'string', isOptional: true },
+        { name: 'municipio_id', type: 'string', isOptional: true },
+        { name: 'vereda_id', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string', isIndexed: true },
         { name: 'local_updated_at', type: 'number' },
         { name: 'server_updated_at', type: 'number', isOptional: true },
@@ -31,6 +38,32 @@ export const schema = appSchema({
         { name: 'municipio_name', type: 'string', isOptional: true },
         { name: 'seller_id', type: 'string', isOptional: true },
         { name: 'gestor_cobro_id', type: 'string', isOptional: true },
+        // Nombres ya resueltos por el servidor (v8). Sin ellos el detalle decía
+        // "Vendedor: Sin asignar" sin señal aunque el negocio sí tuviera uno.
+        { name: 'seller_name', type: 'string', isOptional: true },
+        { name: 'gestor_cobro_name', type: 'string', isOptional: true },
+        // Negocio creado sin señal y rechazado por el servidor (v9): la fila NO
+        // se borra, queda marcada con el motivo. `sync_status` vale 'rejected'.
+        { name: 'rejected_reason', type: 'string', isOptional: true },
+        { name: 'rejected_at', type: 'number', isOptional: true },
+        { name: 'sync_status', type: 'string' },
+        { name: 'server_updated_at', type: 'number', isOptional: true },
+      ],
+    }),
+    tableSchema({
+      // Productos del negocio (v8), con nombre y SKU ya resueltos: sin señal el
+      // detalle ocultaba la sección entera.
+      name: 'negocio_items',
+      columns: [
+        { name: 'negocio_id', type: 'string', isIndexed: true },
+        { name: 'product_id', type: 'string' },
+        { name: 'product_name', type: 'string', isOptional: true },
+        { name: 'product_sku', type: 'string', isOptional: true },
+        { name: 'warehouse_id', type: 'string', isOptional: true },
+        { name: 'description', type: 'string', isOptional: true },
+        { name: 'quantity', type: 'number' },
+        { name: 'unit_price', type: 'number' },
+        { name: 'subtotal', type: 'number' },
         { name: 'sync_status', type: 'string' },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],
@@ -69,6 +102,11 @@ export const schema = appSchema({
         { name: 'discount_amount', type: 'number', isOptional: true },
         { name: 'discount_reason', type: 'string', isOptional: true },
         { name: 'expected_total', type: 'number', isOptional: true },
+        // Rechazo del servidor (v7): el pago NO se borra del teléfono, queda
+        // marcado con el motivo para que la persona decida qué hacer con el
+        // recibo que ya entregó. `sync_status` toma el valor 'rejected'.
+        { name: 'rejected_reason', type: 'string', isOptional: true },
+        { name: 'rejected_at', type: 'number', isOptional: true },
         { name: 'sync_status', type: 'string', isIndexed: true },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],
@@ -115,11 +153,89 @@ export const schema = appSchema({
       columns: [
         { name: 'nombre', type: 'string' },
         { name: 'is_active', type: 'boolean' },
+        // Departamento del municipio (v8): completa la ubicación de la ficha.
+        { name: 'departamento_id', type: 'string', isOptional: true },
+      ],
+    }),
+    tableSchema({
+      // Veredas (v8): la ficha del cliente muestra «dirección, vereda, municipio».
+      name: 'catalog_veredas',
+      columns: [
+        { name: 'nombre', type: 'string' },
+        { name: 'municipio_id', type: 'string', isIndexed: true },
+        { name: 'is_active', type: 'boolean' },
+      ],
+    }),
+    tableSchema({
+      name: 'catalog_departamentos',
+      columns: [
+        { name: 'nombre', type: 'string' },
+        { name: 'is_active', type: 'boolean' },
       ],
     }),
     tableSchema({
       name: 'catalog_payment_methods',
       columns: [{ name: 'name', type: 'string' }],
+    }),
+    tableSchema({
+      // Catálogo de producto (v9). Se baja aparte, bajo demanda: son ~2.100
+      // productos y ~3.400 existencias (~1,4 MB) y sólo lo usa el asistente de
+      // negocio sin señal.
+      name: 'catalog_products',
+      columns: [
+        { name: 'name', type: 'string' },
+        { name: 'sku', type: 'string', isOptional: true },
+        { name: 'barcode', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'category_id', type: 'string', isOptional: true },
+        { name: 'brand_id', type: 'string', isOptional: true },
+        { name: 'status', type: 'boolean' },
+        { name: 'server_updated_at', type: 'number', isOptional: true },
+      ],
+    }),
+    tableSchema({
+      name: 'catalog_warehouses',
+      columns: [
+        { name: 'name', type: 'string' },
+        { name: 'city', type: 'string', isOptional: true },
+        { name: 'is_active', type: 'boolean' },
+      ],
+    }),
+    tableSchema({
+      // Existencias de la última descarga: nunca son el stock de ahora mismo,
+      // y la pantalla lo dice así.
+      name: 'catalog_warehouse_stock',
+      columns: [
+        { name: 'product_id', type: 'string', isIndexed: true },
+        { name: 'warehouse_id', type: 'string', isIndexed: true },
+        { name: 'quantity', type: 'number' },
+        { name: 'server_updated_at', type: 'number', isOptional: true },
+      ],
+    }),
+    tableSchema({
+      // Usuarios activos (v8). Resuelve nombres de vendedor/gestor y alimenta
+      // los filtros por vendedor, que sin red salían vacíos.
+      name: 'profiles',
+      columns: [
+        { name: 'full_name', type: 'string', isOptional: true },
+        { name: 'email', type: 'string', isOptional: true },
+      ],
+    }),
+    tableSchema({
+      // Fila activa de configuración de crédito (v8): decimales del dinero y
+      // texto legal para los recibos sin señal.
+      name: 'credit_settings',
+      columns: [
+        { name: 'formula_type', type: 'string' },
+        { name: 'interest_rate_monthly_pct', type: 'number' },
+        { name: 'rounding_unit', type: 'number' },
+        { name: 'late_fee_rate_pct', type: 'number' },
+        { name: 'money_decimal_places', type: 'number' },
+        { name: 'min_installments', type: 'number' },
+        { name: 'max_installments', type: 'number' },
+        { name: 'default_frequency', type: 'string' },
+        { name: 'legal_text', type: 'string', isOptional: true },
+        { name: 'is_active', type: 'boolean' },
+      ],
     }),
     tableSchema({
       name: 'user_profile_cache',

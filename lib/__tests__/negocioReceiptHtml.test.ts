@@ -1,4 +1,8 @@
-import { buildNegocioReceiptHtml } from '../negocioReceiptHtml';
+import {
+  buildNegocioReceiptHtml,
+  PENDING_CONFIRMATION_RECEIPT_LEGEND,
+  PENDING_CONFIRMATION_RECEIPT_NOTE,
+} from '../negocioReceiptHtml';
 
 const sample = {
   receiptNumber: 'RV-2026-1',
@@ -41,6 +45,41 @@ describe('buildNegocioReceiptHtml', () => {
     expect(html).toContain('class="receipt is-voided"');
     expect(html).toContain('RECIBO ANULADO');
     expect(html).toContain('<span class="status status-void">Anulado</span>');
+  });
+
+  /**
+   * Cobro sin señal: el cliente se lleva el papel, así que el recibo tiene que
+   * decir que el pago todavía no está confirmado. Al confirmarse, desaparece.
+   */
+  describe('pago pendiente de confirmación', () => {
+    it('lleva la leyenda y la explicación cuando el pago salió de la cola', () => {
+      const html = buildNegocioReceiptHtml({ ...sample, pendingConfirmation: true });
+
+      expect(html).toContain(PENDING_CONFIRMATION_RECEIPT_LEGEND);
+      expect(html).toContain(PENDING_CONFIRMATION_RECEIPT_NOTE);
+    });
+
+    it('un pago confirmado no lleva leyenda', () => {
+      for (const pendingConfirmation of [undefined, false, null]) {
+        const html = buildNegocioReceiptHtml({ ...sample, pendingConfirmation });
+        expect(html).not.toContain(PENDING_CONFIRMATION_RECEIPT_LEGEND);
+        expect(html).not.toContain(PENDING_CONFIRMATION_RECEIPT_NOTE);
+      }
+    });
+
+    it('un recibo anulado no mezcla los dos avisos', () => {
+      const html = buildNegocioReceiptHtml({ ...sample, status: 'anulado', pendingConfirmation: true });
+
+      expect(html).toContain('RECIBO ANULADO');
+      expect(html).not.toContain(PENDING_CONFIRMATION_RECEIPT_LEGEND);
+    });
+
+    it('no agrega CSS nuevo (paridad con el recibo web)', () => {
+      const css = (html: string) => html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+      expect(css(buildNegocioReceiptHtml({ ...sample, pendingConfirmation: true }))).toBe(
+        css(buildNegocioReceiptHtml(sample))
+      );
+    });
   });
 
   describe('pronto pago', () => {

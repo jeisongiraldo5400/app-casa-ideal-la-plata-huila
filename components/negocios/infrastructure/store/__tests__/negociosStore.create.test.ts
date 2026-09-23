@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useNegociosStore, type CreateNegocioInput } from '../negociosStore';
 import { validateNegocioItemsStock } from '../../services/negociosStockService';
 
@@ -88,7 +89,9 @@ describe('negociosStore.createAndActivate — origen y destino', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFrom();
-    (supabase.auth.getUser as jest.Mock).mockResolvedValue({ data: { user: { id: 'u1' } } });
+    // El negocio ya no pregunta al servidor quién es el usuario: usa la sesión
+    // local, que es la que hay sin señal.
+    useSyncStore.setState({ userId: 'u1', online: true });
     (supabase.rpc as jest.Mock).mockResolvedValue({ data: 'n1', error: null });
     (validateNegocioItemsStock as jest.Mock).mockResolvedValue({ ok: true });
     useNegociosStore.setState({ creditSettings: null });

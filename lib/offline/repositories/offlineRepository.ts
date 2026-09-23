@@ -13,17 +13,21 @@ import {
   type LocalCustomerQuery,
   type LocalCustomerRow,
 } from '@/lib/offline/domain/customersLocal';
-import { getDatabase, isDatabaseOpen } from '../database';
+import { databaseGeneration, getDatabase, isDatabaseOpen } from '../database';
 import {
+  CatalogDepartamento,
   CatalogMunicipio,
   CatalogPaymentMethod,
+  CatalogVereda,
   CollectionRouteRecord,
   CollectionRouteStopRecord,
   Customer,
   FileUpload,
   Negocio,
   NegocioCuota,
+  NegocioItem,
   NegocioPago,
+  Profile,
   ReportSnapshot,
   SyncOutboxItem,
 } from '../models';
@@ -47,13 +51,16 @@ import {
   prepareOutboxRecord,
   resetOutboxItem,
 } from '../sync/outbox';
-import { prepareRevertCommand } from '../sync/reconcile';
+import { PreparedChanges, prepareRevertCommand } from '../sync/reconcile';
+import { prepareRejectedNegocio } from '../sync/negocioCreateCommand';
 import { outboxAffectsNegocio, UNSETTLED_OUTBOX_STATUSES } from '../sync/negocioPendingSync';
 import { refreshPendingCount, runSync } from '../sync/syncEngine';
 import {
   laneForCommand,
+  REJECTED_ROW_SYNC_STATUS,
   type CuotaSnapshot,
   type OptimisticSnapshot,
+  type CreateNegocioPayload,
   type OutboxCommandType,
   type RegisterPagoPayload,
   type RouteSnapshot,
@@ -65,6 +72,7 @@ import {
   deleteLocalPagoSupportFile,
   persistPagoSupportFile,
 } from '../security/localFiles';
+import { isNetworkError } from '../security/sessionPolicy';
 
 export function canUseLocalDb() {
   return isDatabaseOpen();
@@ -110,35 +118,87 @@ async function findOrNull<T extends Model>(table: string, id: string): Promise<T
 
 export async function searchCustomersFromLocal(term: string, limit = 20) {
   if (!canUseLocalDb()) return [];
-  const customers = await getDatabase().get<Customer>('customers').query().fetch();
-  return searchCustomersLocal(
-    customers.map((row) => ({
-      id: row.id,
-      name: row.name,
-      idNumber: row.idNumber,
-      phone: row.phone,
-      sellerId: row.sellerId ?? null,
-    })),
-    term,
-    limit
-  );
+  // Comparte la caché del directorio: son ~2.000 filas y el buscador se llama
+  // en cada pulsación de tecla.
+  return searchCustomersLocal(await readLocalCustomerRows(), term, limit);
+}
+
+/**
+ * Caché del directorio local.
+ *
+ * Desde 20261122120000 el pull trae el directorio completo (~2.000 filas): leer
+ * y mapear todas las filas en cada página de la lista (y otra vez para el
+ * contador de la pestaña) se notaba al desplazarse. Se guarda el mapeo ya hecho
+ * durante unos segundos; lo invalidan la creación de un cliente sin señal y una
+ * descarga nueva.
+ */
+let customerRowsCache: { rows: LocalCustomerRow[]; at: number; generation: number } | null = null;
+const CUSTOMER_ROWS_CACHE_MS = 5_000;
+
+export function invalidateLocalCustomersCache() {
+  customerRowsCache = null;
 }
 
 /** Filas del directorio local, para el módulo de clientes sin conexión. */
 async function readLocalCustomerRows(): Promise<LocalCustomerRow[]> {
+  const generation = databaseGeneration();
+  if (
+    customerRowsCache &&
+    customerRowsCache.generation === generation &&
+    Date.now() - customerRowsCache.at < CUSTOMER_ROWS_CACHE_MS
+  ) {
+    return customerRowsCache.rows;
+  }
   const customers = await getDatabase().get<Customer>('customers').query().fetch();
-  return customers.map((row) => ({
+  const rows = customers.map((row) => ({
     id: row.id,
     name: row.name,
     idNumber: row.idNumber,
     phone: row.phone,
     sellerId: row.sellerId ?? null,
+    email: row.email ?? null,
+    address: row.address ?? null,
+    municipioId: row.municipioId ?? null,
+    veredaId: row.veredaId ?? null,
   }));
+  customerRowsCache = { rows, at: Date.now(), generation };
+  return rows;
 }
 
 export async function fetchCustomersPageFromLocal(params: LocalCustomerQuery) {
   if (!canUseLocalDb()) return { items: [], totalCount: 0 };
   return filterLocalCustomers(await readLocalCustomerRows(), params);
+}
+
+/** Nombre visible de cada usuario descargado, por id. Vacío si no hay base local. */
+export async function fetchProfileNamesFromLocal(): Promise<Map<string, string>> {
+  if (!canUseLocalDb()) return new Map();
+  const rows = await getDatabase().get<Profile>('profiles').query().fetch();
+  return new Map(rows.map((row) => [row.id, row.fullName || row.email || 'Sin nombre']));
+}
+
+/** Nombres de municipios y veredas descargados, para completar la ficha del cliente. */
+export async function fetchLocationNamesFromLocal(): Promise<{
+  municipios: Map<string, { nombre: string; departamentoId: string | null }>;
+  veredas: Map<string, string>;
+  departamentos: Map<string, string>;
+}> {
+  if (!canUseLocalDb()) {
+    return { municipios: new Map(), veredas: new Map(), departamentos: new Map() };
+  }
+  const database = getDatabase();
+  const [municipios, veredas, departamentos] = await Promise.all([
+    database.get<CatalogMunicipio>('catalog_municipios').query().fetch(),
+    database.get<CatalogVereda>('catalog_veredas').query().fetch(),
+    database.get<CatalogDepartamento>('catalog_departamentos').query().fetch(),
+  ]);
+  return {
+    municipios: new Map(
+      municipios.map((row) => [row.id, { nombre: row.nombre, departamentoId: row.departamentoId ?? null }])
+    ),
+    veredas: new Map(veredas.map((row) => [row.id, row.nombre])),
+    departamentos: new Map(departamentos.map((row) => [row.id, row.nombre])),
+  };
 }
 
 export async function countMyCustomersLocal(sellerId: string | null) {
@@ -226,6 +286,11 @@ async function buildCustomerNegocios(
           direccion: negocio.direccion || 'Dirección no registrada',
           municipio_name: negocio.municipioName,
           role_in_negocio: role,
+          // Igual que en la lista: la mora se deriva de las cuotas locales, no
+          // de un campo que sin señal llegaba en null.
+          has_mora: cuotaRows.some(
+            (cuota) => cuota.negocioId === negocio.id && cuota.status === 'mora'
+          ),
         };
       }),
     };
@@ -281,6 +346,9 @@ export async function createCustomerOffline(input: {
       )
     );
   });
+  // La lista de clientes lee de la caché del directorio: sin esto el cliente
+  // recién creado no aparecería hasta pasados unos segundos.
+  invalidateLocalCustomersCache();
   void refreshPendingCount();
   void runSync('mutation');
   return { id: customerId, name: input.name, id_number: input.idNumber };
@@ -328,17 +396,94 @@ export async function fetchNegociosListFromLocal() {
   );
 }
 
+/** Pago que el servidor no aceptó y que sigue guardado en el teléfono. */
+export type RejectedPagoRow = {
+  id: string;
+  negocioId: string;
+  amount: number;
+  paidAt: string;
+  receiptNumber: string | null;
+  paymentMethodName: string | null;
+  createdByName: string | null;
+  /** Motivo tal como lo devolvió el servidor. */
+  rejectedReason: string | null;
+  rejectedAt: number | null;
+};
+
+function toRejectedPagoRow(row: NegocioPago): RejectedPagoRow {
+  return {
+    id: row.id,
+    negocioId: row.negocioId,
+    amount: row.amount,
+    paidAt: row.paidAt,
+    receiptNumber: row.receiptNumber,
+    paymentMethodName: row.paymentMethodName ?? null,
+    createdByName: row.createdByName ?? null,
+    rejectedReason: row.rejectedReason ?? null,
+    rejectedAt: row.rejectedAt ?? null,
+  };
+}
+
+function isRejectedPago(row: NegocioPago) {
+  return row.rowSyncStatus === REJECTED_ROW_SYNC_STATUS;
+}
+
+/** Pagos rechazados de un negocio; se usan también cuando la pantalla carga del servidor. */
+export async function listRejectedPagosFromLocal(negocioId: string): Promise<RejectedPagoRow[]> {
+  if (!canUseLocalDb()) return [];
+  const rows = await getDatabase()
+    .get<NegocioPago>('negocio_pagos')
+    .query(Q.where('negocio_id', negocioId))
+    .fetch();
+  return rows
+    .filter(isRejectedPago)
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
+    .map(toRejectedPagoRow);
+}
+
+/**
+ * Elimina del teléfono un pago rechazado. Solo se llama desde la acción
+ * explícita de la persona: nunca lo hace la sincronización por su cuenta.
+ */
+export async function deleteRejectedPagoLocal(pagoId: string) {
+  if (!canUseLocalDb()) return false;
+  const database = getDatabase();
+  const pago = await findOrNull<NegocioPago>('negocio_pagos', pagoId);
+  if (!pago || !isRejectedPago(pago)) return false;
+  // El comando rechazado que seguía en la cola se cierra con el pago: dejarlo
+  // ahí mostraría un aviso de «rechazado» por un pago que ya no existe.
+  const stuck = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('status', Q.oneOf(['failed', 'conflict'])))
+    .fetch();
+  await database.write(async () => {
+    await pago.destroyPermanently();
+    for (const item of stuck) {
+      const payload = parseOutboxPayload<Record<string, unknown>>(item);
+      if (String(payload.pagoLocalId || '') !== pagoId) continue;
+      await markOutboxDiscarded(item, 'El usuario eliminó el pago no aceptado');
+    }
+  });
+  await refreshPendingCount();
+  return true;
+}
+
 export async function fetchNegocioDetailFromLocal(negocioId: string) {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
   const negocio = await findOrNull<Negocio>('negocios', negocioId);
   if (!negocio) return null;
-  const [customers, cuotas, pagos] = await Promise.all([
+  const [customers, cuotas, allPagos, items] = await Promise.all([
     database.get<Customer>('customers').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query(Q.where('negocio_id', negocioId)).fetch(),
     database.get<NegocioPago>('negocio_pagos').query(Q.where('negocio_id', negocioId)).fetch(),
+    database.get<NegocioItem>('negocio_items').query(Q.where('negocio_id', negocioId)).fetch(),
   ]);
-  return mapNegocioDetailFromLocal({
+  // Los rechazados van aparte: no son dinero recibido, así que no pueden sumar
+  // en los totales ni en el saldo de los recibos.
+  const pagos = allPagos.filter((row) => !isRejectedPago(row));
+  const pendingIds = new Set(pagos.filter((row) => row.rowSyncStatus === 'pending').map((row) => row.id));
+  const detail = mapNegocioDetailFromLocal({
     negocio: {
       id: negocio.id,
       numero: negocio.numero,
@@ -353,12 +498,28 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       municipioName: negocio.municipioName,
       sellerId: negocio.sellerId,
       gestorCobroId: negocio.gestorCobroId,
+      sellerName: negocio.sellerName,
+      gestorCobroName: negocio.gestorCobroName,
     },
     customers: customers.map((row) => ({
       id: row.id,
       name: row.name,
       idNumber: row.idNumber,
       phone: row.phone,
+      email: row.email,
+      address: row.address,
+    })),
+    items: items.map((row) => ({
+      id: row.id,
+      negocioId: row.negocioId,
+      productId: row.productId,
+      productName: row.productName,
+      productSku: row.productSku,
+      warehouseId: row.warehouseId,
+      description: row.description,
+      quantity: row.quantity,
+      unitPrice: row.unitPrice,
+      subtotal: row.subtotal,
     })),
     cuotas: cuotas.map((row) => ({
       id: row.id,
@@ -389,6 +550,16 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       expectedTotal: row.expectedTotal,
     })),
   });
+  return {
+    ...detail,
+    pagos: detail.pagos.map((pago) => ({
+      // Marca para el recibo: mientras el pago siga en la cola, lo impreso
+      // lleva la leyenda «PENDIENTE DE CONFIRMACIÓN».
+      ...pago,
+      pending_confirmation: pendingIds.has(pago.id),
+    })),
+    rejectedPagos: allPagos.filter(isRejectedPago).map(toRejectedPagoRow),
+  };
 }
 
 export async function fetchCarteraDashboardFromLocal() {
@@ -513,6 +684,27 @@ export async function fetchPaymentMethodsFromLocal(): Promise<LocalPaymentMethod
  * El snapshot previo viaja en el payload para poder revertir si el servidor
  * rechaza el pago de forma definitiva.
  */
+/**
+ * Elige el camino del cobro. Si el estado de conexión ya dice que no hay red,
+ * se guarda directo en el teléfono: intentar el servidor primero deja al
+ * cobrador esperando el tiempo límite completo con señal débil. Si hay red pero
+ * la petición no llega (timeout, fallo de conexión), se cae al camino sin
+ * conexión; cualquier otro error (una regla del servidor) se propaga.
+ */
+export async function registerPagoWithFallback<T>(input: {
+  online: boolean;
+  registerOnline: () => Promise<T>;
+  registerOffline: () => Promise<T>;
+}): Promise<T> {
+  if (!input.online && canUseLocalDb()) return input.registerOffline();
+  try {
+    return await input.registerOnline();
+  } catch (error) {
+    if (!isNetworkError(error) || !canUseLocalDb()) throw error;
+    return input.registerOffline();
+  }
+}
+
 export async function registerPagoOffline(input: {
   negocioId: string;
   amount: number;
@@ -1013,6 +1205,14 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
       case 'select_route_stop':
         summary = 'Selección de parada';
         break;
+      case 'upload_negocio_signature':
+        summary = `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
+        break;
+      case 'create_negocio':
+        // El número lo asigna el servidor: hasta entonces se identifica por el
+        // cliente y el valor del negocio.
+        summary = `${String(payload.customerName || 'Cliente')} · ${formatMoney(Number(payload.totalCredit || 0))}`;
+        break;
       default:
         summary = item.type;
     }
@@ -1043,7 +1243,19 @@ export async function discardSyncQueueItem(id: string) {
   const item = await findOrNull<SyncOutboxItem>('sync_outbox', id);
   if (!item) return;
   await database.write(async () => {
-    const operations = await prepareRevertCommand(database, item, 'Descartado por el usuario');
+    const changes = new PreparedChanges();
+    // Un negocio descartado no desaparece del teléfono: queda marcado con el
+    // motivo, igual que si lo hubiera rechazado el servidor. El cliente ya
+    // firmó el contrato y alguien tiene que decidir qué hacer con él.
+    if (item.type === 'create_negocio') {
+      await prepareRejectedNegocio(
+        database,
+        parseOutboxPayload<CreateNegocioPayload>(item),
+        'Descartado por el usuario',
+        changes
+      );
+    }
+    const operations = await prepareRevertCommand(database, item, 'Descartado por el usuario', changes);
     await markOutboxDiscarded(item, 'Descartado por el usuario');
     if (operations.length) await database.batch(...operations);
   });

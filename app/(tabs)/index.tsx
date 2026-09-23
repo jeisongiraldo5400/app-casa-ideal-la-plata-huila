@@ -2,12 +2,13 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { ActionCard, HeroActionCard, ScreenErrorBoundary, ScreenHeader, SectionHeader, StatCard } from '@/components/ui';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
-import { Spacing, getColors } from '@/constants/theme';
+import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { isOfflineError } from '@/lib/errorMessage';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
@@ -25,7 +26,7 @@ function HomeScreenInner() {
   // algo pasa aunque la pantalla destino tarde en traer sus datos.
   const navigate = useNavigateWithLoading();
   const { user } = useAuth();
-  const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
+  const { pendingOrders, pendingDeliveryOrders, loading, error: statsError, reload: reloadStats } = useDashboardStats();
   const { isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
   const [now, setNow] = useState(new Date());
   const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
@@ -45,9 +46,20 @@ function HomeScreenInner() {
     month: 'long',
   }).format(now);
 
-  // Mientras carga se muestran las tarjetas con "—" para no saltar el layout.
-  const ordersValue = loading ? '—' : pendingOrders;
-  const deliveriesValue = loading ? '—' : pendingDeliveryOrders;
+  // "—" mientras carga y también cuando la consulta falló: un cero inventado
+  // haría creer al usuario que no tiene nada pendiente.
+  const ordersValue = pendingOrders ?? '—';
+  const deliveriesValue = pendingDeliveryOrders ?? '—';
+  const statsHint = loading ? 'Actualizando…' : statsError ? 'Sin consultar' : 'Pendientes';
+  // Sin red el mensaje traducido ya lo dice todo; para otros fallos se añade
+  // qué se estaba consultando para que el aviso no quede en el aire.
+  const statsNotice = statsError
+    ? isOfflineError(statsError)
+      ? 'Sin conexión: no se pudo consultar el resumen. Toca para reintentar.'
+      : `No se pudo consultar el resumen: ${statsError} Toca para reintentar.`
+    : null;
+  const cardHint = (value: number | null) =>
+    loading ? 'cargando' : value === null ? 'no se pudo consultar' : String(value);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background.default }]} edges={['top']}>
@@ -59,23 +71,30 @@ function HomeScreenInner() {
         />
 
         <View style={styles.section}>
-          <SectionHeader title="Resumen de hoy" hint={loading ? 'Actualizando…' : 'Pendientes'} />
+          <SectionHeader title="Resumen de hoy" hint={statsHint} />
           <View style={styles.statsRow} accessibilityState={{ busy: loading }}>
             <StatCard
               label="Órdenes de compra"
               value={ordersValue}
               icon="receipt-long"
               color={colors.warning.main}
-              accessibilityLabel={loading ? 'Órdenes de compra pendientes, cargando' : `Órdenes de compra pendientes: ${pendingOrders}`}
+              accessibilityLabel={`Órdenes de compra pendientes: ${cardHint(pendingOrders)}`}
             />
             <StatCard
               label="Órdenes de entrega"
               value={deliveriesValue}
               icon="local-shipping"
               color={colors.info.main}
-              accessibilityLabel={loading ? 'Órdenes de entrega pendientes, cargando' : `Órdenes de entrega pendientes: ${pendingDeliveryOrders}`}
+              accessibilityLabel={`Órdenes de entrega pendientes: ${cardHint(pendingDeliveryOrders)}`}
             />
           </View>
+          {!loading && statsNotice ? (
+            <TouchableOpacity onPress={() => void reloadStats()} accessibilityRole="button">
+              <Text style={[styles.statsNotice, { color: colors.warning.dark }]} accessibilityLiveRegion="polite">
+                {statsNotice}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {showCommercialSection ? (
@@ -136,6 +155,7 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.xl, paddingBottom: Spacing.xxxl, gap: Spacing.xxl },
   section: { gap: Spacing.md },
   statsRow: { flexDirection: 'row', gap: Spacing.md },
+  statsNotice: { ...Typography.metadata },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   // flexBasis + flexGrow: dos por fila sin depender del padding del contenedor.
   halfCard: { flexBasis: '45%', flexGrow: 1 },

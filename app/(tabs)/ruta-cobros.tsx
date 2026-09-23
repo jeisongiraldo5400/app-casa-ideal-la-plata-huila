@@ -1,6 +1,8 @@
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { errorMessage } from '@/lib/errorMessage';
 import { fetchMyCollectionRoutes } from '@/lib/collection-routes/collectionRouteService';
 import { CollectionRouteSummary } from '@/lib/collection-routes/types';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -25,6 +27,9 @@ function CollectionRoutesScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { loading: rolesLoading, isGestorCobro } = useUserRoles();
+  // Sin señal las rutas no se pueden consultar ni crear: hay que decirlo antes
+  // de que el usuario toque «Crear ruta del día» y vea fallar la pantalla.
+  const online = useNetworkStatus();
   const canUseRoutes = isGestorCobro();
   const [routes, setRoutes] = useState<CollectionRouteSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +41,7 @@ function CollectionRoutesScreenInner() {
       setError('');
       setRoutes(await fetchMyCollectionRoutes());
     } catch (e: any) {
-      setError(e.message || 'No fue posible cargar las rutas');
+      setError(errorMessage(e, 'No fue posible cargar las rutas'));
     } finally {
       setLoading(false);
     }
@@ -66,7 +71,16 @@ function CollectionRoutesScreenInner() {
         <MaterialIcons name="route" size={54} color="#ffffff55" />
       </View>
 
-      {error ? <Text style={[styles.error, { color: colors.error.main }]}>{error}</Text> : null}
+      {!online ? (
+        <View style={[styles.offlineNotice, { borderColor: colors.warning.main, backgroundColor: `${colors.warning.main}1a` }]}>
+          <MaterialIcons name="cloud-off" size={22} color={colors.warning.dark} />
+          <Text style={{ color: colors.text.primary, flex: 1 }}>
+            Sin conexión: las rutas de cobro no se pueden consultar ni crear hasta que vuelva la señal.
+          </Text>
+        </View>
+      ) : null}
+
+      {online && error ? <Text style={[styles.error, { color: colors.error.main }]}>{error}</Text> : null}
 
       {active ? (
         <TouchableOpacity style={[styles.activeCard, { backgroundColor: colors.background.paper }]} onPress={() => router.push(`/ruta-cobros/${active.id}` as any)}>
@@ -86,10 +100,16 @@ function CollectionRoutesScreenInner() {
           </View>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => router.navigate('/(tabs)/ruta-cobros-crear' as any)}>
-          <MaterialIcons name="add-road" size={38} color={colors.primary.main} />
+        <TouchableOpacity
+          disabled={!online}
+          accessibilityState={{ disabled: !online }}
+          style={[styles.createCard, { backgroundColor: colors.background.paper, borderColor: online ? colors.primary.main : colors.divider, opacity: online ? 1 : 0.6 }]}
+          onPress={() => router.navigate('/(tabs)/ruta-cobros-crear' as any)}>
+          <MaterialIcons name="add-road" size={38} color={online ? colors.primary.main : colors.text.secondary} />
           <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Crear ruta del día</Text>
-          <Text style={{ color: colors.text.secondary, textAlign: 'center' }}>Selecciona y ordena los negocios que visitarás.</Text>
+          <Text style={{ color: colors.text.secondary, textAlign: 'center' }}>
+            {online ? 'Selecciona y ordena los negocios que visitarás.' : 'Necesitas conexión para crear la ruta del día.'}
+          </Text>
         </TouchableOpacity>
       )}
 
@@ -108,5 +128,5 @@ function CollectionRoutesScreenInner() {
 const styles = StyleSheet.create({
   content: { padding: 18, paddingBottom: 40, gap: 14 }, center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
   hero: { borderRadius: 22, padding: 20, flexDirection: 'row', alignItems: 'center' }, eyebrow: { color: '#bfdbfe', fontSize: 11, fontWeight: '900', letterSpacing: 1 }, title: { color: '#fff', fontWeight: '900', fontSize: 24, marginTop: 4 }, subtitle: { color: '#dbeafe', marginTop: 5, lineHeight: 19 },
-  error: { padding: 12, borderRadius: 10 }, activeCard: { borderRadius: 18, padding: 16, elevation: 2 }, createCard: { borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', padding: 26, alignItems: 'center', gap: 8 }, rowBetween: { flexDirection: 'row', alignItems: 'center', gap: 12 }, iconCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' }, cardTitle: { fontSize: 17, fontWeight: '900' }, metrics: { flexDirection: 'row', justifyContent: 'space-around', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#cbd5e1', paddingTop: 14, marginTop: 14 }, metricLabel: { color: '#64748b', fontSize: 11, textTransform: 'uppercase', fontWeight: '700' }, metricValue: { fontSize: 16, fontWeight: '900', marginTop: 3 }, sectionTitle: { fontSize: 17, fontWeight: '900', marginTop: 8 }, historyCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 14, padding: 14 },
+  error: { padding: 12, borderRadius: 10 }, offlineNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderWidth: 1, borderRadius: 12 }, activeCard: { borderRadius: 18, padding: 16, elevation: 2 }, createCard: { borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', padding: 26, alignItems: 'center', gap: 8 }, rowBetween: { flexDirection: 'row', alignItems: 'center', gap: 12 }, iconCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' }, cardTitle: { fontSize: 17, fontWeight: '900' }, metrics: { flexDirection: 'row', justifyContent: 'space-around', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#cbd5e1', paddingTop: 14, marginTop: 14 }, metricLabel: { color: '#64748b', fontSize: 11, textTransform: 'uppercase', fontWeight: '700' }, metricValue: { fontSize: 16, fontWeight: '900', marginTop: 3 }, sectionTitle: { fontSize: 17, fontWeight: '900', marginTop: 8 }, historyCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 14, padding: 14 },
 });

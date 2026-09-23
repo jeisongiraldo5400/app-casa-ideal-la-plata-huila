@@ -43,11 +43,18 @@ const BY_CONSTRAINT: Record<string, string> = {
   product_suppliers_unique: 'Ese proveedor ya está asociado al producto.',
 };
 
+/**
+ * Texto único para una caída de red. Se exporta para que las pantallas puedan
+ * reconocerlo después de traducido (ver `isOfflineError`).
+ */
+export const OFFLINE_MESSAGE = 'Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.';
+
+/** Texto técnico (en inglés) de una petición que no llegó al servidor. */
+const NETWORK_FAILURE_TEXT =
+  /failed to fetch|network request failed|networkerror|load failed|ERR_NETWORK|timeout/i;
+
 const BY_PATTERN: Array<[RegExp, string]> = [
-  [
-    /failed to fetch|network request failed|networkerror|load failed|ERR_NETWORK|timeout/i,
-    'Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.',
-  ],
+  [NETWORK_FAILURE_TEXT, OFFLINE_MESSAGE],
   [/duplicate key value/i, 'Ya existe un registro con esos datos.'],
   [/violates foreign key/i, 'No se puede completar: el registro está relacionado con otros datos.'],
   [/violates check constraint/i, 'Los datos no cumplen una regla de validación.'],
@@ -160,15 +167,27 @@ export function logHandledError(context: string, error: unknown): void {
   console.error(`${context}:`, error);
 }
 
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message ?? '');
+  }
+  return String(error ?? '');
+}
+
+/**
+ * ¿El fallo se debe a que la petición no llegó al servidor?
+ *
+ * Acepta tanto el error crudo como el mensaje YA traducido por `errorMessage`:
+ * las pantallas guardan en su estado el texto en español, así que buscar solo
+ * las palabras en inglés dejaba el estado «sin conexión» como código muerto.
+ */
+export function isOfflineError(error: unknown): boolean {
+  const message = messageOf(error);
+  return NETWORK_FAILURE_TEXT.test(message) || /sin conexión/i.test(message);
+}
+
 /** Detección local, sin depender del módulo de sincronización. */
 function isNetworkErrorLike(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'object' && error !== null && 'message' in error
-        ? String((error as { message?: unknown }).message ?? '')
-        : String(error ?? '');
-  return /network request failed|failed to fetch|networkerror|load failed|ERR_NETWORK|timeout/i.test(
-    message
-  );
+  return NETWORK_FAILURE_TEXT.test(messageOf(error));
 }

@@ -29,7 +29,26 @@ export type NegocioReceiptData = {
   discountReason?: string | null;
   /** Pendiente total que se liquidó; si falta se deriva de `amount + discountAmount`. */
   expectedTotal?: number | null;
+  /**
+   * El pago se registró sin conexión y sigue en la cola: el recibo sale con la
+   * leyenda de pendiente. Al confirmarse el pago, la leyenda desaparece.
+   */
+  pendingConfirmation?: boolean | null;
 };
+
+/** Leyenda del recibo de un pago que todavía no confirmó el servidor. */
+export const PENDING_CONFIRMATION_RECEIPT_LEGEND = 'PENDIENTE DE CONFIRMACIÓN';
+
+/** Explicación bajo la leyenda, en el mismo lenguaje que se le habla al cliente. */
+export const PENDING_CONFIRMATION_RECEIPT_NOTE =
+  'Este pago se registró sin señal y se confirmará al sincronizar. Conserve el recibo.';
+
+export function isPendingConfirmationReceipt(
+  data: Pick<NegocioReceiptData, 'pendingConfirmation' | 'status'>
+) {
+  // Un recibo anulado ya tiene su propio aviso; no se mezclan los dos.
+  return Boolean(data.pendingConfirmation) && data.status !== 'anulado';
+}
 
 /** Pie del recibo y del ticket de un pronto pago vigente (mismo texto que el web). */
 export const PRONTO_PAGO_RECEIPT_LEGEND = 'Crédito cancelado por pronto pago.';
@@ -161,6 +180,14 @@ export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
   ${field('Descuento pronto pago', esc(formatCOP(pronto.discount)))}${discountReason ? `
   ${field('Motivo del descuento', esc(discountReason), true)}` : ''}`
     : '';
+  const pendingConfirmation = isPendingConfirmationReceipt(data);
+  // Aviso de pago sin confirmar. Reutiliza `.balance` (recuadro ya existente):
+  // RECEIPT_CSS no se toca porque debe seguir idéntico al del web.
+  const pendingBanner = pendingConfirmation
+    ? `<section class="balance"><span>Estado del recibo</span><strong>${esc(
+        PENDING_CONFIRMATION_RECEIPT_LEGEND
+      )}</strong></section>`
+    : '';
   return `<!doctype html><html lang="es"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Recibo ${esc(data.receiptNumber)}</title><style>${RECEIPT_CSS}</style></head><body>
@@ -175,6 +202,7 @@ ${isVoided ? '<div class="watermark" aria-hidden="true">ANULADO</div>' : ''}
   <span class="status status-${status.tone}">${esc(status.label)}</span>
 </section>
 ${isVoided ? '<p class="void-banner">RECIBO ANULADO · Este comprobante no es soporte de pago.</p>' : ''}
+${pendingBanner}
 <section class="amount"><span>${prontoPago ? 'Total pagado' : 'Valor recibido'}</span><strong>${formatCOP(data.amount)}</strong></section>
 <section class="fields">
   ${field('Negocio', esc(formatNegocioCodigo(data.negocioNumero)))}
@@ -186,6 +214,6 @@ ${isVoided ? '<p class="void-banner">RECIBO ANULADO · Este comprobante no es so
   ${field('Registrado por', esc(receiptRegisteredBy(data)))}
 </section>
 <section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(remainingBalance)}</strong></section>
-<footer class="foot">${prontoPago && !isVoided ? `${esc(PRONTO_PAGO_RECEIPT_LEGEND)}<br />` : ''}${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>
+<footer class="foot">${pendingConfirmation ? `${esc(PENDING_CONFIRMATION_RECEIPT_NOTE)}<br />` : ''}${prontoPago && !isVoided ? `${esc(PRONTO_PAGO_RECEIPT_LEGEND)}<br />` : ''}${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>
 </main></body></html>`;
 }

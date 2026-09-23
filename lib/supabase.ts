@@ -13,6 +13,69 @@ if (!supabaseAnonKey) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable')
 }
 
+/**
+ * Tiempo límite de una petición al servidor. Con señal débil (el caso de campo:
+ * datos que "conectan" pero no fluyen) `fetch` puede quedarse colgado minutos:
+ * sin este corte la app gira indefinidamente y nunca cae al camino sin conexión.
+ */
+export const SUPABASE_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Mensaje del corte por tiempo, en castellano llano porque puede llegar a
+ * verse en la cola de sincronización. `isNetworkError` (sessionPolicy) y
+ * `classifyPushError` (retryPolicy) reconocen este texto y lo tratan como «no
+ * se pudo enviar», nunca como un rechazo del servidor.
+ */
+export const REQUEST_TIMEOUT_MESSAGE = 'La red no respondió a tiempo.';
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return String((input as Request)?.url || '');
+}
+
+/**
+ * Las subidas y descargas de archivos (soportes de pago, firmas) viajan por
+ * Storage y pueden tardar mucho más que una consulta con una foto de varios MB
+ * en 2G. Cortarlas a los 10 s dejaría soportes sin subir, así que quedan sin
+ * tiempo límite: su carril de la cola las reintenta igual.
+ */
+function isStorageRequest(url: string): boolean {
+  return url.includes('/storage/v1/');
+}
+
+/** `fetch` con `AbortController` y tiempo límite, salvo para Storage. */
+export function createTimeoutFetch(
+  baseFetch: typeof fetch = fetch,
+  timeoutMs: number = SUPABASE_REQUEST_TIMEOUT_MS
+): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (isStorageRequest(requestUrl(input))) return baseFetch(input, init);
+
+    const controller = new AbortController();
+    const externalSignal = init?.signal;
+    const abortFromCaller = () => controller.abort();
+    externalSignal?.addEventListener?.('abort', abortFromCaller);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      return await baseFetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      // El `AbortError` de un corte propio llega con un texto que no parece de
+      // red; se traduce para que la app lo trate como falta de conexión.
+      if (timedOut) throw new Error(REQUEST_TIMEOUT_MESSAGE);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener?.('abort', abortFromCaller);
+    }
+  };
+}
+
 const secureSessionStorage = {
   getItem: (key: string) => SecureStore.getItemAsync(key),
   setItem: (key: string, value: string) =>
@@ -31,6 +94,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: Platform.OS === 'web',
     persistSession: true,
     detectSessionInUrl: false,
+  },
+  global: {
+    fetch: createTimeoutFetch(),
   },
 })
 

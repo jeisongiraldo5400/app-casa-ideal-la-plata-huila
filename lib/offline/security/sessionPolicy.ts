@@ -28,7 +28,11 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function isNetworkError(error: unknown): boolean {
-  return /network|fetch|failed to connect|internet|offline|timeout|timed out|network request failed/i.test(
+  // `abort`/`AbortError`: una petición cortada por el tiempo límite del cliente
+  // de Supabase nunca llegó al servidor, así que es falta de red, no un rechazo.
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'AbortError') return true;
+  return /network|fetch|failed to connect|internet|offline|timeout|timed out|network request failed|abort|no respondi[óo] a tiempo/i.test(
     getErrorMessage(error)
   );
 }

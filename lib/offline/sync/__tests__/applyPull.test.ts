@@ -294,3 +294,178 @@ describe('pruneOutOfScopeNegocios', () => {
     expect(destroyed.sort()).toEqual(['negocio_cuotas:c1', 'negocio_pagos:p1', 'negocios:reassigned']);
   });
 });
+
+describe('applyPullPayload · colecciones nuevas del pull (v7)', () => {
+  function capturingDatabase() {
+    const created = new Map<string, Record<string, unknown>>();
+    const database = {
+      get: (table: string) => ({
+        find: async () => {
+          throw new Error('not found');
+        },
+        prepareCreate: (fn: (record: Record<string, unknown>) => void) => {
+          const record: Record<string, unknown> = { _raw: { id: '' } };
+          fn(record);
+          created.set(`${table}:${(record._raw as { id: string }).id}`, record);
+          return { op: 'create' };
+        },
+        query: () => ({ fetch: async () => [] }),
+      }),
+      write: async (fn: () => Promise<void>) => fn(),
+      batch: async () => undefined,
+    };
+    return { database, created };
+  }
+
+  function basePayload(): PullPayload {
+    return {
+      server_time: '2026-09-23T00:00:00Z',
+      must_wipe: false,
+      truncated: false,
+      roles: [],
+      customers: emptyChanges(),
+      negocios: emptyChanges(),
+      negocio_cuotas: emptyChanges(),
+      negocio_pagos: emptyChanges(),
+      collection_routes: emptyChanges(),
+      collection_route_stops: emptyChanges(),
+      municipios: emptyChanges(),
+    };
+  }
+
+  it('guarda perfiles, productos del negocio, veredas, departamentos y configuración de crédito', async () => {
+    const { database, created } = capturingDatabase();
+    await applyPullPayload(
+      database as never,
+      {
+        ...basePayload(),
+        negocios: {
+          upserts: [
+            {
+              id: 'n1',
+              numero: 20260002,
+              status: 'activo',
+              deal_date: '2026-09-22',
+              total_credit: 600000,
+              remaining_balance: 600000,
+              customer_id: 'c1',
+              codeudor_customer_id: null,
+              direccion: 'Calle 10',
+              municipio_id: 'm1',
+              municipio_name: 'La Plata',
+              seller_id: 'u1',
+              gestor_cobro_id: null,
+              seller_name: 'Ana Vendedora',
+              gestor_cobro_name: null,
+              updated_at: null,
+              deleted_at: null,
+            },
+          ],
+          deleted: [],
+        },
+        customers: {
+          upserts: [
+            {
+              id: 'c1',
+              name: 'Celene Parra',
+              id_number: '1004153185',
+              phone: '3188624209',
+              seller_id: 'u1',
+              email: 'celene@correo.com',
+              address: 'Vereda Gallego',
+              municipio_id: 'm1',
+              vereda_id: 'v1',
+              phone_secondary: null,
+              updated_at: null,
+              deleted_at: null,
+            },
+          ],
+          deleted: [],
+        },
+        municipios: {
+          upserts: [{ id: 'm1', nombre: 'La Plata', is_active: true, departamento_id: 'd1' }],
+          deleted: [],
+        },
+        negocio_items: {
+          upserts: [
+            {
+              id: 'i1',
+              negocio_id: 'n1',
+              product_id: 'p1',
+              product_name: 'MESA 4 PTOS RIMAX',
+              product_sku: 'MESA-1',
+              warehouse_id: 'w1',
+              description: null,
+              // numeric puede llegar como texto.
+              quantity: '1.000',
+              unit_price: '200000.00',
+              subtotal: '200000.00',
+              updated_at: null,
+              deleted_at: null,
+            },
+          ],
+          deleted: [],
+        },
+        veredas: {
+          upserts: [{ id: 'v1', nombre: 'Gallego', municipio_id: 'm1', is_active: true }],
+          deleted: [],
+        },
+        departamentos: { upserts: [{ id: 'd1', nombre: 'Huila', is_active: true }], deleted: [] },
+        profiles: {
+          upserts: [{ id: 'u1', full_name: 'Ana Vendedora', email: 'ana@correo.com' }],
+          deleted: [],
+        },
+        credit_settings: {
+          upserts: [
+            {
+              id: 'cs1',
+              formula_type: 'financed_balance',
+              interest_rate_monthly_pct: '0.0000',
+              rounding_unit: 1000,
+              late_fee_rate_pct: '0.0000',
+              money_decimal_places: 2,
+              min_installments: 1,
+              max_installments: 36,
+              default_frequency: 'mensual',
+              legal_text: null,
+              is_active: true,
+            },
+          ],
+          deleted: [],
+        },
+      },
+      'user-1'
+    );
+
+    expect(created.get('profiles:u1')).toMatchObject({ fullName: 'Ana Vendedora', email: 'ana@correo.com' });
+    expect(created.get('negocios:n1')).toMatchObject({ sellerName: 'Ana Vendedora', gestorCobroName: null });
+    expect(created.get('customers:c1')).toMatchObject({
+      email: 'celene@correo.com',
+      address: 'Vereda Gallego',
+      municipioId: 'm1',
+      veredaId: 'v1',
+    });
+    expect(created.get('negocio_items:i1')).toMatchObject({
+      productName: 'MESA 4 PTOS RIMAX',
+      quantity: 1,
+      unitPrice: 200000,
+      subtotal: 200000,
+    });
+    expect(created.get('catalog_municipios:m1')).toMatchObject({ departamentoId: 'd1' });
+    expect(created.get('catalog_veredas:v1')).toMatchObject({ nombre: 'Gallego', municipioId: 'm1' });
+    expect(created.get('catalog_departamentos:d1')).toMatchObject({ nombre: 'Huila' });
+    expect(created.get('credit_settings:cs1')).toMatchObject({
+      formulaType: 'financed_balance',
+      moneyDecimalPlaces: 2,
+      maxInstallments: 36,
+      isActive: true,
+    });
+  });
+
+  it('un servidor sin la migración no envía las colecciones nuevas y el pull sigue funcionando', async () => {
+    const { database, created } = capturingDatabase();
+    await expect(applyPullPayload(database as never, basePayload(), 'user-1')).resolves.toBeUndefined();
+    // Solo se crea la caché de roles; ninguna de las tablas nuevas.
+    expect([...created.keys()].filter((key) => !key.startsWith('user_profile_cache:'))).toEqual([]);
+  });
+});

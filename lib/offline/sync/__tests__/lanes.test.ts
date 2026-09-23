@@ -1,4 +1,5 @@
 import { planOutboxRun, type LaneItem } from '../lanes';
+import { OUTBOX_MAX_ATTEMPTS } from '../retryPolicy';
 import { cursorFromServerTime, laneForCommand } from '../types';
 
 function item(overrides: Partial<LaneItem> & { id: string; lane: string }): LaneItem {
@@ -50,7 +51,15 @@ describe('planOutboxRun', () => {
 
   it('omite comandos que agotaron intentos aunque estén vencidos', () => {
     const plan = planOutboxRun(
-      [item({ id: 'agotado', lane: 'x', status: 'error', attempts: 8, nextRetryAt: now - 1 })],
+      [
+        item({
+          id: 'agotado',
+          lane: 'x',
+          status: 'error',
+          attempts: OUTBOX_MAX_ATTEMPTS,
+          nextRetryAt: now - 1,
+        }),
+      ],
       now
     );
     expect(plan.runnable).toEqual([]);

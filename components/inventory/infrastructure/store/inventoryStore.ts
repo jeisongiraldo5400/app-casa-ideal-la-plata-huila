@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { create } from 'zustand';
 
@@ -143,7 +144,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           loading: false,
           refreshing: false,
           loadingMore: false,
-          error: error.message,
+          // Traducido: sin esto la tarjeta mostraba "TypeError: Network request failed".
+          error: errorMessage(error, 'No se pudo cargar el inventario'),
         });
         return;
       }
@@ -231,7 +233,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         loading: false,
         refreshing: false,
         loadingMore: false,
-        error: error.message || 'Error al cargar el inventario',
+        error: errorMessage(error, 'No se pudo cargar el inventario'),
       });
     }
   },

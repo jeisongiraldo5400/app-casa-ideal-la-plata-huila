@@ -31,6 +31,8 @@ const TYPE_LABELS: Record<SyncQueueEntry['type'], string> = {
   start_route: 'Ruta',
   finish_route: 'Ruta',
   select_route_stop: 'Ruta',
+  upload_negocio_signature: 'Firma del negocio',
+  create_negocio: 'Negocio nuevo',
 };
 
 function statusLabel(entry: SyncQueueEntry) {
@@ -104,7 +106,7 @@ export function SyncQueueModal() {
   const discard = (entry: SyncQueueEntry) => {
     Alert.alert(
       'Descartar cambio',
-      'El cambio se eliminará del dispositivo y no se enviará al servidor. Si era un pago, el saldo local volverá a su valor anterior.',
+      'El cambio no se enviará al servidor. Si era un pago, el saldo volverá a su valor anterior y el pago quedará en el negocio marcado como no aceptado, para que usted decida cuándo eliminarlo.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {

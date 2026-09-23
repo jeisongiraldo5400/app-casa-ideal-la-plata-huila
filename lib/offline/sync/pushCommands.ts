@@ -4,12 +4,15 @@ import { buildRegisterPagoRpcCall } from '@/lib/negocios/registerPagoRpc';
 import { getDatabase } from '../database';
 import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
+import { pushCreateNegocio, pushUploadNegocioSignature } from './negocioCreateCommand';
 import { parseOutboxPayload } from './outbox';
 import { classifyPushError } from './retryPolicy';
 import { deleteLocalPagoSupportFile } from '../security/localFiles';
 import type {
   AttachPagoSupportPayload,
   CreateCustomerPayload,
+  CreateNegocioPayload,
+  UploadNegocioSignaturePayload,
   RegisterPagoPayload,
   RouteIdPayload,
   SelectStopPayload,
@@ -55,6 +58,12 @@ export async function pushOutboxItem(item: SyncOutboxItem): Promise<PushResult> 
         return await pushSelectStop(payload as SelectStopPayload);
       case 'attach_pago_support':
         return await pushAttachSupport(payload as AttachPagoSupportPayload);
+      // Negocio creado sin señal: primero la firma, después el negocio (mismo
+      // carril, así que la cola ya garantiza ese orden).
+      case 'upload_negocio_signature':
+        return await pushUploadNegocioSignature(payload as UploadNegocioSignaturePayload);
+      case 'create_negocio':
+        return await pushCreateNegocio(payload as CreateNegocioPayload, item.idempotencyKey);
       default:
         return { outcome: 'fail', message: `Comando desconocido: ${item.type}` };
     }

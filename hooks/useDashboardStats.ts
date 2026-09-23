@@ -1,23 +1,64 @@
+import { errorMessage } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { useCallback, useEffect, useState } from 'react';
 
-interface DashboardStats {
-  entriesToday: number;
-  exitsToday: number;
-  pendingOrders: number;
-  pendingDeliveryOrders: number;
+export interface DashboardStats {
+  /**
+   * `null` = no se pudo consultar. Antes estos campos eran `number` y un fallo
+   * del RPC se pintaba como «0 pendientes»: en ruta, sin señal, el usuario leía
+   * un cero inventado y daba por hecho que no tenía nada por despachar.
+   */
+  entriesToday: number | null;
+  exitsToday: number | null;
+  pendingOrders: number | null;
+  pendingDeliveryOrders: number | null;
   loading: boolean;
+  /** Mensaje en español cuando alguna consulta falló; `null` si todo llegó. */
+  error: string | null;
 }
 
 const DASHBOARD_CHANNEL = 'dashboard-inventory-stats';
 
+/** Respuesta mínima de `supabase.rpc` que necesitan los indicadores. */
+type DashboardRpcResult = {
+  data: Record<string, unknown>[] | null;
+  error: { message?: string; code?: string } | null;
+};
+
+/** Valor de la primera fila; `null` cuando esa consulta no llegó al servidor. */
+function readCount(result: DashboardRpcResult, field: string): number | null {
+  if (result.error) return null;
+  const value = result.data?.[0]?.[field];
+  return typeof value === 'number' ? value : 0;
+}
+
+/**
+ * Arma los indicadores del inicio a partir de las tres consultas. Cada tarjeta
+ * es independiente: si solo una falla, las otras siguen mostrando su número.
+ */
+export function buildDashboardStats(
+  statsResult: DashboardRpcResult,
+  purchaseOrdersResult: DashboardRpcResult,
+  deliveryOrdersResult: DashboardRpcResult
+): Omit<DashboardStats, 'loading'> {
+  const failure = [statsResult, purchaseOrdersResult, deliveryOrdersResult].find((result) => result.error);
+  return {
+    entriesToday: readCount(statsResult, 'entries_quantity_today'),
+    exitsToday: readCount(statsResult, 'exits_quantity_today'),
+    pendingOrders: readCount(purchaseOrdersResult, 'pending'),
+    pendingDeliveryOrders: readCount(deliveryOrdersResult, 'pending_orders'),
+    error: failure ? errorMessage(failure.error, 'No se pudo consultar el resumen') : null,
+  };
+}
+
 export function useDashboardStats() {
   const [stats, setStats] = useState<DashboardStats>({
-    entriesToday: 0,
-    exitsToday: 0,
-    pendingOrders: 0,
-    pendingDeliveryOrders: 0,
+    entriesToday: null,
+    exitsToday: null,
+    pendingOrders: null,
+    pendingDeliveryOrders: null,
     loading: true,
+    error: null,
   });
 
   const loadStats = useCallback(async () => {
@@ -28,23 +69,23 @@ export function useDashboardStats() {
         supabase.rpc('get_delivery_orders_stats'),
       ]);
 
-      if (statsResult.error || purchaseOrdersResult.error || deliveryOrdersResult.error) {
-        console.warn('No se pudieron actualizar todos los indicadores del inicio');
-      }
-
-      const statsData = statsResult.data?.[0] || {};
-      const purchaseOrdersData = purchaseOrdersResult.data?.[0] || {};
-      const deliveryOrdersData = deliveryOrdersResult.data?.[0] || {};
-
+      const next = buildDashboardStats(
+        statsResult as DashboardRpcResult,
+        purchaseOrdersResult as DashboardRpcResult,
+        deliveryOrdersResult as DashboardRpcResult
+      );
+      if (next.error) console.warn('No se pudieron actualizar todos los indicadores del inicio');
+      setStats({ ...next, loading: false });
+    } catch (error) {
+      // Sin red la promesa se rechaza: ninguna tarjeta tiene dato que mostrar.
       setStats({
-        entriesToday: statsData.entries_quantity_today || 0,
-        exitsToday: statsData.exits_quantity_today || 0,
-        pendingOrders: purchaseOrdersData.pending || 0,
-        pendingDeliveryOrders: deliveryOrdersData.pending_orders || 0,
+        entriesToday: null,
+        exitsToday: null,
+        pendingOrders: null,
+        pendingDeliveryOrders: null,
         loading: false,
+        error: errorMessage(error, 'No se pudo consultar el resumen'),
       });
-    } catch {
-      setStats((previous) => ({ ...previous, loading: false }));
     }
   }, []);
 
@@ -92,5 +133,6 @@ export function useDashboardStats() {
     };
   }, [loadStats]);
 
-  return stats;
+  // `reload` permite que la pantalla ofrezca «Reintentar» cuando la carga falla.
+  return { ...stats, reload: loadStats };
 }

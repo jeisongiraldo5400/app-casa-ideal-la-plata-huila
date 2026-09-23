@@ -3,3 +3,4 @@ export { SyncStatusBanner } from './SyncStatusBanner';
 export { AppLockGate } from './AppLockGate';
 export { DownloadDataButton } from './DownloadDataButton';
 export { SyncQueueModal } from './SyncQueueModal';
+export { RejectedPagoCard } from './RejectedPagoCard';

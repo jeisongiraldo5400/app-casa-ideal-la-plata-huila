@@ -7,6 +7,8 @@ import {
   fetchCustomerFromLocal,
   fetchCustomerNegociosFromLocal,
   fetchCustomersPageFromLocal,
+  fetchLocationNamesFromLocal,
+  fetchProfileNamesFromLocal,
 } from '@/lib/offline/repositories/offlineRepository';
 import {
   EMPTY_CARTERA,
@@ -101,18 +103,24 @@ export async function fetchCustomersPage(params: FetchCustomersParams): Promise<
       page,
       pageSize,
     });
+    // Los nombres se resuelven solo para la página visible: el directorio local
+    // son ~2.000 filas y los catálogos se leen una vez, no por fila.
+    const [{ municipios, veredas }, profiles] = await Promise.all([
+      fetchLocationNamesFromLocal(),
+      fetchProfileNamesFromLocal(),
+    ]);
     return {
       customers: local.items.map((row) => ({
         id: row.id,
         name: row.name,
         id_number: row.idNumber,
         phone: row.phone,
-        email: null,
-        address: null,
-        municipio_name: null,
-        vereda_name: null,
+        email: row.email ?? null,
+        address: row.address ?? null,
+        municipio_name: (row.municipioId && municipios.get(row.municipioId)?.nombre) || null,
+        vereda_name: (row.veredaId && veredas.get(row.veredaId)) || null,
         seller_id: row.sellerId,
-        seller_name: null,
+        seller_name: (row.sellerId && profiles.get(row.sellerId)) || null,
       })),
       totalCount: local.totalCount,
       hasMore: page * pageSize < local.totalCount,
@@ -147,27 +155,37 @@ export async function fetchCustomerSummary(customerId: string): Promise<Customer
     return { ...parseCustomerSummary(data), fromCache: false };
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;
-    const [customer, negocios] = await Promise.all([
+    const [customer, negocios, locations, profiles] = await Promise.all([
       fetchCustomerFromLocal(customerId),
       fetchCustomerNegociosFromLocal(customerId),
+      fetchLocationNamesFromLocal(),
+      fetchProfileNamesFromLocal(),
     ]);
     if (!customer) throw error;
+    const municipio = customer.municipioId ? locations.municipios.get(customer.municipioId) : null;
+    const sellerName = customer.sellerId ? profiles.get(customer.sellerId) : null;
     return {
       customer: {
         id: customer.id,
         name: customer.name,
         id_number: customer.idNumber,
         phone: customer.phone,
-        email: null,
-        address: null,
+        email: customer.email ?? null,
+        address: customer.address ?? null,
+        // `notes` no viaja en el pull; es el único campo que sigue en blanco.
         notes: null,
-        municipio_name: null,
-        vereda_name: null,
-        departamento_name: null,
+        municipio_name: municipio?.nombre ?? null,
+        vereda_name: (customer.veredaId && locations.veredas.get(customer.veredaId)) || null,
+        departamento_name:
+          (municipio?.departamentoId && locations.departamentos.get(municipio.departamentoId)) || null,
         created_at: null,
         seller_id: customer.sellerId,
       },
-      seller: null,
+      // El vendedor sale de los perfiles descargados; antes la ficha decía
+      // «Sin vendedor» aunque el cliente sí tuviera uno asignado.
+      seller: sellerName
+        ? { id: customer.sellerId as string, full_name: sellerName, email: null, avatar_url: null }
+        : null,
       negocios: negocios?.negocios || [],
       // Sin conexión no se calcula el resumen de cartera del cliente: la ficha
       // lo oculta en vez de mostrar ceros que parecerían "sin deuda".

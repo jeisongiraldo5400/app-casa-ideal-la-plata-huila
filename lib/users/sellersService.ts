@@ -1,13 +1,19 @@
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import {
+  canUseLocalDb,
+  fetchProfileNamesFromLocal,
+} from '@/lib/offline/repositories/offlineRepository';
 
 export type SellerOption = { id: string; full_name: string };
 
 /**
  * Usuarios de la plataforma que pueden figurar como vendedor de un negocio.
- * `profiles` es legible por cualquier usuario autenticado. Sin red devuelve
- * una lista vacía para que el llamador conserve al usuario actual como única
- * opción (los negocios no se crean offline).
+ * `profiles` es legible por cualquier usuario autenticado.
+ *
+ * Sin red se responde con los perfiles descargados (el pull los trae desde
+ * 20261122120000). Antes devolvía una lista vacía y eso dejaba mudos el filtro
+ * de Clientes, los dos filtros de Cartera y la reasignación de vendedor.
  */
 export async function fetchSellerOptions(): Promise<SellerOption[]> {
   try {
@@ -23,9 +29,18 @@ export async function fetchSellerOptions(): Promise<SellerOption[]> {
       full_name: profile.full_name || profile.email || 'Sin nombre',
     }));
   } catch (error) {
-    if (isNetworkError(error)) return [];
+    if (isNetworkError(error)) return fetchLocalSellerOptions();
     throw error;
   }
+}
+
+/** Perfiles guardados en el teléfono, en el mismo orden alfabético que el servidor. */
+async function fetchLocalSellerOptions(): Promise<SellerOption[]> {
+  if (!canUseLocalDb()) return [];
+  const names = await fetchProfileNamesFromLocal();
+  return [...names.entries()]
+    .map(([id, full_name]) => ({ id, full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
 /** Garantiza que el usuario actual esté en la lista (primero), aunque no haya red. */

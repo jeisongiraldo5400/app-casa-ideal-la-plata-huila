@@ -1,9 +1,45 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 const SUPPORT_DIRECTORY_NAME = 'pago-soportes';
+/** Firmas de negocios creados sin señal, a la espera de subir a Storage. */
+const SIGNATURE_DIRECTORY_NAME = 'negocio-firmas';
 
 function supportDirectoryFor(base: string) {
   return `${base}${SUPPORT_DIRECTORY_NAME}`;
+}
+
+function signatureDirectoryFor(base: string) {
+  return `${base}${SIGNATURE_DIRECTORY_NAME}`;
+}
+
+export function getNegocioSignatureDirectory() {
+  const base = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+  if (!base) throw new Error('No hay almacenamiento local disponible para la firma');
+  return signatureDirectoryFor(base);
+}
+
+/**
+ * Guarda una firma recién capturada (`data:image/png;base64,…`) o ya escrita
+ * en disco (`file:`/`content:`) dentro del almacenamiento privado de la app,
+ * para poder subirla cuando vuelva la red. Devuelve la ruta local.
+ */
+export async function persistNegocioSignatureFile(
+  source: string,
+  localId: string,
+  role: string
+): Promise<string> {
+  const directory = getNegocioSignatureDirectory();
+  const destination = `${directory}/${localId}-${safePagoSupportFileName(role)}.png`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+  const match = source.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (match) {
+    await FileSystem.writeAsStringAsync(destination, match[1], {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return destination;
+  }
+  await FileSystem.copyAsync({ from: source, to: destination });
+  return destination;
 }
 
 export function getPagoSupportDirectory() {
@@ -37,8 +73,10 @@ export async function clearLocalPagoSupportFiles() {
     (base): base is string => Boolean(base)
   );
   await Promise.all(
-    [...new Set(bases.map(supportDirectoryFor))].map((directory) =>
-      FileSystem.deleteAsync(directory, { idempotent: true }).catch(() => undefined)
+    // También las firmas pendientes: al borrar los datos locales no puede
+    // quedar en el teléfono la firma de un cliente.
+    [...new Set([...bases.map(supportDirectoryFor), ...bases.map(signatureDirectoryFor)])].map(
+      (directory) => FileSystem.deleteAsync(directory, { idempotent: true }).catch(() => undefined)
     )
   );
 }

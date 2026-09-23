@@ -1,5 +1,7 @@
 import { BarcodeScanner } from '@/components/scanning';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
+import { describeScanFailure } from '@/lib/barcodeScanFeedback';
+import { logHandledError } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -43,27 +45,27 @@ function QuickSearchScreenInner() {
         .single();
 
       if (error || !product) {
-        Alert.alert(
-          'Producto no encontrado',
-          `No se encontró un producto con el código de barras: ${barcode}`,
-          [
-            { text: 'Intentar de nuevo', style: 'default' },
-            {
-              text: 'Cancelar',
-              style: 'cancel',
-              onPress: goHome,
-            },
-          ]
-        );
+        // Un fallo de red llega aquí dentro de `error`, no como excepción: el
+        // aviso distingue «no existe» de «no se pudo consultar».
+        const alert = describeScanFailure(error, barcode);
+        Alert.alert(alert.title, alert.message, [
+          { text: 'Intentar de nuevo', style: 'default' },
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+            onPress: goHome,
+          },
+        ]);
         return;
       }
 
       setSearchQuery(barcode);
       router.navigate('/(tabs)/inventory');
       setScannerActive(false);
-    } catch (error: any) {
-      console.error('Error searching product:', error);
-      Alert.alert('Error', 'Ocurrió un error al buscar el producto', [
+    } catch (error: unknown) {
+      logHandledError('Buscar producto por código de barras', error);
+      const alert = describeScanFailure(error, barcode);
+      Alert.alert(alert.title, alert.message, [
         { text: 'Intentar de nuevo', style: 'default' },
         {
           text: 'Cancelar',

@@ -2,6 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeliveryLocationFilter } from '../../domain/deliveryLocation';
 import { DeliveryOrder } from '../../types';
+import { errorMessage } from '@/lib/errorMessage';
 import {
   DELIVERY_ORDERS_PAGE_SIZE,
   DeliveryOrdersCursor,
@@ -78,7 +79,8 @@ export function useAllDeliveryOrders({
         setError(null);
       } catch (err) {
         if (id !== requestId.current) return;
-        setError(err instanceof Error && err.message ? err.message : 'Error al cargar las órdenes de entrega');
+        // Traducido: el usuario no debe leer el texto técnico de la red.
+        setError(errorMessage(err, 'No se pudieron cargar las órdenes de entrega'));
         if (!options.append) {
           setOrders([]);
           setHasMore(false);

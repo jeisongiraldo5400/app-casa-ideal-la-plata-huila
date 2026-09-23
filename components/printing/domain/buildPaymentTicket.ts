@@ -1,5 +1,8 @@
 import {
+  PENDING_CONFIRMATION_RECEIPT_LEGEND,
+  PENDING_CONFIRMATION_RECEIPT_NOTE,
   PRONTO_PAGO_RECEIPT_LEGEND,
+  isPendingConfirmationReceipt,
   isProntoPagoReceipt,
   prontoPagoReceiptAmounts,
   receiptRegisteredBy,
@@ -27,6 +30,16 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
 
   if (data.status === 'anulado') {
     lines.push({ type: 'text', text: 'RECIBO ANULADO', align: 'center', bold: true });
+  }
+
+  // Pago tomado sin señal: el cliente se lleva el recibo, así que en el papel
+  // debe verse que todavía falta la confirmación del servidor.
+  if (isPendingConfirmationReceipt(data)) {
+    lines.push(
+      ...textLines(PENDING_CONFIRMATION_RECEIPT_LEGEND, { align: 'center', bold: true }),
+      ...textLines(PENDING_CONFIRMATION_RECEIPT_NOTE, { align: 'center' }),
+      { type: 'separator' }
+    );
   }
 
   lines.push(

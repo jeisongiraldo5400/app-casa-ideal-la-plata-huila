@@ -1,4 +1,11 @@
-export type SyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
+export type SyncStatus = 'synced' | 'pending' | 'conflict' | 'error' | 'rejected';
+
+/**
+ * Estado local de un pago que el servidor no aceptó. No se borra la fila: el
+ * cliente ya se llevó el recibo impreso, así que el pago queda visible en el
+ * negocio, marcado y con el motivo, hasta que la persona decida eliminarlo.
+ */
+export const REJECTED_ROW_SYNC_STATUS = 'rejected';
 
 export type OutboxCommandType =
   | 'create_customer'
@@ -8,7 +15,11 @@ export type OutboxCommandType =
   | 'start_route'
   | 'finish_route'
   | 'select_route_stop'
-  | 'attach_pago_support';
+  | 'attach_pago_support'
+  // Negocio creado sin señal: primero viajan sus firmas y después el RPC
+  // `create_negocio` tal cual se habría enviado con red.
+  | 'upload_negocio_signature'
+  | 'create_negocio';
 
 /**
  * Estado previo de las filas locales modificadas de forma optimista. Permite
@@ -98,6 +109,40 @@ export type AttachPagoSupportPayload = OutboxPayloadBase & {
   pagoLocalId: string;
 };
 
+/** Rol de cada firma del contrato; el mismo que usa Storage. */
+export type NegocioSignatureRole = 'cliente' | 'fiador' | 'vendedor';
+
+/**
+ * Firma capturada sin señal. Viaja antes que el negocio y en su mismo carril:
+ * la ruta de Storage se decide al encolar, así que el `p_negocio` del RPC (y
+ * por tanto el hash de idempotencia) ya no cambia entre reintentos.
+ */
+export type UploadNegocioSignaturePayload = OutboxPayloadBase & {
+  fileUploadId: string;
+  negocioId: string;
+  role: NegocioSignatureRole;
+  /** Ruta definitiva dentro del bucket de firmas. */
+  storagePath: string;
+};
+
+/**
+ * Creación de negocio sin señal. Guarda los argumentos del RPC tal cual: al
+ * volver la red se reenvían sin recalcular nada. El servidor recibe siempre el
+ * mismo `p_negocio_id` y la misma `p_idempotency_key`, así que un reintento no
+ * duplica el negocio.
+ */
+export type CreateNegocioPayload = OutboxPayloadBase & {
+  negocioId: string;
+  /** Sin señal siempre false: activar mueve stock y eso exige servidor. */
+  activate: boolean;
+  negocio: Record<string, unknown>;
+  items: Record<string, unknown>[];
+  /** Resumen para la cola y para el aviso de rechazo. */
+  customerId: string;
+  customerName: string;
+  totalCredit: number;
+};
+
 /**
  * Deriva el carril de un comando. Los comandos con `lane` explícito lo
  * conservan (p. ej. el soporte de un pago comparte carril con su pago).
@@ -110,6 +155,10 @@ export function laneForCommand(type: OutboxCommandType, payload: Record<string, 
       return `customer:${String(payload.customerId || '')}`;
     case 'register_pago':
     case 'attach_pago_support':
+      return `negocio:${String(payload.negocioId || '')}`;
+    // Firmas y negocio comparten carril para que las firmas suban primero.
+    case 'upload_negocio_signature':
+    case 'create_negocio':
       return `negocio:${String(payload.negocioId || '')}`;
     case 'register_route_pago':
       return routeId ? `route:${routeId}` : `negocio:${String(payload.negocioId || '')}`;
@@ -135,6 +184,15 @@ export type PullCustomer = {
   id_number: string;
   phone: string | null;
   seller_id: string | null;
+  /**
+   * Contacto y ubicación (20261122120000). Opcionales: un servidor anterior a
+   * esa migración no los envía y la ficha sigue mostrando lo que sí llegó.
+   */
+  phone_secondary?: string | null;
+  email?: string | null;
+  address?: string | null;
+  municipio_id?: string | null;
+  vereda_id?: string | null;
   updated_at: string | null;
   deleted_at: string | null;
 };
@@ -153,6 +211,25 @@ export type PullNegocio = {
   municipio_name: string | null;
   seller_id: string | null;
   gestor_cobro_id: string | null;
+  /** Nombres ya resueltos por el servidor (20261122120000); opcionales. */
+  seller_name?: string | null;
+  gestor_cobro_name?: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+};
+
+/** Producto de un negocio, con nombre y SKU ya resueltos por el servidor. */
+export type PullNegocioItem = {
+  id: string;
+  negocio_id: string;
+  product_id: string;
+  product_name: string | null;
+  product_sku: string | null;
+  warehouse_id: string | null;
+  description: string | null;
+  quantity: number | string;
+  unit_price: number | string;
+  subtotal: number | string;
   updated_at: string | null;
   deleted_at: string | null;
 };
@@ -229,9 +306,59 @@ export type PullStop = {
   updated_at: string | null;
 };
 
-export type PullMunicipio = { id: string; nombre: string; is_active: boolean };
+export type PullMunicipio = {
+  id: string;
+  nombre: string;
+  is_active: boolean;
+  /** Departamento al que pertenece (20261122120000); opcional. */
+  departamento_id?: string | null;
+};
+export type PullVereda = { id: string; nombre: string; municipio_id: string; is_active: boolean };
+export type PullDepartamento = { id: string; nombre: string; is_active: boolean };
 export type PullPaymentMethod = { id: string; name: string };
+export type PullProfile = { id: string; full_name: string | null; email: string | null };
+export type PullCreditSettings = {
+  id: string;
+  formula_type: string;
+  interest_rate_monthly_pct: number | string;
+  rounding_unit: number | string;
+  late_fee_rate_pct: number | string;
+  money_decimal_places: number | string;
+  min_installments: number | string;
+  max_installments: number | string;
+  default_frequency: string;
+  legal_text: string | null;
+  is_active: boolean;
+};
 export type PullRole = { id: string; role_id: string; nombre: string };
+
+/**
+ * Catálogo de producto (20261122120000). Sólo viaja si se pide con
+ * `p_include_catalog = true`: son ~1,4 MB en la primera bajada.
+ */
+export type PullProduct = {
+  id: string;
+  sku: string | null;
+  barcode: string | null;
+  name: string;
+  category_id: string | null;
+  brand_id: string | null;
+  status: boolean;
+  updated_at: string | null;
+};
+export type PullWarehouse = {
+  id: string;
+  name: string;
+  city: string | null;
+  is_active: boolean;
+};
+export type PullWarehouseStock = {
+  id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity: number | string;
+  updated_at: string | null;
+};
 
 export type PullPayload = {
   server_time: string;
@@ -248,13 +375,39 @@ export type PullPayload = {
   collection_route_stops: CollectionChanges<PullStop>;
   municipios: CollectionChanges<PullMunicipio>;
   payment_methods?: CollectionChanges<PullPaymentMethod>;
+  /**
+   * Colecciones de 20261122120000. Todas opcionales: la app tiene que seguir
+   * sincronizando contra un servidor que todavía no tenga esa migración.
+   */
+  negocio_items?: CollectionChanges<PullNegocioItem>;
+  veredas?: CollectionChanges<PullVereda>;
+  departamentos?: CollectionChanges<PullDepartamento>;
+  profiles?: CollectionChanges<PullProfile>;
+  credit_settings?: CollectionChanges<PullCreditSettings>;
+  /**
+   * Catálogo de producto: sólo llega cuando se pidió. `catalog_included` dice
+   * si este paquete lo trae; sin esa marca, que falten `products` no significa
+   * «no hubo novedades» sino «no se pidió», y el cursor del catálogo no debe
+   * avanzar.
+   */
+  catalog_included?: boolean;
+  products?: CollectionChanges<PullProduct>;
+  warehouses?: CollectionChanges<PullWarehouse>;
+  warehouse_stock?: CollectionChanges<PullWarehouseStock>;
 };
 
-export function assertPullIsComplete(payload: PullPayload, limit: number) {
-  if (!payload.truncated) return;
-  throw new Error(
-    `La descarga supera el límite seguro de ${limit} negocios. No se reemplazaron los datos locales; se requiere paginación en el servidor.`
-  );
+/**
+ * Aviso cuando el servidor recortó la descarga por el tope de negocios.
+ *
+ * Antes esto lanzaba y el paquete entero se descartaba: un gestor con más
+ * negocios que el tope se quedaba con el teléfono vacío, que es peor que
+ * tenerlo incompleto. Ahora se aplica lo que sí llegó (el servidor manda los
+ * negocios con actividad más reciente) y se devuelve el aviso para mostrarlo.
+ * `null` si la descarga vino completa.
+ */
+export function pullTruncationWarning(payload: PullPayload, limit: number): string | null {
+  if (!payload.truncated) return null;
+  return `Descarga incompleta: solo caben ${limit} negocios. Se guardaron los de actividad más reciente; el resto no está en el teléfono.`;
 }
 
 export function toEpoch(value: string | null | undefined): number | null {
@@ -285,8 +438,12 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
  * 6: pagos con `payment_kind`, `discount_amount`, `discount_reason` y
  * `expected_total` (pronto pago). Sin esto, un pronto pago descargado por la
  * versión anterior dejaría mal el saldo de los recibos reimpresos.
+ *
+ * 7: perfiles, productos del negocio, veredas, departamentos, configuración de
+ * crédito, nombres de vendedor/gestor y el directorio completo de clientes con
+ * contacto y ubicación (20261122120000).
  */
-export const PULL_PAYLOAD_VERSION = '6';
+export const PULL_PAYLOAD_VERSION = '7';
 export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
 
 export function pullCursorForPayloadVersion(

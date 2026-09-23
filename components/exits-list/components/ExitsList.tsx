@@ -2,7 +2,9 @@ import { ExitSerialChips } from '@/components/exit-serials/components/ExitSerial
 import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
+import { ScreenState } from '@/components/ui/ScreenState';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
+import { isOfflineError } from '@/lib/errorMessage';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -14,6 +16,7 @@ export function ExitsList() {
   const {
     exits,
     loading,
+    error,
     searchQuery,
     hasMore,
     loadNextPage,
@@ -46,6 +49,26 @@ export function ExitsList() {
         <ActivityIndicator size="large" color={colors.primary.main} />
         <Text style={styles.loadingText}>Cargando salidas...</Text>
       </View>
+    );
+  }
+
+  // Antes un fallo de red se pintaba como "No hay salidas registradas": la
+  // lista vacía por error y la lista vacía de verdad son cosas distintas.
+  if (error && exits.length === 0) {
+    const offline = isOfflineError(error);
+    return (
+      <ScreenState
+        tone="error"
+        icon={offline ? 'cloud-off' : 'error-outline'}
+        title={offline ? 'Sin conexión' : 'No se pudieron cargar las salidas'}
+        description={
+          offline
+            ? 'El historial de salidas requiere internet. Revisa la conexión e inténtalo de nuevo.'
+            : error
+        }
+        actionLabel="Reintentar"
+        onAction={() => void loadExits()}
+      />
     );
   }
 

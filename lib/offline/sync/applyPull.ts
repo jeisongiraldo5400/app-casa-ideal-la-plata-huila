@@ -1,16 +1,24 @@
 import { Q } from '@nozbe/watermelondb';
 import type { Database, Model } from '@nozbe/watermelondb';
 import type { PullPayload } from './types';
-import { toEpoch } from './types';
+import { REJECTED_ROW_SYNC_STATUS, toEpoch } from './types';
 import {
+  CatalogDepartamento,
   CatalogMunicipio,
   CatalogPaymentMethod,
+  CatalogProduct,
+  CatalogVereda,
+  CatalogWarehouse,
+  CatalogWarehouseStock,
   CollectionRouteRecord,
   CollectionRouteStopRecord,
+  CreditSettingsRecord,
   Customer,
   Negocio,
   NegocioCuota,
+  NegocioItem,
   NegocioPago,
+  Profile,
   UserProfileCache,
 } from '../models';
 
@@ -65,6 +73,11 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.idNumber = row.id_number;
         record.phone = row.phone;
         record.sellerId = row.seller_id ?? null;
+        record.phoneSecondary = row.phone_secondary ?? null;
+        record.email = row.email ?? null;
+        record.address = row.address ?? null;
+        record.municipioId = row.municipio_id ?? null;
+        record.veredaId = row.vereda_id ?? null;
         record.rowSyncStatus = 'synced';
         record.localUpdatedAt = Date.now();
         record.serverUpdatedAt = toEpoch(row.updated_at);
@@ -91,6 +104,8 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.municipioName = row.municipio_name;
         record.sellerId = row.seller_id;
         record.gestorCobroId = row.gestor_cobro_id;
+        record.sellerName = row.seller_name ?? null;
+        record.gestorCobroName = row.gestor_cobro_name ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.updated_at);
       })
@@ -98,6 +113,28 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
   }
   for (const id of payload.negocios.deleted) {
     push(operations, await destroyIfExists(database, 'negocios', id));
+  }
+
+  for (const row of payload.negocio_items?.upserts || []) {
+    push(
+      operations,
+      await upsertById<NegocioItem>(database, 'negocio_items', row.id, (record) => {
+        record.negocioId = row.negocio_id;
+        record.productId = row.product_id;
+        record.productName = row.product_name ?? null;
+        record.productSku = row.product_sku ?? null;
+        record.warehouseId = row.warehouse_id ?? null;
+        record.description = row.description ?? null;
+        record.quantity = Number(row.quantity || 0);
+        record.unitPrice = Number(row.unit_price || 0);
+        record.subtotal = Number(row.subtotal || 0);
+        record.rowSyncStatus = 'synced';
+        record.serverUpdatedAt = toEpoch(row.updated_at);
+      })
+    );
+  }
+  for (const id of payload.negocio_items?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'negocio_items', id));
   }
 
   for (const row of payload.negocio_cuotas.upserts) {
@@ -204,8 +241,72 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
       await upsertById<CatalogMunicipio>(database, 'catalog_municipios', row.id, (record) => {
         record.nombre = row.nombre;
         record.isActive = Boolean(row.is_active);
+        record.departamentoId = row.departamento_id ?? null;
       })
     );
+  }
+
+  for (const row of payload.veredas?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CatalogVereda>(database, 'catalog_veredas', row.id, (record) => {
+        record.nombre = row.nombre;
+        record.municipioId = row.municipio_id;
+        record.isActive = Boolean(row.is_active);
+      })
+    );
+  }
+  for (const id of payload.veredas?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'catalog_veredas', id));
+  }
+
+  for (const row of payload.departamentos?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CatalogDepartamento>(database, 'catalog_departamentos', row.id, (record) => {
+        record.nombre = row.nombre;
+        record.isActive = Boolean(row.is_active);
+      })
+    );
+  }
+  for (const id of payload.departamentos?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'catalog_departamentos', id));
+  }
+
+  // Perfiles: resuelven el nombre del vendedor y del gestor sin red, y son la
+  // lista que alimenta los filtros por vendedor (antes vacíos sin conexión).
+  for (const row of payload.profiles?.upserts || []) {
+    push(
+      operations,
+      await upsertById<Profile>(database, 'profiles', row.id, (record) => {
+        record.fullName = row.full_name ?? null;
+        record.email = row.email ?? null;
+      })
+    );
+  }
+  for (const id of payload.profiles?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'profiles', id));
+  }
+
+  for (const row of payload.credit_settings?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CreditSettingsRecord>(database, 'credit_settings', row.id, (record) => {
+        record.formulaType = row.formula_type;
+        record.interestRateMonthlyPct = Number(row.interest_rate_monthly_pct || 0);
+        record.roundingUnit = Number(row.rounding_unit || 0);
+        record.lateFeeRatePct = Number(row.late_fee_rate_pct || 0);
+        record.moneyDecimalPlaces = Number(row.money_decimal_places || 0);
+        record.minInstallments = Number(row.min_installments || 0);
+        record.maxInstallments = Number(row.max_installments || 0);
+        record.defaultFrequency = row.default_frequency;
+        record.legalText = row.legal_text ?? null;
+        record.isActive = Boolean(row.is_active);
+      })
+    );
+  }
+  for (const id of payload.credit_settings?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'credit_settings', id));
   }
 
   // El catálogo de métodos de pago viaja completo: la pantalla de cobro lo
@@ -257,18 +358,35 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
  */
 export async function pruneOutOfScopeNegocios(database: Database, scopedIds: string[]) {
   const scope = new Set(scopedIds);
-  const [negocios, cuotas, pagos] = await Promise.all([
+  const [negocios, cuotas, pagos, items] = await Promise.all([
     database.get<Negocio>('negocios').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     database.get<NegocioPago>('negocio_pagos').query().fetch(),
+    database.get<NegocioItem>('negocio_items').query().fetch(),
   ]);
   const withPendingChanges = new Set<string>();
   for (const row of cuotas) if (row.rowSyncStatus === 'pending') withPendingChanges.add(row.negocioId);
-  for (const row of pagos) if (row.rowSyncStatus === 'pending') withPendingChanges.add(row.negocioId);
+  // Un pago rechazado es la única constancia de un recibo ya entregado: el
+  // negocio no se borra del teléfono mientras siga ahí sin que nadie lo revise.
+  for (const row of pagos) {
+    if (row.rowSyncStatus === 'pending' || row.rowSyncStatus === REJECTED_ROW_SYNC_STATUS) {
+      withPendingChanges.add(row.negocioId);
+    }
+  }
 
   const toRemove = new Set(
     negocios
-      .filter((row) => !scope.has(row.id) && !withPendingChanges.has(row.id))
+      .filter(
+        (row) =>
+          !scope.has(row.id) &&
+          !withPendingChanges.has(row.id) &&
+          // Un negocio creado sin señal todavía no existe en el servidor, así
+          // que nunca está en el alcance: borrarlo sería perder la venta. Lo
+          // mismo si el servidor lo rechazó: queda con su motivo hasta que
+          // alguien lo revise.
+          row.rowSyncStatus !== 'pending' &&
+          row.rowSyncStatus !== REJECTED_ROW_SYNC_STATUS
+      )
       .map((row) => row.id)
   );
   if (!toRemove.size) return 0;
@@ -277,9 +395,89 @@ export async function pruneOutOfScopeNegocios(database: Database, scopedIds: str
   for (const row of negocios) if (toRemove.has(row.id)) operations.push(row.prepareDestroyPermanently());
   for (const row of cuotas) if (toRemove.has(row.negocioId)) operations.push(row.prepareDestroyPermanently());
   for (const row of pagos) if (toRemove.has(row.negocioId)) operations.push(row.prepareDestroyPermanently());
+  for (const row of items) if (toRemove.has(row.negocioId)) operations.push(row.prepareDestroyPermanently());
 
   await database.write(async () => {
     await database.batch(...operations);
   });
   return toRemove.size;
+}
+
+/**
+ * Guarda el catálogo de producto (productos, bodegas y existencias) que llega
+ * sólo cuando se pidió con `p_include_catalog`. Va aparte de
+ * `applyPullPayload` porque también lleva su propio cursor: el resto del
+ * paquete se baja muchas veces al día y el catálogo no.
+ *
+ * Devuelve false si el paquete no traía catálogo (no se pidió o el servidor no
+ * tiene la migración), para que el cursor del catálogo no avance.
+ */
+export async function applyCatalogPayload(database: Database, payload: PullPayload) {
+  if (!payload.catalog_included || !payload.products) return false;
+  const operations: Model[] = [];
+
+  for (const row of payload.products.upserts) {
+    push(
+      operations,
+      await upsertById<CatalogProduct>(database, 'catalog_products', row.id, (record) => {
+        record.name = row.name;
+        record.sku = row.sku ?? null;
+        record.barcode = row.barcode ?? null;
+        record.categoryId = row.category_id ?? null;
+        record.brandId = row.brand_id ?? null;
+        record.status = row.status !== false;
+        record.serverUpdatedAt = toEpoch(row.updated_at);
+      })
+    );
+  }
+  // Un producto borrado o desactivado desaparece del teléfono junto con sus
+  // existencias: si no, seguiría apareciendo en el buscador sin poder venderse.
+  for (const id of payload.products.deleted) {
+    push(operations, await destroyIfExists(database, 'catalog_products', id));
+    for (const stock of await database
+      .get<CatalogWarehouseStock>('catalog_warehouse_stock')
+      .query(Q.where('product_id', id))
+      .fetch()) {
+      operations.push(stock.prepareDestroyPermanently());
+    }
+  }
+
+  for (const row of payload.warehouses?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CatalogWarehouse>(database, 'catalog_warehouses', row.id, (record) => {
+        record.name = row.name;
+        record.city = row.city ?? null;
+        record.isActive = row.is_active !== false;
+      })
+    );
+  }
+  for (const id of payload.warehouses?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'catalog_warehouses', id));
+  }
+
+  for (const row of payload.warehouse_stock?.upserts || []) {
+    push(
+      operations,
+      await upsertById<CatalogWarehouseStock>(
+        database,
+        'catalog_warehouse_stock',
+        row.id,
+        (record) => {
+          record.productId = row.product_id;
+          record.warehouseId = row.warehouse_id;
+          record.quantity = Number(row.quantity || 0);
+          record.serverUpdatedAt = toEpoch(row.updated_at);
+        }
+      )
+    );
+  }
+  for (const id of payload.warehouse_stock?.deleted || []) {
+    push(operations, await destroyIfExists(database, 'catalog_warehouse_stock', id));
+  }
+
+  await database.write(async () => {
+    await database.batch(...operations.filter(Boolean));
+  });
+  return true;
 }

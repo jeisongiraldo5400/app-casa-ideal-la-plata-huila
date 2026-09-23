@@ -1,6 +1,7 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
+import { errorMessage } from '@/lib/errorMessage';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
@@ -44,7 +45,8 @@ export function ReceivedDeliveryOrdersList() {
       setLoading(false);
     } catch (err: any) {
       console.error('Error loading delivery orders:', err);
-      setError(err.message || 'Error al cargar las órdenes de entrega completadas');
+      // Traducido: antes llegaba el texto técnico de la red en inglés.
+      setError(errorMessage(err, 'No se pudieron cargar las órdenes de entrega completadas'));
       setLoading(false);
     }
   };

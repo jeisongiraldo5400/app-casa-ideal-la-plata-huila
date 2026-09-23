@@ -12,6 +12,11 @@ export type LocalCustomerRow = {
   idNumber: string | null;
   phone: string | null;
   sellerId: string | null;
+  /** Contacto y ubicación descargados desde la v8 del esquema local. */
+  email?: string | null;
+  address?: string | null;
+  municipioId?: string | null;
+  veredaId?: string | null;
 };
 
 export type LocalCustomerQuery = {

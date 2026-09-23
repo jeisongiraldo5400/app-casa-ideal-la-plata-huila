@@ -125,3 +125,38 @@ describe('exitsListStore · seriales', () => {
     });
   });
 });
+
+describe('exitsListStore · fallos de carga', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    useExitsListStore.setState({ exits: [], loading: false, error: null, searchQuery: '', currentPage: 1, totalCount: 7, hasMore: true });
+  });
+
+  afterEach(() => errorSpy.mockRestore());
+
+  it('un error del RPC queda expuesto y traducido, no como lista vacía', async () => {
+    mockedRpc.mockResolvedValue({ data: null, error: { code: '', message: 'TypeError: Network request failed' } });
+
+    await useExitsListStore.getState().loadExits();
+
+    const state = useExitsListStore.getState();
+    expect(state.error).toBe('Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.');
+    expect(state.loading).toBe(false);
+    // El conteo anterior no puede quedarse: la pantalla diría "7 registros".
+    expect(state.totalCount).toBe(0);
+    expect(state.hasMore).toBe(false);
+  });
+
+  it('una excepción sin red también deja el mensaje en español', async () => {
+    mockedRpc.mockRejectedValue(new TypeError('Network request failed'));
+
+    await useExitsListStore.getState().loadExits();
+
+    expect(useExitsListStore.getState().error).toBe(
+      'Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.'
+    );
+  });
+});

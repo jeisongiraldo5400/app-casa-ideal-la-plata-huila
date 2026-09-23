@@ -19,6 +19,10 @@ import {
   scanWatchdogMs,
 } from '../printerTransport';
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
+import {
+  PENDING_CONFIRMATION_RECEIPT_LEGEND,
+  PENDING_CONFIRMATION_RECEIPT_NOTE,
+} from '@/lib/negocioReceiptHtml';
 
 const receipt: NegocioReceiptData = {
   receiptNumber: 'RV-2026-001',
@@ -88,6 +92,30 @@ describe('buildPaymentTicket', () => {
     expect(texts).toContain('Valor recibido');
     expect(texts).toContain('Saldo pendiente');
     expect(texts).not.toContain('RECIBO ANULADO');
+  });
+
+  /**
+   * El papel es lo único que le queda al cliente: si el pago se tomó sin señal,
+   * el ticket tiene que decir que falta la confirmación.
+   */
+  it('avisa cuando el pago está pendiente de confirmación', () => {
+    const texts = buildPaymentTicket({ ...receipt, pendingConfirmation: true })
+      .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+      .map((line) => line.text)
+      .join(' ')
+      .replace(/\s+/g, ' ');
+
+    expect(texts).toContain(PENDING_CONFIRMATION_RECEIPT_LEGEND);
+    expect(texts).toContain(PENDING_CONFIRMATION_RECEIPT_NOTE);
+  });
+
+  it('un pago confirmado se imprime sin la leyenda de pendiente', () => {
+    const texts = buildPaymentTicket(receipt)
+      .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+      .map((line) => line.text)
+      .join(' ');
+
+    expect(texts).not.toContain(PENDING_CONFIRMATION_RECEIPT_LEGEND);
   });
 
   it('imprime el método y el sitio de pago como el recibo PDF', () => {

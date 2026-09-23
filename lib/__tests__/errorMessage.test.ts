@@ -1,4 +1,4 @@
-import { errorMessage, logHandledError } from '@/lib/errorMessage';
+import { OFFLINE_MESSAGE, errorMessage, isOfflineError, logHandledError } from '@/lib/errorMessage';
 
 describe('errorMessage', () => {
   it('traduce la restricción por nombre antes que el código SQL', () => {
@@ -98,5 +98,22 @@ describe('logHandledError', () => {
     logHandledError('ctx', new Error('columna inexistente'));
     expect(error).toHaveBeenCalledTimes(1);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('isOfflineError', () => {
+  it('reconoce el error crudo de red', () => {
+    expect(isOfflineError(new TypeError('Network request failed'))).toBe(true);
+    expect(isOfflineError({ message: 'Failed to fetch' })).toBe(true);
+  });
+
+  it('reconoce el mensaje YA traducido: las pantallas guardan el texto en español', () => {
+    expect(isOfflineError(errorMessage(new TypeError('Network request failed')))).toBe(true);
+    expect(isOfflineError(OFFLINE_MESSAGE)).toBe(true);
+  });
+
+  it('no confunde un error de negocio con falta de red', () => {
+    expect(isOfflineError(new Error('La cantidad debe ser mayor a cero'))).toBe(false);
+    expect(isOfflineError(null)).toBe(false);
   });
 });

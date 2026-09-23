@@ -1,4 +1,4 @@
-import { classifyPushError, nextRetryAt, canRetry } from '../retryPolicy';
+import { classifyPushError, nextRetryAt, canRetry, OUTBOX_MAX_ATTEMPTS } from '../retryPolicy';
 import { resolveCustomerIdNumberConflict } from '../conflictPolicy';
 import {
   isAuthSessionMissingError,
@@ -8,7 +8,7 @@ import {
   shouldKeepLocalSession,
   shouldLockApp,
 } from '../../security/sessionPolicy';
-import { assertPullIsComplete, type PullPayload } from '../types';
+import { pullTruncationWarning, type PullPayload } from '../types';
 
 describe('retryPolicy', () => {
   it('clasifica errores de negocio vs red', () => {
@@ -47,18 +47,39 @@ describe('retryPolicy', () => {
   });
 
   it('no reintenta indefinidamente', () => {
-    expect(canRetry('error', 8, Date.now() - 1)).toBe(false);
+    expect(canRetry('error', OUTBOX_MAX_ATTEMPTS, Date.now() - 1)).toBe(false);
     expect(canRetry('pending', 0, Date.now() - 1)).toBe(true);
     expect(nextRetryAt(0, 1_000)).toBe(2_000);
+  });
+
+  /**
+   * Un servidor caído un rato no puede dar por perdido un cobro real: el
+   * cliente ya se llevó el recibo impreso. Los errores transitorios tienen que
+   * insistir muchas veces y durante horas antes de pedir ayuda a la persona.
+   */
+  it('un error de envío no se vuelve terminal a la primera', () => {
+    expect(classifyPushError('unexpected server error')).toBe('retry');
+    expect(classifyPushError('502 Bad Gateway')).toBe('retry');
+    expect(canRetry('error', 1, Date.now() - 1)).toBe(true);
+    expect(canRetry('error', 8, Date.now() - 1)).toBe(true);
+    expect(OUTBOX_MAX_ATTEMPTS).toBeGreaterThanOrEqual(20);
+    // El último escalón de espera llega a una hora: la cola insiste medio día.
+    expect(nextRetryAt(OUTBOX_MAX_ATTEMPTS - 1, 0)).toBe(3_600_000);
+  });
+
+  it('un corte por tiempo límite del cliente cuenta como falta de red', () => {
+    // `createTimeoutFetch` (lib/supabase.ts) traduce el AbortError a este texto.
+    expect(classifyPushError('La red no respondió a tiempo.')).toBe('network');
+    expect(classifyPushError('Aborted')).toBe('network');
   });
 });
 
 describe('pullPolicy', () => {
-  it('rechaza un pull truncado antes de avanzar el cursor local', () => {
-    expect(() => assertPullIsComplete({ truncated: true } as PullPayload, 2000))
-      .toThrow(/2000 negocios/i);
-    expect(() => assertPullIsComplete({ truncated: false } as PullPayload, 2000))
-      .not.toThrow();
+  it('un pull truncado ya no se descarta: devuelve un aviso y se aplica igual', () => {
+    // Antes esto lanzaba y el paquete entero se tiraba: el teléfono se quedaba
+    // sin nada, que es peor que quedarse con datos incompletos.
+    expect(pullTruncationWarning({ truncated: true } as PullPayload, 2000)).toMatch(/2000 negocios/i);
+    expect(pullTruncationWarning({ truncated: false } as PullPayload, 2000)).toBeNull();
   });
 });
 

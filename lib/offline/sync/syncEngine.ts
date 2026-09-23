@@ -4,8 +4,21 @@ import type { Model } from '@nozbe/watermelondb';
 import { supabase } from '@/lib/supabase';
 import { getDatabase, isDatabaseOpen } from '../database';
 import { isNetInfoOnline } from '../network';
-import { applyPullPayload, pruneOutOfScopeNegocios } from './applyPull';
+import { applyCatalogPayload, applyPullPayload, pruneOutOfScopeNegocios } from './applyPull';
+import {
+  clearCatalogRequest,
+  getCatalogCursor,
+  getCatalogPulledAt,
+  isCatalogRequested,
+  markCatalogPulled,
+  shouldIncludeCatalog,
+} from './catalogPull';
 import { planOutboxRun } from './lanes';
+import {
+  prepareConfirmNegocio,
+  prepareRejectedNegocio,
+  prepareRelinkNegocioCustomer,
+} from './negocioCreateCommand';
 import {
   countOutbox,
   getMeta,
@@ -28,12 +41,13 @@ import {
 } from './reconcile';
 import { NETWORK_RETRY_DELAY_MS, OUTBOX_MAX_ATTEMPTS, type OutboxStatus } from './retryPolicy';
 import {
-  assertPullIsComplete,
+  pullTruncationWarning,
   cursorFromServerTime,
   pullCursorForPayloadVersion,
   PULL_PAYLOAD_VERSION,
   PULL_PAYLOAD_VERSION_META_KEY,
   type CreateCustomerPayload,
+  type CreateNegocioPayload,
   type OutboxPayloadBase,
   type PullPayload,
   type RegisterPagoPayload,
@@ -114,10 +128,12 @@ export async function runSync(reason: SyncReason = 'manual') {
         nextDueAt = Date.now() + NETWORK_RETRY_DELAY_MS;
         return;
       }
-      await pullRemote(userId);
+      const truncationWarning = await pullRemote(userId, reason);
       await refreshPendingCount();
       useSyncStore.getState().setStatus('idle');
-      useSyncStore.getState().setLastError(null);
+      // El aviso de descarga recortada viaja por `lastError`: la franja de
+      // estado ya lo pinta y la descarga manual lo devuelve al usuario.
+      useSyncStore.getState().setLastError(truncationWarning);
       useSyncStore.getState().setLastSyncedAt(Date.now());
     } catch (error: any) {
       await refreshPendingCount().catch(() => undefined);
@@ -139,16 +155,50 @@ export async function runSync(reason: SyncReason = 'manual') {
   return inFlight;
 }
 
-async function pullRemote(userId: string) {
+/**
+ * ¿El servidor no conoce `p_include_catalog`? PostgREST resuelve la función por
+ * los nombres de sus argumentos: con un servidor sin la migración del catálogo
+ * la llamada falla con PGRST202 en vez de ignorar el parámetro.
+ */
+function isMissingCatalogParamError(error: unknown): boolean {
+  const record = (error || {}) as { code?: unknown; message?: unknown };
+  if (String(record.code || '') === 'PGRST202') return true;
+  return /p_include_catalog|could not find the function|does not exist/i.test(
+    String(record.message || '')
+  );
+}
+
+/** Devuelve el aviso de descarga recortada, o `null` si vino completa. */
+async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promise<string | null> {
   const database = getDatabase();
   const lastPulledAt = pullCursorForPayloadVersion(
     await getMeta(database, 'last_pulled_at'),
     await getMeta(database, PULL_PAYLOAD_VERSION_META_KEY)
   );
-  const { data, error } = await supabase.rpc('pull_mobile_sync', {
-    p_last_pulled_at: lastPulledAt,
-    p_limit: PULL_LIMIT,
+  // El catálogo de producto sólo viaja si hace falta (ver `catalogPull.ts`).
+  // Cuando viaja se pide desde SU cursor, que es más viejo que el general: con
+  // el cursor general el servidor contestaría «sin novedades» y el teléfono se
+  // quedaría sin catálogo para siempre. Lo que se repite del resto del paquete
+  // son upserts idempotentes de, como mucho, un día.
+  const includeCatalog = shouldIncludeCatalog({
+    reason,
+    requested: isCatalogRequested(),
+    lastCatalogAt: await getCatalogPulledAt(database),
   });
+  const catalogCursor = includeCatalog ? await getCatalogCursor(database) : null;
+  let { data, error } = await supabase.rpc('pull_mobile_sync', {
+    p_last_pulled_at: includeCatalog ? catalogCursor : lastPulledAt,
+    p_limit: PULL_LIMIT,
+    ...(includeCatalog ? { p_include_catalog: true } : {}),
+  });
+  if (error && includeCatalog && isMissingCatalogParamError(error)) {
+    // Servidor anterior a 20261122120000: no conoce el tercer parámetro. Se
+    // sincroniza sin catálogo en vez de dejar el teléfono sin descargar nada.
+    ({ data, error } = await supabase.rpc('pull_mobile_sync', {
+      p_last_pulled_at: lastPulledAt,
+      p_limit: PULL_LIMIT,
+    }));
+  }
   if (error) throw error;
   const payload = data as PullPayload;
   if (payload.must_wipe) {
@@ -159,8 +209,15 @@ async function pullRemote(userId: string) {
     useAuthStore.getState().clearLocalAuth();
     throw new Error('Este dispositivo debe volver a iniciar sesión');
   }
-  assertPullIsComplete(payload, PULL_LIMIT);
+  // Un paquete recortado ya no se descarta: se guarda lo que llegó y el aviso
+  // sube a la franja de estado (antes el teléfono se quedaba sin nada).
+  const truncationWarning = pullTruncationWarning(payload, PULL_LIMIT);
   await applyPullPayload(database, payload, userId);
+  // El catálogo sólo avanza su cursor si de verdad vino en el paquete.
+  if (await applyCatalogPayload(database, payload)) {
+    await markCatalogPulled(database, payload.server_time);
+  }
+  clearCatalogRequest();
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
   await setMeta(database, PULL_PAYLOAD_VERSION_META_KEY, PULL_PAYLOAD_VERSION);
   await setLastOnlineVerifiedAt();
@@ -173,7 +230,11 @@ async function pullRemote(userId: string) {
       role: { id: role.role_id, nombre: role.nombre },
     })),
   });
-  await pruneScope(database);
+  // Con la descarga recortada la lista de alcance también viene recortada: no
+  // es autoridad para borrar, así que la poda se salta hasta la próxima
+  // descarga completa.
+  if (!truncationWarning) await pruneScope(database);
+  return truncationWarning;
 }
 
 /** Elimina negocios que ya no están en el alcance del usuario. Opcional: si el
@@ -251,6 +312,17 @@ async function settleOutboxItem(
     }
     if (item.type === 'create_customer' && result.adoptExisting) {
       await prepareAdoptExistingCustomer(database, payload as CreateCustomerPayload, result.adoptExisting, changes);
+      // El cliente provisional desaparece: los negocios que siguen en cola
+      // apuntaban a ese id y se quedarían sin cliente al llegar al servidor.
+      await prepareRelinkNegocioCustomer(
+        database,
+        (payload as CreateCustomerPayload).customerId,
+        result.adoptExisting.id,
+        changes
+      );
+    }
+    if (item.type === 'create_negocio') {
+      await prepareConfirmNegocio(database, payload as unknown as CreateNegocioPayload, changes);
     }
     await prepareReleaseSnapshot(database, payload.snapshot, changes);
     changes.update(item, (record) => {
@@ -267,9 +339,12 @@ async function settleOutboxItem(
   }
 
   const terminal: 'failed' | 'conflict' = result.outcome === 'conflict' ? 'conflict' : 'failed';
+  // Se distingue lo que el servidor rechazó por una regla (no cambiará al
+  // reintentar) de lo que no se pudo enviar tras insistir mucho rato: el
+  // segundo caso puede volver a intentarse desde la cola.
   const message =
     result.outcome === 'retry'
-      ? `${result.message} (se agotaron los reintentos)`
+      ? `No se pudo enviar al servidor después de varios intentos: ${result.message}`
       : result.message;
   const changes = new PreparedChanges();
   changes.update(item, (record) => {
@@ -277,6 +352,11 @@ async function settleOutboxItem(
     record.attempts = record.attempts + 1;
     record.lastError = message;
   });
+  // El negocio rechazado no se borra del teléfono: queda con su motivo, igual
+  // que un pago rechazado, porque el cliente ya firmó el contrato.
+  if (item.type === 'create_negocio') {
+    await prepareRejectedNegocio(database, payload as unknown as CreateNegocioPayload, message, changes);
+  }
   return prepareRevertCommand(database, item, message, changes);
 }
 
