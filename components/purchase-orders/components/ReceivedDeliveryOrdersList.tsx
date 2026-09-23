@@ -1,7 +1,6 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
@@ -12,12 +11,7 @@ import {
     View,
 } from 'react-native';
 import { DeliveryOrder } from '../types';
-import { resolvedDeliveryQuantity } from '../domain/deliveryOrderItem';
-import {
-  readReturnedQuantity,
-  returnedQuantityGate,
-  withReturnedQuantity,
-} from '../infrastructure/services/returnedQuantityColumn';
+import { fetchReceivedDeliveryOrders } from '../infrastructure/services/receivedDeliveryOrdersService';
 import { DeliveryOrderCard } from './DeliveryOrderCard';
 
 export function ReceivedDeliveryOrdersList() {
@@ -44,202 +38,9 @@ export function ReceivedDeliveryOrdersList() {
     setLoading(true);
     setError(null);
     try {
-      // Consultar directamente la tabla para obtener información completa de cliente y usuario
-      // Filtrar órdenes eliminadas, creadas por el usuario logueado y con estados completados o aprobados
-      // Filtrar por created_by para mostrar solo las órdenes que el usuario logueado registró
-      // Incluir estados: delivered, approved, received (todas las completadas o aprobadas)
-      const { data: ordersData, error: ordersError } = await supabase
-        .from('delivery_orders')
-        .select(`
-          id,
-          created_at,
-          created_by,
-          customer_id,
-          assigned_to_user_id,
-          order_type,
-          delivery_address,
-          notes,
-          status,
-          order_number,
-          municipio_id,
-          vereda_id,
-          customer:customers(id, name, id_number),
-          assigned_to_user:profiles(id, full_name, email),
-          municipio:municipios(id, nombre, departamento_id, departamento:departamentos(id, nombre)),
-          vereda:veredas(id, nombre)
-        `)
-        .is('deleted_at', null)
-        .eq('created_by', user.id) // Solo órdenes creadas por el usuario logueado
-        .in('status', ['delivered', 'approved', 'received']) // Todas las órdenes completadas o aprobadas
-        .order('created_at', { ascending: false })
-        .limit(100); // Limitar a 100 órdenes para mejorar rendimiento
-
-      if (ordersError) {
-        console.error('Error loading delivery orders:', ordersError);
-        setError(ordersError.message);
-        setLoading(false);
-        return;
-      }
-
-      // Cargar perfiles de los creadores por separado (ya que no hay foreign key directa)
-      const createdByUserIds = [...new Set((ordersData || []).map((order: any) => order.created_by).filter(Boolean))];
-      let createdByProfilesMap = new Map();
-      
-      if (createdByUserIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', createdByUserIds);
-        
-        createdByProfilesMap = new Map(
-          (profilesData || []).map((profile) => [profile.id, profile])
-        );
-      }
-
-      // Calcular estadísticas manualmente para incluir todas las órdenes (clientes y remisiones)
-      const orderIds = (ordersData || []).map((order: any) => order.id);
-      
-      let ordersWithStats: any[] = [];
-      if (orderIds.length > 0) {
-        // Cargar items de todas las órdenes en lotes para evitar límites de Supabase
-        // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
-        const BATCH_SIZE = 500;
-        let allItemsData: any[] = [];
-        
-        for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-          const batch = orderIds.slice(i, i + BATCH_SIZE);
-          const { data: itemsData, error: itemsError } = await returnedQuantityGate.run((withColumn) =>
-            supabase
-              .from('delivery_order_items')
-              .select(withReturnedQuantity('delivery_order_id, quantity, delivered_quantity', withColumn))
-              .in('delivery_order_id', batch)
-              .is('deleted_at', null),
-          );
-
-          if (itemsError) {
-            console.error('Error loading delivery order items batch:', itemsError);
-          } else {
-            allItemsData = [...allItemsData, ...(itemsData || [])];
-          }
-        }
-        
-        const itemsData = allItemsData;
-
-        // Calcular estadísticas por orden
-        if (itemsData.length > 0) {
-          const statsByOrder = new Map<string, {
-            total_items: number;
-            total_quantity: number;
-            delivered_items: number;
-            delivered_quantity: number;
-          }>();
-
-          itemsData.forEach((item: any) => {
-            const orderId = item.delivery_order_id;
-            if (!statsByOrder.has(orderId)) {
-              statsByOrder.set(orderId, {
-                total_items: 0,
-                total_quantity: 0,
-                delivered_items: 0,
-                delivered_quantity: 0,
-              });
-            }
-            const stats = statsByOrder.get(orderId)!;
-            stats.total_items += 1;
-            stats.total_quantity += item.quantity || 0;
-            // Misma regla que el resto: lo devuelto ya salió de bodega y cuenta.
-            const resolved = resolvedDeliveryQuantity(
-              item.quantity || 0,
-              item.delivered_quantity || 0,
-              readReturnedQuantity(item),
-            );
-            if (resolved > 0) {
-              stats.delivered_items += 1;
-            }
-            stats.delivered_quantity += resolved;
-          });
-
-          // Combinar datos de órdenes con estadísticas
-          ordersWithStats = (ordersData || []).map((order: any) => {
-            const stats = statsByOrder.get(order.id) || {
-              total_items: 0,
-              total_quantity: 0,
-              delivered_items: 0,
-              delivered_quantity: 0,
-            };
-            const createdByProfile = createdByProfilesMap.get(order.created_by);
-            return {
-              ...order,
-              total_items: stats.total_items,
-              total_quantity: stats.total_quantity,
-              delivered_items: stats.delivered_items,
-              delivered_quantity: stats.delivered_quantity,
-              created_by_profile: createdByProfile || null,
-            };
-          });
-        } else {
-          // Si no hay items, crear órdenes sin estadísticas
-          ordersWithStats = (ordersData || []).map((order: any) => {
-            const createdByProfile = createdByProfilesMap.get(order.created_by);
-            return {
-              ...order,
-              total_items: 0,
-              total_quantity: 0,
-              delivered_items: 0,
-              delivered_quantity: 0,
-              created_by_profile: createdByProfile || null,
-            };
-          });
-        }
-      } else {
-        // Si no hay orderIds, crear órdenes sin estadísticas
-        ordersWithStats = (ordersData || []).map((order: any) => {
-          const createdByProfile = createdByProfilesMap.get(order.created_by);
-          return {
-            ...order,
-            total_items: 0,
-            total_quantity: 0,
-            delivered_items: 0,
-            delivered_quantity: 0,
-            created_by_profile: createdByProfile || null,
-          };
-        });
-      }
-
-      // Las órdenes ya están filtradas por estado "delivered" o "approved" en la consulta
-      // Transformar al formato esperado
-      const completedOrders = ordersWithStats.map((order: any) => ({
-          id: order.id,
-          order_number: order.order_number,
-          created_at: order.created_at,
-          created_by: order.created_by,
-          created_by_name: order.created_by_profile?.full_name || order.created_by_profile?.email || 'Usuario desconocido',
-          customer_id: order.customer_id,
-          customer_id_number: order.customer?.id_number || null,
-          customer_name: order.customer?.name || null,
-          customer_phone: null,
-          customer_email: null,
-          assigned_to_user_id: order.assigned_to_user_id,
-          assigned_to_user_name: order.assigned_to_user?.full_name || null,
-          assigned_to_user_email: order.assigned_to_user?.email || null,
-          order_type: order.order_type,
-          delivery_address: order.delivery_address,
-          municipio_id: order.municipio_id ?? null,
-          vereda_id: order.vereda_id ?? null,
-          departamento_id: order.municipio?.departamento_id ?? null,
-          departamento_name: order.municipio?.departamento?.nombre ?? null,
-          municipio_name: order.municipio?.nombre ?? null,
-          vereda_name: order.vereda?.nombre ?? null,
-          notes: order.notes,
-          status: order.status,
-          total_items: order.total_items,
-          total_quantity: order.total_quantity,
-          delivered_items: order.delivered_items,
-          delivered_quantity: order.delivered_quantity,
-          items: [],
-        }));
-
-      setDeliveryOrders(completedOrders);
+      // El servicio pide las órdenes y el perfil del creador a la vez y después
+      // las líneas en lotes paralelos; aquí solo se pinta el resultado.
+      setDeliveryOrders(await fetchReceivedDeliveryOrders(user.id));
       setLoading(false);
     } catch (err: any) {
       console.error('Error loading delivery orders:', err);
