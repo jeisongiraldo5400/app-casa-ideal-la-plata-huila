@@ -17,11 +17,24 @@ interface CatalogSectionsSummaryProps {
   categories: CategoryPreviewLookup;
 }
 
-/** Categorías cerradas por defecto: se abre solo la fila que el usuario elige. */
+/**
+ * Una sola fila abierta a la vez. La primera categoría arranca desplegada para
+ * que la ficha no se vea como una lista de títulos vacíos; las demás las abre
+ * el usuario.
+ */
 export function CatalogSectionsSummary({ sections, products, categories }: CatalogSectionsSummaryProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const firstSectionId = sections[0]?.id ?? null;
+  const [expandedId, setExpandedId] = useState<string | null>(firstSectionId);
+  // Las categorías llegan asíncronas y cambian al abrir otro catálogo. Al
+  // seguir el id de la primera (y no la longitud) solo se reabre cuando de
+  // verdad es otra lista: si el usuario la cierra, se queda cerrada.
+  const [syncedFirstId, setSyncedFirstId] = useState<string | null>(firstSectionId);
+  if (syncedFirstId !== firstSectionId) {
+    setSyncedFirstId(firstSectionId);
+    setExpandedId(firstSectionId);
+  }
 
   return (
     <View style={styles.list}>
