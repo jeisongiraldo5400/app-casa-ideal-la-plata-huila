@@ -39,13 +39,29 @@ export async function searchCustomersByTerm(
     return [];
   }
 
+  // El nombre se compara sin tildes en el servidor (`search_customers`, que usa
+  // norm_text): «munoz» tiene que encontrar a «MUÑOZ». Como esa función sólo
+  // devuelve los datos básicos, se piden después las filas completas, que es lo
+  // que espera el resto del flujo de salidas.
+  const { data: matches, error: matchError } = await supabase.rpc("search_customers", {
+    search_term: normalizedSearchTerm,
+    limit_count: limit,
+  });
+
+  if (matchError) {
+    throw matchError;
+  }
+
+  const ids = ((matches || []) as { id: string }[]).map((row) => row.id);
+  if (ids.length === 0) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("customers")
     .select("*")
     .is("deleted_at", null)
-    .or(
-      `name.ilike.%${normalizedSearchTerm}%,id_number.ilike.%${normalizedSearchTerm}%`
-    )
+    .in("id", ids)
     .order("name")
     .limit(limit);
 

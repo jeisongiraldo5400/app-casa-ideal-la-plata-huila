@@ -1,4 +1,5 @@
 import { logHandledError } from "@/lib/errorMessage";
+import { fetchInChunks, IN_FILTER_PAGE_SIZE } from "@/lib/inChunks";
 import { logOperationError } from "@/lib/operationLogger";
 import { supabase } from "@/lib/supabase";
 import { PURCHASE_ORDER_RECEIPT_ENTRY_TYPE } from "../../domain/purchaseOrderReceipts";
@@ -9,6 +10,45 @@ import { create } from "zustand";
 type PurchaseOrder = Database["public"]["Tables"]["purchase_orders"]["Row"];
 type PurchaseOrderUpdate =
   Database["public"]["Tables"]["purchase_orders"]["Update"];
+
+/**
+ * Columnas que pintan las tarjetas de «Todas las órdenes» y «Órdenes
+ * recibidas» (PurchaseOrderCard + el filtro de AllOrdersList). `deleted_at` y
+ * `updated_at` no se leen en ninguna de las dos, así que no viajan.
+ */
+const PURCHASE_ORDER_SELECT = `
+  id,
+  order_number,
+  created_at,
+  created_by,
+  status,
+  notes,
+  supplier_id,
+  suppliers:supplier_id (
+    id,
+    name,
+    nit
+  )
+`;
+
+const PURCHASE_ORDER_ITEM_SELECT = `
+  id,
+  purchase_order_id,
+  product_id,
+  quantity,
+  created_at,
+  products:product_id (
+    id,
+    name,
+    barcode
+  )
+`;
+
+/** Lo que se lee de `purchase_orders`; el resto de la fila no se usa. */
+type PurchaseOrderSummary = Pick<
+  PurchaseOrder,
+  "id" | "order_number" | "created_at" | "created_by" | "status" | "notes" | "supplier_id"
+> & { updated_at?: string | null };
 
 interface PurchaseOrderItem {
   id: string;
@@ -23,7 +63,28 @@ interface PurchaseOrderItem {
   };
 }
 
-interface PurchaseOrderWithSupplier extends PurchaseOrder {
+/** Fila de `purchase_order_items` con el producto anidado tal como llega. */
+interface PurchaseOrderItemRow extends Omit<PurchaseOrderItem, "product"> {
+  products?:
+    | { id: string; name: string; barcode: string }
+    | { id: string; name: string; barcode: string }[]
+    | null;
+}
+
+interface PurchaseOrderProfile {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+}
+
+interface PurchaseOrderRow extends PurchaseOrderSummary {
+  suppliers?:
+    | { id: string; name: string | null; nit: string | null }
+    | { id: string; name: string | null; nit: string | null }[]
+    | null;
+}
+
+interface PurchaseOrderWithSupplier extends PurchaseOrderSummary {
   supplier?: {
     id: string;
     name: string | null;
@@ -33,8 +94,74 @@ interface PurchaseOrderWithSupplier extends PurchaseOrder {
     id: string;
     full_name: string | null;
     email: string | null;
-  };
+  } | null;
   items?: PurchaseOrderItem[];
+}
+
+/** Primer elemento cuando PostgREST devuelve la relación como lista. */
+function firstRelated<T>(value: T | T[] | null | undefined): T | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value ?? undefined;
+}
+
+/** Perfiles de los creadores; sin ids no hay consulta que hacer. */
+async function fetchCreatorProfiles(
+  userIds: string[],
+): Promise<Map<string, PurchaseOrderProfile>> {
+  if (userIds.length === 0) return new Map();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .in("id", userIds)
+    .returns<PurchaseOrderProfile[]>();
+  return new Map((data || []).map((profile) => [profile.id, profile]));
+}
+
+/**
+ * Líneas de todas las órdenes traídas, agrupadas por orden.
+ *
+ * `fetchInChunks` parte los ids en lotes que caben en la URL y los lanza en
+ * paralelo (con tope de concurrencia), además de paginar cada lote para no
+ * chocar con el `max-rows` del proyecto. Si falla, se avisa y el listado sigue
+ * sin líneas, como cuando fallaba un lote suelto.
+ */
+async function fetchOrderItems(
+  orderIds: string[],
+): Promise<Map<string, PurchaseOrderItem[]>> {
+  const itemsByOrderId = new Map<string, PurchaseOrderItem[]>();
+  if (orderIds.length === 0) return itemsByOrderId;
+
+  let rows: PurchaseOrderItemRow[] = [];
+  try {
+    rows = await fetchInChunks(
+      orderIds,
+      (chunk) =>
+        supabase
+          .from("purchase_order_items")
+          .select(PURCHASE_ORDER_ITEM_SELECT)
+          .in("purchase_order_id", chunk)
+          .is("deleted_at", null)
+          .order("id", { ascending: true })
+          .returns<PurchaseOrderItemRow[]>(),
+      { pageSize: IN_FILTER_PAGE_SIZE },
+    );
+  } catch (error) {
+    logHandledError(
+      "No se pudo cargar un lote de ítems de órdenes de compra",
+      error,
+    );
+    return itemsByOrderId;
+  }
+
+  rows.forEach(({ products, ...item }) => {
+    const orderId = item.purchase_order_id;
+    if (!orderId) return;
+    const list = itemsByOrderId.get(orderId) ?? [];
+    list.push({ ...item, product: firstRelated(products) });
+    itemsByOrderId.set(orderId, list);
+  });
+
+  return itemsByOrderId;
 }
 
 interface PurchaseOrdersState {
@@ -89,16 +216,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
       try {
         let query = supabase
           .from("purchase_orders")
-          .select(
-            `
-          *,
-          suppliers:supplier_id (
-            id,
-            name,
-            nit
-          )
-        `,
-          )
+          .select(PURCHASE_ORDER_SELECT)
           .is("deleted_at", null)
           .neq("status", "cancelled") // Excluir órdenes canceladas
           .order("created_at", { ascending: false })
@@ -112,7 +230,7 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
           query = query.eq("created_by", userId);
         }
 
-        const { data, error } = await query;
+        const { data, error } = await query.returns<PurchaseOrderRow[]>();
 
         if (error) {
           console.error("Error loading purchase orders:", error);
@@ -128,82 +246,24 @@ export const usePurchaseOrdersStore = create<PurchaseOrdersState>(
           return;
         }
 
-        // Obtener todos los user IDs únicos para cargar los perfiles
-        const userIds = [
-          ...new Set((data || []).map((order: any) => order.created_by)),
-        ];
+        const orders = data || [];
+        const userIds = [...new Set(orders.map((order) => order.created_by))];
+        const orderIds = orders.map((order) => order.id);
 
-        // Cargar perfiles de todos los usuarios
-        const { data: profilesData } = await supabase
-          .from("profiles")
-          .select("id, full_name, email")
-          .in("id", userIds);
-
-        const profilesMap = new Map(
-          (profilesData || []).map((profile) => [profile.id, profile]),
-        );
-
-        // OPTIMIZADO: Cargar todos los items de todas las órdenes en lotes
-        // Esto reduce de N consultas a múltiples consultas en lotes (evita problemas N+1)
-        // Supabase tiene un límite de ~1000 elementos en .in(), así que dividimos en lotes de 500
-        const orderIds = (data || []).map((order: any) => order.id);
-
-        let allItems: any[] = [];
-        if (orderIds.length > 0) {
-          const BATCH_SIZE = 500;
-
-          for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-            const batch = orderIds.slice(i, i + BATCH_SIZE);
-            const { data: itemsData, error: itemsError } = await supabase
-              .from("purchase_order_items")
-              .select(
-                `
-              *,
-              products:product_id (
-                id,
-                name,
-                barcode
-              ),
-              purchase_order_id
-            `,
-              )
-              .in("purchase_order_id", batch)
-              .is("deleted_at", null);
-
-            if (itemsError) {
-              logHandledError(
-                "No se pudo cargar un lote de ítems de órdenes de compra",
-                itemsError,
-              );
-            } else {
-              allItems = [...allItems, ...(itemsData || [])];
-            }
-          }
-        }
-
-        // Agrupar items por purchase_order_id en memoria
-        const itemsByOrderId = new Map<string, PurchaseOrderItem[]>();
-        allItems.forEach((item: any) => {
-          const orderId = item.purchase_order_id;
-          if (!orderId) return;
-          if (!itemsByOrderId.has(orderId)) {
-            itemsByOrderId.set(orderId, []);
-          }
-          itemsByOrderId.get(orderId)!.push({
-            ...item,
-            product: Array.isArray(item.products)
-              ? item.products[0]
-              : item.products,
-          });
-        });
+        // Los perfiles y las líneas dependen de las órdenes, pero no el uno del
+        // otro: van a la vez en lugar de una consulta tras otra. Y dentro de las
+        // líneas, cada lote de ids sale en paralelo (antes era un `for` que
+        // esperaba lote a lote).
+        const [profilesMap, itemsByOrderId] = await Promise.all([
+          fetchCreatorProfiles(userIds),
+          fetchOrderItems(orderIds),
+        ]);
 
         // Asignar items a cada orden
-        const ordersWithItems: PurchaseOrderWithSupplier[] = (data || []).map(
-          (order: any) => ({
+        const ordersWithItems: PurchaseOrderWithSupplier[] = orders.map(
+          ({ suppliers, ...order }) => ({
             ...order,
-            supplier: Array.isArray(order.suppliers)
-              ? order.suppliers[0]
-              : order.suppliers,
+            supplier: firstRelated(suppliers),
             created_by_profile: profilesMap.get(order.created_by) || null,
             items: itemsByOrderId.get(order.id) || [],
           }),

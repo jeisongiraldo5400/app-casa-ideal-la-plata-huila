@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OptionPickerField } from '@/components/ui/OptionPickerField';
 import { useTheme } from '@/components/theme';
@@ -559,16 +560,15 @@ function NegocioCreateScreenInner() {
   const removeDownPayment = (key: string) =>
     setDownPayments((rows) => rows.filter((row) => row.key !== key));
 
-  // Búsqueda de clientes: VACÍA si no hay término de búsqueda
+  // Búsqueda de clientes: VACÍA si no hay término de búsqueda. El servidor ya
+  // filtró sin tildes; aquí se repasa con el mismo criterio para no esconder lo
+  // que sí devolvió (antes este segundo filtro descartaba «MUÑOZ» si el
+  // vendedor había escrito «munoz»).
   const filteredCustomers = useMemo(() => {
-    const q = customerQuery.trim().toLowerCase();
+    const q = customerQuery.trim();
     if (!q) return [];
     return customers
-      .filter(
-        (c) =>
-          (c.name || '').toLowerCase().includes(q) ||
-          (c.id_number || '').toLowerCase().includes(q)
-      )
+      .filter((c) => matchesNormalized(q, c.name, c.id_number) || matchesDigits(q, c.id_number))
       .slice(0, 8);
   }, [customers, customerQuery]);
 

@@ -1,4 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 import { useShallow } from 'zustand/react/shallow';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
@@ -33,6 +34,7 @@ export function SetupForm() {
     loading,
     catalogError,
     setupStep,
+    loadSetupCatalogs,
     loadSuppliers,
     loadWarehouses,
     setSupplier,
@@ -44,7 +46,7 @@ export function SetupForm() {
     entryType,
     setEntryType,
     purchaseOrderValidations,
-  } = useEntriesStore(useShallow((state) => ({ supplierId: state.supplierId, purchaseOrderId: state.purchaseOrderId, selectedPurchaseOrder: state.selectedPurchaseOrder, warehouseId: state.warehouseId, suppliers: state.suppliers, purchaseOrders: state.purchaseOrders, warehouses: state.warehouses, supplierSearchQuery: state.supplierSearchQuery, loading: state.loading, catalogError: state.catalogError, setupStep: state.setupStep, loadSuppliers: state.loadSuppliers, loadWarehouses: state.loadWarehouses, setSupplier: state.setSupplier, setPurchaseOrder: state.setPurchaseOrder, setWarehouse: state.setWarehouse, setSetupStep: state.setSetupStep, setSupplierSearchQuery: state.setSupplierSearchQuery, startEntry: state.startEntry, entryType: state.entryType, setEntryType: state.setEntryType, purchaseOrderValidations: state.purchaseOrderValidations })));
+  } = useEntriesStore(useShallow((state) => ({ supplierId: state.supplierId, purchaseOrderId: state.purchaseOrderId, selectedPurchaseOrder: state.selectedPurchaseOrder, warehouseId: state.warehouseId, suppliers: state.suppliers, purchaseOrders: state.purchaseOrders, warehouses: state.warehouses, supplierSearchQuery: state.supplierSearchQuery, loading: state.loading, catalogError: state.catalogError, setupStep: state.setupStep, loadSetupCatalogs: state.loadSetupCatalogs, loadSuppliers: state.loadSuppliers, loadWarehouses: state.loadWarehouses, setSupplier: state.setSupplier, setPurchaseOrder: state.setPurchaseOrder, setWarehouse: state.setWarehouse, setSetupStep: state.setSetupStep, setSupplierSearchQuery: state.setSupplierSearchQuery, startEntry: state.startEntry, entryType: state.entryType, setEntryType: state.setEntryType, purchaseOrderValidations: state.purchaseOrderValidations })));
 
   const { isDark } = useTheme();
   const Colors = getColors(isDark);
@@ -57,12 +59,12 @@ export function SetupForm() {
       : ['Bodega'];
   const dynamicStep = !entryType ? 1 : entryType === 'PO_ENTRY' ? currentStep : setupStep === 'warehouse' ? stepLabels.length : 1;
 
-  // Una sola carga de catálogos por foco (cubre también el montaje inicial).
+  // Los catálogos sólo se piden si faltan: antes se recargaban proveedores y
+  // bodegas en cada foco, y la pantalla esperaba a las dos consultas.
   useFocusEffect(
     useCallback(() => {
-      void loadSuppliers();
-      void loadWarehouses();
-    }, [loadSuppliers, loadWarehouses])
+      void loadSetupCatalogs();
+    }, [loadSetupCatalogs])
   );
 
   // Las órdenes del proveedor se cargan al entrar al paso de orden de compra.
@@ -81,12 +83,13 @@ export function SetupForm() {
   }, [loadSuppliers, loadWarehouses, setSupplier, setupStep, supplierId]);
 
   const filteredSuppliers = useMemo(() => {
-    if (!supplierSearchQuery) return suppliers;
-    const query = supplierSearchQuery.toLowerCase();
+    // Sin tildes y sin espacios sobrantes; el NIT, además, por sus dígitos.
+    const query = supplierSearchQuery.trim();
+    if (!query) return suppliers;
     return suppliers.filter(
       (supplier) =>
-        supplier.name?.toLowerCase().includes(query) ||
-        supplier.nit?.toLowerCase().includes(query)
+        matchesNormalized(query, supplier.name, supplier.nit) ||
+        matchesDigits(query, supplier.nit)
     );
   }, [suppliers, supplierSearchQuery]);
 

@@ -49,5 +49,19 @@ describe('negocioListFilters', () => {
     it('no coincide cuando ni el número ni el cliente contienen la query', () => {
       expect(matchesNegocioListQuery({ numero: 1, customer: { name: 'Ana' } }, 'luis')).toBe(false);
     });
+
+    // Reportado por el usuario (2026-09-22): buscar con o sin tildes no traía nada.
+    it('encuentra al cliente aunque la tilde no coincida, en los dos sentidos', () => {
+      const negocio = { numero: 20260003, customer: { name: 'Álvaro Muñoz' } };
+      expect(matchesNegocioListQuery(negocio, 'alvaro munoz')).toBe(true);
+      expect(matchesNegocioListQuery(negocio, 'ALVARO')).toBe(true);
+      expect(matchesNegocioListQuery({ numero: 1, customer: { name: 'Alvaro Munoz' } }, 'álvaro muñoz')).toBe(true);
+    });
+
+    it('encuentra el número aunque se escriba con separadores', () => {
+      const negocio = { numero: 20260003, customer: { name: 'Ana' } };
+      expect(matchesNegocioListQuery(negocio, '2026-0003')).toBe(true);
+      expect(matchesNegocioListQuery(negocio, '0003')).toBe(true);
+    });
   });
 });

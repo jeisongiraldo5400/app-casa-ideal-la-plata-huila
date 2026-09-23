@@ -4,6 +4,7 @@ import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useEx
 import { useTheme } from '@/components/theme';
 import { ScreenHeader } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import React, { useEffect } from 'react';
 import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +20,9 @@ export default function ExitsListScreen() {
 
 function ExitsListScreenInner() {
   const { loadExits, loading, exits } = useExitsList();
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 

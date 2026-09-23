@@ -15,18 +15,20 @@ export type CustomerOption = {
 export async function searchCustomersForNegocio(query: string): Promise<CustomerOption[]> {
   const term = query.trim();
   if (!term) return [];
-  const pattern = `%${term}%`;
   try {
-    const [byName, byDocument] = await Promise.all([
-      supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('name', pattern).order('name').limit(20),
-      supabase.from('customers').select('id, name, id_number').is('deleted_at', null).ilike('id_number', pattern).order('name').limit(20),
-    ]);
-    const error = byName.error || byDocument.error;
+    // `search_customers` compara sin tildes ni mayúsculas (norm_text, migración
+    // 20261116120000): con dos `ilike` sueltos, «munoz» no encontraba a
+    // «MUÑOZ» y el vendedor creaba el cliente otra vez.
+    const { data, error } = await supabase.rpc('search_customers', {
+      search_term: term,
+      limit_count: 20,
+    });
     if (error) throw error;
-    const unique = new Map(
-      [...(byName.data || []), ...(byDocument.data || [])].map((row) => [row.id, row as CustomerOption])
-    );
-    return [...unique.values()].slice(0, 20);
+    return ((data || []) as CustomerOption[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      id_number: row.id_number || '',
+    }));
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;
     const local = await searchCustomersFromLocal(term, 20);

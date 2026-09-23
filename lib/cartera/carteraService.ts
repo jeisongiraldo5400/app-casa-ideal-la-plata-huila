@@ -58,13 +58,41 @@ export type CarteraDashboard = {
   customer_concentration: { customer_id: string; customer_name: string; balance: number }[];
 };
 
+/** Carga de mora en curso: dos lecturas simultáneas comparten la misma escritura. */
+let inflightMora: Promise<void> | null = null;
+
+/**
+ * Marca en mora las cuotas vencidas.
+ *
+ * Es una ESCRITURA, no una lectura: por eso vive fuera de `fetchCarteraPage` y
+ * de `fetchCarteraDashboard` (donde se ejecutaba una vez por consulta, o sea
+ * dos veces por apertura de la pantalla). El único llamador es
+ * `loadCarteraScreen`, que la aplica UNA vez y ANTES de leer, para que tanto el
+ * listado como el tablero vean las cuotas ya marcadas.
+ *
+ * Nunca lanza: si falla (o no hay red) se avisa por consola y la lectura sigue
+ * con los estados que ya tuviera la base, igual que antes.
+ */
+export function markCuotasEnMora(): Promise<void> {
+  if (inflightMora) return inflightMora;
+  const request = (async () => {
+    try {
+      const { error } = await supabase.rpc('mark_cuotas_en_mora', { p_negocio_id: null });
+      if (error) console.warn(error.message || 'No fue posible actualizar la mora');
+    } catch (error) {
+      console.warn(
+        (error instanceof Error && error.message) || 'No fue posible actualizar la mora'
+      );
+    }
+  })().finally(() => {
+    inflightMora = null;
+  });
+  inflightMora = request;
+  return request;
+}
+
 export async function fetchCarteraPage(params: CarteraPageQuery) {
   try {
-    const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
-      p_negocio_id: null,
-    });
-    if (moraError) console.warn(moraError.message || 'No fue posible actualizar la mora');
-
     const { data, error } = await supabase.rpc('get_cartera_cuotas', {
       p_filter: params.filter, p_days: params.days, p_search: params.search,
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
@@ -92,11 +120,6 @@ export async function fetchCarteraPage(params: CarteraPageQuery) {
 
 export async function fetchCarteraDashboard(municipioId = '') {
   try {
-    const { error: moraError } = await supabase.rpc('mark_cuotas_en_mora', {
-      p_negocio_id: null,
-    });
-    if (moraError) console.warn(moraError.message || 'No fue posible actualizar la mora');
-
     const { data, error } = await supabase.rpc('get_cartera_management_dashboard', {
       p_municipio_id: municipioId || null,
     });

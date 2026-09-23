@@ -5,6 +5,7 @@ export { Button } from './Button';
 export { Card } from './Card';
 export { FloatingTabBar } from './FloatingTabBar';
 export { FullScreenModal } from './FullScreenModal';
+export { GlobalLoadingBar } from './GlobalLoadingBar';
 export { HeroActionCard } from './HeroActionCard';
 export { IconButton } from './IconButton';
 export { Input } from './Input';

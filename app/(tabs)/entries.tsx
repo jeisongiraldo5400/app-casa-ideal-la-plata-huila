@@ -5,6 +5,7 @@ import { SetupForm } from '@/components/entries/components/SetupForm';
 import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries';
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { useTheme } from '@/components/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,9 +13,12 @@ import React, { useCallback, useRef } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function EntriesScreen() {
-  const { step, currentScannedBarcode, error, finalizing, loadingMessage, clearError, resetCurrentScan, resetAll, lastFinalizeResult, dismissLastFinalizeResult } = useEntries((state) => ({ step: state.step, currentScannedBarcode: state.currentScannedBarcode, error: state.error, finalizing: state.finalizing, loadingMessage: state.loadingMessage, clearError: state.clearError, resetCurrentScan: state.resetCurrentScan, resetAll: state.resetAll, lastFinalizeResult: state.lastFinalizeResult, dismissLastFinalizeResult: state.dismissLastFinalizeResult }));
+  const { step, currentScannedBarcode, error, finalizing, loading, loadingMessage, clearError, resetCurrentScan, resetAll, lastFinalizeResult, dismissLastFinalizeResult } = useEntries((state) => ({ step: state.step, currentScannedBarcode: state.currentScannedBarcode, error: state.error, finalizing: state.finalizing, loading: state.loading, loadingMessage: state.loadingMessage, clearError: state.clearError, resetCurrentScan: state.resetCurrentScan, resetAll: state.resetAll, lastFinalizeResult: state.lastFinalizeResult, dismissLastFinalizeResult: state.dismissLastFinalizeResult }));
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
 
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

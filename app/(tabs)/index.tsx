@@ -4,8 +4,8 @@ import { ActionCard, HeroActionCard, ScreenErrorBoundary, ScreenHeader, SectionH
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { Spacing, getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
+import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,7 +21,9 @@ export default function HomeScreen() {
 function HomeScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const router = useRouter();
+  // El menú de inicio navega avisando al indicador global: el usuario ve que
+  // algo pasa aunque la pantalla destino tarde en traer sus datos.
+  const navigate = useNavigateWithLoading();
   const { user } = useAuth();
   const { pendingOrders, pendingDeliveryOrders, loading } = useDashboardStats();
   const { isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
@@ -84,21 +86,21 @@ function HomeScreenInner() {
                 title="Crear nuevo negocio"
                 subtitle="Crédito y orden de entrega"
                 icon="handshake"
-                onPress={() => router.navigate('/(tabs)/negocio-create')}
+                onPress={() => navigate('/(tabs)/negocio-create')}
               />
             ) : null}
             <View style={styles.actionGrid}>
-              <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => router.navigate('/(tabs)/negocios')} style={styles.halfCard} />
-              <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => router.navigate('/(tabs)/cartera')} style={styles.halfCard} />
+              <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => navigate('/(tabs)/negocios')} style={styles.halfCard} />
+              <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => navigate('/(tabs)/cartera')} style={styles.halfCard} />
               {isVendedor() ? (
-                <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => router.navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
+                <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
               ) : null}
               {canCreateNegocio ? (
-                <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => router.navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
+                <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
               ) : null}
             </View>
             {isGestorCobro() ? (
-              <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => router.navigate('/(tabs)/ruta-cobros' as never)} />
+              <ActionCard title="Mi ruta de cobros" subtitle="Organiza las visitas del día" icon="route" tone="success" onPress={() => navigate('/(tabs)/ruta-cobros' as never)} />
             ) : null}
           </View>
         ) : null}
@@ -107,8 +109,8 @@ function HomeScreenInner() {
           <View style={styles.section}>
             <SectionHeader title="Catálogos" />
             <View style={styles.actionGrid}>
-              <ActionCard compact title="Catálogos" subtitle="Ediciones para clientes" icon="auto-stories" onPress={() => router.navigate('/(tabs)/catalogos' as never)} style={styles.halfCard} />
-              <ActionCard compact title="Nuevo catálogo" subtitle="Elegir productos y compartir" icon="add-circle-outline" tone="info" onPress={() => router.navigate('/(tabs)/catalogo-create' as never)} style={styles.halfCard} />
+              <ActionCard compact title="Catálogos" subtitle="Ediciones para clientes" icon="auto-stories" onPress={() => navigate('/(tabs)/catalogos' as never)} style={styles.halfCard} />
+              <ActionCard compact title="Nuevo catálogo" subtitle="Elegir productos y compartir" icon="add-circle-outline" tone="info" onPress={() => navigate('/(tabs)/catalogo-create' as never)} style={styles.halfCard} />
             </View>
           </View>
         ) : null}
@@ -116,12 +118,12 @@ function HomeScreenInner() {
         <View style={styles.section}>
           <SectionHeader title="Operaciones de almacén" />
           <View style={styles.actionGrid}>
-            <ActionCard compact title="Salidas" subtitle="Registrar despacho" icon="local-shipping" tone="error" onPress={() => router.navigate('/(tabs)/exits')} style={styles.halfCard} />
-            <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => router.navigate('/(tabs)/entries')} style={styles.halfCard} />
-            <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => router.navigate('/(tabs)/my-orders')} style={styles.halfCard} />
-            <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => router.navigate('/(tabs)/all-orders')} style={styles.halfCard} />
+            <ActionCard compact title="Salidas" subtitle="Registrar despacho" icon="local-shipping" tone="error" onPress={() => navigate('/(tabs)/exits')} style={styles.halfCard} />
+            <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => navigate('/(tabs)/entries')} style={styles.halfCard} />
+            <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => navigate('/(tabs)/my-orders')} style={styles.halfCard} />
+            <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => navigate('/(tabs)/all-orders')} style={styles.halfCard} />
           </View>
-          <ActionCard title="Reportes y analítica" subtitle="Estadísticas e indicadores de la operación" icon="insights" onPress={() => router.navigate('/(tabs)/reports')} />
+          <ActionCard title="Reportes y analítica" subtitle="Estadísticas e indicadores de la operación" icon="insights" onPress={() => navigate('/(tabs)/reports')} />
         </View>
       </ScrollView>
     </SafeAreaView>

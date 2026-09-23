@@ -1,3 +1,4 @@
+import { matchesNormalized } from '@/lib/search/normalizeText';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -22,18 +23,20 @@ export function AllOrdersList({ searchQuery = '' }: AllOrdersListProps) {
   const colors = getColors(isDark);
 
   const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return purchaseOrders;
-    const q = searchQuery.toLowerCase().trim();
-    return purchaseOrders.filter((order) => {
-      const fields = [
+    const term = searchQuery.trim();
+    if (!term) return purchaseOrders;
+    // Sin tildes: el proveedor «Comercializadora Andrés» aparece buscando
+    // «andres», y el creador igual.
+    return purchaseOrders.filter((order) =>
+      matchesNormalized(
+        term,
         order.order_number,
         (order as any).supplier?.name,
         order.status,
         order.notes,
         (order as any).created_by_profile?.full_name,
-      ];
-      return fields.some((field) => field && String(field).toLowerCase().includes(q));
-    });
+      ),
+    );
   }, [purchaseOrders, searchQuery]);
 
   if (loading) {

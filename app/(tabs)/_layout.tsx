@@ -2,9 +2,10 @@ import { useTheme } from '@/components/theme';
 import { BackButton, FloatingTabBar, IconButton } from '@/components/ui';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { IconSize, Typography, getColors } from '@/constants/theme';
+import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { Tabs, useRouter } from 'expo-router';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { Tabs } from 'expo-router';
+import { Platform, StyleSheet } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
 
@@ -13,27 +14,24 @@ function HeaderIconButton({ icon, label, onPress }: { icon: 'person' | 'person-s
 }
 
 function ProfileHeaderButton() {
-  const router = useRouter();
-  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => router.navigate('/(tabs)/profile')} />;
+  const navigate = useNavigateWithLoading();
+  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => navigate('/(tabs)/profile')} />;
 }
 
 function CustomersHeaderButton() {
-  const router = useRouter();
-  return <HeaderIconButton icon="person-search" label="Clientes" onPress={() => router.navigate('/(tabs)/clientes' as never)} />;
+  const navigate = useNavigateWithLoading();
+  return <HeaderIconButton icon="person-search" label="Clientes" onPress={() => navigate('/(tabs)/clientes' as never)} />;
 }
 
 export default function TabLayout() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { loading } = useUserRoles();
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.primary.main} />
-      </View>
-    );
-  }
+  // Arranca la carga de roles lo antes posible, pero NO bloquea el navegador:
+  // antes un ActivityIndicator tapaba todas las pestañas hasta que la red
+  // contestaba. Ninguna pestaña visible depende del rol —las pantallas que sí
+  // lo exigen (reportes, ruta de cobros, cartera…) siguen cerrándose solas
+  // mientras `loading` sea true—, así que pintarlas antes no abre accesos.
+  useUserRoles();
 
   return (
     <Tabs

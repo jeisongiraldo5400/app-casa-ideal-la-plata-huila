@@ -9,6 +9,7 @@ import {
 } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { fetchSellerOptions, type SellerOption } from '@/lib/users/sellersService';
@@ -29,6 +30,9 @@ export function CustomersScreen() {
   const [sellers, setSellers] = useState<SellerOption[]>([]);
 
   const list = useCustomersList();
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(rolesLoading || list.loading);
+
 
   useEffect(() => {
     if (list.tab !== 'todos') return;

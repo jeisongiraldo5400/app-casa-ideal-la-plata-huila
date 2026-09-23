@@ -5,6 +5,7 @@ import { useInventory } from '@/components/inventory/infrastructure/hooks/useInv
 import { useTheme } from '@/components/theme';
 import { ScreenHeader } from '@/components/ui';
 import { getColors } from '@/constants/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import React, { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,7 +20,9 @@ export default function InventoryScreen() {
 }
 
 function InventoryScreenInner() {
-  const { loadWarehouses, inventory, totalCount, searchQuery } = useInventory();
+  const { loadWarehouses, inventory, totalCount, searchQuery, loading } = useInventory();
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 

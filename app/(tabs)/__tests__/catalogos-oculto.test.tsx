@@ -52,6 +52,7 @@ jest.mock('@/hooks/useUserRoles', () => ({
     isAdmin: () => false,
     isVendedor: () => true,
     isGestorCobro: () => false,
+    isRecaudador: () => false,
     canAccessCatalogs: () => true,
   }),
 }));

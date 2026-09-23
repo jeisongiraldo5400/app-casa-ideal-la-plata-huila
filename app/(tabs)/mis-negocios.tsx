@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
@@ -16,6 +16,10 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
+
+/** Espera a que el usuario deje de escribir antes de consultar al servidor. */
+const SEARCH_DEBOUNCE_MS = 350;
 
 export default function MisNegociosScreen() {
   return (
@@ -37,10 +41,21 @@ function MisNegociosScreenInner() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<NegocioListFilter>('all');
   const sellerId = user?.id;
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
+
+  // Igual que en Negocios: el servidor busca, porque aquí sólo están las
+  // últimas 100 filas.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const loadMyList = useCallback(() => {
-    if (sellerId) void fetchMyList(sellerId);
-  }, [fetchMyList, sellerId]);
+    if (sellerId) void fetchMyList(sellerId, debouncedQuery);
+  }, [fetchMyList, sellerId, debouncedQuery]);
 
   useFocusEffect(
     useCallback(() => {
@@ -54,7 +69,7 @@ function MisNegociosScreenInner() {
     setRefreshing(false);
   };
 
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = query.trim();
   const filtered = useMemo(
     () =>
       list.filter(

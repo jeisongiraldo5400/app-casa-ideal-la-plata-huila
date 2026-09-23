@@ -1,4 +1,5 @@
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 
 export type NegocioListFilter = 'all' | 'active' | 'overdue' | 'draft';
 
@@ -27,6 +28,10 @@ export function matchesNegocioListFilter(item: any, filter: NegocioListFilter) {
 
 export function matchesNegocioListQuery(item: any, query: string) {
   if (!query) return true;
-  const haystack = `${formatNegocioCodigo(item.numero)} ${item.customer?.name || ''}`.toLowerCase();
-  return haystack.includes(query);
+  // Sin tildes: «alvaro munoz» tiene que encontrar a «Álvaro Muñoz». Y el
+  // número por sus dígitos, para que «2026-0003» valga igual que «20260003».
+  return (
+    matchesNormalized(query, formatNegocioCodigo(item.numero), item.customer?.name) ||
+    matchesDigits(query, item.numero)
+  );
 }

@@ -1,161 +1,69 @@
-import { useEffect, useState } from 'react';
-import { AppState } from 'react-native';
-import { logHandledError } from '@/lib/errorMessage';
-import { supabase } from '@/lib/supabase';
+import { useCallback, useEffect } from 'react';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { getCachedRoles, setCachedRoles } from '@/lib/offline/security/secureKeys';
-import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { hasCatalogRole } from '@/lib/catalogos/access';
+import {
+  retainUserRolesWatchers,
+  useUserRolesStore,
+  type UserRole,
+} from '@/lib/auth/userRolesStore';
 
-interface UserRole {
-  id: string;
-  role_id: string;
-  role: {
-    id: string;
-    nombre: string;
-  } | null;
-}
+export type { UserRole };
 
 /**
- * Hook para obtener y verificar los roles del usuario actual
+ * Roles del usuario actual.
+ *
+ * La interfaz pública no cambió, pero por dentro ya no consulta: lee del store
+ * compartido (`lib/auth/userRolesStore`), que hace UNA sola consulta por carga
+ * aunque el hook esté montado en diez pantallas a la vez.
  */
 export function useUserRoles() {
   const { user } = useAuth();
-  const [roles, setRoles] = useState<UserRole[]>([]);
-  const [loading, setLoading] = useState(true);
+  const userId = user?.id ?? null;
+
+  const roles = useUserRolesStore((state) => state.roles);
+  const loading = useUserRolesStore((state) => state.loading);
+  const setUser = useUserRolesStore((state) => state.setUser);
 
   useEffect(() => {
-    if (!user) {
-      setRoles([]);
-      setLoading(false);
-      return;
-    }
+    setUser(userId);
+  }, [setUser, userId]);
 
-    const loadUserRoles = async () => {
-      try {
-        // Primero obtener los user_roles
-        const { data: userRolesData, error: userRolesError } = await supabase
-          .from('user_roles')
-          .select('id, role_id')
-          .eq('user_id', user.id);
+  // El primer consumidor abre el canal de realtime y el listener de AppState;
+  // el último los cierra. No se duplican por pantalla.
+  useEffect(() => retainUserRolesWatchers(), []);
 
-        if (userRolesError) {
-          throw userRolesError;
-        }
+  // Los ayudantes se memorizan contra `roles`: varias pantallas los usan como
+  // dependencia de efectos y con una identidad nueva por render se relanzaban.
+  const hasRole = useCallback(
+    (roleName: string): boolean =>
+      roles.some((userRole) => userRole.role?.nombre?.toLowerCase() === roleName.toLowerCase()),
+    [roles]
+  );
 
-        if (!userRolesData || userRolesData.length === 0) {
-          setRoles([]);
-          await setCachedRoles({ userId: user.id, roles: [] });
-          setLoading(false);
-          return;
-        }
-
-        // Obtener los detalles de los roles
-        const roleIds = userRolesData.map((ur) => ur.role_id);
-        const { data: rolesData, error: rolesError } = await supabase
-          .from('roles')
-          .select('id, nombre')
-          .in('id', roleIds)
-          .is('deleted_at', null);
-
-        if (rolesError) {
-          throw rolesError;
-        }
-
-        // Combinar user_roles con roles
-        const transformedRoles: UserRole[] = userRolesData.map((userRole) => {
-          const role = rolesData?.find((r) => r.id === userRole.role_id);
-          return {
-            id: userRole.id,
-            role_id: userRole.role_id,
-            role: role ? { id: role.id, nombre: role.nombre } : null,
-          };
-        });
-
-        setRoles(transformedRoles);
-        await setCachedRoles({ userId: user.id, roles: transformedRoles });
-      } catch (error) {
-        // Sin red se usan los roles cacheados: es el camino previsto y no un
-        // fallo. Con `console.error`, LogBox pintaba la pantalla roja en
-        // desarrollo y tapaba los avisos propios (el "Pago guardado sin
-        // conexión", por ejemplo).
-        logHandledError('No se pudieron leer los roles del usuario', error);
-        const cached = await getCachedRoles();
-        if (cached?.userId === user.id) {
-          setRoles(cached.roles);
-        } else if (!isNetworkError(error)) {
-          setRoles([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUserRoles();
-    const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void loadUserRoles();
-    });
-    const rolesChannel = supabase
-      .channel(`user-roles-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_roles',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => void loadUserRoles()
-      )
-      .subscribe();
-
-    return () => {
-      appStateSubscription.remove();
-      void supabase.removeChannel(rolesChannel);
-    };
-  }, [user]);
-
-  const hasRole = (roleName: string): boolean => {
-    return roles.some((userRole) => 
-      userRole.role?.nombre?.toLowerCase() === roleName.toLowerCase()
-    );
-  };
-
-  const isAdmin = (): boolean => {
-    return hasRole('admin');
-  };
-
-  const isBodeguero = (): boolean => {
-    return hasRole('bodeguero');
-  };
-
-  const isVendedor = (): boolean => {
-    return hasRole('vendedor');
-  };
-
-  const isGestorCobro = (): boolean => {
-    return hasRole('gestor de cobro');
-  };
+  const isAdmin = useCallback((): boolean => hasRole('admin'), [hasRole]);
+  const isBodeguero = useCallback((): boolean => hasRole('bodeguero'), [hasRole]);
+  const isVendedor = useCallback((): boolean => hasRole('vendedor'), [hasRole]);
+  const isGestorCobro = useCallback((): boolean => hasRole('gestor de cobro'), [hasRole]);
 
   /** Cobra en todos los negocios sin tenerlos asignados (20261113120000). */
-  const isRecaudador = (): boolean => {
-    return hasRole('recaudador');
-  };
+  const isRecaudador = useCallback((): boolean => hasRole('recaudador'), [hasRole]);
 
   /** Módulo de catálogos: admin, catalog_admin, catalog_editor o catalog_seller. */
-  const canAccessCatalogs = (): boolean => {
-    return hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? ''));
-  };
+  const canAccessCatalogs = useCallback(
+    (): boolean => hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? '')),
+    [roles]
+  );
 
-  const canMarkOrderAsReceived = (): boolean => {
-    return isAdmin() || isBodeguero();
-  };
+  const canMarkOrderAsReceived = useCallback(
+    (): boolean => isAdmin() || isBodeguero(),
+    [isAdmin, isBodeguero]
+  );
 
   /** Modo vendedor: prioriza ventas si es vendedor y no bodeguero (admin ve ambos). */
-  const preferSellerWorkspace = (): boolean => {
+  const preferSellerWorkspace = useCallback((): boolean => {
     if (isAdmin()) return false;
     return isVendedor() && !isBodeguero();
-  };
+  }, [isAdmin, isBodeguero, isVendedor]);
 
   return {
     roles,

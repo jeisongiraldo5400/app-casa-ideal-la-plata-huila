@@ -1,5 +1,6 @@
 import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
+import { startNavigationLoading } from '@/lib/ui/loadingStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import React from 'react';
@@ -58,7 +59,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 
           const onPress = () => {
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!isCurrentRoute && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+            if (!isCurrentRoute && !event.defaultPrevented) {
+              // Aviso global desde el propio toque: la pestaña destino puede
+              // tardar en traer sus datos y sin esto la barra parece no responder.
+              startNavigationLoading();
+              navigation.navigate(route.name, route.params);
+            }
           };
 
           return (

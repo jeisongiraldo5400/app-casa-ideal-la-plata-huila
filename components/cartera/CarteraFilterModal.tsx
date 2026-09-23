@@ -1,3 +1,4 @@
+import { matchesNormalized } from '@/lib/search/normalizeText';
 import { useTheme } from '@/components/theme';
 import { Button, FullScreenModal, SearchField, SegmentedControl } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
@@ -64,16 +65,17 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
   const searchMunicipio = values.searchMunicipio || '';
   const selectedSeller = sellers.find((item) => item.id === values.sellerId);
   const searchSeller = values.searchSeller || '';
+  // Sin tildes y sin espacios sobrantes: «ramirez» encuentra a «RAMÍREZ».
   const availableSellers = sellers
-    .filter((item) => item.full_name.toLowerCase().includes(searchSeller.toLowerCase()))
+    .filter((item) => matchesNormalized(searchSeller, item.full_name))
     .slice(0, 30);
   const selectedCustomerSeller = sellers.find((item) => item.id === values.customerSellerId);
   const searchCustomerSeller = values.searchCustomerSeller || '';
   const availableCustomerSellers = sellers
-    .filter((item) => item.full_name.toLowerCase().includes(searchCustomerSeller.toLowerCase()))
+    .filter((item) => matchesNormalized(searchCustomerSeller, item.full_name))
     .slice(0, 30);
   const available = municipios
-    .filter((item) => item.nombre.toLowerCase().includes(searchMunicipio.toLowerCase()))
+    .filter((item) => matchesNormalized(searchMunicipio, item.nombre))
     .slice(0, 30);
   const patch = (next: Partial<CarteraFilterValues>) => onChange({ ...values, ...next });
 
