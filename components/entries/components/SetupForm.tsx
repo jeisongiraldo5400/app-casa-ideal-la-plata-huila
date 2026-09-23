@@ -1,4 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 import { useShallow } from 'zustand/react/shallow';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
@@ -81,12 +82,13 @@ export function SetupForm() {
   }, [loadSuppliers, loadWarehouses, setSupplier, setupStep, supplierId]);
 
   const filteredSuppliers = useMemo(() => {
-    if (!supplierSearchQuery) return suppliers;
-    const query = supplierSearchQuery.toLowerCase();
+    // Sin tildes y sin espacios sobrantes; el NIT, además, por sus dígitos.
+    const query = supplierSearchQuery.trim();
+    if (!query) return suppliers;
     return suppliers.filter(
       (supplier) =>
-        supplier.name?.toLowerCase().includes(query) ||
-        supplier.nit?.toLowerCase().includes(query)
+        matchesNormalized(query, supplier.name, supplier.nit) ||
+        matchesDigits(query, supplier.nit)
     );
   }, [suppliers, supplierSearchQuery]);
 

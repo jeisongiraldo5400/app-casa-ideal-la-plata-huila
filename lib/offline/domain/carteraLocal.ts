@@ -1,3 +1,4 @@
+import { matchesDigits, matchesNormalized, normalizeText } from '@/lib/search/normalizeText';
 import { localDateValue } from '@/lib/localDate';
 // Solo tipos, y desde un módulo sin dependencias (`lib/cartera/types`): así el
 // dominio comparte el vocabulario de filtros con el servicio remoto sin
@@ -74,7 +75,7 @@ export function filterCarteraCuotas<
   params: CarteraQuery & { today?: string }
 ) {
   const today = params.today || localDateValue();
-  const search = params.search.trim().toLowerCase();
+  const search = params.search.trim();
   const horizon = new Date(`${today}T12:00:00`);
   horizon.setDate(horizon.getDate() + params.days);
   const horizonDate = horizon.toISOString().slice(0, 10);
@@ -100,8 +101,11 @@ export function filterCarteraCuotas<
     if (params.dueFrom && row.dueDate < params.dueFrom) return false;
     if (params.dueTo && row.dueDate > params.dueTo) return false;
     if (search) {
-      const haystack = `${row.customerName} ${row.customerIdNumber || ''} ${row.negocioNumero}`.toLowerCase();
-      if (!haystack.includes(search)) return false;
+      // Sin tildes y con el número por sus dígitos, igual que con conexión.
+      const coincide =
+        matchesNormalized(search, row.customerName, row.customerIdNumber, String(row.negocioNumero)) ||
+        matchesDigits(search, row.negocioNumero, row.customerIdNumber);
+      if (!coincide) return false;
     }
     if (params.filter === 'mora') return row.status === 'mora' || row.dueDate < today;
     if (params.filter === 'vencidas') return row.dueDate < today;
@@ -216,17 +220,17 @@ export function searchCustomersLocal<T extends { name: string; idNumber: string 
   term: string,
   limit = 20
 ): T[] {
-  const query = term.trim().toLowerCase();
+  const query = normalizeText(term);
   if (query.length < 2) return [];
   return customers
-    .filter((customer) => {
-      const name = customer.name.toLowerCase();
-      const idNumber = (customer.idNumber || '').toLowerCase();
-      return name.includes(query) || idNumber.includes(query);
-    })
+    .filter(
+      (customer) =>
+        matchesNormalized(term, customer.name, customer.idNumber) ||
+        matchesDigits(term, customer.idNumber)
+    )
     .sort((a, b) => {
-      const aExact = (a.idNumber || '').toLowerCase() === query ? 0 : 1;
-      const bExact = (b.idNumber || '').toLowerCase() === query ? 0 : 1;
+      const aExact = normalizeText(a.idNumber) === query ? 0 : 1;
+      const bExact = normalizeText(b.idNumber) === query ? 0 : 1;
       if (aExact !== bExact) return aExact - bExact;
       return a.name.localeCompare(b.name);
     })

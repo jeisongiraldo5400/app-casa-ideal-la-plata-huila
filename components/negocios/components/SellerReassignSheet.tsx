@@ -1,3 +1,4 @@
+import { matchesNormalized } from '@/lib/search/normalizeText';
 import { useTheme } from '@/components/theme';
 import { Button, FullScreenModal, ScreenState, SearchField } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
@@ -52,8 +53,8 @@ export function SellerReassignSheet({ visible, currentSellerId, saving, onClose,
   }, [visible]);
 
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return options.filter((option) => !term || option.full_name.toLowerCase().includes(term)).slice(0, 50);
+    const term = search.trim();
+    return options.filter((option) => matchesNormalized(term, option.full_name)).slice(0, 50);
   }, [options, search]);
 
   const canConfirm = Boolean(selected) && selected !== currentSellerId && !saving;

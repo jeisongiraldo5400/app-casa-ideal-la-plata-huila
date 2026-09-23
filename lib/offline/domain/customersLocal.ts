@@ -1,3 +1,4 @@
+import { matchesDigits, matchesNormalized, normalizeText } from '@/lib/search/normalizeText';
 /**
  * Filtrado y paginación en memoria del directorio de clientes local.
  *
@@ -21,14 +22,17 @@ export type LocalCustomerQuery = {
   pageSize?: number;
 };
 
-/** Un término vacío no filtra; con texto busca en nombre y documento. */
+/**
+ * Un término vacío no filtra; con texto busca en nombre, documento y teléfono.
+ * Sin tildes, igual que con conexión: «munoz» encuentra a «MUÑOZ». Documento y
+ * teléfono, además, por sus dígitos, para que los puntos no estorben.
+ */
 export function matchesCustomerQuery(customer: LocalCustomerRow, term: string): boolean {
-  const query = term.trim().toLowerCase();
-  if (!query) return true;
-  const name = customer.name.toLowerCase();
-  const idNumber = (customer.idNumber || '').toLowerCase();
-  const phone = (customer.phone || '').toLowerCase();
-  return name.includes(query) || idNumber.includes(query) || phone.includes(query);
+  if (!normalizeText(term)) return true;
+  return (
+    matchesNormalized(term, customer.name, customer.idNumber, customer.phone) ||
+    matchesDigits(term, customer.idNumber, customer.phone)
+  );
 }
 
 /** Documento exacto primero, luego alfabético: mismo orden que la búsqueda online. */

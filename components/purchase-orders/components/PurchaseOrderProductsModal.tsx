@@ -1,3 +1,4 @@
+import { matchesNormalized } from '@/lib/search/normalizeText';
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -128,12 +129,11 @@ export function PurchaseOrderProductsModal({
 
     // Filtrar items por búsqueda
     const filteredItems = useMemo(() => {
-        if (!searchTerm) return items;
-        const term = searchTerm.toLowerCase();
+        const term = searchTerm.trim();
+        if (!term) return items;
+        // Sin tildes: «bano» encuentra «JUEGO DE BAÑO».
         return items.filter(item =>
-            item.product_name.toLowerCase().includes(term) ||
-            (item.product_sku?.toLowerCase().includes(term)) ||
-            (item.product_barcode?.toLowerCase().includes(term))
+            matchesNormalized(term, item.product_name, item.product_sku, item.product_barcode)
         );
     }, [items, searchTerm]);
 

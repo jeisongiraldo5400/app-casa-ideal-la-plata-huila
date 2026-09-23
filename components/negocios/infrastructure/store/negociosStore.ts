@@ -56,9 +56,9 @@ interface NegociosState {
   myFromCache: boolean;
   myError: string | null;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
-  fetchList: () => Promise<void>;
+  fetchList: (search?: string) => Promise<void>;
   /** Carga los negocios de `sellerId`; se pasa explícito para no depender de red en modo offline. */
-  fetchMyList: (sellerId: string) => Promise<void>;
+  fetchMyList: (sellerId: string, search?: string) => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
   createAndActivate: (input: {
     deal_date: string;
@@ -173,6 +173,37 @@ const isValidDateValue = (value: string) => {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 };
 
+/** Ningún negocio: un uuid que no existe, para no devolver la lista entera. */
+const SIN_COINCIDENCIAS = 'id.eq.00000000-0000-0000-0000-000000000000';
+
+/**
+ * Filtro de PostgREST para buscar negocios en el servidor.
+ *
+ * El número se resuelve con `search_negocio_ids_by_numero` (encuentra «003» en
+ * el 20260003) y el cliente con `search_customers`, que compara sin tildes.
+ * Antes la lista traía las 50 filas más recientes y se filtraba en el teléfono:
+ * un negocio viejo salía como «Sin coincidencias» aunque existiera.
+ *
+ * Devuelve null si no hay término (la lista sale sin filtrar).
+ */
+async function negocioSearchFilter(search: string | undefined): Promise<string | null> {
+  const term = (search || '').trim();
+  if (!term) return null;
+
+  const [porNumero, porCliente] = await Promise.all([
+    supabase.rpc('search_negocio_ids_by_numero', { p_term: term, p_limit: 200 }),
+    supabase.rpc('search_customers', { search_term: term, limit_count: 200 }),
+  ]);
+
+  const filtros: string[] = [];
+  const negocioIds = ((porNumero.data || []) as { id: string }[]).map((row) => row.id);
+  if (negocioIds.length) filtros.push(`id.in.(${negocioIds.join(',')})`);
+  const customerIds = ((porCliente.data || []) as { id: string }[]).map((row) => row.id);
+  if (customerIds.length) filtros.push(`customer_id.in.(${customerIds.join(',')})`);
+
+  return filtros.length ? filtros.join(',') : SIN_COINCIDENCIAS;
+}
+
 export const useNegociosStore = create<NegociosState>((set, get) => ({
   list: [],
   loading: false,
@@ -184,11 +215,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
   myError: null,
   creditSettings: null,
 
-  fetchList: async () => {
+  fetchList: async (search) => {
     set({ loading: true, error: null });
     try {
       // `negocios` no tiene columna remaining_balance: se deriva de las cuotas.
-      const { data, error } = await supabase
+      let query = supabase
         .from('negocios')
         .select(
           '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
@@ -196,6 +227,12 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
+      // Con término, la búsqueda la hace el servidor: antes se filtraban en el
+      // teléfono las 50 filas más recientes, así que un negocio viejo salía
+      // como «Sin coincidencias» aunque existiera.
+      const filtroBusqueda = await negocioSearchFilter(search);
+      if (filtroBusqueda) query = query.or(filtroBusqueda);
+      const { data, error } = await query;
       if (error) throw error;
       const list = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
         ...negocio,
@@ -220,10 +257,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     }
   },
 
-  fetchMyList: async (sellerId) => {
+  fetchMyList: async (sellerId, search) => {
     set({ myLoading: true, myError: null });
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('negocios')
         .select(
           '*, customer:customers!negocios_customer_id_fkey(name), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at)'
@@ -232,6 +269,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         .eq('seller_id', sellerId)
         .order('created_at', { ascending: false })
         .limit(100);
+      const filtroBusqueda = await negocioSearchFilter(search);
+      if (filtroBusqueda) query = query.or(filtroBusqueda);
+      const { data, error } = await query;
       if (error) throw error;
       const myList = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
         ...negocio,

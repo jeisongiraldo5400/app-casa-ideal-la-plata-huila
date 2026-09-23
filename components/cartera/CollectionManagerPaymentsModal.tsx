@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -122,16 +123,18 @@ export function CollectionManagerPaymentsModal({
     [businesses, scope],
   );
   const filteredBusinessOptions = useMemo(() => {
-    const term = businessSearch.trim().toLocaleLowerCase('es');
+    const term = businessSearch.trim();
     if (!term) return options;
 
-    return options.filter((business) =>
-      [
-        business.customer_name,
-        business.customer_id_number || '',
-        String(business.negocio_numero),
-        formatNegocioCodigo(business.negocio_numero),
-      ].some((value) => value.toLocaleLowerCase('es').includes(term)),
+    // Sin tildes en el nombre y por dígitos en el número y el documento.
+    return options.filter(
+      (business) =>
+        matchesNormalized(
+          term,
+          business.customer_name,
+          business.customer_id_number,
+          formatNegocioCodigo(business.negocio_numero),
+        ) || matchesDigits(term, business.negocio_numero, business.customer_id_number),
     );
   }, [businessSearch, options]);
   const visibleBusinessOptions = filteredBusinessOptions.slice(0, businessVisibleCount);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 import {
   ExitSerialRecord,
   fetchExitSerialsByExitId,
@@ -61,12 +62,19 @@ export function useMyOrders() {
   }, [historySearch]);
 
   const filteredPendingOrders = useMemo(() => {
-    const term = pendingSearch.trim().toLocaleLowerCase('es-CO');
+    const term = pendingSearch.trim();
     if (!term) return pendingOrders;
-    return pendingOrders.filter((order) =>
-      [order.order_number, order.customer_name, order.customer_id_number, order.delivery_address]
-        .filter(Boolean)
-        .some((value) => value!.toLocaleLowerCase('es-CO').includes(term)),
+    // Sin tildes: «maria» encuentra «MARÍA». El documento, además, por sus
+    // dígitos, para que los puntos al escribir la cédula no estorben.
+    return pendingOrders.filter(
+      (order) =>
+        matchesNormalized(
+          term,
+          order.order_number,
+          order.customer_name,
+          order.customer_id_number,
+          order.delivery_address,
+        ) || matchesDigits(term, order.customer_id_number),
     );
   }, [pendingOrders, pendingSearch]);
 
