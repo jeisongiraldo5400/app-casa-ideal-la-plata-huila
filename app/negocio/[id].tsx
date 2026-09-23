@@ -40,6 +40,7 @@ import { InstallmentCard } from '@/components/negocios/components/InstallmentCar
 import { SellerReassignSheet } from '@/components/negocios/components/SellerReassignSheet';
 import { NegocioContactDetailsSheet } from '@/components/negocios/components/NegocioContactDetailsSheet';
 import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
+import { labelNegocioOrigen, resolveNegocioOrigen } from '@/lib/negocios/negocioOrigen';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { PaymentCard } from '@/components/negocios/components/PaymentCard';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
@@ -134,6 +135,8 @@ function NegocioDetailScreenInner() {
   const [currentUserName, setCurrentUserName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  /** Número de la orden de la que salió la mercancía (remisión u OE de cliente). */
+  const [originOrderNumber, setOriginOrderNumber] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
@@ -233,6 +236,7 @@ function NegocioDetailScreenInner() {
       setCodeudorMeta(local.codeudor || {});
       setSellerName('');
       setOrderNumber(null);
+      setOriginOrderNumber(null);
       setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));
     },
     []
@@ -409,14 +413,30 @@ function NegocioDetailScreenInner() {
         setSellerName('');
       }
 
-      if (n.delivery_order_id) {
-        const { data: oe, error: orderError } = await supabase
+      // Un solo viaje para los dos números que pinta la pantalla: el de la orden
+      // del negocio y el de la orden de origen. En un negocio ya activo suelen
+      // ser la misma fila (activate_negocio reutiliza la orden de origen), y en
+      // un borrador solo existe la de origen; por eso se piden juntos con `in`
+      // en vez de una consulta por campo.
+      const origen = resolveNegocioOrigen(n);
+      const orderIds = Array.from(
+        new Set([n.delivery_order_id, origen.orderId].filter(Boolean) as string[])
+      );
+      if (orderIds.length) {
+        const { data: oes, error: orderError } = await supabase
           .from('delivery_orders')
-          .select('order_number')
-          .eq('id', n.delivery_order_id)
-          .maybeSingle();
+          .select('id, order_number')
+          .in('id', orderIds);
         if (orderError) throw orderError;
-        setOrderNumber(oe?.order_number || null);
+        const numberById = new Map(
+          (oes || []).map((oe) => [oe.id as string, (oe.order_number as string | null) || null])
+        );
+        setOrderNumber(n.delivery_order_id ? numberById.get(n.delivery_order_id) || null : null);
+        setOriginOrderNumber(origen.orderId ? numberById.get(origen.orderId) || null : null);
+      } else {
+        // Borrador sin origen: nada que mostrar, y hay que limpiar lo del negocio anterior.
+        setOrderNumber(null);
+        setOriginOrderNumber(null);
       }
       // mark_cuotas_en_mora exige can_manage_collection_for_negocio; un usuario
       // que solo puede ver el negocio recibe "Sin permiso" y no es un fallo real.
@@ -1346,6 +1366,10 @@ function NegocioDetailScreenInner() {
     negocio.installments_count != null
       ? `${downPaymentLabel ? `${downPaymentLabel} · ` : ''}${cuotasLabel}${orderNumber ? ` · OE ${orderNumber}` : ''}`
       : downPaymentLabel;
+  // El detalle local no descarga `remission_id` ni `source_delivery_order_id`:
+  // sin ese dato el origen queda «desconocido» y la tarjeta no se pinta, en vez
+  // de afirmar «Desde bodega» por omisión.
+  const origen = resolveNegocioOrigen(negocio, { known: !fromLocal });
   const canReassignSeller = !fromLocal && isAdmin() && negocio.status !== 'anulado';
   // Activo, entregado o cerrado: solo dirección, notas y gestor de cobro (el
   // servidor valida admin, vendedor dueño o gestor asignado). Solo con conexión.
@@ -1414,6 +1438,25 @@ function NegocioDetailScreenInner() {
 
         {/* El detalle local no incluye ítems ni subtotal de productos. */}
         {!fromLocal ? <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} /> : null}
+
+        {/* La orden del negocio y de dónde salió la mercancía. Sin conexión no
+            se conoce el origen y la tarjeta se omite. */}
+        {origen.kind !== 'desconocido' ? (
+          <Card variant="outlined" style={styles.sellerCard}>
+            <View style={styles.sellerRow}>
+              <MaterialIcons name="local-shipping" size={IconSize.md} color={colors.primary.main} />
+              <View style={styles.sellerCopy}>
+                <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Orden de entrega</Text>
+                <Text style={[styles.sellerName, { color: colors.text.primary }]} numberOfLines={1}>
+                  {orderNumber || 'Se asigna al activar el negocio'}
+                </Text>
+                <Text style={[styles.helper, { color: colors.text.secondary }]}>
+                  Origen: {labelNegocioOrigen(origen, originOrderNumber)}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ) : null}
 
         <Card variant="outlined" style={styles.sellerCard}>
           <View style={styles.sellerRow}>
