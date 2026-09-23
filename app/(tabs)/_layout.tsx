@@ -5,7 +5,7 @@ import { IconSize, Typography, getColors } from '@/constants/theme';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { Tabs } from 'expo-router';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
 
@@ -26,15 +26,12 @@ function CustomersHeaderButton() {
 export default function TabLayout() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { loading } = useUserRoles();
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.primary.main} />
-      </View>
-    );
-  }
+  // Arranca la carga de roles lo antes posible, pero NO bloquea el navegador:
+  // antes un ActivityIndicator tapaba todas las pestañas hasta que la red
+  // contestaba. Ninguna pestaña visible depende del rol —las pantallas que sí
+  // lo exigen (reportes, ruta de cobros, cartera…) siguen cerrándose solas
+  // mientras `loading` sea true—, así que pintarlas antes no abre accesos.
+  useUserRoles();
 
   return (
     <Tabs
