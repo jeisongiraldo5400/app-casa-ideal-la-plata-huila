@@ -67,6 +67,7 @@ import {
   prontoPagoDecimalPlaces,
 } from '@/lib/negocios/prontoPago';
 import { canOfferVoidPago } from '@/lib/negocios/voidNegocioPago';
+import { invalidateCartera } from '@/lib/cartera/carteraCache';
 import { ProntoPagoSheet } from '@/components/negocios/components/ProntoPagoSheet';
 import { VoidPagoSheet } from '@/components/negocios/components/VoidPagoSheet';
 import {
@@ -662,6 +663,9 @@ function NegocioDetailScreenInner() {
    * por su cuenta de lo que no pudo traer.
    */
   const refreshAfterPago = async (options?: { preferLocal?: boolean }) => {
+    // Cartera guarda sus datos unos segundos para no reconsultar al volver: un
+    // pago los deja viejos, así que se marcan para que se recarguen.
+    invalidateCartera();
     try {
       await load(options);
     } catch {
