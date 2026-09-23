@@ -5,6 +5,7 @@ import { ReceivedOrdersList } from '@/components/purchase-orders/components/Rece
 import { useTheme } from '@/components/theme';
 import { SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
@@ -25,6 +26,9 @@ function ReceivedOrdersScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [activeTab, setActiveTab] = useState<TabType>('delivery');
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
 
   useEffect(() => {
     if (user) void loadPurchaseOrders('received', user.id);

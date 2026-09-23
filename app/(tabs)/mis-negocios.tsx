@@ -16,6 +16,7 @@ import {
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 
 /** Espera a que el usuario deje de escribir antes de consultar al servidor. */
 const SEARCH_DEBOUNCE_MS = 350;
@@ -40,6 +41,9 @@ function MisNegociosScreenInner() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<NegocioListFilter>('all');
   const sellerId = user?.id;
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
 
   // Igual que en Negocios: el servidor busca, porque aquí sólo están las
   // últimas 100 filas.

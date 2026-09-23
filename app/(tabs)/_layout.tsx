@@ -2,8 +2,9 @@ import { useTheme } from '@/components/theme';
 import { BackButton, FloatingTabBar, IconButton } from '@/components/ui';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { IconSize, Typography, getColors } from '@/constants/theme';
+import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 const isWeb = Platform.OS === 'web';
@@ -13,13 +14,13 @@ function HeaderIconButton({ icon, label, onPress }: { icon: 'person' | 'person-s
 }
 
 function ProfileHeaderButton() {
-  const router = useRouter();
-  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => router.navigate('/(tabs)/profile')} />;
+  const navigate = useNavigateWithLoading();
+  return <HeaderIconButton icon="person" label="Abrir perfil" onPress={() => navigate('/(tabs)/profile')} />;
 }
 
 function CustomersHeaderButton() {
-  const router = useRouter();
-  return <HeaderIconButton icon="person-search" label="Clientes" onPress={() => router.navigate('/(tabs)/clientes' as never)} />;
+  const navigate = useNavigateWithLoading();
+  return <HeaderIconButton icon="person-search" label="Clientes" onPress={() => navigate('/(tabs)/clientes' as never)} />;
 }
 
 export default function TabLayout() {

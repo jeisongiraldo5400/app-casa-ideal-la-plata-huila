@@ -18,7 +18,7 @@ import 'react-native-reanimated';
 import { OfflineProvider } from '@/components/offline';
 import { PushNotificationsProvider } from '@/components/notifications';
 import { PrinterPickerModal } from '@/components/printing';
-import { StackHeader } from '@/components/ui';
+import { GlobalLoadingBar, StackHeader } from '@/components/ui';
 import { startSupabaseAuthLifecycle } from '@/lib/supabase';
 
 // Mantener el splash screen visible hasta que la app esté lista
@@ -165,6 +165,12 @@ function RootLayout() {
         <OfflineProvider>
           <PushNotificationsProvider>
             <RootLayoutNav />
+            {/*
+              Aviso de carga único de la app. Va después del navegador para
+              quedar por encima de cualquier pantalla, pero no captura toques:
+              informa, no bloquea.
+            */}
+            <GlobalLoadingBar />
             <PrinterPickerModal />
             <StatusBar style={isDark ? 'light' : 'dark'} />
           </PushNotificationsProvider>

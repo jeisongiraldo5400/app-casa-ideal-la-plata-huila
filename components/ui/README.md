@@ -42,6 +42,10 @@ para texto sobre `primary.main` / `navigation.background`; `overlay` para fondos
 - Entrada y filtros: `Input`, `SearchField`, `SegmentedControl`, `OptionPickerField`.
 - Estados: `ScreenState` (carga, vacío, error; `variant="inline"` dentro de listas; `tone="error"`),
   `Pagination`, `ScreenErrorBoundary`.
+- Aviso de carga global: `GlobalLoadingBar` se monta **una sola vez** en `app/_layout.tsx`; ninguna
+  pantalla lo renderiza. Cada pantalla publica su carga con `useScreenLoading(loading)` junto al
+  `ScreenState` que ya tiene, y los menús navegan con `useNavigateWithLoading()` (la barra de
+  pestañas usa `startNavigationLoading()`). Aparece tras 200 ms para no parpadear y no bloquea toques.
 - Modales: `ModalSheet` (diálogo centrado con overlay, header y pie) y `FullScreenModal` (pantalla
   completa con área segura, header con cierre y pie opcional en `ActionBar`).
 

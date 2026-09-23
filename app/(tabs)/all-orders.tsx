@@ -3,6 +3,7 @@ import { useTheme } from '@/components/theme';
 import { SearchField, SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
 import { useLocalSearchParams } from 'expo-router';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
@@ -30,6 +31,9 @@ function AllOrdersScreenInner() {
   );
   const [searchQuery, setSearchQuery] = useState(params.q ?? '');
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
 
   useEffect(() => {
     void loadPurchaseOrders();

@@ -2,6 +2,7 @@ import { ExitScanningWorkspace } from '@/components/exits/components/ExitScannin
 import { SetupForm } from '@/components/exits/components/SetupForm';
 import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
 import { useTheme } from '@/components/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -30,14 +31,18 @@ function ExitsScreenInner() {
     step,
     error,
     finalizing,
+    loading,
     loadingMessage,
     resetAll,
     lastFinalizeResult,
     dismissLastFinalizeResult,
-  } = useExits((state) => ({ step: state.step, error: state.error, finalizing: state.finalizing, loadingMessage: state.loadingMessage, resetAll: state.resetAll, lastFinalizeResult: state.lastFinalizeResult, dismissLastFinalizeResult: state.dismissLastFinalizeResult }));
+  } = useExits((state) => ({ step: state.step, error: state.error, finalizing: state.finalizing, loading: state.loading, loadingMessage: state.loadingMessage, resetAll: state.resetAll, lastFinalizeResult: state.lastFinalizeResult, dismissLastFinalizeResult: state.dismissLastFinalizeResult }));
 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
 
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

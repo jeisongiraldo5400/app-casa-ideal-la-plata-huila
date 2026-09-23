@@ -19,6 +19,7 @@ import { parseCarteraDueParam } from '@/lib/cartera/carteraDeepLink';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const PAGE_SIZE = 10;
@@ -45,6 +46,9 @@ function CarteraScreenInner() {
   const [fromCache,setFromCache]=useState(false);
   const lastSyncedAt=useSyncStore((state)=>state.lastSyncedAt);
   const [managerPickerOpen,setManagerPickerOpen]=useState(false); const [selectedManager,setSelectedManager]=useState<CollectionManager|null>(null); const [managerModalOpen,setManagerModalOpen]=useState(false);
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(loading);
+
 
   const load=useCallback(async(target:number=1, reset:boolean=true)=>{
     if(reset)setLoading(true);else setLoadingMore(true);

@@ -6,6 +6,7 @@ import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
 import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
 import { useTheme } from '@/components/theme';
+import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -190,6 +191,9 @@ export function MyOrdersScreen() {
   const router = useRouter();
   const orders = useMyOrders();
   const { refreshAll } = orders;
+  // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
+  useScreenLoading(orders.pendingLoading || orders.historyInitialLoading);
+
   const [activeTab, setActiveTab] = useState<OrdersTab>('pending');
   const [startingOrderId, setStartingOrderId] = useState<string | null>(null);
   const [productsModalTarget, setProductsModalTarget] = useState<ProductsModalTarget | null>(null);
