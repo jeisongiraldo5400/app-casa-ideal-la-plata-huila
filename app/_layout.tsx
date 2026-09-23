@@ -71,10 +71,9 @@ function RootLayoutNav() {
 
     async function prepare() {
       try {
-        await initialize();
-        await initializeTheme();
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Las dos preparaciones son independientes: en serie sumaban su espera
+        // al arranque.
+        await Promise.all([initialize(), initializeTheme()]);
 
         if (!cancelled) setAppIsReady(true);
       } catch (e: any) {

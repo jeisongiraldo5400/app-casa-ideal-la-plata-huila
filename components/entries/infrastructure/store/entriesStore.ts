@@ -242,6 +242,8 @@ export interface EntriesState {
   setSetupStep: (step: "supplier" | "purchase-order" | "warehouse") => void;
   setSupplierSearchQuery: (query: string) => void;
   loadSuppliers: () => Promise<void>;
+  /** Proveedores y bodegas, sólo si faltan; en paralelo. */
+  loadSetupCatalogs: () => Promise<void>;
   loadPurchaseOrders: (supplierId: string) => Promise<void>;
   validatePurchaseOrderProgress: (purchaseOrderId: string) => Promise<void>;
   validateAllPurchaseOrders: () => Promise<void>;
@@ -504,6 +506,17 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   setSupplierSearchQuery: (query) => {
     set({ supplierSearchQuery: query });
+  },
+
+  /**
+   * Proveedores y bodegas cambian poco y la pantalla los pedía en CADA foco,
+   * en fila: dos viajes al servidor antes de poder elegir nada. Se cargan una
+   * vez por sesión (o si quedaron vacíos por un fallo) y en paralelo.
+   */
+  loadSetupCatalogs: async () => {
+    const { suppliers, warehouses } = get();
+    if (suppliers.length > 0 && warehouses.length > 0) return;
+    await Promise.all([get().loadSuppliers(), get().loadWarehouses()]);
   },
 
   loadSuppliers: async () => {

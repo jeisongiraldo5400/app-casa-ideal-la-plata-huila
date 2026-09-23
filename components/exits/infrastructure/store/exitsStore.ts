@@ -495,6 +495,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
   },
 
   loadUsers: async () => {
+    // La lista de usuarios activos cambia poco y se pedía en cada foco: si ya
+    // está cargada no se vuelve a pedir (el reintento tras un fallo sí, porque
+    // entonces quedó vacía).
+    if (get().users.length > 0) return;
     set({ usersError: null });
     try {
       const data = await fetchActiveProfiles();
