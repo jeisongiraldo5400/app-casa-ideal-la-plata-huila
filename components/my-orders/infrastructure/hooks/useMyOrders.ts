@@ -11,6 +11,7 @@ import {
   RegisteredDeliveryOrder,
   RegisteredDeliveryOrderItem,
 } from '../services/myOrdersService';
+import { errorMessage } from '@/lib/errorMessage';
 
 const HISTORY_PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -23,9 +24,6 @@ interface OrderDetailState {
   error: string | null;
 }
 
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
 
 export function useMyOrders() {
   const [pendingOrders, setPendingOrders] = useState<PendingDeliveryOrder[]>([]);

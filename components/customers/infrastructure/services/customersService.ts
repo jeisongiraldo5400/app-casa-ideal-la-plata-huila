@@ -38,6 +38,48 @@ export async function searchCustomersForNegocio(query: string): Promise<Customer
   }
 }
 
+/** Cliente que ya tiene un número de documento. */
+export type ExistingCustomer = {
+  id: string;
+  name: string;
+  id_number: string;
+  /** Eliminado: el documento sigue ocupado, pero no aparece en las búsquedas. */
+  deleted: boolean;
+};
+
+/**
+ * El documento ya lo tiene otro cliente. La base lo rechaza con la restricción
+ * `customers_id_number_key`, que incluye también a los clientes eliminados.
+ */
+export function isDuplicateCustomerIdNumber(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, message, details } = error as { code?: unknown; message?: unknown; details?: unknown };
+  const text = `${typeof message === 'string' ? message : ''} ${typeof details === 'string' ? details : ''}`;
+  return String(code ?? '') === '23505' && text.includes('customers_id_number_key');
+}
+
+/**
+ * Quién tiene ya ese documento, para ofrecer usarlo en vez de mostrar un error.
+ * Si no se puede consultar (sin permiso o sin red) devuelve `null` y la
+ * pantalla se queda con el mensaje general.
+ */
+export async function findCustomerByIdNumber(idNumber: string): Promise<ExistingCustomer | null> {
+  const value = idNumber.trim();
+  if (!value) return null;
+  try {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id, name, id_number, deleted_at')
+      .eq('id_number', value)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return { id: data.id, name: data.name, id_number: data.id_number, deleted: Boolean(data.deleted_at) };
+  } catch {
+    return null;
+  }
+}
+
 /** Ubicación guardada del cliente (su vivienda). */
 export type CustomerSavedLocation = {
   municipioId: string | null;

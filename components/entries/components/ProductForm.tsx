@@ -93,7 +93,7 @@ export function ProductForm({ barcode, onProductCreated, onCancel }: ProductForm
       });
 
       if (error) {
-        Alert.alert('Error', error.message || 'Error al crear el producto');
+        Alert.alert('Error', errorMessage(error, 'Error al crear el producto'));
       } else if (product && useEntriesStore.getState().getResetGeneration() === capturedGeneration) {
         // El producto debe pasar por la misma verificación de cantidad que uno escaneado.
         // Si el store fue reseteado mientras se creaba (usuario cambió de pantalla),

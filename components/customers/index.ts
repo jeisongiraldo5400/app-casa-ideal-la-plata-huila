@@ -1,9 +1,16 @@
-export { createCustomer, fetchCustomerSavedLocation, searchCustomersForNegocio } from './infrastructure/services/customersService';
+export {
+  createCustomer,
+  fetchCustomerSavedLocation,
+  findCustomerByIdNumber,
+  isDuplicateCustomerIdNumber,
+  searchCustomersForNegocio,
+} from './infrastructure/services/customersService';
 export type {
   CreateCustomerInput,
   CustomerLocationInput,
   CustomerOption,
   CustomerSavedLocation,
+  ExistingCustomer,
 } from './infrastructure/services/customersService';
 
 export { CustomersScreen } from './components/CustomersScreen';

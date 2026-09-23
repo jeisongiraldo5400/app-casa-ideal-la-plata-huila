@@ -25,6 +25,7 @@ import {
   findActiveProductByBarcode,
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
+import { errorMessage } from '@/lib/errorMessage';
 
 export type { NegocioProduct } from '@/components/negocios/infrastructure/services/negociosProductsService';
 
@@ -93,7 +94,7 @@ export function NegocioProductAddSection({
       })
       .catch((error: any) => {
         if (cancelled) return;
-        Alert.alert('Error', error.message || 'No se pudo consultar stock');
+        Alert.alert('Error', errorMessage(error, 'No se pudo consultar stock'));
         setProductStock([]);
         setWarehouseId('');
       })

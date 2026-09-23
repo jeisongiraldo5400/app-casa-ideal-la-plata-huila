@@ -8,6 +8,7 @@ import { Formik, FormikHelpers } from 'formik';
 import React, { useState } from 'react';
 import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Yup from 'yup';
+import { errorMessage } from '@/lib/errorMessage';
 
 interface ChangePasswordFormValues {
   currentPassword: string;
@@ -70,7 +71,7 @@ export function ChangePasswordForm({ visible, onClose }: ChangePasswordFormProps
       // Cambiar la contraseña
       const { error } = await changePassword(values.newPassword);
       if (error) {
-        Alert.alert('Error', error.message || 'Error al cambiar la contraseña');
+        Alert.alert('Error', errorMessage(error, 'Error al cambiar la contraseña'));
       } else {
         Alert.alert(
           'Éxito',
@@ -87,7 +88,7 @@ export function ChangePasswordForm({ visible, onClose }: ChangePasswordFormProps
         );
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+      Alert.alert('Error', errorMessage(error, 'Ocurrió un error inesperado'));
     } finally {
       setSubmitting(false);
     }

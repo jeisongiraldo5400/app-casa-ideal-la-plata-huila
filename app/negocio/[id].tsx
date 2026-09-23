@@ -102,6 +102,7 @@ import {
   fetchPaymentMethods,
   type PaymentMethodOption,
 } from '@/components/negocios/infrastructure/services/paymentMethodsService';
+import { errorMessage } from '@/lib/errorMessage';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -845,7 +846,7 @@ function NegocioDetailScreenInner() {
         );
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo registrar');
+      Alert.alert('Error', errorMessage(e, 'No se pudo registrar'));
     } finally {
       setSaving(false);
     }
@@ -936,7 +937,7 @@ function NegocioDetailScreenInner() {
         title: labelNegocioCodigo(negocio.numero),
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo compartir');
+      Alert.alert('Error', errorMessage(e, 'No se pudo compartir'));
     }
   };
 
@@ -975,7 +976,7 @@ function NegocioDetailScreenInner() {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: pago.virtual_receipt_number });
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudo compartir el recibo');
+      Alert.alert('Error', errorMessage(error, 'No se pudo compartir el recibo'));
     }
   };
 
@@ -1144,7 +1145,7 @@ function NegocioDetailScreenInner() {
       }
       // Sigue en borrador: se conservan key y firmas subidas para reintentar
       // con el mismo payload.
-      Alert.alert('Error', error.message || 'No se pudo activar el negocio');
+      Alert.alert('Error', errorMessage(error, 'No se pudo activar el negocio'));
     } finally {
       activatingRef.current = false;
       setActionSaving(false);
