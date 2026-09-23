@@ -12,8 +12,9 @@
  * (`app/(tabs)/catalogo-create.tsx`) y las pantallas de detalle de
  * `app/catalogo/**`.
  *
- * Apagado en la 3.1.0: el módulo viaja en la app pero no se muestra hasta que
- * se decida publicarlo. Con `false` no aparece en el menú de inicio,
+ * Encendido el 2026-09-22 por decisión del usuario. Estuvo apagado desde la
+ * 3.1.0, mientras se decidía publicarlo: con `false` no aparece en el menú de
+ * inicio,
  * las rutas no se registran en los layouts y, si alguien llega por enlace
  * profundo o escribiendo la ruta, la pantalla redirige al inicio sin pedir
  * datos de catálogos.
@@ -25,4 +26,4 @@
 // El tipo es `boolean` a propósito (y no el literal `false`): así TypeScript
 // sigue revisando las dos ramas de cada `if` y el día que se ponga en `true`
 // no hay nada más que cambiar.
-export const CATALOGOS_HABILITADOS: boolean = false;
+export const CATALOGOS_HABILITADOS: boolean = true;
