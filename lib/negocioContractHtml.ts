@@ -26,6 +26,11 @@ export type NegocioContractData = {
   codeudor_address?: string | null;
   seller_name?: string | null;
   seller_id_number?: string | null;
+  /**
+   * Quien registró el negocio, que no siempre es el vendedor: un asesor puede
+   * crearlo para otro. Mismo dato y mismo orden que el PDF de la web.
+   */
+  created_by_name?: string | null;
   products_subtotal: number;
   interest_amount: number;
   total_credit: number;
@@ -400,7 +405,10 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="meta">
     <div><b>FECHA</b><br/>${formattedDate}</div>
     <div><b>LUGAR</b><br/>${location}</div>
-    <div><b>VENDEDOR</b><br/>${esc(data.seller_name) || '—'}</div>
+    <div>
+      <b>CREADO POR</b><br/>${esc(data.created_by_name) || '—'}
+      <br/><b>VENDEDOR DEL NEGOCIO</b><br/>${esc(data.seller_name) || '—'}
+    </div>
   </div>
   <div class="parties">
     <section class="party"><div class="box-title">Comprador</div>
@@ -443,7 +451,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="sigs">
     ${sig(data.customer_signature_url, 'Firma del cliente', data.customer_name, data.customer_id_number)}
     ${sig(data.guarantor_signature_url, 'Firma del fiador', data.codeudor_name, data.codeudor_id_number)}
-    ${sig(data.seller_signature_url, 'Firma del vendedor', data.seller_name, data.seller_id_number)}
+    ${sig(data.seller_signature_url, 'Firma del vendedor del negocio', data.seller_name, data.seller_id_number)}
   </div>
   <section class="promissory">
     <h3>Letra de cambio - por ${formatCOP(data.total_credit)}</h3>

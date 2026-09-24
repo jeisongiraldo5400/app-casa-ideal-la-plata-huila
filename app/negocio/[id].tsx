@@ -139,6 +139,8 @@ function NegocioDetailScreenInner() {
   const [customerMeta, setCustomerMeta] = useState<any>({});
   const [codeudorMeta, setCodeudorMeta] = useState<any>({});
   const [sellerName, setSellerName] = useState('');
+  // Quien registró el negocio; no siempre es el vendedor.
+  const [createdByName, setCreatedByName] = useState('');
   /** Nombre del usuario actual: autor de los pagos que registre desde esta pantalla. */
   const [currentUserName, setCurrentUserName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
@@ -248,6 +250,9 @@ function NegocioDetailScreenInner() {
       // El nombre del vendedor viaja resuelto en el pull: antes la pantalla
       // decía «Sin asignar» sin señal aunque el negocio sí tuviera vendedor.
       setSellerName(local.negocio.seller_name || '');
+      // La descarga no trae quién creó el negocio: el contrato imprimirá una
+      // raya en «CREADO POR» en vez de dar por hecho que fue el vendedor.
+      setCreatedByName('');
       setOrderNumber(null);
       setOriginOrderNumber(null);
       setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));
@@ -418,16 +423,21 @@ function NegocioDetailScreenInner() {
         setCodeudorMeta({});
       }
 
-      if (n.seller_id) {
-        const { data: seller, error: sellerError } = await supabase
+      // Vendedor y creador en un solo viaje: suelen ser la misma persona, y
+      // aun cuando no lo sean no hace falta consultar dos veces.
+      const profileIds = [n.seller_id, n.created_by].filter(Boolean) as string[];
+      if (profileIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('full_name')
-          .eq('id', n.seller_id)
-          .maybeSingle();
-        if (sellerError) throw sellerError;
-        setSellerName(seller?.full_name || '');
+          .select('id, full_name')
+          .in('id', [...new Set(profileIds)]);
+        if (profilesError) throw profilesError;
+        const byId = new Map((profiles || []).map((row) => [row.id, row.full_name || '']));
+        setSellerName(n.seller_id ? byId.get(n.seller_id) || '' : '');
+        setCreatedByName(n.created_by ? byId.get(n.created_by) || '' : '');
       } else {
         setSellerName('');
+        setCreatedByName('');
       }
 
       // Un solo viaje para los dos números que pinta la pantalla: el de la orden
@@ -940,6 +950,7 @@ function NegocioDetailScreenInner() {
       codeudor_email: codeudorMeta.email,
       codeudor_address: codeudorMeta.address,
       seller_name: sellerName,
+      created_by_name: createdByName,
       products_subtotal: Number(negocio.products_subtotal),
       interest_amount: Number(negocio.interest_amount),
       total_credit: Number(negocio.total_credit),

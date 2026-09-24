@@ -58,3 +58,37 @@ describe('contrato del negocio: tamaño del PDF (referencia para la web)', () =>
     }
   });
 });
+
+// Igualado con el PDF de la web (pedido por el usuario, 2026-09-24): el
+// contrato dice quién creó el negocio y quién es su vendedor, en ese orden.
+describe('creador y vendedor del negocio', () => {
+  it('nombra primero a quien lo creó', () => {
+    const html = buildNegocioContractHtml({
+      ...base,
+      seller_name: 'ANDRÉS RAMÍREZ',
+      created_by_name: 'TATIANA CHINCHILLA',
+    });
+
+    expect(html).toContain('CREADO POR');
+    expect(html).toContain('TATIANA CHINCHILLA');
+    expect(html).toContain('VENDEDOR DEL NEGOCIO');
+    expect(html).toContain('ANDRÉS RAMÍREZ');
+    expect(html.indexOf('CREADO POR')).toBeLessThan(html.indexOf('VENDEDOR DEL NEGOCIO'));
+  });
+
+  it('sin creador conocido (sin señal) deja la raya en vez de repetir al vendedor', () => {
+    const html = buildNegocioContractHtml({ ...base, seller_name: 'ANDRÉS RAMÍREZ' });
+
+    expect(html).toContain('CREADO POR');
+    expect(html).toContain('ANDRÉS RAMÍREZ');
+    const creado = html.indexOf('CREADO POR');
+    const vendedor = html.indexOf('VENDEDOR DEL NEGOCIO');
+    expect(html.slice(creado, vendedor)).toContain('—');
+  });
+
+  it('la firma del vendedor se rotula como del negocio, igual que en la web', () => {
+    const html = buildNegocioContractHtml({ ...base, seller_name: 'ANDRÉS RAMÍREZ' });
+
+    expect(html).toContain('Firma del vendedor del negocio');
+  });
+});
