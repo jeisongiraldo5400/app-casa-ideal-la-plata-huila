@@ -238,6 +238,38 @@ const DELIVERY_ORDER_ORIGIN_SELECT = `
 /** Unidades ya vendidas en negocios, por remisión, producto y bodega. */
 async function fetchRemissionSoldMap(remissionIds: string[]): Promise<Map<string, number>> {
   if (remissionIds.length === 0) return new Map();
+
+  // Vía RPC porque `negocios` SÍ está acotado por RLS: un vendedor no ve los
+  // negocios de sus compañeros, así que leyendo la tabla contaba como libre lo
+  // que otro ya había vendido. `get_remission_sold_quantities` devuelve sólo
+  // cantidades, sin ensanchar el acceso a los negocios.
+  const { data, error } = await rpcUntyped('get_remission_sold_quantities', {
+    p_remission_ids: remissionIds,
+  });
+  if (!error) return mapSoldRpcRows(data);
+
+  // Servidor sin la migración 20261123120000: se cae a la consulta de antes,
+  // que sigue siendo correcta para quien ve todos los negocios.
+  return fetchRemissionSoldMapFromTable(remissionIds);
+}
+
+/** Filas de `get_remission_sold_quantities` al mapa que usa la pantalla. */
+export function mapSoldRpcRows(rows: unknown): Map<string, number> {
+  const soldMap = new Map<string, number>();
+  if (!Array.isArray(rows)) return soldMap;
+  for (const raw of rows) {
+    const row = asRecord(raw);
+    const remissionId = str(row?.remission_id);
+    const productId = str(row?.product_id);
+    const warehouseId = str(row?.warehouse_id);
+    if (!remissionId || !productId || !warehouseId) continue;
+    const key = deliveryOrderAvailabilityKey(remissionId, productId, warehouseId);
+    soldMap.set(key, (soldMap.get(key) || 0) + num(row?.sold_quantity));
+  }
+  return soldMap;
+}
+
+async function fetchRemissionSoldMapFromTable(remissionIds: string[]): Promise<Map<string, number>> {
   // En lotes para que la URL de PostgREST no supere el límite, y por páginas
   // porque una remisión puede tener varios negocios.
   try {

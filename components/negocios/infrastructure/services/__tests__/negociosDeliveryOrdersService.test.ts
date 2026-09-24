@@ -9,6 +9,7 @@ import {
   mapPendingRemissionRows,
   mapRemissionOriginRows,
   mapSoldQuantities,
+  mapSoldRpcRows,
   negocioSkipsWarehouseStock,
   parseRemissionOriginRows,
   searchAvailableDeliveryOrders,
@@ -422,19 +423,102 @@ describe('searchAvailableDeliveryOrders', () => {
       customer: null,
       items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 5, deleted_at: null, product: { name: 'Base' }, warehouse: { name: 'Principal' } }],
     };
-    mockSupabaseTables((table) => {
-      if (table === 'delivery_orders') return { data: [remission], error: null };
-      if (table === 'negocios') {
-        return {
-          data: [{ remission_id: 'r1', source_delivery_order_id: null, negocio_items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2 }] }],
-          error: null,
-        };
-      }
-      return { data: [], error: null };
+    mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: [remission], error: null } : { data: [], error: null }
+    );
+    // Lo vendido llega por RPC: `negocios` está acotado por RLS y no sirve.
+    mockRpc.mockResolvedValue({
+      data: [{ remission_id: 'r1', product_id: 'p1', warehouse_id: 'w1', sold_quantity: 2 }],
+      error: null,
     });
 
     const [option] = await searchAvailableDeliveryOrders('');
 
     expect(option.items[0]?.available_quantity).toBe(3);
+  });
+});
+
+// Reportado por el usuario (2026-09-23, producción): la lista de órdenes sólo
+// se llenaba para administradores. Además del arreglo de RLS en el servidor,
+// lo ya vendido de una remisión no se puede leer de `negocios`: esa tabla SÍ
+// está acotada, y un vendedor veía como libre lo que otro ya había vendido.
+describe('saldo vendido de una remisión', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const remission = (id: string) => ({
+    id,
+    order_number: `REM-${id}`,
+    created_at: '2026-09-01T00:00:00Z',
+    order_type: 'remission',
+    status: 'pending',
+    customer_id: null,
+    negocio_id: null,
+    municipio_id: null,
+    vereda_id: null,
+    delivery_address: null,
+    customer: null,
+    items: [
+      { product_id: 'p1', warehouse_id: 'w1', quantity: 10, deleted_at: null, product: { name: 'Nevera' }, warehouse: { name: 'Principal' } },
+    ],
+  });
+
+  it('lo pregunta por RPC y no leyendo los negocios', async () => {
+    const calls = mockSupabaseTables((table) =>
+      table === 'delivery_orders' ? { data: [remission('r-1')], error: null } : { data: [], error: null }
+    );
+    mockRpc.mockResolvedValue({
+      data: [{ remission_id: 'r-1', product_id: 'p1', warehouse_id: 'w1', sold_quantity: 3 }],
+      error: null,
+    });
+
+    const options = await searchAvailableDeliveryOrders('');
+
+    expect(mockRpc).toHaveBeenCalledWith('get_remission_sold_quantities', {
+      p_remission_ids: ['r-1'],
+    });
+    expect(calls.some((c) => c.table === 'negocios')).toBe(false);
+    // 10 de la remisión menos las 3 que otro vendedor ya colocó.
+    expect(options[0].items[0].available_quantity).toBe(7);
+  });
+
+  it('con un servidor sin el RPC vuelve a la consulta de antes', async () => {
+    const calls = mockSupabaseTables((table) => {
+      if (table === 'delivery_orders') return { data: [remission('r-1')], error: null };
+      if (table === 'negocios') {
+        return {
+          data: [
+            {
+              remission_id: 'r-1',
+              negocio_items: [{ product_id: 'p1', warehouse_id: 'w1', quantity: 2 }],
+            },
+          ],
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    });
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'function does not exist' } });
+
+    const options = await searchAvailableDeliveryOrders('');
+
+    expect(calls.some((c) => c.table === 'negocios')).toBe(true);
+    expect(options[0].items[0].available_quantity).toBe(8);
+  });
+});
+
+describe('mapSoldRpcRows', () => {
+  it('suma por remisión, producto y bodega', () => {
+    const map = mapSoldRpcRows([
+      { remission_id: 'r-1', product_id: 'p1', warehouse_id: 'w1', sold_quantity: 2 },
+      { remission_id: 'r-1', product_id: 'p1', warehouse_id: 'w1', sold_quantity: '3' },
+      { remission_id: 'r-1', product_id: 'p1', warehouse_id: 'w2', sold_quantity: 1 },
+    ]);
+    expect(map.get(deliveryOrderAvailabilityKey('r-1', 'p1', 'w1'))).toBe(5);
+    expect(map.get(deliveryOrderAvailabilityKey('r-1', 'p1', 'w2'))).toBe(1);
+  });
+
+  it('descarta filas incompletas y lo que no es una lista', () => {
+    expect(mapSoldRpcRows([{ remission_id: 'r-1', product_id: null, warehouse_id: 'w1', sold_quantity: 2 }]).size).toBe(0);
+    expect(mapSoldRpcRows(null).size).toBe(0);
   });
 });
