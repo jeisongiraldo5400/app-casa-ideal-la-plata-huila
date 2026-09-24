@@ -29,8 +29,14 @@ jest.mock('@/lib/cartera/carteraCatalogs', () => ({
 }));
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
+/** Se cambia en la prueba del recaudador; el resto de casos lo deja en false. */
+let mockSoloBusqueda = false;
 jest.mock('@/hooks/useUserRoles', () => ({
-  useUserRoles: () => ({ isAdmin: () => false, isGestorCobro: () => false }),
+  useUserRoles: () => ({
+    isAdmin: () => false,
+    isGestorCobro: () => false,
+    onlyFindsBySearch: () => mockSoloBusqueda,
+  }),
 }));
 jest.mock('@/lib/offline/store/syncStore', () => ({
   useSyncStore: (selector: (state: { lastSyncedAt: number | null }) => unknown) =>
@@ -95,6 +101,7 @@ async function renderScreen() {
 describe('Pantalla de Cartera', () => {
   beforeEach(() => {
     resetCarteraCache();
+    mockSoloBusqueda = false;
     focusCallback = null;
     mockPush.mockReset();
     mockedLoad.mockReset().mockResolvedValue(result);
@@ -166,5 +173,19 @@ describe('Pantalla de Cartera', () => {
     });
 
     expect(mockedLoad).toHaveBeenCalledTimes(2);
+  });
+
+  // Reportado por el usuario (2026-09-24): el recaudador veía toda la cartera.
+  // Cobra en cualquier negocio, pero llega a él buscándolo.
+  it('el recaudador no pide la cartera hasta que busca, y se le dice por qué', async () => {
+    mockSoloBusqueda = true;
+
+    const screen = render(<CarteraScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Busca el negocio que vas a cobrar/i)).toBeTruthy()
+    );
+    expect(mockedLoad).not.toHaveBeenCalled();
+    expect(screen.getByText('Cobro por búsqueda')).toBeTruthy();
   });
 });

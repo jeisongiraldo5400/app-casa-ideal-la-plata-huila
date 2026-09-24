@@ -1,0 +1,81 @@
+import { MaterialIcons } from '@expo/vector-icons';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Radius, Spacing } from '@/constants/theme';
+
+/** Espera a que la persona deje de teclear antes de consultar el servidor. */
+const DEBOUNCE_MS = 350;
+
+type Props = {
+  value: string;
+  onChange: (value: string) => void;
+  colors: any;
+  placeholder?: string;
+};
+
+/**
+ * Buscador de la cartera. Se declara a nivel de módulo y guarda lo tecleado en
+ * su propio estado: un campo definido dentro del render de la pantalla se
+ * remonta en cada tecla y pierde el foco.
+ */
+export function CarteraSearchField({ value, onChange, colors, placeholder }: Props) {
+  const [text, setText] = useState(value);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cambios que no vienen del teclado (limpiar filtros, un enlace directo).
+  useEffect(() => {
+    setText((current) => (current === value ? current : value));
+  }, [value]);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  function handleChange(next: string) {
+    setText(next);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => onChange(next.trim()), DEBOUNCE_MS);
+  }
+
+  function clear() {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setText('');
+    onChange('');
+  }
+
+  return (
+    <View style={[styles.wrap, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+      <MaterialIcons name="search" size={20} color={colors.text.secondary} />
+      <TextInput
+        style={[styles.input, { color: colors.text.primary }]}
+        value={text}
+        onChangeText={handleChange}
+        placeholder={placeholder || 'Número de negocio o cédula'}
+        placeholderTextColor={colors.text.secondary}
+        autoCorrect={false}
+        autoCapitalize="none"
+        returnKeyType="search"
+        accessibilityLabel="Buscar negocio para cobrar"
+      />
+      {text.length > 0 && (
+        <Pressable onPress={clear} accessibilityRole="button" accessibilityLabel="Limpiar búsqueda">
+          <MaterialIcons name="close" size={20} color={colors.text.secondary} />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: Radius.control,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  input: { flex: 1, fontSize: 15, paddingVertical: Spacing.sm },
+});

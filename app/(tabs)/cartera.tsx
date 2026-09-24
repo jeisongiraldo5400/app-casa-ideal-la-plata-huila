@@ -8,6 +8,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
 import { CarteraAnalyticsSection } from '@/components/cartera/CarteraAnalyticsSection';
 import { CarteraFilterModal, DEFAULT_CARTERA_FILTERS, type CarteraFilterValues } from '@/components/cartera/CarteraFilterModal';
+import { CarteraSearchField } from '@/components/cartera/CarteraSearchField';
 import { CollectionManagerPicker } from '@/components/cartera/CollectionManagerPicker';
 import { CollectionManagerPaymentsModal } from '@/components/cartera/CollectionManagerPaymentsModal';
 import { DownloadDataButton } from '@/components/offline';
@@ -38,7 +39,11 @@ export default function CarteraScreen() {
 }
 
 function CarteraScreenInner() {
-  const router=useRouter(); const {isDark}=useTheme(); const colors=getColors(isDark); const {isAdmin,isGestorCobro}=useUserRoles();
+  const router=useRouter(); const {isDark}=useTheme(); const colors=getColors(isDark); const {isAdmin,isGestorCobro,onlyFindsBySearch}=useUserRoles();
+  // El recaudador cobra en cualquier negocio pero no recorre la cartera: solo
+  // ve lo que busca (20261125120000). El servidor ya no le devuelve nada sin
+  // término; aquí se explica por qué, en vez de dejar una lista vacía.
+  const searchOnly=onlyFindsBySearch();
   const [filters,setFilters]=useState<Filters>(INITIAL_FILTERS); const [draftFilters,setDraftFilters]=useState<Filters>(INITIAL_FILTERS); const [filtersOpen,setFiltersOpen]=useState(false);
   const [rows,setRows]=useState<CarteraRow[]>([]); const [totalCount,setTotalCount]=useState(0); const [page,setPage]=useState(1); const [loading,setLoading]=useState(true); const [loadingMore,setLoadingMore]=useState(false); const [refreshing,setRefreshing]=useState(false);
   const [dashboard,setDashboard]=useState<CarteraDashboard|null>(null);
@@ -62,6 +67,11 @@ function CarteraScreenInner() {
     // Volver a la pantalla con los mismos filtros y datos recientes no vuelve a
     // pedir nada; paginar («cargar más») siempre pide.
     if(reset&&!options?.force&&hasRows.current&&!needsCarteraRefresh(getCarteraStamp(),key,Date.now())){setLoading(false);setRefreshing(false);return;}
+    // Sin término, al recaudador el servidor no le devuelve cuotas: no se pide.
+    if(searchOnly&&(filters.search||'').trim().length===0){
+      hasRows.current=false;setRows([]);setTotalCount(0);setDashboard(null);
+      setLoading(false);setLoadingMore(false);setRefreshing(false);return;
+    }
     if(reset)setLoading(true);else setLoadingMore(true);
     try {
       const result=await loadCarteraScreen({...filters,page:target,pageSize:PAGE_SIZE,includeDashboard:reset});
@@ -75,7 +85,7 @@ function CarteraScreenInner() {
       if(reset){hasRows.current=false;setRows([]);setTotalCount(0);setFromCache(false);}
       Alert.alert('Cartera', errorMessage(e, 'No fue posible cargar la información'));
     }finally{setLoading(false);setLoadingMore(false);setRefreshing(false);}
-  },[filters]);
+  },[filters,searchOnly]);
   useFocusEffect(useCallback(()=>{void load(1,true);},[load]));
   // El detalle del negocio es donde se registran y se anulan los pagos: al
   // volver de allí la cartera se vuelve a pedir aunque hayan pasado segundos.
@@ -88,12 +98,14 @@ function CarteraScreenInner() {
   const openFilters=()=>{setDraftFilters(filters);setFiltersOpen(true);};
   const applyFilters=()=>{setFilters(draftFilters);setFiltersOpen(false);};
   const showManager=()=>{if(isGestorCobro()&&!isAdmin()){Alert.alert('Mis cobros','Seleccione su usuario desde la lista de gestores disponible para su cuenta.');}setManagerPickerOpen(true);};
+  const hasSearch=(filters.search||'').trim().length>0;
   const summary=dashboard?.summary||{}; const primary=[['Cartera pendiente',formatCOP(Number(summary.total_balance||0)),colors.primary.main],['Cartera vencida',formatCOP(Number(summary.overdue_balance||0)),colors.error.main],['Recaudado mes',formatCOP(Number(summary.collected_month||0)),colors.success.main],['Cumplimiento',`${Number(summary.collection_compliance||0).toFixed(1)}%`,Number(summary.collection_compliance||0)>=90?colors.success.main:colors.warning.main]];
   return <View style={[styles.container,{backgroundColor:colors.background.default}]}> 
     <FlatList data={rows} keyExtractor={(item)=>item.cuota_id} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load(1,true,{force:true});}}/>}
       ListHeaderComponent={<View>
-      <View style={styles.top}><View><Text style={{color:colors.text.secondary,fontSize:12}}>{totalCount} cuotas abiertas</Text>{fromCache?<Text style={{color:colors.text.secondary,fontSize:12,marginTop:2}}>{formatLocalDataLabel(lastSyncedAt)}</Text>:null}</View><View style={styles.actions}><Pressable onPress={openFilters} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="tune" size={23} color={colors.primary.main}/></Pressable><Pressable onPress={()=>void load(1,true,{force:true})} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="refresh" size={23} color={colors.primary.main}/></Pressable></View></View>
-      <View style={styles.cards}>{primary.map(([label,value,color])=><View key={label as string} style={[styles.card,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><Text style={{color:colors.text.secondary,fontSize:11}}>{label}</Text><Text style={{color:color as string,fontWeight:'800',fontSize:15}} numberOfLines={1}>{value}</Text></View>)}</View>
+      <View style={styles.top}><View><Text style={{color:colors.text.secondary,fontSize:12}}>{searchOnly&&!hasSearch?'Cobro por búsqueda':`${totalCount} cuotas abiertas`}</Text>{fromCache?<Text style={{color:colors.text.secondary,fontSize:12,marginTop:2}}>{formatLocalDataLabel(lastSyncedAt)}</Text>:null}</View><View style={styles.actions}><Pressable onPress={openFilters} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="tune" size={23} color={colors.primary.main}/></Pressable><Pressable onPress={()=>void load(1,true,{force:true})} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="refresh" size={23} color={colors.primary.main}/></Pressable></View></View>
+      {searchOnly&&<CarteraSearchField value={filters.search||''} colors={colors} onChange={(term)=>{const next={...filters,search:term};setFilters(next);setDraftFilters(next);}}/>}
+      {!searchOnly&&<View style={styles.cards}>{primary.map(([label,value,color])=><View key={label as string} style={[styles.card,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><Text style={{color:colors.text.secondary,fontSize:11}}>{label}</Text><Text style={{color:color as string,fontWeight:'800',fontSize:15}} numberOfLines={1}>{value}</Text></View>)}</View>}
       {(isAdmin()||isGestorCobro())&&<Pressable onPress={showManager} style={[styles.managerButton,{backgroundColor:colors.background.paper,borderColor:colors.divider}]} accessibilityRole="button">
         <View style={styles.managerButtonLeading}>
           <MaterialIcons name="people-alt" size={20} color={colors.primary.main} />
@@ -103,11 +115,11 @@ function CarteraScreenInner() {
           <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
         </View>
       </Pressable>}
-      <CarteraAnalyticsSection data={dashboard} colors={colors} onOpenBusiness={openNegocio}/>
+      {!searchOnly&&<CarteraAnalyticsSection data={dashboard} colors={colors} onOpenBusiness={openNegocio}/>}
       <Text style={[styles.section,{color:colors.text.primary}]}>Cuotas</Text><Text style={{color:colors.text.secondary,fontSize:12,marginBottom:8}}>{filters.filter==='todas'?'Todas las cuotas abiertas':filters.filter.replace('_',' ') }{filters.municipioId?' · Municipio filtrado':''}{filters.sellerId?' · Vendedor del negocio filtrado':''}{filters.customerSellerId?' · Vendedor del cliente filtrado':''}{filters.paymentMethodId?' · Método de pago filtrado':''}{filters.dueFrom||filters.dueTo?' · Vencimiento filtrado':''}</Text>
       </View>}
       renderItem={({item})=>{const overdue=daysOverdue(item.due_date);const border=item.status==='mora'||overdue>30?colors.error.main:overdue>0?colors.warning.main:colors.primary.main;return <Pressable onPress={()=>openNegocio(item.negocio_id)} style={[styles.row,{backgroundColor:colors.background.paper,borderLeftColor:border}]}><View style={{flex:1,gap:2}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>{formatNegocioCodigo(item.negocio_numero)} · {labelCuotaNombre(item.installment_number)}</Text><Text style={{color:colors.text.secondary,fontSize:13}}>{item.customer_name||'Cliente'}{item.municipio_name?` · ${item.municipio_name}`:''}</Text><Text style={{color:overdue>0?colors.error.main:colors.text.secondary,fontSize:12}}>Vence {item.due_date}{overdue>0?` · ${overdue} días de atraso`:''}</Text></View><View style={{alignItems:'flex-end',gap:4}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>{formatCOP(Number(item.saldo))}</Text><Text style={{color:item.status==='mora'?colors.error.main:colors.text.secondary,fontSize:12,fontWeight:'700'}}>{item.status==='mora'?'En mora':item.status==='parcial'?'Parcial':'Pendiente'}</Text></View></Pressable>}}
-      ListEmptyComponent={loading?<ActivityIndicator color={colors.primary.main} style={{margin:30}}/>:<View style={{alignItems:'center'}}><Text style={[styles.empty,{color:colors.text.secondary}]}>{fromCache?'No hay datos locales. Conéctese y pulse Descargar información.':'Sin cuotas para estos filtros'}</Text><DownloadDataButton variant="cta"/></View>}
+      ListEmptyComponent={loading?<ActivityIndicator color={colors.primary.main} style={{margin:30}}/>:<View style={{alignItems:'center'}}><Text style={[styles.empty,{color:colors.text.secondary}]}>{searchOnly&&!hasSearch?'Busca el negocio que vas a cobrar por su número o por la cédula del cliente. No se muestra la cartera completa.':fromCache?'No hay datos locales. Conéctese y pulse Descargar información.':'Sin cuotas para estos filtros'}</Text>{searchOnly&&!hasSearch?null:<DownloadDataButton variant="cta"/>}</View>}
       ListFooterComponent={rows.length<totalCount?<Pressable disabled={loadingMore} onPress={()=>void load(page+1,false)} style={[styles.loadMore,{borderColor:colors.divider}]}>{loadingMore?<ActivityIndicator color={colors.primary.main}/>:<Text style={{color:colors.primary.main,fontWeight:'700'}}>Cargar más · {rows.length} de {totalCount}</Text>}</Pressable>:rows.length?<Text style={[styles.end,{color:colors.text.secondary}]}>Mostrando {rows.length} de {totalCount} cuotas</Text>:null}/>
     <CarteraFilterModal visible={filtersOpen} municipios={catalogs.municipios} sellers={catalogs.sellers} paymentMethods={catalogs.paymentMethods} values={draftFilters} onChange={setDraftFilters} onClose={applyFilters}/>
     <CollectionManagerPicker visible={managerPickerOpen} onClose={()=>setManagerPickerOpen(false)} onSelect={(manager)=>{setSelectedManager(manager);setManagerPickerOpen(false);setManagerModalOpen(true);}}/>

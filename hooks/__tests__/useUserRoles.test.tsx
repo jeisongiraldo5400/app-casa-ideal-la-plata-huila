@@ -80,6 +80,38 @@ describe('useUserRoles', () => {
     expect(result.current.preferSellerWorkspace()).toBe(true);
     expect(result.current.canAccessCatalogs()).toBe(false);
     expect(result.current.canMarkOrderAsReceived()).toBe(false);
+    // Es gestor y vendedor además de recaudador: esos roles sí dan listado.
+    expect(result.current.onlyFindsBySearch()).toBe(false);
+  });
+
+  // Reportado por el usuario (2026-09-24): el recaudador veía toda la cartera.
+  // Cobra en cualquier negocio, pero llega a él buscándolo.
+  it('el recaudador «puro» solo llega a un negocio buscándolo', async () => {
+    eq.mockResolvedValue({ data: [row('recaudador')], error: null });
+
+    const { result } = renderHook(() => useUserRoles());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.isRecaudador()).toBe(true);
+    expect(result.current.onlyFindsBySearch()).toBe(true);
+  });
+
+  it('un admin que además es recaudador conserva su vista completa', async () => {
+    eq.mockResolvedValue({ data: [row('recaudador'), row('admin', '2')], error: null });
+
+    const { result } = renderHook(() => useUserRoles());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.onlyFindsBySearch()).toBe(false);
+  });
+
+  it('quien no es recaudador nunca queda limitado a la búsqueda', async () => {
+    eq.mockResolvedValue({ data: [row('gestor de cobro')], error: null });
+
+    const { result } = renderHook(() => useUserRoles());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.onlyFindsBySearch()).toBe(false);
   });
 
   it('dos consumidores comparten una sola consulta y el mismo resultado', async () => {

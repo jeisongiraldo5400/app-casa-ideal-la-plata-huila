@@ -40,12 +40,15 @@ function NegociosScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { list, loading, fromCache, error, fetchList } = useNegociosStore();
-  const { isAdmin, isVendedor, isGestorCobro } = useUserRoles();
+  const { isAdmin, isVendedor, isGestorCobro, onlyFindsBySearch } = useUserRoles();
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<NegocioListFilter>('all');
+  // El recaudador cobra en cualquier negocio, pero no recorre la lista: llega
+  // a uno buscándolo (20261125120000).
+  const searchOnly = onlyFindsBySearch();
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
 
@@ -61,11 +64,14 @@ function NegociosScreenInner() {
 
   useFocusEffect(
     useCallback(() => {
+      // Sin término no se pide la lista: el recaudador no tiene listado que ver.
+      if (searchOnly && debouncedQuery.length === 0) return;
       fetchList(debouncedQuery);
-    }, [fetchList, debouncedQuery])
+    }, [fetchList, debouncedQuery, searchOnly])
   );
 
   const onRefresh = async () => {
+    if (searchOnly && debouncedQuery.length === 0) return;
     setRefreshing(true);
     await fetchList(debouncedQuery);
     setRefreshing(false);
@@ -83,6 +89,15 @@ function NegociosScreenInner() {
   const initialLoading = loading && !refreshing && list.length === 0;
 
   const renderEmpty = () => {
+    if (searchOnly && normalizedQuery.length === 0) {
+      return (
+        <ScreenState
+          icon="search"
+          title="Busca el negocio que vas a cobrar"
+          description="Escribe su número o la cédula del cliente. No se muestra la lista completa de negocios."
+        />
+      );
+    }
     if (initialLoading) {
       return <ScreenState loading title="Cargando negocios…" variant="inline" />;
     }

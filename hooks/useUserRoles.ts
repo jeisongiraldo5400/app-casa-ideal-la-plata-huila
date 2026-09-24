@@ -48,6 +48,17 @@ export function useUserRoles() {
   /** Cobra en todos los negocios sin tenerlos asignados (20261113120000). */
   const isRecaudador = useCallback((): boolean => hasRole('recaudador'), [hasRole]);
 
+  /**
+   * Solo puede llegar a un negocio buscándolo: no ve listados de cartera ni de
+   * negocios. Es el caso del recaudador «puro» (20261125120000): cobra en
+   * cualquier negocio, pero no recorre la cartera ajena. Si además tiene otro
+   * rol que sí da esa vista, manda ese otro rol.
+   */
+  const onlyFindsBySearch = useCallback(
+    (): boolean => isRecaudador() && !isAdmin() && !isGestorCobro() && !isVendedor(),
+    [isAdmin, isGestorCobro, isRecaudador, isVendedor]
+  );
+
   /** Módulo de catálogos: admin, catalog_admin, catalog_editor o catalog_seller. */
   const canAccessCatalogs = useCallback(
     (): boolean => hasCatalogRole(roles.map((userRole) => userRole.role?.nombre ?? '')),
@@ -74,6 +85,7 @@ export function useUserRoles() {
     isVendedor,
     isGestorCobro,
     isRecaudador,
+    onlyFindsBySearch,
     canAccessCatalogs,
     canMarkOrderAsReceived,
     preferSellerWorkspace,
