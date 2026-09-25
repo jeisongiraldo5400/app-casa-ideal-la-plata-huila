@@ -13,6 +13,22 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+
+jest.mock('@/components/offline/infrastructure/syncPrefsService', () => ({
+  useOfflineSelection: () => ({
+    isSelected: (id: string) => id === '3408',
+    toggle: jest.fn(),
+    count: 1,
+    mode: 'seleccion',
+    supported: true,
+  }),
+}));
+
+jest.mock('@/lib/offline/repositories/deliveryOrdersRepository', () => ({
+  listLocalOfflineOrders: jest.fn(async () => []),
+}));
+
 const colors = {
   text: { primary: '#111827', secondary: '#6b7280' },
   primary: { main: '#1e3a8a' },
@@ -105,5 +121,46 @@ describe('NegocioOriginOrderPicker', () => {
     const screen = render(<NegocioOriginOrderPicker {...baseProps} orders={[]} error="Sin conexión" />);
 
     expect(screen.getByText('Sin conexión')).toBeTruthy();
+  });
+
+  describe('sin señal: órdenes llevadas en el teléfono', () => {
+    it('dice que son las del teléfono y la hora de la foto', () => {
+      const screen = render(
+        <NegocioOriginOrderPicker {...baseProps} fromLocal snapshotLabel="7:15 a. m." />
+      );
+
+      expect(screen.getByTestId('origin-orders-local-hint').props.children).toMatch(
+        /Órdenes llevadas en el teléfono \(descargadas 7:15 a\. m\.\)/
+      );
+      expect(screen.queryByText(/más recientes/)).toBeNull();
+      expect(screen.getByPlaceholderText('Buscar por número o cliente')).toBeTruthy();
+    });
+
+    it('una orden que ya no sirve se ve con su motivo y no se puede elegir', () => {
+      const cancelada = { ...order('3410', 'PEDRO'), from_local: true, unusable_reason: 'La orden fue cancelada' };
+      const screen = render(
+        <NegocioOriginOrderPicker {...baseProps} orders={[cancelada]} fromLocal />
+      );
+
+      expect(screen.getByText('La orden fue cancelada')).toBeTruthy();
+      fireEvent.press(screen.getByTestId('origin-order-3410'));
+      expect(baseProps.onSelect).not.toHaveBeenCalled();
+    });
+
+    it('sin ninguna llevada explica cómo marcarlas con señal', () => {
+      const screen = render(<NegocioOriginOrderPicker {...baseProps} orders={[]} fromLocal />);
+
+      expect(screen.getByTestId('origin-orders-none-local').props.children).toMatch(
+        /No hay órdenes de entrega en el teléfono\. Con señal, pulse «Llevar en el teléfono»/
+      );
+    });
+  });
+
+  it('con señal cada orden ofrece llevarla en el teléfono', async () => {
+    const screen = render(<NegocioOriginOrderPicker {...baseProps} showOfflineToggle />);
+
+    expect(await screen.findByText('En el teléfono')).toBeTruthy();
+    expect(screen.getByText('Quitar del teléfono')).toBeTruthy();
+    expect(screen.getByText('Llevar en el teléfono')).toBeTruthy();
   });
 });

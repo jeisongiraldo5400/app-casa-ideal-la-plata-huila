@@ -149,3 +149,46 @@ describe('NegocioProductAddSection scanner', () => {
     }
   );
 });
+
+describe('NegocioProductAddSection · producto que no está en el teléfono', () => {
+  const { productoNoEstaEnElTelefono } = jest.requireActual(
+    '../../infrastructure/services/negociosProductsService'
+  ) as typeof import('../../infrastructure/services/negociosProductsService');
+
+  it('sin señal y sin coincidencias dice que no está en el teléfono y cómo traerlo', () => {
+    const screen = render(
+      <NegocioProductAddSection
+        products={[]}
+        productQuery="comedor"
+        onProductQueryChange={jest.fn()}
+        items={[]}
+        onAdd={jest.fn()}
+        onStockLoaded={jest.fn()}
+        emptyMessage={productoNoEstaEnElTelefono('comedor')}
+        colors={colors}
+      />
+    );
+
+    expect(screen.getByTestId('negocio-product-not-on-phone').props.children).toBe(
+      '«comedor» no está en el teléfono: no vino en la última descarga. Si es nuevo, con señal pulse «Descargar» en Preparar el teléfono.'
+    );
+  });
+
+  it('con coincidencias no avisa', () => {
+    const screen = render(
+      <NegocioProductAddSection
+        products={[product]}
+        productQuery="nev"
+        onProductQueryChange={jest.fn()}
+        items={[]}
+        onAdd={jest.fn()}
+        onStockLoaded={jest.fn()}
+        emptyMessage="no debería verse"
+        colors={colors}
+      />
+    );
+
+    expect(screen.queryByTestId('negocio-product-not-on-phone')).toBeNull();
+    expect(screen.getByText('Nevera')).toBeTruthy();
+  });
+});

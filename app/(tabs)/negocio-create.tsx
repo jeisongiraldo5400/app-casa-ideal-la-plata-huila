@@ -74,6 +74,11 @@ import {
   type RemissionOriginGroup,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import {
+  fetchLocalPendingRemissions,
+  fetchLocalRemissionOriginGroups,
+} from '@/components/negocios/infrastructure/services/negociosOfflineOrdersService';
+import { buildNegocioOriginPayload } from '@/components/negocios/domain/negocioOrigin';
+import {
   NegocioDeliveryModeSection,
   type NegocioDeliveryMode,
 } from '@/components/negocios/components/NegocioDeliveryModeSection';
@@ -107,6 +112,7 @@ import { errorMessage } from '@/lib/errorMessage';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import {
+  productSearchNotice,
   searchProductsForNegocio,
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
@@ -116,7 +122,8 @@ import {
   fetchLocationCatalogsFromLocal,
   localCatalogPulledAt,
 } from '@/lib/offline/repositories/catalogRepository';
-import { ensureCatalogForOffline, formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
+import { formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
+import { useOfflineSelection } from '@/components/offline/infrastructure/syncPrefsService';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 type Customer = {
@@ -174,6 +181,12 @@ function NegocioCreateScreenInner() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
   const [productQuery, setProductQuery] = useState('');
+  /** Término cuya búsqueda de productos ya terminó (para no avisar a medias). */
+  const [productSearchedQuery, setProductSearchedQuery] = useState('');
+  /** Productos «ninguno» en Preparar el teléfono: sin señal no hay catálogo a propósito. */
+  const noProductsOnPhone = useOfflineSelection('productos').mode === 'ninguno';
+  const noProductsOnPhoneRef = useRef(noProductsOnPhone);
+  noProductsOnPhoneRef.current = noProductsOnPhone;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [codeudor, setCodeudor] = useState<Customer | null>(null);
@@ -217,7 +230,12 @@ function NegocioCreateScreenInner() {
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
   const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
-  const originOrderSearch = useOriginOrderSearch(originType === 'orden_entrega');
+  // Sin señal, «Orden de entrega existente» lista las órdenes llevadas en el
+  // teléfono (las que se marcaron con señal) en vez de consultar el servidor.
+  const originOrderSearch = useOriginOrderSearch(
+    originType === 'orden_entrega',
+    !online || usingLocalData
+  );
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderOption | null>(null);
   /** Origen bodega: retiro directo o la OE viaja en una remisión pendiente. */
   const [deliveryMode, setDeliveryMode] = useState<NegocioDeliveryMode>('directo');
@@ -239,6 +257,7 @@ function NegocioCreateScreenInner() {
     setProducts([]);
     setCustomerQuery('');
     setProductQuery('');
+    setProductSearchedQuery('');
     setCustomer(null);
     setCodeudor(null);
     setDepartamentoId('');
@@ -279,9 +298,8 @@ function NegocioCreateScreenInner() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Con señal se aprovecha para dejar el catálogo de producto al día; sin
-      // ella no hace nada y el asistente trabaja con la última descarga.
-      void ensureCatalogForOffline().catch(() => undefined);
+      // Nada se descarga solo (contrato v2): el catálogo baja únicamente al
+      // pulsar «Descargar» en Preparar el teléfono.
       try {
         const [, d, m, v, sellers, cachedName, pending] = await Promise.all([
           fetchCreditSettings(),
@@ -305,7 +323,10 @@ function NegocioCreateScreenInner() {
           .order('nombre'),
         fetchSellerOptions().catch(() => [] as SellerOption[]),
         getCachedProfileName().catch(() => null),
-        fetchPendingRemissions().catch(() => [] as PendingRemissionOption[]),
+        // Si la consulta falla por red se usa la lista ligera del teléfono.
+        fetchPendingRemissions().catch(() =>
+          fetchLocalPendingRemissions().catch(() => [] as PendingRemissionOption[])
+        ),
         ]);
         if (d.error) throw d.error;
         if (m.error) throw m.error;
@@ -333,12 +354,15 @@ function NegocioCreateScreenInner() {
           return;
         }
         try {
-          const [locales, cachedName, sellers] = await Promise.all([
+          const [locales, cachedName, sellers, localRemissions] = await Promise.all([
             fetchLocationCatalogsFromLocal(),
             getCachedProfileName().catch(() => null),
             // Sin red devuelve los perfiles descargados; el resultado de la
             // tanda anterior se perdió al rechazar la primera promesa.
             fetchSellerOptions().catch(() => [] as SellerOption[]),
+            // «Enviar en remisión» sin señal: la lista ligera de remisiones
+            // pendientes que bajó con la última descarga.
+            fetchLocalPendingRemissions().catch(() => [] as PendingRemissionOption[]),
           ]);
           if (cancelled) return;
           if (!locales.departamentos.length || !locales.municipios.length) {
@@ -350,7 +374,7 @@ function NegocioCreateScreenInner() {
           setDepartamentos(locales.departamentos);
           setMunicipios(locales.municipios);
           setVeredas(locales.veredas);
-          setPendingRemissions([]);
+          setPendingRemissions(localRemissions);
           setSellerOptions(
             withCurrentUserOption(
               sellers || [],
@@ -391,6 +415,15 @@ function NegocioCreateScreenInner() {
   /** Sin señal (o con datos locales): nada de lo que se ve es definitivo. */
   const sinRed = !online || usingLocalData;
   const ultimaDescarga = formatLastDownloadTime(catalogPulledAt);
+  // Sin señal el buscador mira solo lo que bajó al teléfono: si no aparece,
+  // se dice por qué en vez de dejar la lista vacía.
+  const productSearchMiss = productSearchNotice({
+    offline: sinRed,
+    noProductsOnPhone,
+    query: productQuery,
+    searchedQuery: productSearchedQuery,
+    resultsCount: products.length,
+  });
 
   /**
    * La pantalla es una pestaña y sigue viva al salir. Si se sale con un negocio
@@ -515,16 +548,23 @@ function NegocioCreateScreenInner() {
 
   useEffect(() => {
     const query = productQuery.trim();
-    if (!query) { setProducts([]); return; }
+    if (!query) { setProducts([]); setProductSearchedQuery(''); return; }
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const rows = await searchProductsForNegocio(query);
-        if (!cancelled) setProducts(rows);
+        if (!cancelled) {
+          setProducts(rows);
+          setProductSearchedQuery(query);
+        }
       } catch (error) {
         if (!cancelled) {
-          Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          // Con productos «ninguno» el aviso va en el buscador, no en una alerta.
+          if (!noProductsOnPhoneRef.current) {
+            Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          }
           setProducts([]);
+          setProductSearchedQuery('');
         }
       }
     }, 300);
@@ -558,7 +598,12 @@ function NegocioCreateScreenInner() {
     }
     let cancelled = false;
     setOriginGroupsLoading(true);
-    fetchRemissionOriginProducts(selectedRemissionId)
+    // Remisión llevada en el teléfono: los grupos salen de su foto, restando
+    // lo que ya tomaron negocios de este teléfono aún no enviados.
+    const loadGroups = selectedDeliveryOrder?.from_local
+      ? fetchLocalRemissionOriginGroups
+      : fetchRemissionOriginProducts;
+    loadGroups(selectedRemissionId)
       .then((groups) => {
         if (!cancelled) setOriginGroups(groups);
       })
@@ -574,7 +619,7 @@ function NegocioCreateScreenInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRemissionId]);
+  }, [selectedRemissionId, selectedDeliveryOrder?.from_local]);
 
   useEffect(() => {
     if (originType === 'orden_entrega') {
@@ -783,37 +828,15 @@ function NegocioCreateScreenInner() {
     }
   };
 
-  /**
-   * Origen del negocio según lo elegido en el paso 1:
-   * - bodega: sin origen; `target_remission_id` solo si la OE viaja en remisión.
-   * - OE cliente suelta: `source_delivery_order_id` = OE.
-   * - remisión, grupo propio (CASO 1): `remission_id` = `source` = remisión.
-   * - remisión, OE hija (CASO 3): `source_delivery_order_id` = hija, sin `remission_id`.
-   */
-  const buildOriginPayload = () => {
-    if (originType === 'bodega') {
-      return {
-        remission_id: null,
-        source_delivery_order_id: null,
-        target_remission_id: deliveryMode === 'remision' ? targetRemission?.id ?? null : null,
-      };
-    }
-    if (originIsRemission) {
-      const own = selectedOriginGroup?.kind === 'own';
-      return {
-        remission_id: own ? selectedDeliveryOrder?.id ?? null : null,
-        source_delivery_order_id: own
-          ? selectedDeliveryOrder?.id ?? null
-          : selectedOriginGroup?.sourceOrderId ?? null,
-        target_remission_id: null,
-      };
-    }
-    return {
-      remission_id: null,
-      source_delivery_order_id: selectedDeliveryOrder?.id ?? null,
-      target_remission_id: null,
-    };
-  };
+  /** Origen del negocio: idéntico con señal y sin ella (ver `buildNegocioOriginPayload`). */
+  const buildOriginPayload = () =>
+    buildNegocioOriginPayload({
+      originType,
+      deliveryMode,
+      targetRemissionId: targetRemission?.id,
+      selectedOrder: selectedDeliveryOrder,
+      selectedGroup: selectedOriginGroup,
+    });
 
   const canAdvanceProductsStep = () => {
     if (!items.length) return false;
@@ -1139,6 +1162,7 @@ function NegocioCreateScreenInner() {
                 remissions={pendingRemissions}
                 selectedRemission={targetRemission}
                 onSelectRemission={setTargetRemission}
+                offline={sinRed}
                 colors={colors}
               />
             )}
@@ -1167,6 +1191,9 @@ function NegocioCreateScreenInner() {
                   setSelectedOriginGroup(null);
                   setItems([]);
                 }}
+                fromLocal={originOrderSearch.fromLocal}
+                snapshotLabel={formatLastDownloadTime(originOrderSearch.snapshotAt)}
+                showOfflineToggle={!sinRed}
                 colors={colors}
               />
             )}
@@ -1539,6 +1566,7 @@ function NegocioCreateScreenInner() {
                 items={items}
                 onAdd={handleAddItem}
                 onStockLoaded={handleStockLoaded}
+                emptyMessage={productSearchMiss}
                 colors={colors}
               />
             )}

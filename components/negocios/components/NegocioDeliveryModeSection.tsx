@@ -21,8 +21,14 @@ type Props = {
   remissions: PendingRemissionOption[];
   selectedRemission: PendingRemissionOption | null;
   onSelectRemission: (remission: PendingRemissionOption) => void;
+  /** Sin señal: la lista es la que bajó con la última descarga. */
+  offline?: boolean;
   colors: ThemeColors;
 };
+
+/** Sin señal y sin remisiones pendientes en el teléfono: qué hacer. */
+export const SIN_REMISIONES_EN_EL_TELEFONO =
+  'No hay remisiones pendientes en el teléfono. Con señal, pulse «Descargar información» antes de salir para traer las remisiones abiertas, o elija «Retiro directo».';
 
 const MODE_OPTIONS: { id: NegocioDeliveryMode; label: string }[] = [
   { id: 'directo', label: 'Retiro directo' },
@@ -40,6 +46,7 @@ export function NegocioDeliveryModeSection({
   remissions,
   selectedRemission,
   onSelectRemission,
+  offline = false,
   colors,
 }: Props) {
   return (
@@ -84,9 +91,18 @@ export function NegocioDeliveryModeSection({
       {mode === 'remision' && (
         <View style={{ gap: 6 }}>
           <Text style={[styles.label, { color: colors.text.secondary }]}>Remisión pendiente *</Text>
+          {offline && remissions.length > 0 ? (
+            <Text style={{ color: colors.text.secondary, fontSize: 12 }} testID="remisiones-desde-telefono">
+              Remisiones pendientes de la última descarga. El servidor confirma que siga abierta al
+              enviar el negocio.
+            </Text>
+          ) : null}
           {remissions.length === 0 ? (
-            <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-              No hay remisiones pendientes.
+            <Text
+              style={{ color: colors.text.secondary, fontSize: 12 }}
+              testID={offline ? 'sin-remisiones-en-telefono' : undefined}
+            >
+              {offline ? SIN_REMISIONES_EN_EL_TELEFONO : 'No hay remisiones pendientes.'}
             </Text>
           ) : (
             remissions.map((remission) => {

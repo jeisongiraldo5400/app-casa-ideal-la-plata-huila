@@ -6,7 +6,10 @@ jest.mock('@/lib/supabase', () => ({
 }));
 
 import {
+  SIN_PRODUCTOS_EN_EL_TELEFONO,
   findActiveProductByBarcode,
+  productSearchNotice,
+  productoNoEstaEnElTelefono,
   searchProductsForNegocio,
 } from '../negociosProductsService';
 
@@ -46,5 +49,27 @@ describe('negociosProductsService', () => {
   it('devuelve null si el código no existe', async () => {
     mockBuilder.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     await expect(findActiveProductByBarcode('999')).resolves.toBeNull();
+  });
+});
+
+describe('aviso del buscador de productos sin señal', () => {
+  const base = { offline: true, noProductsOnPhone: false, query: 'comedor', searchedQuery: 'comedor', resultsCount: 0 };
+
+  it('con productos «ninguno» dice que no los lleva y dónde activarlos', () => {
+    expect(productSearchNotice({ ...base, noProductsOnPhone: true, searchedQuery: '' })).toBe(
+      'No llevas productos en el teléfono; actívalos en Preparar el teléfono.'
+    );
+    expect(SIN_PRODUCTOS_EN_EL_TELEFONO).toMatch(/Preparar el teléfono/);
+  });
+
+  it('con catálogo y sin coincidencias dice que no está en el teléfono', () => {
+    expect(productSearchNotice(base)).toBe(productoNoEstaEnElTelefono('comedor'));
+  });
+
+  it('no avisa con señal, con resultados, sin término ni a mitad de búsqueda', () => {
+    expect(productSearchNotice({ ...base, offline: false })).toBeNull();
+    expect(productSearchNotice({ ...base, resultsCount: 2 })).toBeNull();
+    expect(productSearchNotice({ ...base, query: '  ' })).toBeNull();
+    expect(productSearchNotice({ ...base, query: 'comedor g' })).toBeNull();
   });
 });

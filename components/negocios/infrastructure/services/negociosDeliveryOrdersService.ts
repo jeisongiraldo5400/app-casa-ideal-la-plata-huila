@@ -29,6 +29,10 @@ export interface DeliveryOrderOption {
   vereda_id: string | null;
   delivery_address: string | null;
   items: DeliveryOrderItemOption[];
+  /** Salió de la foto de órdenes llevadas en el teléfono (sin señal). */
+  from_local?: boolean;
+  /** Sin señal: por qué ya no sirve de origen (la muestra deshabilitada). */
+  unusable_reason?: string | null;
 }
 
 export function deliveryOrderAvailabilityKey(

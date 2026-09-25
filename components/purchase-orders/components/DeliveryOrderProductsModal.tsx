@@ -24,6 +24,7 @@ import {
 } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import { fetchDeliveryOrderItemsForViewing } from '../infrastructure/services/deliveryOrderItemsService';
 import { DeliveryOrderItem } from '../types';
+import { OfflineOrderToggle } from './OfflineOrderToggle';
 
 type SerialsByLine = Record<string, DeliveryOrderSerialRecord[]>;
 
@@ -44,6 +45,8 @@ interface DeliveryOrderProductsModalProps {
      * aplica la misma visibilidad de la orden para cualquier rol y nunca lanza.
      */
     loadSerials?: (orderId: string) => Promise<SerialsByLine>;
+    /** Muestra «Llevar en el teléfono» (remisiones y OE de cliente vigentes). */
+    offlineToggle?: boolean;
 }
 
 export function DeliveryOrderProductsModal({
@@ -53,6 +56,7 @@ export function DeliveryOrderProductsModal({
     orderNumber,
     loadItems = fetchDeliveryOrderItemsForViewing,
     loadSerials = fetchDeliveryOrderSerials,
+    offlineToggle = false,
 }: DeliveryOrderProductsModalProps) {
     const insets = useSafeAreaInsets();
     const { height: windowHeight } = useWindowDimensions();
@@ -177,6 +181,12 @@ export function DeliveryOrderProductsModal({
                             <MaterialIcons name="close" size={24} color={colors.text.secondary} />
                         </TouchableOpacity>
                     </View>
+
+                    {offlineToggle ? (
+                        <View style={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm }}>
+                            <OfflineOrderToggle orderId={orderId} orderNumber={orderNumber} />
+                        </View>
+                    ) : null}
 
                     {/* Progreso general */}
                     {!loading && !error && (
