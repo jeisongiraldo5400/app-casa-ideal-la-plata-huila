@@ -43,6 +43,7 @@ import {
   mapNegocioDetailFromLocal,
   mapNegociosListFromLocal,
   remainingForNegocio,
+  type LocalNegocioListItem,
 } from '../domain/negociosLocal';
 import {
   listReviewableOutbox,
@@ -53,7 +54,12 @@ import {
 } from '../sync/outbox';
 import { PreparedChanges, prepareRevertCommand } from '../sync/reconcile';
 import { prepareRejectedNegocio } from '../sync/negocioCreateCommand';
-import { outboxAffectsNegocio, UNSETTLED_OUTBOX_STATUSES } from '../sync/negocioPendingSync';
+import {
+  buildNegocioSyncStateMap,
+  outboxAffectsNegocio,
+  UNSETTLED_OUTBOX_STATUSES,
+  type NegocioSyncState,
+} from '../sync/negocioPendingSync';
 import { refreshPendingCount, runSync } from '../sync/syncEngine';
 import {
   laneForCommand,
@@ -394,6 +400,75 @@ export async function fetchNegociosListFromLocal() {
       status: row.status,
     }))
   );
+}
+
+/**
+ * Negocios creados en el teléfono que el servidor aún no confirma, para el
+ * distintivo de la lista: `states` (id → pendiente/rechazado) y `items`, sus
+ * filas ya con la forma de la lista (con señal la lista viene del servidor y
+ * no los trae). Lee la misma cola que «Cambios sin sincronizar» y solo las
+ * filas locales sin confirmar: una lectura para toda la lista, no por tarjeta.
+ */
+export async function loadNegocioSyncOverlay(): Promise<{
+  states: Record<string, NegocioSyncState>;
+  items: LocalNegocioListItem[];
+}> {
+  if (!canUseLocalDb()) return { states: {}, items: [] };
+  const database = getDatabase();
+  const [outbox, unsynced] = await Promise.all([
+    listReviewableOutbox(database),
+    database.get<Negocio>('negocios').query(Q.where('sync_status', Q.notEq('synced'))).fetch(),
+  ]);
+  const states = buildNegocioSyncStateMap(
+    outbox
+      .filter((item) => item.type === 'create_negocio')
+      .map((item) => ({
+        type: item.type,
+        status: item.status,
+        payload: parseOutboxPayload<Record<string, unknown>>(item),
+      })),
+    unsynced.map((row) => ({ id: row.id, rowSyncStatus: row.rowSyncStatus }))
+  );
+  const rows = unsynced.filter((row) => states[row.id]);
+  if (!rows.length) return { states, items: [] };
+  const customerIds = [...new Set(rows.map((row) => row.customerId).filter(Boolean))];
+  const [customers, cuotas] = await Promise.all([
+    customerIds.length
+      ? database.get<Customer>('customers').query(Q.where('id', Q.oneOf(customerIds))).fetch()
+      : Promise.resolve([] as Customer[]),
+    database
+      .get<NegocioCuota>('negocio_cuotas')
+      .query(Q.where('negocio_id', Q.oneOf(rows.map((row) => row.id))))
+      .fetch(),
+  ]);
+  const items = mapNegociosListFromLocal(
+    rows.map((row) => ({
+      id: row.id,
+      numero: row.numero,
+      status: row.status,
+      dealDate: row.dealDate,
+      totalCredit: row.totalCredit,
+      remainingBalance: row.remainingBalance,
+      customerId: row.customerId,
+      codeudorCustomerId: row.codeudorCustomerId,
+      direccion: row.direccion,
+      municipioId: row.municipioId,
+      municipioName: row.municipioName,
+      sellerId: row.sellerId,
+    })),
+    customers.map((row) => ({ id: row.id, name: row.name, idNumber: row.idNumber, phone: row.phone })),
+    cuotas.map((row) => ({
+      id: row.id,
+      negocioId: row.negocioId,
+      installmentNumber: row.installmentNumber,
+      dueDate: row.dueDate,
+      amount: row.amount,
+      paidAmount: row.paidAmount,
+      lateFeeAmount: row.lateFeeAmount,
+      status: row.status,
+    }))
+  );
+  return { states, items };
 }
 
 /** Pago que el servidor no aceptó y que sigue guardado en el teléfono. */

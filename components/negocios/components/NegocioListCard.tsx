@@ -5,8 +5,18 @@ import { ListCard, Metric, StatusChip } from '@/components/ui';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelNegocioStatus, negocioStatusTone } from '@/lib/negocioLabels';
 import { describeNegocioOrigen } from '@/lib/negocios/negocioOrigen';
+import { NEGOCIO_SYNC_BADGE, type NegocioSyncState } from '@/lib/negocios/negocioSyncBadge';
 
-export function NegocioListCard({ item, onPress }: { item: any; onPress: () => void }) {
+export function NegocioListCard({
+  item,
+  onPress,
+  syncState,
+}: {
+  item: any;
+  onPress: () => void;
+  /** Negocio creado en el teléfono y aún sin confirmar (ver `useNegocioSyncOverlay`). */
+  syncState?: NegocioSyncState | null;
+}) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const saldo = Number(item.remaining_balance ?? 0);
@@ -26,15 +36,20 @@ export function NegocioListCard({ item, onPress }: { item: any; onPress: () => v
   // fila local no trae el dato y `describeNegocioOrigen` devuelve null: la
   // línea simplemente no se pinta.
   const origen = describeNegocioOrigen(item);
+  const syncBadge = syncState ? NEGOCIO_SYNC_BADGE[syncState] : null;
+  // El número lo asigna el servidor: sin confirmar, la fila local lleva 0.
+  const codigo = syncBadge && !Number(item.numero) ? 'Sin número' : formatNegocioCodigo(item.numero);
 
   return (
     <ListCard
       onPress={onPress}
-      accessibilityLabel={`Negocio ${formatNegocioCodigo(item.numero)}, ${customer}, ${labelNegocioStatus(item.status)}, saldo ${formatCOP(saldo)}${origen ? `, ${origen.texto}` : ''}`}>
+      accessibilityLabel={`Negocio ${codigo}, ${customer}, ${labelNegocioStatus(item.status)}${syncBadge ? `, ${syncBadge.label}` : ''}, saldo ${formatCOP(saldo)}${origen ? `, ${origen.texto}` : ''}`}
+      accessibilityHint={syncBadge?.hint}>
       <View style={styles.cardTop}>
-        <Text style={[styles.numero, { color: colors.text.primary }]}>{formatNegocioCodigo(item.numero)}</Text>
+        <Text style={[styles.numero, { color: colors.text.primary }]}>{codigo}</Text>
         <StatusChip label={labelNegocioStatus(item.status)} tone={negocioStatusTone(item.status)} />
       </View>
+      {syncBadge ? <StatusChip label={syncBadge.label} tone={syncBadge.tone} icon={syncBadge.icon} /> : null}
       <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>{customer}</Text>
       <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>{meta}</Text>
       {origen ? (
