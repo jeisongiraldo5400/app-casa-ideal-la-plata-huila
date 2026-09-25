@@ -1,3 +1,5 @@
+import { NOT_ON_PHONE_MESSAGE, NOT_ON_PHONE_TITLE, useNotOnPhone } from '@/components/offline/NotOnPhoneNotice';
+import { OfflineSelectionToggle } from '@/components/offline/OfflineSelectionToggle';
 import { useTheme } from '@/components/theme';
 import { BackButton, Button, Card, ScreenState, SectionHeader, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
@@ -21,7 +23,10 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const online = useSyncStore((state) => state.online);
   const detail = useCustomerDetail(customerId);
+  // Sin señal y con clientes en «Solo lo que elijo», que no esté es lo esperable.
+  const notOnPhone = useNotOnPhone('clientes', !online);
 
   // Sin esto el encabezado muestra el nombre de la ruta («cliente/[id]») y se
   // queda sin botón de volver, porque el Stack raíz no los define por pantalla.
@@ -53,10 +58,10 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background.default }]}>
         <Stack.Screen options={screenOptions} />
         <ScreenState
-          tone="error"
-          icon="error-outline"
-          title="No se pudo cargar el cliente"
-          description={detail.error || 'Inténtalo de nuevo.'}
+          tone={notOnPhone ? 'warning' : 'error'}
+          icon={notOnPhone ? 'phonelink-off' : 'error-outline'}
+          title={notOnPhone ? NOT_ON_PHONE_TITLE : 'No se pudo cargar el cliente'}
+          description={notOnPhone ? NOT_ON_PHONE_MESSAGE : detail.error || 'Inténtalo de nuevo.'}
           actionLabel="Reintentar"
           onAction={detail.reload}
         />
@@ -82,6 +87,8 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
       ) : null}
 
       <CustomerContactBlock customer={customer} />
+
+      <OfflineSelectionToggle domain="clientes" id={customer.id} />
 
       <View>
         <SectionHeader title="Vendedor" />

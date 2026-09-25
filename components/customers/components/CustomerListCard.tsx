@@ -1,3 +1,4 @@
+import { OfflineSelectionToggle } from '@/components/offline/OfflineSelectionToggle';
 import { useTheme } from '@/components/theme';
 import { ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
@@ -43,6 +44,7 @@ export function CustomerListCard({ customer, onPress, showSeller = true }: Custo
               )}
             </View>
           ) : null}
+          <OfflineSelectionToggle domain="clientes" id={customer.id} compact />
         </View>
         <MaterialIcons name="chevron-right" size={24} color={colors.text.secondary} />
       </View>

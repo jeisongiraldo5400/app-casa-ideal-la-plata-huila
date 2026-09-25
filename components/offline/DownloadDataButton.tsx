@@ -13,9 +13,15 @@ import {
 
 type DownloadDataButtonProps = {
   variant?: 'row' | 'cta';
+  /**
+   * Si se da, la fila abre «Qué llevar en el teléfono» en vez de descargar
+   * (allí está «Descargar ahora»). Solo cuando el servidor admite la descarga
+   * selectiva; si no, la fila descarga como siempre.
+   */
+  onOpen?: () => void;
 };
 
-export function DownloadDataButton({ variant = 'row' }: DownloadDataButtonProps) {
+export function DownloadDataButton({ variant = 'row', onOpen }: DownloadDataButtonProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const status = useSyncStore((state) => state.status);
@@ -49,6 +55,10 @@ export function DownloadDataButton({ variant = 'row' }: DownloadDataButtonProps)
         : 'Negocios y cartera para usar sin red';
 
   const onPress = async () => {
+    if (onOpen && variant === 'row') {
+      onOpen();
+      return;
+    }
     if (syncing) return;
     setBusy(true);
     try {
@@ -91,7 +101,7 @@ export function DownloadDataButton({ variant = 'row' }: DownloadDataButtonProps)
   return (
     <Pressable
       onPress={() => void onPress()}
-      disabled={syncing}
+      disabled={syncing && !onOpen}
       style={styles.row}
       testID="download-data-button"
     >

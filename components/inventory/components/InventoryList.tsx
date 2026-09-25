@@ -1,5 +1,6 @@
 import { useInventory } from '@/components/inventory/infrastructure/hooks/useInventory';
 import type { InventoryItem } from '@/components/inventory/infrastructure/store/inventoryStore';
+import { OfflineSelectionToggle } from '@/components/offline/OfflineSelectionToggle';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
@@ -96,6 +97,7 @@ export function InventoryList({ header }: InventoryListProps) {
             <Text style={styles.quantityValue}>{displayQuantity}</Text>
           </View>
         </View>
+        <OfflineSelectionToggle domain="productos" id={item.id} compact />
         {selectedWarehouseId ? (
           <View style={styles.warehouseInfo}>
             <Text style={styles.warehouseLabel}>Bodega:</Text>

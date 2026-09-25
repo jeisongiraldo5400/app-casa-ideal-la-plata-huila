@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { DownloadDataButton } from '@/components/offline';
+import { NotOnPhoneNotice } from '@/components/offline/NotOnPhoneNotice';
 import {
   HeroActionCard,
   ScreenErrorBoundary,
@@ -134,8 +135,9 @@ function NegociosScreenInner() {
           onAction={() => {
             setQuery('');
             setFilter('all');
-          }}
-        />
+          }}>
+          <NotOnPhoneNotice domain="clientes" fromCache={fromCache} />
+        </ScreenState>
       );
     }
     if (fromCache) {
@@ -144,6 +146,7 @@ function NegociosScreenInner() {
           icon="cloud-off"
           title="Sin datos locales"
           description="Conéctese y descargue la información para trabajar sin conexión.">
+          <NotOnPhoneNotice domain="clientes" fromCache={fromCache} />
           <DownloadDataButton variant="cta" />
         </ScreenState>
       );
