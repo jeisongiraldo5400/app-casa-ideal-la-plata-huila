@@ -8,6 +8,7 @@ interface ListCardProps {
   onPress?: () => void;
   variant?: 'elevated' | 'outlined';
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -16,7 +17,7 @@ interface ListCardProps {
  * Tarjeta para filas de lista (negocios, cuotas, pagos). Con `onPress` se
  * vuelve pulsable con feedback; sin él es un contenedor estático.
  */
-export function ListCard({ children, onPress, variant = 'outlined', accessibilityLabel, disabled, style }: ListCardProps) {
+export function ListCard({ children, onPress, variant = 'outlined', accessibilityLabel, accessibilityHint, disabled, style }: ListCardProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const surface = { backgroundColor: colors.background.paper, borderColor: colors.divider };
@@ -29,6 +30,7 @@ export function ListCard({ children, onPress, variant = 'outlined', accessibilit
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={onPress}

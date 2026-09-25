@@ -12,6 +12,7 @@ import {
   SegmentedControl,
 } from '@/components/ui';
 import { NegocioListCard } from '@/components/negocios/components/NegocioListCard';
+import { useNegocioSyncOverlay } from '@/components/negocios/infrastructure/hooks/useNegocioSyncOverlay';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
 import {
   NEGOCIO_LIST_FILTERS,
@@ -19,6 +20,7 @@ import {
   matchesNegocioListQuery,
   type NegocioListFilter,
 } from '@/lib/negocios/negocioListFilters';
+import { negocioCardOpensSyncQueue, withUnsyncedNegociosFirst } from '@/lib/negocios/negocioSyncBadge';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -42,6 +44,9 @@ function NegociosScreenInner() {
   const { list, loading, fromCache, error, fetchList } = useNegociosStore();
   const { isAdmin, isVendedor, isGestorCobro, onlyFindsBySearch } = useUserRoles();
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
+  // Negocios creados en el teléfono sin confirmar: distintivo en la tarjeta.
+  const syncOverlay = useNegocioSyncOverlay();
   const canCreate = isAdmin() || isVendedor() || isGestorCobro();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
@@ -77,16 +82,23 @@ function NegociosScreenInner() {
     setRefreshing(false);
   };
 
+  // Con señal la lista viene del servidor, que no conoce los negocios aún sin
+  // confirmar: se añaden desde el teléfono y van arriba en ambos casos. El
+  // recaudador no crea negocios ni recorre la lista.
+  const fullList = useMemo(
+    () => (searchOnly ? list : withUnsyncedNegociosFirst(list, syncOverlay.items, syncOverlay.states)),
+    [list, searchOnly, syncOverlay]
+  );
   const normalizedQuery = query.trim();
   const filtered = useMemo(
     () =>
-      list.filter(
+      fullList.filter(
         (item) => matchesNegocioListFilter(item, filter) && matchesNegocioListQuery(item, normalizedQuery)
       ),
-    [list, filter, normalizedQuery]
+    [fullList, filter, normalizedQuery]
   );
   const hasFilters = filter !== 'all' || normalizedQuery.length > 0;
-  const initialLoading = loading && !refreshing && list.length === 0;
+  const initialLoading = loading && !refreshing && fullList.length === 0;
 
   const renderEmpty = () => {
     if (searchOnly && normalizedQuery.length === 0) {
@@ -179,9 +191,9 @@ function NegociosScreenInner() {
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {!initialLoading && list.length > 0 ? (
+      {!initialLoading && fullList.length > 0 ? (
         <Text style={[styles.count, { color: colors.text.secondary }]}>
-          {filtered.length} de {list.length} negocio{list.length === 1 ? '' : 's'}
+          {filtered.length} de {fullList.length} negocio{fullList.length === 1 ? '' : 's'}
         </Text>
       ) : null}
     </View>
@@ -197,9 +209,23 @@ function NegociosScreenInner() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />}
         ListHeaderComponent={header}
         ListEmptyComponent={renderEmpty()}
-        renderItem={({ item }) => (
-          <NegocioListCard item={item} onPress={() => router.push(`/negocio/${item.id}`)} />
-        )}
+        renderItem={({ item }) => {
+          const syncState = syncOverlay.states[item.id];
+          return (
+            <NegocioListCard
+              item={item}
+              syncState={syncState}
+              onPress={() =>
+                // Rechazado: se decide en «Cambios sin sincronizar» (motivo,
+                // reintentar o descartar). Pendiente con señal: la ficha
+                // consultaría al servidor, que aún no lo conoce.
+                negocioCardOpensSyncQueue(syncState, !fromCache)
+                  ? setQueueVisible(true)
+                  : router.push(`/negocio/${item.id}`)
+              }
+            />
+          );
+        }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
     </View>
