@@ -59,6 +59,8 @@ export type EnqueueNegocioCreateInput = {
     municipioName: string | null;
     sellerId: string | null;
     sellerName: string | null;
+    /** Quién lo registra: el usuario del teléfono (el contrato lo pone en «CREADO POR»). */
+    createdBy?: string | null;
   };
   /**
    * Carril del negocio. Si el cliente también está en la cola (se creó sin
@@ -175,6 +177,9 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
         record.gestorCobroId = null;
         record.sellerName = input.local.sellerName;
         record.gestorCobroName = null;
+        record.createdBy = input.local.createdBy ?? null;
+        // El nombre se resuelve al leer, con los perfiles descargados.
+        record.createdByName = null;
         record.rejectedReason = null;
         record.rejectedAt = null;
         record.rowSyncStatus = 'pending';

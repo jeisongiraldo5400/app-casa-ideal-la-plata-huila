@@ -106,6 +106,8 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.gestorCobroId = row.gestor_cobro_id;
         record.sellerName = row.seller_name ?? null;
         record.gestorCobroName = row.gestor_cobro_name ?? null;
+        record.createdBy = row.created_by ?? null;
+        record.createdByName = row.created_by_name ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.updated_at);
       })
@@ -401,6 +403,36 @@ export async function pruneOutOfScopeNegocios(database: Database, scopedIds: str
     await database.batch(...operations);
   });
   return toRemove.size;
+}
+
+/**
+ * Recaudador puro (`pull_scope` = 'cobro', 20261128120000): el servidor sólo le
+ * baja el titular y el codeudor de cada negocio, pero el teléfono puede traer
+ * el directorio completo de antes (una versión anterior de la app, o un rol
+ * de vendedor que le quitaron). Se borran los clientes descargados que ya no
+ * son de ningún negocio del teléfono. Los creados sin señal (pendientes o
+ * rechazados) no se tocan: todavía no existen en el servidor.
+ *
+ * Debe correr DESPUÉS de `pruneOutOfScopeNegocios`, con los negocios ya al día.
+ */
+export async function pruneCustomersOutsideNegocios(database: Database) {
+  const [customers, negocios] = await Promise.all([
+    database.get<Customer>('customers').query().fetch(),
+    database.get<Negocio>('negocios').query().fetch(),
+  ]);
+  const referenced = new Set<string>();
+  for (const negocio of negocios) {
+    if (negocio.customerId) referenced.add(negocio.customerId);
+    if (negocio.codeudorCustomerId) referenced.add(negocio.codeudorCustomerId);
+  }
+  const operations: Model[] = customers
+    .filter((row) => row.rowSyncStatus === 'synced' && !referenced.has(row.id))
+    .map((row) => row.prepareDestroyPermanently());
+  if (!operations.length) return 0;
+  await database.write(async () => {
+    await database.batch(...operations);
+  });
+  return operations.length;
 }
 
 /**

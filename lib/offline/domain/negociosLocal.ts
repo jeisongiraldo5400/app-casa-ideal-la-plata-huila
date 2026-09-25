@@ -25,6 +25,9 @@ export type LocalNegocioRow = {
   /** Nombres ya resueltos en el pull; null en filas anteriores a la v8. */
   sellerName?: string | null;
   gestorCobroName?: string | null;
+  /** Quién registró el negocio (v10); null en filas anteriores. */
+  createdBy?: string | null;
+  createdByName?: string | null;
 };
 
 /** Producto de un negocio guardado en el teléfono. */
@@ -105,6 +108,9 @@ export type LocalNegocioDetail = {
     /** Nombres resueltos en el pull; la pantalla ya no tiene que preguntar a `profiles`. */
     seller_name: string | null;
     gestor_cobro_name: string | null;
+    created_by: string | null;
+    /** Nombre de quien registró el negocio, para el «CREADO POR» del contrato. */
+    created_by_name: string | null;
     /** Suma de los subtotales locales, para la tarjeta de productos. */
     products_subtotal: number;
     delivery_order_id: null;
@@ -259,6 +265,8 @@ export function mapNegocioDetailFromLocal(input: {
       gestor_cobro_id: input.negocio.gestorCobroId ?? null,
       seller_name: input.negocio.sellerName ?? null,
       gestor_cobro_name: input.negocio.gestorCobroName ?? null,
+      created_by: input.negocio.createdBy ?? null,
+      created_by_name: input.negocio.createdByName ?? null,
       products_subtotal: relatedItems.reduce((sum, item) => sum + item.subtotal, 0),
       delivery_order_id: null,
       customer_signature_url: null,

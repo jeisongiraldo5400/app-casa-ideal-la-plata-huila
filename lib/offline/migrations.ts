@@ -39,6 +39,12 @@ export const REJECTED_NEGOCIO_COLUMNS = [
   { name: 'rejected_at', type: 'number' as const, isOptional: true },
 ];
 
+/** Columnas de `negocios` añadidas en la versión 10 (también en `schema.ts`). */
+export const NEGOCIO_CREATOR_COLUMNS = [
+  { name: 'created_by', type: 'string' as const, isOptional: true },
+  { name: 'created_by_name', type: 'string' as const, isOptional: true },
+];
+
 /** Tablas del catálogo de producto añadidas en la versión 9 (también en `schema.ts`). */
 export const CATALOG_PRODUCT_TABLES = [
   {
@@ -74,6 +80,12 @@ export const CATALOG_PRODUCT_TABLES = [
 
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Quién creó el negocio (20261128120000): sin él el contrato impreso sin
+      // señal ponía «—» en «CREADO POR».
+      toVersion: 10,
+      steps: [addColumns({ table: 'negocios', columns: NEGOCIO_CREATOR_COLUMNS })],
+    },
     {
       // Catálogo de producto para armar un negocio sin señal, y la marca de
       // rechazo del negocio que el servidor no aceptó al subirlo.

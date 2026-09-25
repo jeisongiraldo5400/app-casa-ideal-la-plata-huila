@@ -250,9 +250,10 @@ function NegocioDetailScreenInner() {
       // El nombre del vendedor viaja resuelto en el pull: antes la pantalla
       // decía «Sin asignar» sin señal aunque el negocio sí tuviera vendedor.
       setSellerName(local.negocio.seller_name || '');
-      // La descarga no trae quién creó el negocio: el contrato imprimirá una
-      // raya en «CREADO POR» en vez de dar por hecho que fue el vendedor.
-      setCreatedByName('');
+      // Quién creó el negocio viaja en el pull desde 20261128120000. Si no está
+      // (datos bajados antes), el contrato imprime una raya en «CREADO POR» en
+      // vez de dar por hecho que fue el vendedor.
+      setCreatedByName(local.negocio.created_by_name || '');
       setOrderNumber(null);
       setOriginOrderNumber(null);
       setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));

@@ -599,6 +599,12 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       gestorCobroId: negocio.gestorCobroId,
       sellerName: negocio.sellerName,
       gestorCobroName: negocio.gestorCobroName,
+      createdBy: negocio.createdBy,
+      // Viaja resuelto en el pull (20261128120000). Un negocio creado sin señal
+      // sólo guarda el id: su nombre sale de los perfiles descargados.
+      createdByName:
+        negocio.createdByName ||
+        (negocio.createdBy ? (await fetchProfileNamesFromLocal()).get(negocio.createdBy) ?? null : null),
     },
     customers: customers.map((row) => ({
       id: row.id,
