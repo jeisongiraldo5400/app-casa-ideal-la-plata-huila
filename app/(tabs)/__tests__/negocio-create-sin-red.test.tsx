@@ -113,6 +113,15 @@ jest.mock('expo-router', () => ({
 
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: jest.fn() }));
 
+/** Un teléfono Android con barra de navegación de 48 px. */
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: ({ children, style }: any) => <View style={style}>{children}</View>,
+    useSafeAreaInsets: () => ({ top: 0, bottom: 48, left: 0, right: 0 }),
+  };
+});
+
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 
 describe('Asistente de negocio · sin red', () => {
@@ -147,5 +156,19 @@ describe('Asistente de negocio · sin red', () => {
       expect(screen.getByText(/pulse «Descargar información»/)).toBeTruthy()
     );
     expect(screen.getByText('Reintentar')).toBeTruthy();
+  });
+
+  // Reportado con un vídeo del usuario (2026-09-24): en un Android de borde a
+  // borde, «Guardar sin señal» quedaba DEBAJO de los botones del sistema y no
+  // se podía pulsar. El pie tiene que apartarse él mismo.
+  it('el pie se aparta de la barra de navegación de Android', async () => {
+    const screen = render(<NegocioCreateScreen />);
+
+    const pie = await screen.findByTestId('negocio-create-pie');
+    const estilos = (Array.isArray(pie.props.style) ? pie.props.style : [pie.props.style])
+      .filter(Boolean)
+      .reduce((acc: Record<string, unknown>, capa: Record<string, unknown>) => ({ ...acc, ...capa }), {});
+
+    expect(estilos.paddingBottom).toBeGreaterThanOrEqual(48);
   });
 });

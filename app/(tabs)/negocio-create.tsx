@@ -13,7 +13,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
@@ -389,6 +389,12 @@ function NegocioCreateScreenInner() {
    */
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  // La app se dibuja de borde a borde en Android (app.json: edgeToEdgeEnabled),
+  // así que el pie fijo tiene que apartarse él mismo de la barra de navegación:
+  // si no, «Guardar sin señal» queda debajo de los botones del sistema y no se
+  // puede pulsar. Mismo criterio que components/ui/ActionBar.
+  const insets = useSafeAreaInsets();
+  const footerPaddingBottom = Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 12);
   const hasDraft = hasNegocioDraft({
     step,
     customerId: customer?.id,
@@ -1023,7 +1029,7 @@ function NegocioCreateScreenInner() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}
+        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 + footerPaddingBottom }}
         keyboardShouldPersistTaps="handled"
       >
         {showDraftBanner && hasDraft && (
@@ -1711,7 +1717,13 @@ function NegocioCreateScreenInner() {
       </ScrollView>
 
       {/* FIXED NAVIGATION FOOTER */}
-      <View style={[styles.fixedFooterNav, { backgroundColor: colors.background.paper, borderTopColor: colors.divider }]}>
+      <View
+        testID="negocio-create-pie"
+        style={[
+          styles.fixedFooterNav,
+          { backgroundColor: colors.background.paper, borderTopColor: colors.divider, paddingBottom: footerPaddingBottom },
+        ]}
+      >
         {step > 0 && (
           <TouchableOpacity
             style={[
@@ -2152,7 +2164,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     borderTopWidth: 1,
     elevation: 8,
     shadowColor: '#000',
