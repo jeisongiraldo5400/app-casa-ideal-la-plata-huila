@@ -4749,7 +4749,10 @@ export type Database = {
           p_gestor_id: string
           p_negocio_id?: string
           p_page?: number
+          p_in_cierre?: boolean
           p_page_size?: number
+          p_payment_method_ids?: string[]
+          p_payment_site?: string
           p_receipt_status?: string
           p_scope?: string
           p_search?: string
@@ -5683,6 +5686,21 @@ export type Database = {
           full_name: string
           id: string
         }[]
+      }
+      list_my_collected_payments: {
+        Args: {
+          p_collector_id?: string
+          p_from?: string
+          p_in_cierre?: boolean
+          p_page?: number
+          p_page_size?: number
+          p_payment_method_ids?: string[]
+          p_payment_site?: string
+          p_search?: string
+          p_status?: string
+          p_to?: string
+        }
+        Returns: Json
       }
       list_pending_remissions: {
         Args: never

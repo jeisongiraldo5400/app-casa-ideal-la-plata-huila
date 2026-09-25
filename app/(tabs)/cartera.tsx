@@ -12,6 +12,7 @@ import { CarteraSearchField } from '@/components/cartera/CarteraSearchField';
 import { CarteraCuotaPeople } from '@/components/cartera/CarteraCuotaPeople';
 import { CollectionManagerPicker } from '@/components/cartera/CollectionManagerPicker';
 import { CollectionManagerPaymentsModal } from '@/components/cartera/CollectionManagerPaymentsModal';
+import { MisCobrosEntryButton } from '@/components/cartera/mis-cobros/MisCobrosEntryButton';
 import { DownloadDataButton } from '@/components/offline';
 import { NotOnPhoneNotice } from '@/components/offline/NotOnPhoneNotice';
 import { type CarteraDashboard, type CarteraRow, type CollectionManager } from '@/lib/cartera/carteraService';
@@ -122,11 +123,12 @@ function CarteraScreenInner() {
       ListHeaderComponent={<View>
       <View style={styles.top}><View><Text style={{color:colors.text.secondary,fontSize:12}}>{searchOnly&&!hasSearch?'Cobro por búsqueda':`${totalCount} ${filters.filter==='pagadas'?'cuotas pagadas':'cuotas abiertas'}`}</Text>{fromCache?<Text style={{color:colors.text.secondary,fontSize:12,marginTop:2}}>{formatLocalDataLabel(lastSyncedAt)}</Text>:null}</View><View style={styles.actions}><Pressable onPress={openFilters} accessibilityRole="button" accessibilityLabel={activeCount?`Filtros, ${activeCount} activos`:'Filtros'} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="tune" size={23} color={colors.primary.main}/>{activeCount?<View style={[styles.badge,{backgroundColor:colors.primary.main}]}><Text style={[styles.badgeText,{color:colors.primary.contrastText}]}>{activeCount}</Text></View>:null}</Pressable><Pressable onPress={()=>void load(1,true,{force:true})} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="refresh" size={23} color={colors.primary.main}/></Pressable></View></View>
       {!searchOnly&&<View style={styles.cards}>{primary.map(([label,value,color])=><View key={label as string} style={[styles.card,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><Text style={{color:colors.text.secondary,fontSize:11}}>{label}</Text><Text style={{color:color as string,fontWeight:'800',fontSize:15}} numberOfLines={1}>{value}</Text></View>)}</View>}
+      <MisCobrosEntryButton/>
       {(isAdmin()||isGestorCobro())&&<Pressable onPress={showManager} style={[styles.managerButton,{backgroundColor:colors.background.paper,borderColor:colors.divider}]} accessibilityRole="button">
         <View style={styles.managerButtonLeading}>
           <MaterialIcons name="people-alt" size={20} color={colors.primary.main} />
         </View>
-        <Text style={[styles.managerButtonLabel,{color:colors.text.primary}]} numberOfLines={1}>{isAdmin()?'Ver cobros por gestor':'Mis cobros'}</Text>
+        <Text style={[styles.managerButtonLabel,{color:colors.text.primary}]} numberOfLines={1}>{isAdmin()?'Ver cobros por gestor':'Cobros de mi cartera'}</Text>
         <View style={styles.managerButtonChevron}>
           <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
         </View>
