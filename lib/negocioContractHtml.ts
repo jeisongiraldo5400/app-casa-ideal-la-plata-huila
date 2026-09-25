@@ -27,6 +27,12 @@ export type NegocioContractData = {
   seller_name?: string | null;
   seller_id_number?: string | null;
   /**
+   * Dueño del cliente (`customers.seller_id`): es el «Vendedor» del negocio
+   * (20261206120000). Si no se pasa (undefined), se usa `seller_name`; null =
+   * cliente sin dueño («—»).
+   */
+  customer_seller_name?: string | null;
+  /**
    * Quien registró el negocio, que no siempre es el vendedor: un asesor puede
    * crearlo para otro. Mismo dato y mismo orden que el PDF de la web.
    */
@@ -407,7 +413,7 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
     <div><b>LUGAR</b><br/>${location}</div>
     <div>
       <b>CREADO POR</b><br/>${esc(data.created_by_name) || '—'}
-      <br/><b>VENDEDOR DEL NEGOCIO</b><br/>${esc(data.seller_name) || '—'}
+      <br/><b>VENDEDOR (DUEÑO DEL CLIENTE)</b><br/>${esc(data.customer_seller_name === undefined ? data.seller_name : data.customer_seller_name) || '—'}
     </div>
   </div>
   <div class="parties">

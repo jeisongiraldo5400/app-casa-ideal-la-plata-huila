@@ -37,7 +37,10 @@ import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
-import { SellerReassignSheet } from '@/components/negocios/components/SellerReassignSheet';
+import {
+  canAlignNegocioSellerWithOwner,
+  negocioSellerDiffersFromOwner,
+} from '@/components/negocios/domain/negocioSellerOwner';
 import { NegocioContactDetailsSheet } from '@/components/negocios/components/NegocioContactDetailsSheet';
 import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
 import { labelNegocioOrigen, resolveNegocioOrigen } from '@/lib/negocios/negocioOrigen';
@@ -149,6 +152,8 @@ function NegocioDetailScreenInner() {
   // Vendedor al que pertenece el CLIENTE (`customers.seller_id`), que puede no
   // ser el vendedor del negocio: en cartera se leía uno por el otro.
   const [customerSellerName, setCustomerSellerName] = useState<string | null>(null);
+  /** Dueño del cliente: es el «Vendedor» del negocio (20261206120000). */
+  const [customerSellerId, setCustomerSellerId] = useState<string | null>(null);
   /** Nombre del usuario actual: autor de los pagos que registre desde esta pantalla. */
   const [currentUserName, setCurrentUserName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
@@ -164,7 +169,6 @@ function NegocioDetailScreenInner() {
   const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
-  const [sellerSheetOpen, setSellerSheetOpen] = useState(false);
   const [sellerSaving, setSellerSaving] = useState(false);
   const [contactSheetOpen, setContactSheetOpen] = useState(false);
 
@@ -266,6 +270,7 @@ function NegocioDetailScreenInner() {
       setCreatedByName(local.negocio.created_by_name || '');
       // El cliente baja con su `seller_id` y los usuarios bajan completos.
       setCustomerSellerName(local.customerSeller?.name ?? null);
+      setCustomerSellerId(local.customerSeller?.id ?? null);
       setOrderNumber(null);
       setOriginOrderNumber(null);
       setRemisionVigente(null);
@@ -421,6 +426,7 @@ function NegocioDetailScreenInner() {
       setCustomerMeta(custRes.data || {});
       // Solo para nombrar al vendedor del cliente (se resuelve con los perfiles).
       const customerSellerId = custRes.data?.seller_id ?? null;
+      setCustomerSellerId(customerSellerId);
       setLegalText(settingsRes.data?.legal_text || null);
       setPayMoneyDecimals(settingsRes.data?.money_decimal_places ?? null);
       setCustomerSignature(customerSignatureUrl || '');
@@ -975,6 +981,7 @@ function NegocioDetailScreenInner() {
       codeudor_email: codeudorMeta.email,
       codeudor_address: codeudorMeta.address,
       seller_name: sellerName,
+      customer_seller_name: customerSellerName,
       created_by_name: createdByName,
       products_subtotal: Number(negocio.products_subtotal),
       interest_amount: Number(negocio.interest_amount),
@@ -1287,20 +1294,23 @@ function NegocioDetailScreenInner() {
     }
   };
 
-  /** Reasigna el vendedor (solo admin); el nuevo vendedor ve el negocio y su cartera. */
-  const reassignSeller = async (sellerId: string, motivo: string) => {
-    if (!negocio || sellerSaving) return;
+  /**
+   * Alinea el negocio con el dueño actual del cliente (solo admin). El
+   * vendedor ya no se elige en el negocio: se cambia reasignando el cliente
+   * en Clientes, y el servidor solo acepta al dueño del cliente.
+   */
+  const alignSellerWithOwner = async () => {
+    if (!negocio || sellerSaving || !customerSellerId) return;
     try {
       setSellerSaving(true);
       const { error } = await supabase.rpc('assign_seller_to_negocio', {
         p_negocio_id: negocio.id,
-        p_seller_id: sellerId,
-        p_motivo: motivo || null,
+        p_seller_id: customerSellerId,
+        p_motivo: 'Alinear con el dueño del cliente',
       });
       if (error) throw error;
-      setSellerSheetOpen(false);
       await load();
-      Alert.alert('Listo', 'Vendedor actualizado.');
+      Alert.alert('Listo', 'El negocio quedó con el vendedor dueño del cliente.');
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo cambiar el vendedor');
     } finally {
@@ -1481,7 +1491,25 @@ function NegocioDetailScreenInner() {
   // sin ese dato el origen queda «desconocido» y la tarjeta no se pinta, en vez
   // de afirmar «Desde bodega» por omisión.
   const origen = resolveNegocioOrigen(negocio, { known: !fromLocal });
-  const canReassignSeller = !fromLocal && isAdmin() && negocio.status !== 'anulado';
+  const canAlignSeller =
+    !fromLocal &&
+    canAlignNegocioSellerWithOwner({
+      isAdmin: isAdmin(),
+      online,
+      status: negocio.status,
+      negocioSellerId: negocio.seller_id,
+      customerSellerId,
+    });
+  const sellerDiffers = negocioSellerDiffersFromOwner(negocio.seller_id, customerSellerId);
+  const confirmAlignSeller = () =>
+    Alert.alert(
+      'Alinear con el dueño del cliente',
+      `El vendedor del negocio pasará a ser ${customerSellerName || 'el dueño del cliente'}. Para cambiar el vendedor, reasigne el cliente en Clientes.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Alinear', onPress: () => void alignSellerWithOwner() },
+      ]
+    );
   // Activo, entregado o cerrado: solo dirección, notas y gestor de cobro (el
   // servidor valida admin, vendedor dueño o gestor asignado). Solo con conexión.
   const contactDetailsEditable = canEditNegocioContactDetails(negocio.status);
@@ -1578,26 +1606,27 @@ function NegocioDetailScreenInner() {
           <View style={styles.sellerRow}>
             <MaterialIcons name="badge" size={IconSize.md} color={colors.primary.main} />
             <View style={styles.sellerCopy}>
-              <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Vendedor del negocio</Text>
-              <Text style={[styles.sellerName, { color: colors.text.primary }]} numberOfLines={1}>
-                {sellerName || 'Sin asignar'}
+              <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Vendedor (dueño del cliente)</Text>
+              <Text testID="negocio-customer-seller" style={[styles.sellerName, { color: colors.text.primary }]} numberOfLines={1}>
+                {customerSellerName || 'Sin asignar'}
               </Text>
               {/*
-                Las otras dos personas, rotuladas: quien registró el negocio y
-                el vendedor al que pertenece el cliente. Aquí se muestran
-                siempre las tres (hay espacio y es donde se reasigna el
-                vendedor del negocio); en la tarjeta de cartera solo se repite
-                el vendedor del negocio si es otra persona.
+                El vendedor es el dueño del cliente (20261206120000); quien
+                registró el negocio va aparte. Si el negocio guarda otro
+                vendedor (anterior a la regla o cliente reasignado después), se
+                dice cuál, para no confundir la cartera.
               */}
               <Text testID="negocio-registered-by" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
-                Registrado por: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{createdByName || '—'}</Text>
+                Creado por: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{createdByName || '—'}</Text>
               </Text>
-              <Text testID="negocio-customer-seller" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
-                Vendedor del cliente: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{customerSellerName || 'Sin asignar'}</Text>
-              </Text>
+              {sellerDiffers ? (
+                <Text testID="negocio-stored-seller" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
+                  Vendedor registrado en el negocio: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{sellerName || '—'}</Text>
+                </Text>
+              ) : null}
             </View>
-            {canReassignSeller ? (
-              <Button title="Cambiar" variant="outline" size="sm" onPress={() => setSellerSheetOpen(true)} />
+            {canAlignSeller ? (
+              <Button title="Alinear" variant="outline" size="sm" onPress={confirmAlignSeller} loading={sellerSaving} />
             ) : null}
           </View>
         </Card>
@@ -1803,13 +1832,6 @@ function NegocioDetailScreenInner() {
         />
       </ActionBar>
 
-      <SellerReassignSheet
-        visible={sellerSheetOpen}
-        currentSellerId={negocio.seller_id || null}
-        saving={sellerSaving}
-        onClose={() => setSellerSheetOpen(false)}
-        onConfirm={reassignSeller}
-      />
 
       {contactSheetOpen ? (
         <NegocioContactDetailsSheet

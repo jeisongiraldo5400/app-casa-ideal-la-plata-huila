@@ -84,8 +84,19 @@ interface NegociosState {
      */
     target_remission_id?: string | null;
     items: NegocioItem[];
-    /** Vendedor del negocio; por defecto el usuario autenticado. */
+    /**
+     * Vendedor enviado al servidor; por defecto el usuario autenticado. El
+     * servidor lo sustituye por el dueño del cliente cuando lo tiene
+     * (20261206120000): el vendedor del negocio es el dueño del cliente.
+     */
     seller_id?: string | null;
+    /**
+     * Solo admin, cliente sin dueño: el servidor asigna el cliente a
+     * `seller_id` en la misma transacción (con historial).
+     */
+    assign_customer_seller?: boolean;
+    /** Vendedor con el que se pinta el negocio pendiente sin señal (dueño del cliente). */
+    local_seller_id?: string | null;
     /** Abonos iniciales pactados (vacío = sin cuota inicial). */
     down_payment_schedule: DownPaymentEntry[];
     /** 0 cuando los abonos iniciales cubren el valor de los productos. */
@@ -480,6 +491,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       customer_id: input.customer_id,
       codeudor_customer_id: input.codeudor_customer_id || null,
       seller_id: input.seller_id || userId,
+      // Solo cuando el admin eligió vendedor para un cliente sin dueño: los
+      // demás payloads conservan la forma de siempre.
+      ...(input.assign_customer_seller ? { assign_customer_seller: true } : {}),
       remission_id: input.remission_id || null,
       source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
       target_remission_id: input.target_remission_id || null,
@@ -536,7 +550,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           direccion: input.direccion.trim(),
           municipioId: input.municipio_id,
           municipioName: input.municipio_name ?? null,
-          sellerId: input.seller_id || userId,
+          sellerId: input.local_seller_id || input.seller_id || userId,
           sellerName: input.seller_name ?? null,
           createdBy: userId,
         },

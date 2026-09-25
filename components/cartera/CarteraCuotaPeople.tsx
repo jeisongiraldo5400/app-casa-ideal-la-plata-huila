@@ -11,10 +11,8 @@ type Props = {
 
 /**
  * Personas de una cuota o de un negocio, cada una con su rótulo:
- * «Registrado por», «Vendedor del negocio» (solo si es otra persona) y
- * «Vendedor del cliente». Antes la cartera solo sugería al vendedor del
- * negocio, que suele ser quien lo registró, y se leía como si el cliente fuera
- * suyo (ver `lib/cartera/carteraPeople`).
+ * «Vendedor (dueño del cliente)», «Creado por» y, solo si es otra persona,
+ * «Vendedor registrado en el negocio» (ver `lib/cartera/carteraPeople`).
  */
 export function CarteraCuotaPeople({ row, colors, fontSize = 12, testID = 'cartera-people' }: Props) {
   return (

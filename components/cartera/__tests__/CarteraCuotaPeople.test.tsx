@@ -11,25 +11,26 @@ const textOf = (node: { props: { children: unknown } }) =>
     .join('');
 
 describe('CarteraCuotaPeople', () => {
-  it('caso reportado: quien vendió no aparece como dueño del cliente', () => {
+  it('vendedor = dueño del cliente; quien lo creó va aparte', () => {
     const { getByTestId, queryByTestId } = render(
       <CarteraCuotaPeople
         colors={colors}
         row={{
           created_by: 'u1',
           created_by_name: 'Ana',
-          seller_id: 'u1',
-          seller_name: 'Ana',
+          seller_id: 'u2',
+          seller_name: 'Beto',
+          customer_seller_id: 'u2',
           customer_seller_name: 'Beto',
         }}
       />
     );
-    expect(textOf(getByTestId('cartera-people-registered_by'))).toBe('Registrado por: Ana');
-    expect(textOf(getByTestId('cartera-people-customer_seller'))).toBe('Vendedor del cliente: Beto');
+    expect(textOf(getByTestId('cartera-people-customer_seller'))).toBe('Vendedor (dueño del cliente): Beto');
+    expect(textOf(getByTestId('cartera-people-registered_by'))).toBe('Creado por: Ana');
     expect(queryByTestId('cartera-people-business_seller')).toBeNull();
   });
 
-  it('cliente sin vendedor y vendedor del negocio distinto de quien registró', () => {
+  it('cliente sin vendedor y negocio con vendedor guardado', () => {
     const { getByTestId } = render(
       <CarteraCuotaPeople
         colors={colors}
@@ -38,11 +39,12 @@ describe('CarteraCuotaPeople', () => {
           created_by_name: 'Gestor',
           seller_id: 'u1',
           seller_name: 'Ana',
+          customer_seller_id: null,
           customer_seller_name: null,
         }}
       />
     );
-    expect(textOf(getByTestId('cartera-people-business_seller'))).toBe('Vendedor del negocio: Ana');
-    expect(textOf(getByTestId('cartera-people-customer_seller'))).toBe('Vendedor del cliente: Sin asignar');
+    expect(textOf(getByTestId('cartera-people-business_seller'))).toBe('Vendedor registrado en el negocio: Ana');
+    expect(textOf(getByTestId('cartera-people-customer_seller'))).toBe('Vendedor (dueño del cliente): Sin asignar');
   });
 });

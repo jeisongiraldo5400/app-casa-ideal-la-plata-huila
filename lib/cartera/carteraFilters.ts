@@ -139,8 +139,8 @@ export function describeCarteraFilters(values: CarteraQuery): string {
         : CARTERA_STATUS_LABELS[values.filter],
   ];
   if (values.municipioId) parts.push('Municipio filtrado');
-  if (values.sellerId) parts.push('Vendedor del negocio filtrado');
-  if (values.customerSellerId) parts.push('Vendedor del cliente filtrado');
+  if (values.sellerId) parts.push('Vendedor registrado en el negocio filtrado');
+  if (values.customerSellerId) parts.push('Vendedor (dueño del cliente) filtrado');
   if (values.paymentMethodId) parts.push('Método de pago filtrado');
   if (values.gestorId) parts.push('Gestor filtrado');
   const range = describeDueRange(values.dueFrom || '', values.dueTo || '');

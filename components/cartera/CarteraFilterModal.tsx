@@ -184,7 +184,7 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
         </View>
 
         <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor del negocio</Text>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor registrado en el negocio</Text>
           <SearchField
             value={searchSeller}
             onChangeText={(value) => patch({ searchSeller: value })}
@@ -224,7 +224,7 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
         </View>
 
         <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor del cliente</Text>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor (dueño del cliente)</Text>
           <SearchField
             value={searchCustomerSeller}
             onChangeText={(value) => patch({ searchCustomerSeller: value })}
