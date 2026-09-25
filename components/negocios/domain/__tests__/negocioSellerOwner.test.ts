@@ -1,6 +1,7 @@
 import {
   buildNegocioSellerInput,
   canAlignNegocioSellerWithOwner,
+  negocioSellerBlockedReason,
   negocioSellerDiffersFromOwner,
   negocioSellerMode,
   negocioSellerOwnerHint,
@@ -28,6 +29,18 @@ describe('negocioSellerMode', () => {
     expect(negocioSellerMode({ hasCustomer: true, lookup: free, isAdmin: true, online: true })).toBe('admin-choose');
     expect(negocioSellerMode({ hasCustomer: true, lookup: free, isAdmin: true, online: false })).toBe('admin-offline');
     expect(negocioSellerMode({ hasCustomer: true, lookup: free, isAdmin: false, online: true })).toBe('unassigned');
+  });
+
+  it('cliente sin dueño: el vendedor (no admin) se queda con el cliente, con y sin señal', () => {
+    for (const online of [true, false]) {
+      expect(
+        negocioSellerMode({ hasCustomer: true, lookup: free, isAdmin: false, isVendedor: true, online })
+      ).toBe('self-assign');
+    }
+    // Admin que además es vendedor: manda la regla del admin.
+    expect(
+      negocioSellerMode({ hasCustomer: true, lookup: free, isAdmin: true, isVendedor: true, online: true })
+    ).toBe('admin-choose');
   });
 
   it('dueño desconocido', () => {
@@ -81,9 +94,46 @@ describe('textos', () => {
     expect(negocioSellerOwnerText({ mode: 'none', lookup: null, chosenSellerName: null })).toBeNull();
   });
 
-  it('sin señal el admin sabe que debe asignarlo desde Clientes', () => {
-    expect(negocioSellerOwnerHint('admin-offline')).toMatch(/Clientes cuando haya señal/);
-    expect(negocioSellerOwnerHint('admin-choose')).toMatch(/quedará asignado/);
+  it('sin señal el admin sabe que debe asignarlo con señal', () => {
+    expect(negocioSellerOwnerHint('admin-offline')).toBe('Este cliente no tiene vendedor: asígnalo con señal');
+    expect(negocioSellerOwnerHint('admin-choose')).toMatch(/Obligatorio.*quedará asignado/);
+    expect(negocioSellerOwnerHint('self-assign')).toBe('El cliente quedará asignado a usted.');
+  });
+
+  it('vendedor que se queda con el cliente: rótulo con su nombre', () => {
+    expect(
+      negocioSellerOwnerText({ mode: 'self-assign', lookup: free, chosenSellerName: null, createdByName: 'Ana' })
+    ).toBe('Ana (usted)');
+  });
+});
+
+describe('negocioSellerBlockedReason', () => {
+  it('admin con señal debe elegir; sin señal no puede guardar', () => {
+    expect(negocioSellerBlockedReason({ mode: 'admin-choose', chosenSellerId: '' })).toMatch(/elija el vendedor/);
+    expect(negocioSellerBlockedReason({ mode: 'admin-choose', chosenSellerId: 's1' })).toBeNull();
+    expect(negocioSellerBlockedReason({ mode: 'admin-offline', chosenSellerId: '' })).toBe(
+      'Este cliente no tiene vendedor: asígnalo con señal'
+    );
+  });
+
+  it('los demás casos no bloquean', () => {
+    for (const mode of ['owner', 'self-assign', 'unassigned', 'none'] as const) {
+      expect(negocioSellerBlockedReason({ mode, chosenSellerId: '' })).toBeNull();
+    }
+  });
+});
+
+describe('buildNegocioSellerInput (vendedor sin dueño)', () => {
+  it('pinta el negocio pendiente con quien registra y no manda la bandera', () => {
+    const input = buildNegocioSellerInput({
+      mode: 'self-assign',
+      lookup: free,
+      chosenSellerId: '',
+      chosenSellerName: null,
+      createdByName: 'Ana',
+      userId: 'u1',
+    });
+    expect(input).toEqual({ local_seller_id: 'u1', seller_name: 'Ana' });
   });
 });
 

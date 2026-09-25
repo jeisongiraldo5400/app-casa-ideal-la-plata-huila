@@ -43,6 +43,7 @@ import {
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { negocioSkipsWarehouseStock } from '../services/negociosDeliveryOrdersService';
 import type { Json } from '@/types/database.types';
+import { NEGOCIO_SELLER_RULE } from '../../domain/negocioSellerOwner';
 
 export interface NegocioItem {
   product_id: string;
@@ -494,6 +495,10 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       // Solo cuando el admin eligió vendedor para un cliente sin dueño: los
       // demás payloads conservan la forma de siempre.
       ...(input.assign_customer_seller ? { assign_customer_seller: true } : {}),
+      // Marca de la regla «vendedor = dueño del cliente» (20261207120000):
+      // con ella el servidor exige al admin elegir vendedor para un cliente
+      // sin dueño. Va siempre, con y sin señal.
+      seller_rule: NEGOCIO_SELLER_RULE,
       remission_id: input.remission_id || null,
       source_delivery_order_id: input.source_delivery_order_id || input.remission_id || null,
       target_remission_id: input.target_remission_id || null,

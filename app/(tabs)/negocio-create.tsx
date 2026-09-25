@@ -59,6 +59,7 @@ import {
 } from '@/lib/users/sellersService';
 import {
   buildNegocioSellerInput,
+  negocioSellerBlockedReason,
   negocioSellerMode,
   negocioSellerOwnerHint,
   negocioSellerOwnerText,
@@ -171,7 +172,7 @@ function NegocioCreateScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { roles: userRoles, isAdmin } = useUserRoles();
+  const { roles: userRoles, isAdmin, isVendedor } = useUserRoles();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -720,6 +721,7 @@ function NegocioCreateScreenInner() {
     hasCustomer: Boolean(customer),
     lookup: customerSeller,
     isAdmin: isAdmin(),
+    isVendedor: isVendedor(),
     online: !sinRed,
   });
   const chosenSellerName =
@@ -728,6 +730,13 @@ function NegocioCreateScreenInner() {
     mode: sellerMode,
     lookup: customerSeller,
     chosenSellerName,
+    createdByName,
+  });
+  // Admin con cliente sin dueño: debe elegir vendedor (con señal) o no puede
+  // guardar (sin señal). El servidor lo exige igual (`seller_rule`).
+  const sellerBlockedReason = negocioSellerBlockedReason({
+    mode: sellerMode,
+    chosenSellerId: sellerId,
   });
   const sellerOwnerHint = negocioSellerOwnerHint(sellerMode);
 
@@ -961,6 +970,7 @@ function NegocioCreateScreenInner() {
     if (signatureError) return Alert.alert('Firma requerida', signatureError);
     const originError = originStepError();
     if (originError) return Alert.alert('Origen del negocio', originError);
+    if (sellerBlockedReason) return Alert.alert('Vendedor del cliente', sellerBlockedReason);
 
     try {
       savingRef.current = true;
@@ -975,6 +985,7 @@ function NegocioCreateScreenInner() {
         chosenSellerId: sellerId,
         chosenSellerName,
         createdByName,
+        userId: user?.id ?? null,
       });
       const sellerInput = { ...sellerArgs, local_seller_id, seller_name };
       const result = await createAndActivate({
@@ -1408,19 +1419,16 @@ function NegocioCreateScreenInner() {
                   {sellerMode === 'admin-choose' ? (
                     <>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
-                        Vendedor (dueño del cliente)
+                        Vendedor (dueño del cliente) *
                       </Text>
                       <OptionPickerField
                         value={sellerId}
                         onValueChange={setSellerId}
-                        options={[
-                          { value: '', label: 'Sin vendedor (dejar sin asignar)' },
-                          ...vendedorOptions.map((seller) => ({
-                            value: seller.id,
-                            label: seller.full_name,
-                          })),
-                        ]}
-                        placeholder="Sin vendedor"
+                        options={vendedorOptions.map((seller) => ({
+                          value: seller.id,
+                          label: seller.full_name,
+                        }))}
+                        placeholder="Seleccione vendedor"
                         modalTitle="Vendedor (dueño del cliente)"
                         colors={colors}
                       />
@@ -1432,7 +1440,14 @@ function NegocioCreateScreenInner() {
                     colors={colors}
                   />
                   {sellerOwnerHint ? (
-                    <Text style={{ fontSize: 12, color: colors.text.secondary }}>{sellerOwnerHint}</Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: sellerMode === 'admin-offline' ? colors.error.main : colors.text.secondary,
+                      }}
+                    >
+                      {sellerOwnerHint}
+                    </Text>
                   ) : null}
                 </View>
                 <View style={{ gap: 6 }}>
@@ -1872,7 +1887,7 @@ function NegocioCreateScreenInner() {
                 opacity:
                   loadingInitialData || initialDataError
                     ? 0.5
-                    : step === 0 && (Boolean(originStepError()) || !customer || !departamentoId || !municipioId || !direccion.trim())
+                    : step === 0 && (Boolean(originStepError()) || !customer || Boolean(sellerBlockedReason) || !departamentoId || !municipioId || !direccion.trim())
                     ? 0.5
                     : step === 1 && !canAdvanceProductsStep()
                     ? 0.5
@@ -1889,6 +1904,7 @@ function NegocioCreateScreenInner() {
                   return Alert.alert('Selección requerida', originError);
                 }
                 if (!customer) return Alert.alert('Selección requerida', 'Por favor seleccione un cliente para continuar.');
+                if (sellerBlockedReason) return Alert.alert('Vendedor del cliente', sellerBlockedReason);
                 if (!departamentoId) return Alert.alert('Campo requerido', 'Seleccione un departamento.');
                 if (!municipioId) return Alert.alert('Campo requerido', 'Seleccione un municipio.');
                 if (!direccion.trim()) return Alert.alert('Campo requerido', 'Ingrese la dirección de la vivienda.');

@@ -129,6 +129,8 @@ describe('negociosStore.createAndActivate · sin señal', () => {
     expect(payload.negocio.seller_id).toBe('u1');
     expect(payload.negocio).not.toHaveProperty('assign_customer_seller');
     expect(payload.local.sellerId).toBe('s-dueno');
+    // Marca de la regla nueva: el servidor exige al admin elegir vendedor.
+    expect(payload.negocio.seller_rule).toBe(2);
   });
 
   it('admin que asigna vendedor a un cliente sin dueño: la bandera viaja en p_negocio', async () => {

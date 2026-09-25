@@ -105,7 +105,7 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'vendedor@casaideal.co' } }),
 }));
 
-jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ roles: [], isAdmin: () => false }) }));
+jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ roles: [], isAdmin: () => false, isVendedor: () => true }) }));
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
