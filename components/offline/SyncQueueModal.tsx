@@ -149,7 +149,8 @@ export function SyncQueueModal() {
           {failedCount ? ` · ${failedCount} rechazado${failedCount === 1 ? '' : 's'}` : ''}
         </Text>
         <Pressable
-          onPress={() => void runSync('manual')}
+          // Solo envía la cola; la descarga vive en «Preparar el teléfono» (v2).
+          onPress={() => void runSync('retry')}
           disabled={status === 'syncing'}
           style={[styles.syncButton, { backgroundColor: colors.primary.main, opacity: status === 'syncing' ? 0.6 : 1 }]}
         >

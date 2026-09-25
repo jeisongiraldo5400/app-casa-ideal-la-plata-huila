@@ -47,7 +47,8 @@ function openPreparePhone() {
   try {
     router.push('/datos-sin-conexion' as never);
   } catch {
-    void runSync('manual');
+    // Sin navegador listo: al menos se sube la cola (la descarga es solo manual).
+    void runSync('retry');
   }
 }
 
@@ -125,7 +126,8 @@ export function SyncStatusBanner() {
       openPreparePhone();
       return;
     }
-    void runSync('manual');
+    // Solo sube la cola: bajar datos es exclusivo de «Descargar» (contrato v2).
+    void runSync('retry');
   };
 
   return (

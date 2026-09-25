@@ -17,7 +17,6 @@
  * la descarga solo manual, antes del primer «Descargar» aún no se sabe, y la
  * pantalla es justo donde se prepara esa primera descarga.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { create } from 'zustand';
@@ -26,7 +25,12 @@ import { errorMessage } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { isDatabaseOpen } from '@/lib/offline/database';
-import { getLocalSyncConfig, lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
+import {
+  getLocalSyncConfig,
+  hasPendingChoicesToDownload,
+  lastManualDownloadAt,
+  markChoicesChangedLocally,
+} from '@/lib/offline/sync/syncPrefs';
 
 /**
  * Dominios de preferencia. `municipios` es un dominio de selección (v2): los
@@ -187,8 +191,8 @@ type SyncPrefsState = {
   error: string | null;
   /** Ids con un cambio en curso (para desactivar el botón mientras tanto). */
   busyIds: Record<string, true>;
-  /** Cuándo se cambió por última vez la elección (ms). */
-  changedAt: number | null;
+  /** Hay elecciones hechas que aún no se descargan (motor: `hasPendingChoicesToDownload`). */
+  pendingDownload: boolean;
   /** Última descarga manual (ms), según el motor. */
   lastManualAt: number | null;
 };
@@ -204,7 +208,7 @@ function initialState(): SyncPrefsState {
     },
     error: null,
     busyIds: {},
-    changedAt: null,
+    pendingDownload: false,
     lastManualAt: null,
   };
 }
@@ -214,6 +218,7 @@ export const useSyncPrefsStore = create<SyncPrefsState>(() => initialState());
 /** Para pruebas y al cerrar sesión. */
 export function resetSyncPrefs() {
   inFlightLoad = null;
+  lastServerConfig = undefined;
   useSyncPrefsStore.setState(initialState(), true);
 }
 
@@ -224,37 +229,34 @@ function patchDomain(domain: SyncPrefDomain, patch: Partial<DomainSyncConfig>) {
 }
 
 // ---------------------------------------------------------------------------
-// «Pendiente de descargar»: la elección cambió después de la última descarga
-// manual. La hora del cambio se guarda por usuario en AsyncStorage para que el
-// aviso sobreviva a un reinicio de la app.
+// «Pendiente de descargar»: lo decide el motor (BC) con
+// `hasPendingChoicesToDownload`, que compara la hora del último cambio hecho en
+// este teléfono (`markChoicesChangedLocally`) con la última descarga manual y,
+// si se le pasa, la configuración recién leída del servidor con la descargada.
 
-const CHANGED_AT_KEY = 'casa_ideal.sync_prefs.changed_at';
+/** Última respuesta cruda de `get_mobile_sync_config` (para comparar con lo descargado). */
+let lastServerConfig: unknown;
 
-function changedAtKey() {
-  return `${CHANGED_AT_KEY}:${useSyncStore.getState().userId ?? 'anon'}`;
-}
+type PendingArg = Parameters<typeof hasPendingChoicesToDownload>[0];
 
-/** true si hay elecciones hechas después de la última descarga manual. */
-export function isDownloadPending(state: Pick<SyncPrefsState, 'changedAt' | 'lastManualAt'>) {
-  if (!state.changedAt) return false;
-  return !state.lastManualAt || state.changedAt > state.lastManualAt;
+export function isDownloadPending(state: Pick<SyncPrefsState, 'pendingDownload'>) {
+  return state.pendingDownload;
 }
 
 function markChanged() {
-  const now = Date.now();
-  useSyncPrefsStore.setState({ changedAt: now });
-  void AsyncStorage.setItem(changedAtKey(), String(now)).catch(() => undefined);
+  // Se ve al instante; la marca persistente la guarda el motor.
+  useSyncPrefsStore.setState({ pendingDownload: true });
+  void (async () => markChoicesChangedLocally())().catch(() => undefined);
 }
 
-/** Relee la hora del último cambio y de la última descarga manual. */
+/** Relee si hay elecciones pendientes y la hora de la última descarga manual. */
 export async function refreshDownloadState() {
-  const [storedChanged, manualAt] = await Promise.all([
-    AsyncStorage.getItem(changedAtKey()).catch(() => null),
+  const [pending, manualAt] = await Promise.all([
+    (async () => hasPendingChoicesToDownload(lastServerConfig as PendingArg))().catch(() => null),
     (async () => lastManualDownloadAt())().catch(() => null),
   ]);
-  const parsed = storedChanged ? Number(storedChanged) : NaN;
   useSyncPrefsStore.setState((state) => ({
-    changedAt: Number.isFinite(parsed) ? Math.max(parsed, state.changedAt ?? 0) : state.changedAt,
+    pendingDownload: pending ?? state.pendingDownload,
     lastManualAt: manualAt ?? null,
   }));
 }
@@ -290,6 +292,7 @@ async function fillMissingIds(config: SyncConfig) {
 /** Configuración del usuario desde el servidor; actualiza el store. */
 export async function getSyncConfig(): Promise<SyncConfig> {
   const data = await call('get_mobile_sync_config');
+  lastServerConfig = data;
   const config = parseSyncConfig(data);
   await fillMissingIds(config);
   useSyncPrefsStore.setState({ config, status: 'ready', error: null });
@@ -333,13 +336,14 @@ export function loadSyncPrefs(options: { force?: boolean } = {}): Promise<void> 
   if (!isDatabaseOpen()) return Promise.resolve();
   if (inFlightLoad) return inFlightLoad;
   inFlightLoad = (async () => {
-    void refreshDownloadState();
     if (useSyncPrefsStore.getState().status === 'idle') {
       useSyncPrefsStore.setState({ status: 'loading' });
     }
     try {
       await getSyncConfig();
+      void refreshDownloadState();
     } catch (error) {
+      void refreshDownloadState();
       if (error instanceof SyncPrefsUnsupportedError) {
         useSyncPrefsStore.setState({ status: 'unsupported' });
       } else if (isNetworkError(error) || !useSyncStore.getState().online) {
