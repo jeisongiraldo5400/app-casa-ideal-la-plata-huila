@@ -43,6 +43,8 @@ type Props = {
   items: NegocioItem[];
   onAdd: (item: NegocioItem) => void;
   onStockLoaded: (productId: string, stock: ProductWarehouseStock[]) => void;
+  /** Aviso cuando la búsqueda terminó sin resultados (sin señal: no está en el teléfono). */
+  emptyMessage?: string | null;
   colors: ThemeColors;
 };
 
@@ -53,6 +55,7 @@ export function NegocioProductAddSection({
   items,
   onAdd,
   onStockLoaded,
+  emptyMessage = null,
   colors,
 }: Props) {
   const [selectedProduct, setSelectedProduct] = useState<NegocioProduct | null>(null);
@@ -267,6 +270,12 @@ export function NegocioProductAddSection({
           />
         </Modal>
       )}
+
+      {!selectedProduct && filteredProducts.length === 0 && emptyMessage ? (
+        <Text testID="negocio-product-not-on-phone" style={{ color: colors.text.secondary, fontSize: 12 }}>
+          {emptyMessage}
+        </Text>
+      ) : null}
 
       {!selectedProduct &&
         filteredProducts.map((p) => (

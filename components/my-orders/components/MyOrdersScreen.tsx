@@ -5,6 +5,7 @@ import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store
 // Misma lista de productos que "Todas las órdenes"; sólo cambia de dónde lee los
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
 import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
+import { canTakeOrderOffline } from '@/components/purchase-orders/components/OfflineOrderToggle';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
@@ -40,6 +41,8 @@ type Colors = ReturnType<typeof getColors>;
 interface ProductsModalTarget {
   id: string;
   orderNumber: string;
+  /** El detalle ofrece «Llevar en el teléfono» (orden vigente de remisión o cliente). */
+  offlineToggle?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -103,14 +106,14 @@ function StatusBadge({ status, colors }: { status: string; colors: Colors }) {
  * la tarjeta pulsable, y al ser un táctil anidado se queda con el toque en vez
  * de disparar la acción de la tarjeta.
  */
-function ProductsButton({ orderId, orderNumber, colors, onOpen }: { orderId: string; orderNumber: string | null; colors: Colors; onOpen: (target: ProductsModalTarget) => void }) {
+function ProductsButton({ orderId, orderNumber, colors, onOpen, offlineToggle = false }: { orderId: string; orderNumber: string | null; colors: Colors; onOpen: (target: ProductsModalTarget) => void; offlineToggle?: boolean }) {
   return (
     <TouchableOpacity
       testID={`view-products-${orderId}`}
       accessibilityRole="button"
       accessibilityLabel={`Ver productos de ${orderNumber || 'la orden'}`}
       style={[styles.productsButton, { backgroundColor: colors.primary.main + '10' }]}
-      onPress={() => onOpen({ id: orderId, orderNumber: orderNumber || orderId.slice(0, 8) })}
+      onPress={() => onOpen({ id: orderId, orderNumber: orderNumber || orderId.slice(0, 8), offlineToggle })}
       activeOpacity={0.7}
     >
       <MaterialIcons name="inventory-2" size={18} color={colors.primary.main} />
@@ -317,7 +320,13 @@ export function MyOrdersScreen() {
           {item.total_items} {item.total_items === 1 ? 'producto' : 'productos'}
         </Text>
 
-        <ProductsButton colors={colors} onOpen={setProductsModalTarget} orderId={item.id} orderNumber={item.order_number} />
+        <ProductsButton
+          colors={colors}
+          onOpen={setProductsModalTarget}
+          orderId={item.id}
+          orderNumber={item.order_number}
+          offlineToggle={canTakeOrderOffline(item)}
+        />
 
         <View style={[styles.exitButton, { backgroundColor: colors.primary.main }]}>
           {isStarting
@@ -505,6 +514,7 @@ export function MyOrdersScreen() {
           orderId={productsModalTarget.id}
           orderNumber={productsModalTarget.orderNumber}
           loadItems={fetchAssignedDeliveryOrderItems}
+          offlineToggle={productsModalTarget.offlineToggle}
         />
       ) : null}
     </View>

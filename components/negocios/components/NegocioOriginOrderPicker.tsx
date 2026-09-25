@@ -6,6 +6,7 @@ import {
   formatDeliveryOrderOptionLabel,
   type DeliveryOrderOption,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
+import { OfflineOrderToggle } from '@/components/purchase-orders/components/OfflineOrderToggle';
 
 type ThemeColors = {
   text: { primary: string; secondary: string };
@@ -13,6 +14,7 @@ type ThemeColors = {
   background: { paper: string };
   divider: string;
   error: { main: string };
+  warning?: { main: string };
 };
 
 type Props = {
@@ -25,7 +27,17 @@ type Props = {
   onSelect: (order: DeliveryOrderOption) => void;
   onClearSelection: () => void;
   colors: ThemeColors;
+  /** Sin señal: la lista son las órdenes llevadas en el teléfono. */
+  fromLocal?: boolean;
+  /** Hora de la foto de las órdenes llevadas (`formatLastDownloadTime`). */
+  snapshotLabel?: string | null;
+  /** Con señal: cada orden ofrece «Llevar en el teléfono». */
+  showOfflineToggle?: boolean;
 };
+
+/** Sin señal y sin órdenes llevadas: qué hacer, en vez de una lista muda. */
+export const SIN_ORDENES_EN_EL_TELEFONO =
+  'No hay órdenes de entrega en el teléfono. Con señal, pulse «Llevar en el teléfono» en la remisión u orden que va a usar (aquí mismo o en «Todas las órdenes») y descargue la información antes de salir.';
 
 /**
  * Elegir la orden de entrega de la que sale un negocio.
@@ -48,7 +60,11 @@ export function NegocioOriginOrderPicker({
   onSelect,
   onClearSelection,
   colors,
+  fromLocal = false,
+  snapshotLabel = null,
+  showOfflineToggle = false,
 }: Props) {
+  const warningColor = colors.warning?.main ?? colors.error.main;
   if (selectedOrder) {
     return (
       <View style={styles.block}>
@@ -64,6 +80,7 @@ export function NegocioOriginOrderPicker({
             </Text>
             <Text style={[styles.cardMeta, { color: colors.text.secondary }]}>
               {selectedOrder.items.length} producto(s) disponible(s)
+              {selectedOrder.from_local ? ' · en el teléfono' : ''}
             </Text>
           </View>
           <Pressable
@@ -86,7 +103,7 @@ export function NegocioOriginOrderPicker({
       <SearchField
         value={query}
         onChangeText={onQueryChange}
-        placeholder="Buscar por número, cliente, documento o asesor"
+        placeholder={fromLocal ? 'Buscar por número o cliente' : 'Buscar por número, cliente, documento o asesor'}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -98,37 +115,75 @@ export function NegocioOriginOrderPicker({
       ) : error ? (
         <Text style={[styles.hint, { color: colors.error.main }]}>{error}</Text>
       ) : orders.length === 0 ? (
-        <Text style={[styles.hint, { color: colors.text.secondary }]}>
-          {query.trim()
+        <Text
+          testID={fromLocal && !query.trim() ? 'origin-orders-none-local' : undefined}
+          style={[styles.hint, { color: fromLocal && !query.trim() ? warningColor : colors.text.secondary }]}
+        >
+          {fromLocal
+            ? query.trim()
+              ? 'Ninguna orden llevada en el teléfono coincide con la búsqueda.'
+              : SIN_ORDENES_EN_EL_TELEFONO
+            : query.trim()
             ? 'Ninguna orden con productos disponibles coincide con la búsqueda.'
             : 'No hay órdenes con productos disponibles.'}
         </Text>
       ) : (
         <>
-          {!query.trim() && (
-            <Text style={[styles.hint, { color: colors.text.secondary }]}>
-              Las {DELIVERY_ORDER_SEARCH_LIMIT} más recientes. Escribe para buscar cualquier otra.
+          {fromLocal ? (
+            <Text testID="origin-orders-local-hint" style={[styles.hint, { color: colors.text.secondary }]}>
+              {snapshotLabel
+                ? `Órdenes llevadas en el teléfono (descargadas ${snapshotLabel}). Lo disponible ya descuenta los negocios de este teléfono sin enviar.`
+                : 'Órdenes llevadas en el teléfono. Lo disponible ya descuenta los negocios de este teléfono sin enviar.'}
             </Text>
+          ) : (
+            !query.trim() && (
+              <Text style={[styles.hint, { color: colors.text.secondary }]}>
+                Las {DELIVERY_ORDER_SEARCH_LIMIT} más recientes. Escribe para buscar cualquier otra.
+              </Text>
+            )
           )}
-          {orders.map((order) => (
-            <Pressable
-              key={order.id}
-              testID={`origin-order-${order.id}`}
-              accessibilityRole="button"
-              onPress={() => onSelect(order)}
-              style={[styles.card, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-            >
-              <MaterialIcons name="local-shipping" size={22} color={colors.text.secondary} />
-              <View style={styles.cardBody}>
-                <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
-                  {formatDeliveryOrderOptionLabel(order)}
-                </Text>
-                <Text style={[styles.cardMeta, { color: colors.text.secondary }]}>
-                  {order.items.length} producto(s) disponible(s)
-                </Text>
-              </View>
-            </Pressable>
-          ))}
+          {orders.map((order) => {
+            const unusable = Boolean(order.unusable_reason);
+            return (
+              <Pressable
+                key={order.id}
+                testID={`origin-order-${order.id}`}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: unusable }}
+                disabled={unusable}
+                onPress={() => onSelect(order)}
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.background.paper,
+                    borderColor: colors.divider,
+                    opacity: unusable ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name={unusable ? 'block' : 'local-shipping'}
+                  size={22}
+                  color={colors.text.secondary}
+                />
+                <View style={styles.cardBody}>
+                  <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
+                    {formatDeliveryOrderOptionLabel(order)}
+                  </Text>
+                  {unusable ? (
+                    <Text style={[styles.cardMeta, { color: warningColor }]}>{order.unusable_reason}</Text>
+                  ) : (
+                    <Text style={[styles.cardMeta, { color: colors.text.secondary }]}>
+                      {order.items.length} producto(s) disponible(s)
+                    </Text>
+                  )}
+                  {showOfflineToggle && !fromLocal ? (
+                    <OfflineOrderToggle orderId={order.id} orderNumber={order.order_number} />
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
         </>
       )}
     </View>

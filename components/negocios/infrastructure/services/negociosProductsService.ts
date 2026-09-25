@@ -11,6 +11,14 @@ import {
 export const SIN_CATALOGO_LOCAL =
   'Sin conexión y sin catálogo descargado. Conéctese y pulse «Descargar información» para poder armar negocios sin señal.';
 
+/**
+ * Sin señal, con catálogo en el teléfono pero sin el producto buscado: o no
+ * existe, o no se eligió llevarlo (descarga selectiva de productos).
+ */
+export function productoNoEstaEnElTelefono(term: string): string {
+  return `«${term.trim()}» no está en el teléfono. Si lo va a vender, con señal márquelo en Inventario con «Llevar en el teléfono» (o descargue todo el catálogo) y pulse «Descargar información».`;
+}
+
 export type NegocioProduct = {
   id: string;
   name: string;

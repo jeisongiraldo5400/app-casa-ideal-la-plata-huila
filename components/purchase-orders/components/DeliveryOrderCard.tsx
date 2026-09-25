@@ -20,6 +20,7 @@ import {
 import { formatDeliveryLocation } from '../domain/deliveryLocation';
 import { DeliveryOrderProductsModal } from './DeliveryOrderProductsModal';
 import { DeliveryOrderRecipientModal } from './DeliveryOrderRecipientModal';
+import { OfflineOrderToggle, canTakeOrderOffline } from './OfflineOrderToggle';
 
 interface DeliveryOrderCardProps {
   order: DeliveryOrder;
@@ -37,6 +38,7 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
   const progress = calculateDeliveryProgress(order);
   const recipient = getRecipientInfo(order);
   const locationLabel = formatDeliveryLocation(order);
+  const offlineEligible = canTakeOrderOffline(order);
 
   // Determinar el badge de progreso
   const getProgressBadge = () => {
@@ -196,6 +198,12 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
           </Text>
         )}
 
+        {/* Llevar la orden al teléfono para usarla sin señal en el asistente
+            de negocio (remisión del camión u OE de cliente). */}
+        {offlineEligible ? (
+          <OfflineOrderToggle orderId={order.id} orderNumber={order.order_number} />
+        ) : null}
+
         {/* Botones de acción */}
         <View style={[styles.actionsContainer, { borderTopColor: colors.divider }]}>
           <TouchableOpacity
@@ -232,6 +240,7 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
         onClose={() => setShowProductsModal(false)}
         orderId={order.id}
         orderNumber={order.order_number || order.id.slice(0, 8)}
+        offlineToggle={offlineEligible}
       />
 
       {/* Modal de destinatario */}
