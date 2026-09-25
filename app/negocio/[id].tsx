@@ -146,6 +146,9 @@ function NegocioDetailScreenInner() {
   const [sellerName, setSellerName] = useState('');
   // Quien registró el negocio; no siempre es el vendedor.
   const [createdByName, setCreatedByName] = useState('');
+  // Vendedor al que pertenece el CLIENTE (`customers.seller_id`), que puede no
+  // ser el vendedor del negocio: en cartera se leía uno por el otro.
+  const [customerSellerName, setCustomerSellerName] = useState<string | null>(null);
   /** Nombre del usuario actual: autor de los pagos que registre desde esta pantalla. */
   const [currentUserName, setCurrentUserName] = useState('');
   const [legalText, setLegalText] = useState<string | null>(null);
@@ -261,6 +264,8 @@ function NegocioDetailScreenInner() {
       // (datos bajados antes), el contrato imprime una raya en «CREADO POR» en
       // vez de dar por hecho que fue el vendedor.
       setCreatedByName(local.negocio.created_by_name || '');
+      // El cliente baja con su `seller_id` y los usuarios bajan completos.
+      setCustomerSellerName(local.customerSeller?.name ?? null);
       setOrderNumber(null);
       setOriginOrderNumber(null);
       setRemisionVigente(null);
@@ -345,7 +350,7 @@ function NegocioDetailScreenInner() {
           .order('virtual_receipt_number', { ascending: false }),
         supabase
           .from('customers')
-          .select('name, id_number, phone, email, address')
+          .select('name, id_number, phone, email, address, seller_id')
           .eq('id', n.customer_id)
           .maybeSingle(),
         supabase
@@ -414,6 +419,8 @@ function NegocioDetailScreenInner() {
       setPaymentPage(0);
       setCustomerName(custRes.data?.name || '');
       setCustomerMeta(custRes.data || {});
+      // Solo para nombrar al vendedor del cliente (se resuelve con los perfiles).
+      const customerSellerId = custRes.data?.seller_id ?? null;
       setLegalText(settingsRes.data?.legal_text || null);
       setPayMoneyDecimals(settingsRes.data?.money_decimal_places ?? null);
       setCustomerSignature(customerSignatureUrl || '');
@@ -432,9 +439,9 @@ function NegocioDetailScreenInner() {
         setCodeudorMeta({});
       }
 
-      // Vendedor y creador en un solo viaje: suelen ser la misma persona, y
-      // aun cuando no lo sean no hace falta consultar dos veces.
-      const profileIds = [n.seller_id, n.created_by].filter(Boolean) as string[];
+      // Vendedor, creador y vendedor del cliente en un solo viaje: suelen
+      // repetirse, y aun cuando no lo hagan no hace falta consultar tres veces.
+      const profileIds = [n.seller_id, n.created_by, customerSellerId].filter(Boolean) as string[];
       if (profileIds.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
@@ -444,9 +451,11 @@ function NegocioDetailScreenInner() {
         const byId = new Map((profiles || []).map((row) => [row.id, row.full_name || '']));
         setSellerName(n.seller_id ? byId.get(n.seller_id) || '' : '');
         setCreatedByName(n.created_by ? byId.get(n.created_by) || '' : '');
+        setCustomerSellerName(customerSellerId ? byId.get(customerSellerId) || null : null);
       } else {
         setSellerName('');
         setCreatedByName('');
+        setCustomerSellerName(null);
       }
 
       // Un solo viaje para los dos números que pinta la pantalla: el de la orden
@@ -1569,9 +1578,22 @@ function NegocioDetailScreenInner() {
           <View style={styles.sellerRow}>
             <MaterialIcons name="badge" size={IconSize.md} color={colors.primary.main} />
             <View style={styles.sellerCopy}>
-              <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Vendedor</Text>
+              <Text style={[styles.sellerLabel, { color: colors.text.secondary }]}>Vendedor del negocio</Text>
               <Text style={[styles.sellerName, { color: colors.text.primary }]} numberOfLines={1}>
                 {sellerName || 'Sin asignar'}
+              </Text>
+              {/*
+                Las otras dos personas, rotuladas: quien registró el negocio y
+                el vendedor al que pertenece el cliente. Aquí se muestran
+                siempre las tres (hay espacio y es donde se reasigna el
+                vendedor del negocio); en la tarjeta de cartera solo se repite
+                el vendedor del negocio si es otra persona.
+              */}
+              <Text testID="negocio-registered-by" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
+                Registrado por: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{createdByName || '—'}</Text>
+              </Text>
+              <Text testID="negocio-customer-seller" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
+                Vendedor del cliente: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{customerSellerName || 'Sin asignar'}</Text>
               </Text>
             </View>
             {canReassignSeller ? (

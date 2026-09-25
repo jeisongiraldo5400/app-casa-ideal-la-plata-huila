@@ -4701,6 +4701,8 @@ export type Database = {
         }
         Returns: {
           amount: number
+          created_by: string
+          created_by_name: string
           cuota_id: string
           customer_address: string
           customer_id_number: string

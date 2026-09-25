@@ -51,6 +51,13 @@ export type CarteraRow = {
   seller_name: string | null;
   customer_seller_id: string | null;
   customer_seller_name: string | null;
+  /**
+   * Quién registró el negocio (20261202120000). Por defecto también es el
+   * vendedor del negocio; `null` si el negocio no lo guardó o el servidor aún
+   * no lo devuelve. Opcionales: las filas de servidores anteriores no los traen.
+   */
+  created_by?: string | null;
+  created_by_name?: string | null;
   installment_number: number;
   due_date: string;
   amount: number;
