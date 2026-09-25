@@ -16,8 +16,7 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatLastDownloadTime, requestManualDownload } from '@/lib/offline/sync/downloadData';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { ClientesBlock, clientesNothingChosen, NOTHING_CHOSEN_MESSAGE } from './prepare/ClientesBlock';
-import { SelectedList } from './prepare/SelectedList';
+import { carriedLabel, SelectedList } from './prepare/SelectedList';
 import { PREPARE_PHONE_AFTER_MS } from './SyncStatusBanner';
 import { setSyncMode, SELECTION_LIMITS, useSyncPrefs } from './infrastructure/syncPrefsService';
 
@@ -34,18 +33,31 @@ function BlockDate({ label, at }: { label: string; at: number | null }) {
   );
 }
 
-const ALWAYS_INCLUDED = [
-  'Tus negocios (como vendedor, creador o gestor asignado) y sus clientes',
-  'Departamentos, municipios y veredas',
-  'Métodos de pago y vendedores',
-  'Tus rutas de cobro',
-];
-/** Solo a quien puede usar órdenes (el recaudador puro no las recibe). */
-const ALWAYS_INCLUDED_ORDERS = 'Remisiones pendientes (lista ligera)';
+/** Qué baja siempre (v3): los clientes van todos; los negocios, solo los abiertos. */
+export function alwaysIncludedLines(input: { recaudador: boolean; canOrders: boolean }): string[] {
+  return [
+    input.recaudador
+      ? 'Los clientes de los negocios que cobras, con sus direcciones'
+      : 'Todos los clientes, con sus direcciones',
+    'Negocios abiertos con sus cuotas y pagos (los cerrados y anulados no se llevan)',
+    'Departamentos, municipios y veredas',
+    'Métodos de pago y vendedores',
+    'Tus rutas de cobro',
+    ...(input.canOrders ? ['Remisiones pendientes (lista ligera)'] : []),
+  ];
+}
+
+function estimateLine(estimated: { clientes: number; negocios: number } | null) {
+  if (!estimated) return null;
+  const clientes = `${estimated.clientes} ${estimated.clientes === 1 ? 'cliente' : 'clientes'}`;
+  const negocios = `${estimated.negocios} ${estimated.negocios === 1 ? 'negocio abierto' : 'negocios abiertos'}`;
+  return `Se descargarán unos ${clientes} y ${negocios}.`;
+}
 
 /**
- * «Preparar el teléfono» (contrato v2, punto 8). La persona elige y pulsa
- * «Descargar»: nada baja solo. Cada cambio queda «Pendiente de descargar».
+ * «Preparar el teléfono» (contrato v2 + v3). Clientes y negocios abiertos van
+ * siempre; se eligen productos (sí / no) y las órdenes, que se marcan desde
+ * sus listas. Nada baja solo: cada cambio queda «Pendiente de descargar».
  */
 export function OfflineDataScreen() {
   const { isDark } = useTheme();
@@ -78,7 +90,7 @@ export function OfflineDataScreen() {
     };
   }, [lastSyncedAt]);
 
-  const runDownload = async () => {
+  const download = async () => {
     if (downloading) return;
     setDownloading(true);
     try {
@@ -91,20 +103,6 @@ export function OfflineDataScreen() {
     } finally {
       setDownloading(false);
     }
-  };
-
-  // Clientes en «Elegir» sin nada elegido: el teléfono se quedaría sin
-  // clientes. Se pregunta antes de descargar (solo si el bloque se ve).
-  const download = () => {
-    if (downloading) return;
-    if (prefs.status === 'ready' && clientesNothingChosen(prefs.config, prefs.meta)) {
-      Alert.alert('¿Descargar sin clientes?', NOTHING_CHOSEN_MESSAGE, [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Descargar igual', onPress: () => void runDownload() },
-      ]);
-      return;
-    }
-    void runDownload();
   };
 
   const toggleProducts = useCallback(async (value: boolean) => {
@@ -146,6 +144,7 @@ export function OfflineDataScreen() {
   }
 
   const productsOn = prefs.config.productos.mode !== 'ninguno';
+  const estimate = prefs.status === 'ready' ? estimateLine(prefs.meta.estimated) : null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
@@ -161,7 +160,7 @@ export function OfflineDataScreen() {
           </View>
           {lastDownload == null ? (
             <Text style={[styles.caption, { color: colors.warning.main }]} testID="prepare-first-time">
-              Aún no has preparado el teléfono. Elige qué llevar y pulsa «Descargar» antes de salir.
+              Aún no has preparado el teléfono. Revisa qué llevar y pulsa «Descargar» antes de salir.
             </Text>
           ) : prefs.pendingDownload || stale ? (
             <Text style={[styles.caption, { color: colors.warning.main }]} testID="prepare-warning">
@@ -179,23 +178,21 @@ export function OfflineDataScreen() {
 
         <Card style={styles.card}>
           <SectionHeader title="Siempre incluido" />
-          {(canOrders ? [...ALWAYS_INCLUDED, ALWAYS_INCLUDED_ORDERS] : ALWAYS_INCLUDED).map((line) => (
+          {alwaysIncludedLines({ recaudador, canOrders }).map((line) => (
             <Text key={line} style={[styles.caption, { color: colors.text.secondary }]}>
               • {line}
             </Text>
           ))}
+          {estimate ? (
+            <Text style={[styles.caption, { color: colors.text.primary }]} testID="prepare-estimate">
+              {estimate}
+            </Text>
+          ) : null}
+          <BlockDate label="Descargado" at={lastDownload} />
         </Card>
 
         {blocked ?? (
           <>
-            <ClientesBlock
-              config={prefs.config}
-              meta={prefs.meta}
-              online={online}
-              recaudador={recaudador}
-              dateSlot={<BlockDate label="Clientes descargados" at={lastDownload} />}
-            />
-
             {canCatalog ? (
               <Card style={styles.card}>
                 <View testID="domain-card-productos" style={styles.cardBody}>
@@ -241,7 +238,7 @@ export function OfflineDataScreen() {
                     title="Órdenes de entrega"
                     action={
                       <StatusChip
-                        label={`${prefs.config.ordenes.count} ${prefs.config.ordenes.count === 1 ? 'llevada' : 'llevadas'}`}
+                        label={carriedLabel(prefs.config.ordenes.count)}
                         tone={prefs.config.ordenes.count ? 'success' : 'neutral'}
                         icon="local-shipping"
                       />
@@ -262,7 +259,7 @@ export function OfflineDataScreen() {
         <Button
           title={downloading ? 'Descargando…' : 'Descargar'}
           icon="cloud-download"
-          onPress={download}
+          onPress={() => void download()}
           loading={downloading}
           disabled={downloading}
           style={styles.flex}

@@ -8,17 +8,12 @@ import {
   listSyncSelection,
   setSyncSelection,
   type SelectionItem,
-  type SyncPrefDomain,
+  type SelectionDomain,
 } from '../infrastructure/syncPrefsService';
 
-const NOUNS: Record<'clientes' | 'ordenes', { many: string; carried: string; carriedOne: string }> = {
-  clientes: { many: 'clientes', carried: 'elegidos', carriedOne: 'elegido' },
-  ordenes: { many: 'órdenes', carried: 'llevadas', carriedOne: 'llevada' },
-};
-
-export function carriedLabel(domain: 'clientes' | 'ordenes', count: number) {
-  const noun = NOUNS[domain];
-  return `${count} ${count === 1 ? noun.carriedOne : noun.carried}`;
+/** «1 llevada» / «3 llevadas» (solo las órdenes se eligen una a una). */
+export function carriedLabel(count: number) {
+  return `${count} ${count === 1 ? 'llevada' : 'llevadas'}`;
 }
 
 const LIST_PAGE = 10;
@@ -29,7 +24,7 @@ export function SelectedList({
   count,
   disabled,
 }: {
-  domain: Extract<SyncPrefDomain, 'clientes' | 'ordenes'>;
+  domain: SelectionDomain;
   count: number;
   disabled: boolean;
 }) {
@@ -78,7 +73,7 @@ export function SelectedList({
   if (count === 0) {
     return (
       <Text style={[styles.caption, { color: colors.text.secondary }]}>
-        {domain === 'ordenes' ? 'Aún no llevas órdenes.' : 'Aún no has elegido clientes uno a uno.'}
+        Aún no llevas órdenes.
       </Text>
     );
   }

@@ -159,10 +159,9 @@ function product(id: string) {
 }
 
 const CONFIG: LocalSyncConfig = {
-  clientes: { mode: 'seleccion', revision: 3, count: 12, misClientes: false },
+  clientes: { mode: 'todo', revision: 3, count: 0 },
   productos: { mode: 'todo', revision: 1, count: null },
   ordenes: { revision: 2, count: 1 },
-  municipios: null,
 };
 
 beforeEach(() => {
@@ -329,10 +328,9 @@ describe('preferencias y revisiones', () => {
 
     expect(await readAppliedRevisions(mockDb as never)).toEqual({ clientes: 3, productos: null });
     expect(await getLocalSyncConfig()).toEqual({
-      clientes: { mode: 'seleccion', revision: 3, count: null, misClientes: null },
+      clientes: { mode: 'seleccion', revision: 3, count: null },
       productos: { mode: 'todo', revision: 1, count: null },
       ordenes: { revision: 2, count: null },
-      municipios: null,
     });
   });
 
@@ -363,7 +361,6 @@ describe('preferencias y revisiones', () => {
       mode: 'todo',
       revision: 7,
       count: null,
-      misClientes: null,
     });
   });
 
@@ -386,36 +383,40 @@ describe('preferencias y revisiones', () => {
   });
 });
 
-describe('«Mis clientes» en la configuración descargada', () => {
-  const server = {
-    clientes: { mode: 'seleccion', revision: 3, count: 0, mis_clientes: false },
+describe('v3: clientes siempre todos', () => {
+  const v2 = {
+    clientes: { mode: 'seleccion', revision: 3, count: 4, mis_clientes: true },
+    productos: { mode: 'todo', revision: 1 },
+    ordenes: { revision: 1, count: 0 },
+    municipios: { revision: 3, count: 2 },
+  };
+  const v3 = {
+    clientes: { mode: 'todo', revision: 3, count: 0, mis_clientes: false },
     productos: { mode: 'todo', revision: 1 },
     ordenes: { revision: 1, count: 0 },
     municipios: { revision: 3, count: 0 },
   };
 
-  it('se guarda y se relee de sync_meta', async () => {
-    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: { ...server, clientes: { ...server.clientes, mis_clientes: true } } }), {
-      catalogApplied: false,
+  it('lo que v2 mandaba de más (mis_clientes, municipios) no se guarda', async () => {
+    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: v3 }), { catalogApplied: false });
+    expect(await getLocalSyncConfig()).toEqual({
+      clientes: { mode: 'todo', revision: 3, count: 0 },
+      productos: { mode: 'todo', revision: 1, count: null },
+      ordenes: { revision: 1, count: 0 },
     });
-    expect((await getLocalSyncConfig())?.clientes.misClientes).toBe(true);
   });
 
-  it('encenderlo desde otro teléfono (misma revisión y conteo) sale como pendiente de descargar', async () => {
-    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: server }), { catalogApplied: false });
+  it('un teléfono descargado en v2 con «Elegir» queda pendiente de descargar frente al servidor v3', async () => {
+    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: v2 }), { catalogApplied: false });
     await markManualDownloadDone(mockDb as never, 1000);
-    const downloaded = await getLocalSyncConfig();
-
-    expect(serverConfigDiffers(downloaded, server)).toBe(false);
-    const encendido = { ...server, clientes: { ...server.clientes, mis_clientes: true } };
-    expect(serverConfigDiffers(downloaded, encendido)).toBe(true);
-    expect(await hasPendingChoicesToDownload(encendido)).toBe(true);
+    expect(serverConfigDiffers(await getLocalSyncConfig(), v3)).toBe(true);
+    expect(await hasPendingChoicesToDownload(v3)).toBe(true);
   });
 
-  it('un servidor que no lo manda no cuenta como cambio', () => {
-    const downloaded = parseSyncConfig(server);
-    const { mis_clientes: _omit, ...sinFlag } = server.clientes;
-    expect(serverConfigDiffers(downloaded, { ...server, clientes: sinFlag })).toBe(false);
+  it('descargado en v3, la misma configuración no está pendiente', async () => {
+    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: v3 }), { catalogApplied: false });
+    await markManualDownloadDone(mockDb as never, 1000);
+    expect(await hasPendingChoicesToDownload(v3)).toBe(false);
   });
 });
 
@@ -546,6 +547,20 @@ describe('purga de negocios tras una descarga manual completa', () => {
     expect(mockDb.ids('negocio_cuotas')).toEqual(['q-cobro', 'q-viene']);
     expect(mockDb.ids('negocio_pagos')).toEqual(['p-rechazado']);
     expect(mockDb.ids('negocio_items')).toEqual([]);
+  });
+
+  it('v3: un negocio que pasó a cerrado o anulado (ya no viene) se borra, salvo si tiene algo por enviar', async () => {
+    mockDb.seed('negocios', 'n-cerrado', { customerId: 'c1', status: 'cerrado', rowSyncStatus: 'synced' });
+    mockDb.seed('negocios', 'n-anulado-con-cobro', { customerId: 'c2', status: 'anulado', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_cuotas', 'q-cerrado', { negocioId: 'n-cerrado', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_pagos', 'p-cerrado', { negocioId: 'n-cerrado', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_pagos', 'p-sin-enviar', { negocioId: 'n-anulado-con-cobro', rowSyncStatus: 'pending' });
+
+    expect(await purgeUnsentNegocios(mockDb as never, negociosPayload())).toBe(true);
+
+    expect(mockDb.ids('negocios')).toEqual(['n-anulado-con-cobro']);
+    expect(mockDb.ids('negocio_cuotas')).toEqual([]);
+    expect(mockDb.ids('negocio_pagos')).toEqual(['p-sin-enviar']);
   });
 
   it('sin negocios completos o con el paquete recortado no se purga (queda la poda por alcance)', async () => {

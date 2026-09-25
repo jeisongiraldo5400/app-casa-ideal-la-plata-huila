@@ -307,8 +307,9 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
     // borra lo que no vino; si no, la poda por `pull_mobile_scope` de siempre.
     if (!(await purgeUnsentNegocios(database, payload))) await pruneScope(database);
     // Recaudador puro sin descarga selectiva: fuera los clientes que no son
-    // de ningún negocio suyo (20261128120000). Con clientes completos manda
-    // la selección (v2: el recaudador también elige clientes o municipios).
+    // de ningún negocio suyo (20261128120000). Con clientes completos ya
+    // vienen sólo los de sus negocios abiertos (v3) y los purga la descarga
+    // selectiva.
     if (payload.pull_scope === 'cobro' && !fullDomainsSent(payload).includes('clientes')) {
       await pruneCustomersOutsideNegocios(database);
     }

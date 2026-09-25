@@ -7,10 +7,15 @@
  * NO se descarga nada (contrato v2): la elección queda «Pendiente de descargar»
  * hasta que la persona pulse «Descargar» en «Preparar el teléfono».
  *
- * El estado vive en un store de zustand compartido: la ficha de un cliente, su
- * fila en la lista y la pantalla de ajustes ven la misma marca sin volver a
- * preguntar al servidor. `useOfflineSelection(domain)` es el hook que usan las
- * pantallas (clientes, productos y, en el paquete E, órdenes).
+ * v3 (20261205120000): los clientes van SIEMPRE todos (ya no hay «Elegir»,
+ * municipios ni «Mis clientes»). Quedan dos preferencias: productos
+ * (todo | ninguno) y las órdenes marcadas una a una.
+ *
+ * El estado vive en un store de zustand compartido: la lista de órdenes, su
+ * detalle y la pantalla de ajustes ven la misma marca sin volver a preguntar
+ * al servidor. `useOfflineSelection('ordenes')` es el hook que usan las
+ * pantallas de órdenes; `useOfflineSelection('productos').mode` dice si el
+ * catálogo va en el teléfono.
  *
  * Si el servidor no tiene los RPC (PGRST202), `supported` queda en `false` y la
  * UI se oculta sin romper nada. No se exige `isSelectiveSyncSupported()`: con
@@ -32,12 +37,11 @@ import {
   markChoicesChangedLocally,
 } from '@/lib/offline/sync/syncPrefs';
 
-/**
- * Dominios de preferencia. `municipios` es un dominio de selección (v2): los
- * clientes cuyo municipio está elegido bajan sin marcarlos uno a uno.
- */
-export type SyncPrefDomain = 'clientes' | 'productos' | 'ordenes' | 'municipios';
-/** clientes: todo | seleccion · productos: todo | ninguno · ordenes/municipios: seleccion. */
+/** Dominios de preferencia: productos (modo) y órdenes (selección). */
+export type SyncPrefDomain = 'productos' | 'ordenes';
+/** Lo único que se elige una a una. */
+export type SelectionDomain = 'ordenes';
+/** productos: todo | ninguno · ordenes: seleccion. */
 export type SyncMode = 'todo' | 'seleccion' | 'ninguno';
 
 export type DomainSyncConfig = {
@@ -52,8 +56,6 @@ export type SyncConfig = Record<SyncPrefDomain, DomainSyncConfig>;
 
 /** Lo que `get_mobile_sync_config` manda además de los dominios. */
 export type SyncConfigMeta = {
-  /** Atajo «Mis clientes» (flag del servidor, no ids: no gasta el tope). */
-  misClientes: boolean;
   /** Total exacto que bajaría la próxima descarga. */
   estimated: { clientes: number; negocios: number } | null;
   ordersAllowed: boolean;
@@ -61,7 +63,6 @@ export type SyncConfigMeta = {
 };
 
 export const DEFAULT_CONFIG_META: SyncConfigMeta = {
-  misClientes: false,
   estimated: null,
   ordersAllowed: true,
   catalogAllowed: true,
@@ -77,11 +78,8 @@ export type SelectionItem = {
 /** Tope del RPC por llamada; los lotes más grandes se parten. */
 export const SELECTION_CHUNK_SIZE = 200;
 /** Topes totales del servidor (el RPC los hace cumplir; aquí solo se avisan). */
-export const SELECTION_LIMITS: Record<SyncPrefDomain, number> = {
-  clientes: 1000,
-  productos: 1000,
+export const SELECTION_LIMITS: Record<SelectionDomain, number> = {
   ordenes: 100,
-  municipios: 200,
 };
 
 const FUNCTION_NOT_FOUND = 'PGRST202';
@@ -146,18 +144,20 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const DOMAINS: SyncPrefDomain[] = ['clientes', 'productos', 'ordenes', 'municipios'];
-const SELECTION_ONLY: SyncPrefDomain[] = ['ordenes', 'municipios'];
+const DOMAINS: SyncPrefDomain[] = ['productos', 'ordenes'];
+
+function isSelectionDomain(domain: SyncPrefDomain): domain is SelectionDomain {
+  return domain === 'ordenes';
+}
 
 export function defaultDomainConfig(domain: SyncPrefDomain): DomainSyncConfig {
-  const selectionOnly = SELECTION_ONLY.includes(domain);
-  return { mode: selectionOnly ? 'seleccion' : 'todo', revision: 0, count: 0, ids: selectionOnly ? [] : null };
+  // Productos no tiene ids (todo | ninguno): `ids` en [] para no pedirlos.
+  return { mode: isSelectionDomain(domain) ? 'seleccion' : 'todo', revision: 0, count: 0, ids: [] };
 }
 
 function parseMode(domain: SyncPrefDomain, raw: unknown): SyncMode {
-  if (SELECTION_ONLY.includes(domain)) return 'seleccion';
-  if (domain === 'productos') return raw === 'ninguno' ? 'ninguno' : 'todo';
-  return raw === 'seleccion' ? 'seleccion' : 'todo';
+  if (isSelectionDomain(domain)) return 'seleccion';
+  return raw === 'ninguno' ? 'ninguno' : 'todo';
 }
 
 export function parseSyncConfig(data: unknown): SyncConfig {
@@ -166,8 +166,12 @@ export function parseSyncConfig(data: unknown): SyncConfig {
   const config = {} as SyncConfig;
   for (const domain of DOMAINS) {
     const raw = asRecord(root[domain]);
-    const ids = asIds(raw.ids) ?? asIds(selected[domain]);
     const mode = parseMode(domain, raw.mode);
+    if (!isSelectionDomain(domain)) {
+      config[domain] = { mode, revision: toNumber(raw.revision), count: 0, ids: [] };
+      continue;
+    }
+    const ids = asIds(raw.ids) ?? asIds(selected[domain]);
     config[domain] = {
       mode,
       revision: toNumber(raw.revision),
@@ -180,11 +184,9 @@ export function parseSyncConfig(data: unknown): SyncConfig {
 
 export function parseConfigMeta(data: unknown): SyncConfigMeta {
   const root = asRecord(data);
-  const clientes = asRecord(root.clientes);
   const estimated = asRecord(root.estimated);
   const hasEstimate = estimated.clientes != null;
   return {
-    misClientes: clientes.mis_clientes === true,
     estimated: hasEstimate
       ? { clientes: toNumber(estimated.clientes), negocios: toNumber(estimated.negocios) }
       : null,
@@ -238,10 +240,8 @@ function initialState(): SyncPrefsState {
   return {
     status: 'idle',
     config: {
-      clientes: defaultDomainConfig('clientes'),
       productos: defaultDomainConfig('productos'),
       ordenes: defaultDomainConfig('ordenes'),
-      municipios: defaultDomainConfig('municipios'),
     },
     meta: DEFAULT_CONFIG_META,
     error: null,
@@ -302,7 +302,7 @@ export async function refreshDownloadState() {
 
 /** Pagina `list_mobile_sync_selection` con nombre para la pantalla de ajustes. */
 export async function listSyncSelection(
-  domain: SyncPrefDomain,
+  domain: SelectionDomain,
   limit = 20,
   offset = 0
 ): Promise<SelectionItem[]> {
@@ -317,7 +317,7 @@ export async function listSyncSelection(
 async function fillMissingIds(config: SyncConfig) {
   for (const domain of DOMAINS) {
     const current = config[domain];
-    if (current.ids !== null) continue;
+    if (current.ids !== null || !isSelectionDomain(domain)) continue;
     const ids: string[] = [];
     for (let offset = 0; offset < SELECTION_LIMITS[domain]; offset += SELECTION_CHUNK_SIZE) {
       const page = await listSyncSelection(domain, SELECTION_CHUNK_SIZE, offset);
@@ -352,17 +352,6 @@ async function refreshEstimate() {
   }
 }
 
-/** Enciende o apaga «Mis clientes» (flag del servidor). */
-export async function setMisClientes(enabled: boolean) {
-  const data = asRecord(await call('set_mobile_sync_mis_clientes', { p_enabled: enabled }));
-  useSyncPrefsStore.setState((state) => ({ meta: { ...state.meta, misClientes: data.mis_clientes !== undefined ? data.mis_clientes === true : enabled } }));
-  patchDomain('clientes', {
-    revision: toNumber(data.revision, useSyncPrefsStore.getState().config.clientes.revision),
-    count: toNumber(data.count, useSyncPrefsStore.getState().config.clientes.count),
-  });
-  markChanged();
-}
-
 let inFlightLoad: Promise<void> | null = null;
 
 async function applyLocalFallback() {
@@ -374,11 +363,9 @@ async function applyLocalFallback() {
   const localRecord = asRecord(local);
   useSyncPrefsStore.setState((state) => {
     const config = { ...state.config };
-    for (const domain of ['clientes', 'productos'] as const) {
-      const raw = asRecord(localRecord[domain]);
-      if (raw.mode === 'todo' || raw.mode === 'seleccion' || raw.mode === 'ninguno') {
-        config[domain] = { ...config[domain], mode: parseMode(domain, raw.mode) };
-      }
+    const raw = asRecord(localRecord.productos);
+    if (raw.mode === 'todo' || raw.mode === 'ninguno') {
+      config.productos = { ...config.productos, mode: parseMode('productos', raw.mode) };
     }
     return { config, status: 'offline' };
   });
@@ -423,7 +410,7 @@ export function loadSyncPrefs(options: { force?: boolean } = {}): Promise<void> 
 }
 
 export async function setSyncMode(domain: SyncPrefDomain, mode: SyncMode) {
-  if (SELECTION_ONLY.includes(domain)) throw new Error('Este dominio siempre se elige uno a uno.');
+  if (isSelectionDomain(domain)) throw new Error('Este dominio siempre se elige uno a uno.');
   const data = asRecord(await call('set_mobile_sync_mode', { p_domain: domain, p_mode: mode }));
   patchDomain(domain, {
     mode,
@@ -437,7 +424,7 @@ export async function setSyncMode(domain: SyncPrefDomain, mode: SyncMode) {
  * el conteo y la revisión que respondió el servidor en el último lote.
  */
 export async function setSyncSelection(
-  domain: SyncPrefDomain,
+  domain: SelectionDomain,
   ids: string[],
   selected: boolean
 ): Promise<{ count: number; revision: number }> {
@@ -520,10 +507,8 @@ export type OfflineSelection = {
 const EMPTY_IDS: string[] = [];
 
 const DOMAIN_NOUN: Record<SyncPrefDomain, string> = {
-  clientes: 'el cliente',
   productos: 'el producto',
   ordenes: 'la orden',
-  municipios: 'el municipio',
 };
 
 /**
@@ -550,6 +535,8 @@ export function useOfflineSelection(domain: SyncPrefDomain): OfflineSelection {
 
   const toggle = useCallback(
     async (id: string) => {
+      // Productos no se marca uno a uno (todo | ninguno).
+      if (!isSelectionDomain(domain)) return false;
       if (!useSyncStore.getState().online) {
         Alert.alert('Sin conexión', 'Necesitas señal para llevar o quitar del teléfono.');
         return false;
