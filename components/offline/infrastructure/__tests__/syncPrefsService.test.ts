@@ -102,9 +102,10 @@ describe('loadSyncPrefs', () => {
   it('sin señal usa el modo que guardó el último pull', async () => {
     rpc.mockRejectedValue(new Error('Network request failed'));
     mockedLocal.mockResolvedValue({
-      clientes: { mode: 'seleccion', revision: 2 },
-      productos: { mode: 'todo', revision: 1 },
-      ordenes: { revision: 1 },
+      clientes: { mode: 'seleccion', revision: 2, count: null },
+      productos: { mode: 'todo', revision: 1, count: null },
+      ordenes: { revision: 1, count: null },
+      municipios: null,
     });
     await loadSyncPrefs();
     const state = useSyncPrefsStore.getState();

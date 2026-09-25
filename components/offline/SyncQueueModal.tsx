@@ -149,7 +149,7 @@ export function SyncQueueModal() {
           {failedCount ? ` · ${failedCount} rechazado${failedCount === 1 ? '' : 's'}` : ''}
         </Text>
         <Pressable
-          onPress={() => void runSync('manual')}
+          onPress={() => void runSync('retry')}
           disabled={status === 'syncing'}
           style={[styles.syncButton, { backgroundColor: colors.primary.main, opacity: status === 'syncing' ? 0.6 : 1 }]}
         >
