@@ -57,7 +57,6 @@ jest.mock('@/lib/offline/repositories/catalogRepository', () => ({
 }));
 
 jest.mock('@/lib/offline/sync/downloadData', () => ({
-  ensureCatalogForOffline: jest.fn(async () => false),
   formatLastDownloadTime: (value: number | null) => (value ? '7:15 a. m.' : null),
 }));
 

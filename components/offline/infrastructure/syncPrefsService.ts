@@ -5,11 +5,12 @@
  * versión de D.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import { runSync } from '@/lib/offline/sync/syncEngine';
 
 export type SyncDomain = 'clientes' | 'productos' | 'ordenes';
-export type SyncMode = 'todo' | 'seleccion';
+/** Contrato v2: productos es `todo` | `ninguno`; clientes `todo` | `seleccion`. */
+export type SyncMode = 'todo' | 'seleccion' | 'ninguno';
 
 export interface SyncDomainConfig {
   mode: SyncMode;
@@ -37,7 +38,7 @@ const rpc = (fn: string, args?: Record<string, unknown>) =>
 function domainConfig(raw: unknown, fallbackMode: SyncMode): SyncDomainConfig {
   const row = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
-    mode: row.mode === 'seleccion' || row.mode === 'todo' ? row.mode : fallbackMode,
+    mode: row.mode === 'seleccion' || row.mode === 'todo' || row.mode === 'ninguno' ? row.mode : fallbackMode,
     revision: Number(row.revision) || 0,
     count: Number(row.count) || 0,
     ids: Array.isArray(row.ids) ? row.ids.filter((id): id is string => typeof id === 'string') : undefined,
@@ -58,7 +59,7 @@ export async function getSyncConfig(): Promise<SyncConfig> {
 export async function setSyncMode(domain: SyncDomain, mode: SyncMode): Promise<void> {
   const { error } = await rpc('set_mobile_sync_mode', { p_domain: domain, p_mode: mode });
   if (error) throw new Error(error.message || 'No se pudo cambiar el modo de descarga');
-  void runSync('manual');
+  // Contrato v2: no descarga; queda pendiente hasta pulsar «Descargar».
 }
 
 export async function setSyncSelection(
@@ -72,7 +73,7 @@ export async function setSyncSelection(
     p_selected: selected,
   });
   if (error) throw new Error(error.message || 'No se pudo guardar la selección');
-  void runSync('manual');
+  // Contrato v2: no descarga; queda pendiente hasta pulsar «Descargar».
 }
 
 export function useOfflineSelection(domain: SyncDomain) {
@@ -99,16 +100,26 @@ export function useOfflineSelection(domain: SyncDomain) {
 
   const isSelected = useCallback((id: string) => ids.has(id), [ids]);
 
+  /** Nunca lanza: si falla muestra su propia alerta y devuelve false. */
   const toggle = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       const selected = !ids.has(id);
-      await setSyncSelection(domain, [id], selected);
+      try {
+        await setSyncSelection(domain, [id], selected);
+      } catch (error: unknown) {
+        Alert.alert(
+          'Preparar el teléfono',
+          error instanceof Error && error.message ? error.message : 'No se pudo guardar la selección'
+        );
+        return false;
+      }
       setIds((prev) => {
         const next = new Set(prev);
         if (selected) next.add(id);
         else next.delete(id);
         return next;
       });
+      return true;
     },
     [domain, ids]
   );

@@ -170,7 +170,7 @@ describe('NegocioProductAddSection · producto que no está en el teléfono', ()
     );
 
     expect(screen.getByTestId('negocio-product-not-on-phone').props.children).toBe(
-      '«comedor» no está en el teléfono. Si lo va a vender, con señal márquelo en Inventario con «Llevar en el teléfono» (o descargue todo el catálogo) y pulse «Descargar información».'
+      '«comedor» no está en el teléfono: no vino en la última descarga. Si es nuevo, con señal pulse «Descargar» en Preparar el teléfono.'
     );
   });
 

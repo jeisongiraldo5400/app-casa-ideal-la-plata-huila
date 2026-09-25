@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useOfflineSelection } from '@/components/offline/infrastructure/syncPrefsService';
 import { formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
-import { errorMessage } from '@/lib/errorMessage';
 import { useLocalOfflineOrders } from '../infrastructure/hooks/useLocalOfflineOrders';
 
 /**
@@ -24,11 +24,14 @@ type Props = {
   orderNumber?: string | null;
 };
 
+/** Marcar no descarga (contrato v2): hay que pulsar «Descargar». */
+export const PENDIENTE_DE_DESCARGAR = 'Pendiente de descargar · pulsa Descargar en Preparar el teléfono';
+
 /**
  * «Llevar en el teléfono / Quitar del teléfono» de una orden de entrega, con
  * el distintivo «En el teléfono». Las órdenes nunca bajan todas: el vendedor
- * marca con señal las que va a usar en el campo (la remisión del camión) y la
- * siguiente sincronización trae su foto para el asistente de negocio.
+ * marca con señal las que va a usar en el campo (la remisión del camión) y su
+ * foto baja cuando pulsa «Descargar» en Preparar el teléfono: nada baja solo.
  */
 export function OfflineOrderToggle({ orderId, orderNumber }: Props) {
   const { isDark } = useTheme();
@@ -37,6 +40,7 @@ export function OfflineOrderToggle({ orderId, orderNumber }: Props) {
   const localOrders = useLocalOfflineOrders();
   const online = useSyncStore((state) => state.online);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   if (!selection.supported) return null;
 
@@ -52,18 +56,15 @@ export function OfflineOrderToggle({ orderId, orderNumber }: Props) {
     ? downloadedAt
       ? `Descargada ${downloadedAt}`
       : 'Descargada'
-    : 'Pendiente de descargar';
+    : null;
+  const pendingDownload = selected && !local;
 
   const handlePress = async () => {
     if (busy) return;
     setBusy(true);
-    try {
-      await selection.toggle(orderId);
-    } catch (error: unknown) {
-      Alert.alert('Llevar en el teléfono', errorMessage(error, 'No se pudo guardar el cambio'));
-    } finally {
-      setBusy(false);
-    }
+    // `toggle` nunca lanza y ya avisa si falla: aquí no se muestra otra alerta.
+    await selection.toggle(orderId);
+    setBusy(false);
   };
 
   const label = selected ? 'Quitar del teléfono' : 'Llevar en el teléfono';
@@ -82,6 +83,18 @@ export function OfflineOrderToggle({ orderId, orderNumber }: Props) {
             >
               {status}
             </Text>
+          ) : null}
+          {pendingDownload ? (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Ir a Preparar el teléfono"
+              onPress={() => router.push('/datos-sin-conexion' as never)}
+              hitSlop={6}
+            >
+              <Text style={[styles.status, { color: colors.primary.main }]} numberOfLines={2}>
+                {PENDIENTE_DE_DESCARGAR}
+              </Text>
+            </Pressable>
           ) : null}
         </View>
       ) : (

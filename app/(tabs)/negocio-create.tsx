@@ -112,7 +112,7 @@ import { errorMessage } from '@/lib/errorMessage';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import {
-  productoNoEstaEnElTelefono,
+  productSearchNotice,
   searchProductsForNegocio,
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
@@ -122,7 +122,8 @@ import {
   fetchLocationCatalogsFromLocal,
   localCatalogPulledAt,
 } from '@/lib/offline/repositories/catalogRepository';
-import { ensureCatalogForOffline, formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
+import { formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
+import { useOfflineSelection } from '@/components/offline/infrastructure/syncPrefsService';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 type Customer = {
@@ -182,6 +183,10 @@ function NegocioCreateScreenInner() {
   const [productQuery, setProductQuery] = useState('');
   /** Término cuya búsqueda de productos ya terminó (para no avisar a medias). */
   const [productSearchedQuery, setProductSearchedQuery] = useState('');
+  /** Productos «ninguno» en Preparar el teléfono: sin señal no hay catálogo a propósito. */
+  const noProductsOnPhone = useOfflineSelection('productos').mode === 'ninguno';
+  const noProductsOnPhoneRef = useRef(noProductsOnPhone);
+  noProductsOnPhoneRef.current = noProductsOnPhone;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [codeudor, setCodeudor] = useState<Customer | null>(null);
@@ -293,9 +298,8 @@ function NegocioCreateScreenInner() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Con señal se aprovecha para dejar el catálogo de producto al día; sin
-      // ella no hace nada y el asistente trabaja con la última descarga.
-      void ensureCatalogForOffline().catch(() => undefined);
+      // Nada se descarga solo (contrato v2): el catálogo baja únicamente al
+      // pulsar «Descargar» en Preparar el teléfono.
       try {
         const [, d, m, v, sellers, cachedName, pending] = await Promise.all([
           fetchCreditSettings(),
@@ -413,13 +417,13 @@ function NegocioCreateScreenInner() {
   const ultimaDescarga = formatLastDownloadTime(catalogPulledAt);
   // Sin señal el buscador mira solo lo que bajó al teléfono: si no aparece,
   // se dice por qué en vez de dejar la lista vacía.
-  const productSearchMiss =
-    sinRed &&
-    Boolean(productSearchedQuery) &&
-    productSearchedQuery === productQuery.trim() &&
-    products.length === 0
-      ? productoNoEstaEnElTelefono(productSearchedQuery)
-      : null;
+  const productSearchMiss = productSearchNotice({
+    offline: sinRed,
+    noProductsOnPhone,
+    query: productQuery,
+    searchedQuery: productSearchedQuery,
+    resultsCount: products.length,
+  });
 
   /**
    * La pantalla es una pestaña y sigue viva al salir. Si se sale con un negocio
@@ -555,7 +559,10 @@ function NegocioCreateScreenInner() {
         }
       } catch (error) {
         if (!cancelled) {
-          Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          // Con productos «ninguno» el aviso va en el buscador, no en una alerta.
+          if (!noProductsOnPhoneRef.current) {
+            Alert.alert('Error', errorMessage(error, 'No fue posible buscar productos'));
+          }
           setProducts([]);
           setProductSearchedQuery('');
         }

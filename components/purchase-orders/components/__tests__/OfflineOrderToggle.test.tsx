@@ -15,6 +15,9 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
+
 jest.mock('@/lib/offline/sync/downloadData', () => ({
   formatLastDownloadTime: (value: number | null) => (value ? '7:15 a. m.' : null),
 }));
@@ -25,7 +28,7 @@ jest.mock('@/lib/offline/repositories/deliveryOrdersRepository', () => ({
 
 const mockSelection = {
   isSelected: jest.fn((_id: string) => false),
-  toggle: jest.fn(async (_id: string) => undefined),
+  toggle: jest.fn(async (_id: string) => true),
   count: 0,
   mode: 'seleccion' as const,
   supported: true,
@@ -72,13 +75,16 @@ describe('OfflineOrderToggle · Llevar en el teléfono', () => {
     await waitFor(() => expect(mockSelection.toggle).toHaveBeenCalledWith('rem-1'));
   });
 
-  it('marcada y aún sin foto dice que está pendiente de descargar', async () => {
+  it('marcar no descarga: dice que falta pulsar Descargar y lleva a Preparar el teléfono', async () => {
     mockSelection.isSelected.mockReturnValue(true);
     const screen = render(<OfflineOrderToggle orderId="rem-1" />);
     await settle();
 
     expect(screen.getByText('En el teléfono')).toBeTruthy();
-    expect(screen.getByText('Pendiente de descargar')).toBeTruthy();
+    fireEvent.press(
+      screen.getByText('Pendiente de descargar · pulsa Descargar en Preparar el teléfono')
+    );
+    expect(mockPush).toHaveBeenCalledWith('/datos-sin-conexion');
     fireEvent.press(screen.getByText('Quitar del teléfono'));
     await waitFor(() => expect(mockSelection.toggle).toHaveBeenCalledWith('rem-1'));
   });
@@ -91,6 +97,7 @@ describe('OfflineOrderToggle · Llevar en el teléfono', () => {
     await settle();
 
     await waitFor(() => expect(screen.getByText('Descargada 7:15 a. m.')).toBeTruthy());
+    expect(screen.queryByText(/Pendiente de descargar/)).toBeNull();
   });
 
   it('si la foto dice que ya no sirve, muestra el motivo', async () => {
@@ -105,17 +112,18 @@ describe('OfflineOrderToggle · Llevar en el teléfono', () => {
     await waitFor(() => expect(screen.getByText('La remisión fue cancelada')).toBeTruthy());
   });
 
-  it('el error del servidor (p. ej. el tope) se muestra', async () => {
+  it('si no se pudo marcar no muestra otra alerta (ya la muestra useOfflineSelection)', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
-    mockSelection.toggle.mockRejectedValueOnce(new Error('Puedes llevar hasta 100 órdenes'));
+    mockSelection.toggle.mockResolvedValueOnce(false);
     const screen = render(<OfflineOrderToggle orderId="rem-1" />);
     await settle();
 
     fireEvent.press(screen.getByText('Llevar en el teléfono'));
 
-    await waitFor(() =>
-      expect(alert).toHaveBeenCalledWith('Llevar en el teléfono', 'Puedes llevar hasta 100 órdenes')
-    );
+    await waitFor(() => expect(mockSelection.toggle).toHaveBeenCalled());
+    await settle();
+    expect(alert).not.toHaveBeenCalled();
+    expect(screen.getByText('Llevar en el teléfono')).toBeTruthy();
     alert.mockRestore();
   });
 

@@ -11,12 +11,38 @@ import {
 export const SIN_CATALOGO_LOCAL =
   'Sin conexión y sin catálogo descargado. Conéctese y pulse «Descargar información» para poder armar negocios sin señal.';
 
+/** Sin señal con productos «ninguno» en Preparar el teléfono. */
+export const SIN_PRODUCTOS_EN_EL_TELEFONO =
+  'No llevas productos en el teléfono; actívalos en Preparar el teléfono.';
+
 /**
- * Sin señal, con catálogo en el teléfono pero sin el producto buscado: o no
- * existe, o no se eligió llevarlo (descarga selectiva de productos).
+ * Sin señal, con catálogo en el teléfono pero sin el producto buscado: no
+ * estaba en la última descarga (o no existe).
  */
 export function productoNoEstaEnElTelefono(term: string): string {
-  return `«${term.trim()}» no está en el teléfono. Si lo va a vender, con señal márquelo en Inventario con «Llevar en el teléfono» (o descargue todo el catálogo) y pulse «Descargar información».`;
+  return `«${term.trim()}» no está en el teléfono: no vino en la última descarga. Si es nuevo, con señal pulse «Descargar» en Preparar el teléfono.`;
+}
+
+/**
+ * Aviso del buscador de productos del asistente sin señal, o null. Con
+ * productos «ninguno» lo dice de entrada; si no, solo cuando la búsqueda del
+ * término escrito ya terminó sin resultados (para no avisar a medias).
+ */
+export function productSearchNotice(input: {
+  offline: boolean;
+  noProductsOnPhone: boolean;
+  query: string;
+  searchedQuery: string;
+  resultsCount: number;
+}): string | null {
+  if (!input.offline) return null;
+  const query = input.query.trim();
+  if (!query) return null;
+  if (input.noProductsOnPhone) return SIN_PRODUCTOS_EN_EL_TELEFONO;
+  if (input.searchedQuery === query && input.resultsCount === 0) {
+    return productoNoEstaEnElTelefono(query);
+  }
+  return null;
 }
 
 export type NegocioProduct = {

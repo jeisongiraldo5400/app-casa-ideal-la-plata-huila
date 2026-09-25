@@ -13,6 +13,8 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+
 jest.mock('@/components/offline/infrastructure/syncPrefsService', () => ({
   useOfflineSelection: () => ({
     isSelected: (id: string) => id === '3408',
