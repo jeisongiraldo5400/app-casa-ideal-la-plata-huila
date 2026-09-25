@@ -7,9 +7,9 @@ import {
 } from '@/lib/offline/repositories/offlineRepository';
 
 /**
- * Vendedor dueño del cliente (`customers.seller_id`). Es informativo: al crear
- * un negocio se muestra junto al «Vendedor del negocio» y a «Creado por» para
- * no confundir a las tres personas; no decide a quién queda el negocio.
+ * Vendedor dueño del cliente (`customers.seller_id`). Desde 20261206120000 es
+ * el «Vendedor» del negocio: al crear se muestra fijo junto a «Creado por» y,
+ * si el cliente no tiene dueño, un administrador con señal puede asignarlo.
  *
  * - `assigned`: el cliente tiene vendedor; `name` es null si sin señal no se
  *   descargó su perfil.
@@ -71,7 +71,7 @@ async function fetchCustomerSellerLookupFromLocal(customerId: string): Promise<C
   }
 }
 
-/** Texto para «Vendedor del cliente: …». */
+/** Texto para «Vendedor (dueño del cliente): …». */
 export function customerSellerLabel(lookup: CustomerSellerLookup | null): string {
   if (!lookup) return 'Cargando…';
   switch (lookup.status) {

@@ -51,7 +51,18 @@ import {
 } from '@/lib/negocios/negocioCreditRules';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { getCachedProfileName } from '@/lib/offline/security/secureKeys';
-import { fetchSellerOptions, withCurrentUserOption, type SellerOption } from '@/lib/users/sellersService';
+import {
+  fetchSellerOptions,
+  fetchVendedorOptions,
+  withCurrentUserOption,
+  type SellerOption,
+} from '@/lib/users/sellersService';
+import {
+  buildNegocioSellerInput,
+  negocioSellerMode,
+  negocioSellerOwnerHint,
+  negocioSellerOwnerText,
+} from '@/components/negocios/domain/negocioSellerOwner';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
@@ -87,7 +98,6 @@ import { NegocioOriginOrderPicker } from '@/components/negocios/components/Negoc
 import { NegocioDraftBanner } from '@/components/negocios/components/NegocioDraftBanner';
 import { NegocioPeopleLines } from '@/components/negocios/components/NegocioPeopleLines';
 import {
-  customerSellerLabel,
   fetchCustomerSellerLookup,
   type CustomerSellerLookup,
 } from '@/components/customers/infrastructure/services/customerSellerLookup';
@@ -161,7 +171,7 @@ function NegocioCreateScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { roles: userRoles } = useUserRoles();
+  const { roles: userRoles, isAdmin } = useUserRoles();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -205,9 +215,15 @@ function NegocioCreateScreenInner() {
   const [stockFromLocal, setStockFromLocal] = useState(false);
   /** Abonos iniciales pactados (vacío = sin cuota inicial). */
   const [downPayments, setDownPayments] = useState<DownPaymentRow[]>([]);
-  /** '' = usuario actual. */
+  /**
+   * Vendedor que un administrador asigna a un cliente SIN dueño ('' = ninguno).
+   * Con dueño no se elige: el vendedor del negocio es el dueño del cliente.
+   */
   const [sellerId, setSellerId] = useState('');
+  /** Perfiles (para nombres, p. ej. «Creado por»). */
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
+  /** Solo usuarios con rol vendedor, para el selector del admin (con señal). */
+  const [vendedorOptions, setVendedorOptions] = useState<SellerOption[]>([]);
   /** Vendedor dueño del cliente elegido; `null` mientras se consulta. */
   const [customerSeller, setCustomerSeller] = useState<CustomerSellerLookup | null>(null);
   const [installments, setInstallments] = useState('3');
@@ -515,11 +531,12 @@ function NegocioCreateScreenInner() {
     };
   }, [customer?.id, selectedDeliveryOrder, municipios]);
 
-  // Solo informativo: el vendedor del cliente no cambia quién queda como
-  // vendedor del negocio (por defecto, quien lo crea).
+  // El dueño del cliente es el vendedor del negocio (20261206120000). Al
+  // cambiar de cliente se descarta el vendedor que el admin hubiera elegido.
   useEffect(() => {
     const customerId = customer?.id;
     setCustomerSeller(null);
+    setSellerId('');
     if (!customerId) return;
     let cancelled = false;
     fetchCustomerSellerLookup(customerId)
@@ -697,12 +714,32 @@ function NegocioCreateScreenInner() {
   // así que parecía que no hacían nada. Ahora se deshabilitan y el texto dice
   // qué falta. "Guardar borrador" incluido: la base exige la firma al insertar.
   const saveBlockedReason = negocioSaveBlockedBySignature(signature, sellerSignature);
-  const effectiveSellerId = sellerId || user?.id || '';
   const createdByName =
     sellerOptions.find((option) => option.id === user?.id)?.full_name || user?.email || null;
-  const effectiveSellerName =
-    sellerOptions.find((option) => option.id === effectiveSellerId)?.full_name ?? null;
-  const customerSellerText = customer ? customerSellerLabel(customerSeller) : null;
+  const sellerMode = negocioSellerMode({
+    hasCustomer: Boolean(customer),
+    lookup: customerSeller,
+    isAdmin: isAdmin(),
+    online: !sinRed,
+  });
+  const chosenSellerName =
+    vendedorOptions.find((option) => option.id === sellerId)?.full_name ?? null;
+  const sellerOwnerText = negocioSellerOwnerText({
+    mode: sellerMode,
+    lookup: customerSeller,
+    chosenSellerName,
+  });
+  const sellerOwnerHint = negocioSellerOwnerHint(sellerMode);
+
+  // Selector del admin: solo usuarios con rol vendedor y solo con señal.
+  useEffect(() => {
+    if (sellerMode !== 'admin-choose' || vendedorOptions.length) return;
+    let cancelled = false;
+    fetchVendedorOptions()
+      .then((options) => { if (!cancelled) setVendedorOptions(options); })
+      .catch(() => { if (!cancelled) setVendedorOptions([]); });
+    return () => { cancelled = true; };
+  }, [sellerMode, vendedorOptions.length]);
   const calc = calculateCredit({
     productsSubtotal: subtotal,
     downPayment: downPaymentTotal,
@@ -930,6 +967,16 @@ function NegocioCreateScreenInner() {
       setSaving(true);
       const numeroLabel = (numero: number | null | undefined) => formatNegocioCodigo(numero);
       const originPayload = buildOriginPayload();
+      // Se arma una sola vez por envío: el payload es lo que el servidor
+      // hashea contra la clave de idempotencia.
+      const { local_seller_id, seller_name, ...sellerArgs } = buildNegocioSellerInput({
+        mode: sellerMode,
+        lookup: customerSeller,
+        chosenSellerId: sellerId,
+        chosenSellerName,
+        createdByName,
+      });
+      const sellerInput = { ...sellerArgs, local_seller_id, seller_name };
       const result = await createAndActivate({
         deal_date: localDateValue(),
         municipio_id: municipioId,
@@ -937,7 +984,7 @@ function NegocioCreateScreenInner() {
         direccion,
         customer_id: customer.id,
         codeudor_customer_id: codeudor?.id || null,
-        seller_id: effectiveSellerId || null,
+        ...sellerInput,
         ...originPayload,
         items,
         down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
@@ -950,7 +997,6 @@ function NegocioCreateScreenInner() {
         activate,
         // Para poder pintar el negocio pendiente sin volver a preguntar.
         customer_name: customer.name,
-        seller_name: effectiveSellerName,
         municipio_name: municipios.find((m) => m.id === municipioId)?.nombre ?? null,
       });
       if (result?.queued) {
@@ -1358,29 +1404,36 @@ function NegocioCreateScreenInner() {
                   </TouchableOpacity>
                 ) : null}
 
-                <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
-                    Vendedor del negocio *
-                  </Text>
-                  <OptionPickerField
-                    value={effectiveSellerId}
-                    onValueChange={setSellerId}
-                    options={sellerOptions.map((seller) => ({
-                      value: seller.id,
-                      label: seller.full_name,
-                    }))}
-                    placeholder="Seleccione vendedor"
-                    modalTitle="Vendedor del negocio"
-                    colors={colors}
-                  />
-                  <Text style={{ fontSize: 12, color: colors.text.secondary }}>
-                    Quien hizo la venta; por defecto, usted.
-                  </Text>
+                <View style={{ gap: 6 }} testID="negocio-create-seller">
+                  {sellerMode === 'admin-choose' ? (
+                    <>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                        Vendedor (dueño del cliente)
+                      </Text>
+                      <OptionPickerField
+                        value={sellerId}
+                        onValueChange={setSellerId}
+                        options={[
+                          { value: '', label: 'Sin vendedor (dejar sin asignar)' },
+                          ...vendedorOptions.map((seller) => ({
+                            value: seller.id,
+                            label: seller.full_name,
+                          })),
+                        ]}
+                        placeholder="Sin vendedor"
+                        modalTitle="Vendedor (dueño del cliente)"
+                        colors={colors}
+                      />
+                    </>
+                  ) : null}
                   <NegocioPeopleLines
                     createdByName={createdByName}
-                    customerSellerText={customerSellerText}
+                    sellerOwnerText={sellerMode === 'admin-choose' ? null : sellerOwnerText}
                     colors={colors}
                   />
+                  {sellerOwnerHint ? (
+                    <Text style={{ fontSize: 12, color: colors.text.secondary }}>{sellerOwnerHint}</Text>
+                  ) : null}
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
@@ -1743,9 +1796,8 @@ function NegocioCreateScreenInner() {
               {planRequired ? `${installments} cuotas` : 'sin cuotas'}
             </Text>
             <NegocioPeopleLines
-              sellerName={effectiveSellerName}
               createdByName={createdByName}
-              customerSellerText={customerSellerText}
+              sellerOwnerText={sellerOwnerText}
               colors={colors}
             />
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>

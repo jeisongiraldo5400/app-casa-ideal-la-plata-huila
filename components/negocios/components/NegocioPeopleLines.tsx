@@ -5,23 +5,24 @@ type ThemeColors = {
 };
 
 type Props = {
-  /** Solo se muestra si se pasa (en la confirmación final). */
-  sellerName?: string | null;
   createdByName: string | null;
-  /** `null` = no hay cliente elegido y la línea se oculta. */
-  customerSellerText: string | null;
+  /**
+   * Texto de «Vendedor (dueño del cliente)». `null` = no hay cliente elegido y
+   * la línea se oculta.
+   */
+  sellerOwnerText: string | null;
   colors: ThemeColors;
 };
 
 /**
- * Al crear un negocio intervienen tres personas que se leían todas como
- * «vendedor»:
- * - Vendedor del negocio (`negocios.seller_id`): quien hizo la venta; se elige.
+ * Al crear un negocio intervienen dos personas (20261206120000):
+ * - Vendedor (dueño del cliente) (`customers.seller_id`): el vendedor del
+ *   negocio es siempre el dueño del cliente; no se elige aquí, salvo que un
+ *   administrador asigne uno a un cliente que no lo tiene.
  * - Creado por (`negocios.created_by`): quien lo registra; se pone solo.
- * - Vendedor del cliente (`customers.seller_id`): el dueño del cliente.
  * Estas líneas son de solo lectura.
  */
-export function NegocioPeopleLines({ sellerName, createdByName, customerSellerText, colors }: Props) {
+export function NegocioPeopleLines({ createdByName, sellerOwnerText, colors }: Props) {
   const line = (label: string, value: string, testID: string) => (
     <Text testID={testID} style={[styles.line, { color: colors.text.secondary }]}>
       {label}: <Text style={[styles.value, { color: colors.text.primary }]}>{value}</Text>
@@ -29,13 +30,10 @@ export function NegocioPeopleLines({ sellerName, createdByName, customerSellerTe
   );
   return (
     <View testID="negocio-people-lines" style={styles.wrap}>
-      {sellerName !== undefined
-        ? line('Vendedor del negocio', sellerName || '—', 'negocio-people-seller')
+      {sellerOwnerText !== null
+        ? line('Vendedor (dueño del cliente)', sellerOwnerText, 'negocio-people-seller')
         : null}
       {line('Creado por', createdByName || 'Usuario actual', 'negocio-people-created-by')}
-      {customerSellerText !== null
-        ? line('Vendedor del cliente', customerSellerText, 'negocio-people-customer-seller')
-        : null}
     </View>
   );
 }

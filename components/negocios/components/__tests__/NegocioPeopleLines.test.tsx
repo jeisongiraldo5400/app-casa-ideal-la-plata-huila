@@ -13,24 +13,17 @@ const textOf = (node: { props: { children: unknown } }) =>
 describe('NegocioPeopleLines', () => {
   it('sin cliente muestra solo quién crea el negocio', () => {
     const { getByTestId, queryByTestId } = render(
-      <NegocioPeopleLines createdByName="Ana" customerSellerText={null} colors={colors} />
+      <NegocioPeopleLines createdByName="Ana" sellerOwnerText={null} colors={colors} />
     );
     expect(textOf(getByTestId('negocio-people-created-by'))).toBe('Creado por: Ana');
-    expect(queryByTestId('negocio-people-customer-seller')).toBeNull();
     expect(queryByTestId('negocio-people-seller')).toBeNull();
   });
 
-  it('con cliente y en la confirmación distingue a las tres personas', () => {
+  it('con cliente distingue al vendedor (dueño del cliente) de quien lo crea', () => {
     const { getByTestId } = render(
-      <NegocioPeopleLines
-        sellerName="Carlos"
-        createdByName="Ana"
-        customerSellerText="Luis"
-        colors={colors}
-      />
+      <NegocioPeopleLines createdByName="Ana" sellerOwnerText="Luis" colors={colors} />
     );
-    expect(textOf(getByTestId('negocio-people-seller'))).toBe('Vendedor del negocio: Carlos');
+    expect(textOf(getByTestId('negocio-people-seller'))).toBe('Vendedor (dueño del cliente): Luis');
     expect(textOf(getByTestId('negocio-people-created-by'))).toBe('Creado por: Ana');
-    expect(textOf(getByTestId('negocio-people-customer-seller'))).toBe('Vendedor del cliente: Luis');
   });
 });

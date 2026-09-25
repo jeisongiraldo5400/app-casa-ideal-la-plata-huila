@@ -121,6 +121,29 @@ describe('negociosStore.createAndActivate · sin señal', () => {
     ]);
   });
 
+  it('cliente con dueño: no añade la bandera y pinta el negocio pendiente con el dueño', async () => {
+    await useNegociosStore.getState().createAndActivate({ ...baseInput, local_seller_id: 's-dueno' });
+
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    // Forma de siempre: el servidor sustituye el usuario por el dueño del cliente.
+    expect(payload.negocio.seller_id).toBe('u1');
+    expect(payload.negocio).not.toHaveProperty('assign_customer_seller');
+    expect(payload.local.sellerId).toBe('s-dueno');
+  });
+
+  it('admin que asigna vendedor a un cliente sin dueño: la bandera viaja en p_negocio', async () => {
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      seller_id: 's-nuevo',
+      assign_customer_seller: true,
+      local_seller_id: 's-nuevo',
+    });
+
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(payload.negocio).toMatchObject({ seller_id: 's-nuevo', assign_customer_seller: true });
+    expect(payload.local.sellerId).toBe('s-nuevo');
+  });
+
   it('el negocio viaja en el carril del cliente que aún está en la cola', async () => {
     await useNegociosStore.getState().createAndActivate(baseInput);
 

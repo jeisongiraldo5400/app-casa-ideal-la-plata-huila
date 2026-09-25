@@ -56,3 +56,22 @@ export function withCurrentUserOption(
   };
   return [own, ...rest];
 }
+
+/**
+ * Solo usuarios activos con rol vendedor (RPC `list_sellers`): los únicos que
+ * pueden ser dueños de un cliente. Requiere señal a propósito: los perfiles
+ * descargados no traen roles, y ofrecer a alguien sin el rol haría fallar la
+ * asignación en el servidor.
+ */
+export async function fetchVendedorOptions(search = ''): Promise<SellerOption[]> {
+  const { data, error } = await supabase.rpc('list_sellers', {
+    p_search: search.trim(),
+    p_limit: 200,
+  });
+  if (error) throw new Error(error.message || 'No fue posible cargar los vendedores');
+  const rows = (data || []) as { id: string; full_name: string | null; email: string | null }[];
+  return rows.map((row) => ({
+    id: row.id,
+    full_name: row.full_name || row.email || 'Sin nombre',
+  }));
+}

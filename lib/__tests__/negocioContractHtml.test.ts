@@ -71,9 +71,9 @@ describe('creador y vendedor del negocio', () => {
 
     expect(html).toContain('CREADO POR');
     expect(html).toContain('TATIANA CHINCHILLA');
-    expect(html).toContain('VENDEDOR DEL NEGOCIO');
+    expect(html).toContain('VENDEDOR (DUEÑO DEL CLIENTE)');
     expect(html).toContain('ANDRÉS RAMÍREZ');
-    expect(html.indexOf('CREADO POR')).toBeLessThan(html.indexOf('VENDEDOR DEL NEGOCIO'));
+    expect(html.indexOf('CREADO POR')).toBeLessThan(html.indexOf('VENDEDOR (DUEÑO DEL CLIENTE)'));
   });
 
   it('sin creador conocido (sin señal) deja la raya en vez de repetir al vendedor', () => {
@@ -82,8 +82,19 @@ describe('creador y vendedor del negocio', () => {
     expect(html).toContain('CREADO POR');
     expect(html).toContain('ANDRÉS RAMÍREZ');
     const creado = html.indexOf('CREADO POR');
-    const vendedor = html.indexOf('VENDEDOR DEL NEGOCIO');
+    const vendedor = html.indexOf('VENDEDOR (DUEÑO DEL CLIENTE)');
     expect(html.slice(creado, vendedor)).toContain('—');
+  });
+
+  it('el vendedor es el dueño del cliente cuando se conoce', () => {
+    const html = buildNegocioContractHtml({
+      ...base,
+      seller_name: 'ANDRÉS RAMÍREZ',
+      customer_seller_name: 'LUISA DUEÑA',
+      created_by_name: 'TATIANA CHINCHILLA',
+    });
+    const vendedor = html.indexOf('VENDEDOR (DUEÑO DEL CLIENTE)');
+    expect(html.slice(vendedor, vendedor + 120)).toContain('LUISA DUEÑA');
   });
 
   it('la firma del vendedor se rotula como del negocio, igual que en la web', () => {
