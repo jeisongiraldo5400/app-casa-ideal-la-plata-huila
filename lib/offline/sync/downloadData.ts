@@ -47,13 +47,47 @@ export async function ensureCatalogForOffline(): Promise<boolean> {
   return true;
 }
 
-export function formatLastDownloadTime(lastSyncedAt: number | null) {
+function startOfDay(ms: number) {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+/**
+ * Hora de una descarga. Si no es de hoy lo dice («ayer 12:54 p. m.», «23 sep.
+ * 12:54 p. m.»): sólo con la hora, una descarga de ayer parecía de hoy y se
+ * creaba un negocio sin señal creyendo que las existencias estaban al día.
+ */
+export function formatLastDownloadTime(lastSyncedAt: number | null, now = Date.now()) {
   if (!lastSyncedAt) return null;
-  return new Date(lastSyncedAt).toLocaleTimeString('es-CO', {
+  const time = new Date(lastSyncedAt).toLocaleTimeString('es-CO', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   });
+  const days = Math.round((startOfDay(now) - startOfDay(lastSyncedAt)) / 86_400_000);
+  if (days <= 0) return time;
+  if (days === 1) return `ayer ${time}`;
+  const date = new Date(lastSyncedAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+  return `${date} ${time}`;
+}
+
+/** Margen para no avisar de un catálogo que bajó en la misma sincronización. */
+const CATALOG_LAG_TOLERANCE_MS = 5 * 60 * 1000;
+
+/**
+ * Aviso de que productos y existencias son más viejos que el resto de los
+ * datos. `null` si están al día o nunca se bajaron (quien no crea negocios no
+ * los necesita).
+ */
+export function catalogLagLabel(
+  lastSyncedAt: number | null,
+  catalogAt: number | null,
+  now = Date.now()
+): string | null {
+  if (!lastSyncedAt || !catalogAt) return null;
+  if (lastSyncedAt - catalogAt < CATALOG_LAG_TOLERANCE_MS) return null;
+  return `Productos y existencias · ${formatLastDownloadTime(catalogAt, now)}`;
 }
 
 export function formatLocalDataLabel(lastSyncedAt: number | null) {

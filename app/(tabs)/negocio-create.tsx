@@ -373,6 +373,9 @@ function NegocioCreateScreenInner() {
 
   // Hora de la última descarga del catálogo: es la fecha de las existencias
   // que se ven sin señal, y la pantalla la dice en vez de dejarlo a la fe.
+  // Se vuelve a leer tras cada sincronización: la pantalla es una pestaña que
+  // sigue viva, y antes mostraba la hora de cuando se abrió, no la de ahora.
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   useEffect(() => {
     let cancelled = false;
     void localCatalogPulledAt()
@@ -383,7 +386,7 @@ function NegocioCreateScreenInner() {
     return () => {
       cancelled = true;
     };
-  }, [initialDataReload, loadingInitialData]);
+  }, [initialDataReload, loadingInitialData, lastSyncedAt]);
 
   /** Sin señal (o con datos locales): nada de lo que se ve es definitivo. */
   const sinRed = !online || usingLocalData;

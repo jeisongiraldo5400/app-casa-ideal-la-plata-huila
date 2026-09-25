@@ -5,6 +5,7 @@ import {
   requestCatalogOnNextSync,
   isCatalogRequested,
   shouldIncludeCatalog,
+  mustRerunAfterInFlight,
 } from '../catalogPull';
 import { filterCatalogProducts, stockRowsForProduct } from '../../domain/catalogLocal';
 import type { PullPayload } from '../types';
@@ -255,5 +256,51 @@ describe('buscar en el catálogo descargado', () => {
       { warehouse_id: 'w2', warehouse_name: 'Bodega Centro', quantity: 9 },
       { warehouse_id: 'w1', warehouse_name: 'Bodega Andes', quantity: 2 },
     ]);
+  });
+});
+
+describe('mustRerunAfterInFlight', () => {
+  it('«Descargar información» durante una sincronización automática vuelve a sincronizar (con catálogo)', () => {
+    expect(
+      mustRerunAfterInFlight({
+        inFlight: { reason: 'reconnect', catalogRequested: false },
+        reason: 'manual',
+        catalogRequested: false,
+      })
+    ).toBe(true);
+  });
+
+  it('el asistente que pide catálogo a mitad de una automática no se pierde', () => {
+    expect(
+      mustRerunAfterInFlight({
+        inFlight: { reason: 'foreground', catalogRequested: false },
+        reason: 'mutation',
+        catalogRequested: true,
+      })
+    ).toBe(true);
+  });
+
+  it('si la que corre ya es manual o ya llevaba el catálogo, basta con esperarla', () => {
+    expect(
+      mustRerunAfterInFlight({
+        inFlight: { reason: 'manual', catalogRequested: false },
+        reason: 'manual',
+        catalogRequested: true,
+      })
+    ).toBe(false);
+    expect(
+      mustRerunAfterInFlight({
+        inFlight: { reason: 'mutation', catalogRequested: true },
+        reason: 'mutation',
+        catalogRequested: true,
+      })
+    ).toBe(false);
+    expect(
+      mustRerunAfterInFlight({
+        inFlight: { reason: 'foreground', catalogRequested: false },
+        reason: 'mutation',
+        catalogRequested: false,
+      })
+    ).toBe(false);
   });
 });

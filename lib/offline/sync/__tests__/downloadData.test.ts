@@ -1,5 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
-import { requestManualDownload } from '../downloadData';
+import { catalogLagLabel, formatLastDownloadTime, requestManualDownload } from '../downloadData';
 import { runSync } from '../syncEngine';
 import { useSyncStore } from '../../store/syncStore';
 
@@ -39,5 +39,41 @@ describe('requestManualDownload', () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockedRunSync).toHaveBeenCalledWith('manual');
+  });
+});
+
+describe('formatLastDownloadTime', () => {
+  const now = new Date(2026, 8, 25, 10, 12).getTime();
+
+  it('hoy muestra solo la hora', () => {
+    const label = formatLastDownloadTime(new Date(2026, 8, 25, 9, 5).getTime(), now);
+    expect(label).not.toMatch(/ayer|sep/);
+  });
+
+  it('una descarga de ayer lo dice (antes parecía de hoy)', () => {
+    expect(formatLastDownloadTime(new Date(2026, 8, 24, 12, 54).getTime(), now)).toMatch(/^ayer /);
+  });
+
+  it('más vieja lleva la fecha', () => {
+    expect(formatLastDownloadTime(new Date(2026, 8, 20, 12, 54).getTime(), now)).toMatch(/^20 /);
+  });
+});
+
+describe('catalogLagLabel', () => {
+  const now = new Date(2026, 8, 25, 10, 20).getTime();
+  const synced = new Date(2026, 8, 25, 10, 18).getTime();
+
+  it('no avisa si el catálogo bajó en la misma sincronización', () => {
+    expect(catalogLagLabel(synced, synced - 60_000, now)).toBeNull();
+  });
+
+  it('avisa cuando productos y existencias quedaron atrás', () => {
+    expect(catalogLagLabel(synced, new Date(2026, 8, 24, 12, 54).getTime(), now)).toMatch(
+      /^Productos y existencias · ayer /
+    );
+  });
+
+  it('sin catálogo descargado no dice nada', () => {
+    expect(catalogLagLabel(synced, null, now)).toBeNull();
   });
 });

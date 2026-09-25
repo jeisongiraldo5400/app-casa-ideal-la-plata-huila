@@ -17,7 +17,9 @@ import {
   getCatalogPulledAt,
   isCatalogRequested,
   markCatalogPulled,
+  mustRerunAfterInFlight,
   shouldIncludeCatalog,
+  type InFlightSyncMeta,
 } from './catalogPull';
 import { planOutboxRun } from './lanes';
 import {
@@ -72,6 +74,7 @@ export type SyncReason = 'manual' | 'reconnect' | 'foreground' | 'mutation' | 'r
 
 let started = false;
 let inFlight: Promise<void> | null = null;
+let inFlightMeta: InFlightSyncMeta | null = null;
 let unsubscribeNet: (() => void) | null = null;
 let appStateSub: { remove: () => void } | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -107,9 +110,25 @@ export async function refreshPendingCount() {
   useSyncStore.getState().setFailedCount(counts.failed);
 }
 
-export async function runSync(reason: SyncReason = 'manual') {
+export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
   if (!isDatabaseOpen()) return;
-  if (inFlight) return inFlight;
+  if (inFlight) {
+    const catalogRequested = isCatalogRequested();
+    if (
+      inFlightMeta &&
+      mustRerunAfterInFlight({ inFlight: inFlightMeta, reason, catalogRequested })
+    ) {
+      // Se espera a que termine la que corre y se lanza la propia; si varias
+      // esperan, la primera arranca y las demás se suman a ella.
+      const current = inFlight;
+      return current.then((): Promise<void> => runSync(reason));
+    }
+    return inFlight;
+  }
+  // La petición de catálogo se toma AL ARRANCAR: si llega a mitad de camino,
+  // ésta ya no la atiende y no debe borrarla.
+  const catalogRequested = isCatalogRequested();
+  inFlightMeta = { reason, catalogRequested };
   inFlight = (async () => {
     const net = await NetInfo.fetch();
     const online = isNetInfoOnline(net);
@@ -137,7 +156,7 @@ export async function runSync(reason: SyncReason = 'manual') {
         nextDueAt = Date.now() + NETWORK_RETRY_DELAY_MS;
         return;
       }
-      const truncationWarning = await pullRemote(userId, reason);
+      const truncationWarning = await pullRemote(userId, reason, catalogRequested);
       await refreshPendingCount();
       useSyncStore.getState().setStatus('idle');
       // El aviso de descarga recortada viaja por `lastError`: la franja de
@@ -160,6 +179,7 @@ export async function runSync(reason: SyncReason = 'manual') {
     }
   })().finally(() => {
     inFlight = null;
+    inFlightMeta = null;
   });
   return inFlight;
 }
@@ -178,7 +198,11 @@ function isMissingCatalogParamError(error: unknown): boolean {
 }
 
 /** Devuelve el aviso de descarga recortada, o `null` si vino completa. */
-async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promise<string | null> {
+async function pullRemote(
+  userId: string,
+  reason: SyncReason = 'manual',
+  catalogRequested = false
+): Promise<string | null> {
   const database = getDatabase();
   const lastPulledAt = pullCursorForPayloadVersion(
     await getMeta(database, 'last_pulled_at'),
@@ -198,7 +222,7 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
     storedScope !== 'cobro' &&
     shouldIncludeCatalog({
       reason,
-      requested: isCatalogRequested(),
+      requested: catalogRequested,
       lastCatalogAt: await getCatalogPulledAt(database),
     });
   const catalogCursor = includeCatalog
@@ -235,7 +259,8 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   if (await applyCatalogPayload(database, payload)) {
     await markCatalogPulled(database, payload.server_time);
   }
-  clearCatalogRequest();
+  // Sólo se borra la petición que esta descarga atendió.
+  if (catalogRequested) clearCatalogRequest();
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
   // Si el alcance cambió (le dieron o le quitaron un rol), la próxima descarga
   // es completa: el cursor delta no traería los clientes viejos que ahora sí le

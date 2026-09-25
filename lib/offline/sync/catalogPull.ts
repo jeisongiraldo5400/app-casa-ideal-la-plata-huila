@@ -45,6 +45,30 @@ export function clearCatalogRequest() {
   catalogRequested = false;
 }
 
+/** Lo que llevaba la sincronización en curso cuando arrancó. */
+export type InFlightSyncMeta = { reason: SyncReason; catalogRequested: boolean };
+
+/**
+ * ¿Hay que sincronizar otra vez cuando termine la que está en curso?
+ *
+ * Una sincronización automática (al volver la señal, al abrir la app, tras un
+ * cobro) decide al arrancar si pide el catálogo. Si la persona pulsa
+ * «Descargar información», o el asistente de negocio pide el catálogo, justo
+ * mientras corre una de ésas, antes se colgaba de ella: la hora de «Datos
+ * actualizados» avanzaba pero productos y existencias seguían siendo los de
+ * ayer, y el asistente mostraba la hora vieja.
+ */
+export function mustRerunAfterInFlight(input: {
+  inFlight: InFlightSyncMeta;
+  reason: SyncReason;
+  catalogRequested: boolean;
+}): boolean {
+  // Una manual ya trae el catálogo: cualquier petición queda cubierta.
+  if (input.inFlight.reason === 'manual') return false;
+  if (input.reason === 'manual') return true;
+  return input.catalogRequested && !input.inFlight.catalogRequested;
+}
+
 export function shouldIncludeCatalog(input: {
   reason: SyncReason;
   requested: boolean;

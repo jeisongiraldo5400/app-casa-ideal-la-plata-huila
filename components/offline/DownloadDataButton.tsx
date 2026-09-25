@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { localCatalogPulledAt } from '@/lib/offline/repositories/catalogRepository';
 import {
+  catalogLagLabel,
   formatLastDownloadTime,
   requestManualDownload,
 } from '@/lib/offline/sync/downloadData';
@@ -20,6 +22,21 @@ export function DownloadDataButton({ variant = 'row' }: DownloadDataButtonProps)
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const lastError = useSyncStore((state) => state.lastError);
   const [busy, setBusy] = useState(false);
+  // Productos y existencias van aparte y no bajan en cada sincronización: si
+  // quedaron atrás se dice, para no creer que el stock es de la hora de arriba.
+  const [catalogAt, setCatalogAt] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void localCatalogPulledAt()
+      .then((value) => {
+        if (!cancelled) setCatalogAt(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [lastSyncedAt]);
+  const catalogNote = catalogLagLabel(lastSyncedAt, catalogAt);
 
   const syncing = busy || status === 'syncing';
   const time = formatLastDownloadTime(lastSyncedAt);
@@ -87,6 +104,11 @@ export function DownloadDataButton({ variant = 'row' }: DownloadDataButtonProps)
         >
           {subtitle}
         </Text>
+        {!syncing && !lastError && catalogNote ? (
+          <Text style={[styles.note, { color: colors.text.secondary }]} testID="download-data-catalog-note">
+            {catalogNote}
+          </Text>
+        ) : null}
       </View>
       {syncing ? (
         <ActivityIndicator color={colors.primary.main} />
@@ -116,6 +138,10 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  note: {
+    fontSize: 13,
+    marginTop: 2,
   },
   cta: {
     marginTop: 16,
