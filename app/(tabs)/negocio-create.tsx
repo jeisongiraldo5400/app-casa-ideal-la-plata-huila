@@ -258,6 +258,38 @@ function NegocioCreateScreenInner() {
   const [deliveryMode, setDeliveryMode] = useState<NegocioDeliveryMode>('directo');
   const [pendingRemissions, setPendingRemissions] = useState<PendingRemissionOption[]>([]);
   const [targetRemission, setTargetRemission] = useState<PendingRemissionOption | null>(null);
+  const [refreshingRemissions, setRefreshingRemissions] = useState(false);
+  const [remissionsNotice, setRemissionsNotice] = useState<string | null>(null);
+
+  /**
+   * «Actualizar remisiones»: con señal vuelve a pedir las pendientes al
+   * servidor; sin señal relee la lista de la última descarga. Si la remisión
+   * elegida ya no está pendiente, se quita la elección y se avisa.
+   */
+  const refreshRemissions = useCallback(async () => {
+    setRefreshingRemissions(true);
+    setRemissionsNotice(null);
+    let next: PendingRemissionOption[];
+    let notice: string | null = null;
+    try {
+      next = await fetchPendingRemissions();
+    } catch (error: unknown) {
+      if (!isNetworkError(error)) {
+        setRemissionsNotice(errorMessage(error, 'No fue posible actualizar las remisiones.'));
+        setRefreshingRemissions(false);
+        return;
+      }
+      next = await fetchLocalPendingRemissions().catch(() => [] as PendingRemissionOption[]);
+      notice = 'Sin señal: se muestran las remisiones de la última descarga.';
+    }
+    setPendingRemissions(next);
+    if (targetRemission && !next.some((remission) => remission.id === targetRemission.id)) {
+      notice = `La remisión ${targetRemission.order_number} ya no está pendiente: elija otra.`;
+      setTargetRemission(null);
+    }
+    setRemissionsNotice(notice ?? `Remisiones actualizadas · ${next.length} pendiente${next.length === 1 ? '' : 's'}.`);
+    setRefreshingRemissions(false);
+  }, [targetRemission]);
   /** Origen remisión: grupo elegido (propios o una OE hija). */
   const [originGroups, setOriginGroups] = useState<RemissionOriginGroup[]>([]);
   const [originGroupsLoading, setOriginGroupsLoading] = useState(false);
@@ -1220,6 +1252,9 @@ function NegocioCreateScreenInner() {
                 selectedRemission={targetRemission}
                 onSelectRemission={setTargetRemission}
                 offline={sinRed}
+                onRefresh={() => void refreshRemissions()}
+                refreshing={refreshingRemissions}
+                refreshNotice={remissionsNotice}
                 colors={colors}
               />
             )}
