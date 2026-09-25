@@ -222,7 +222,7 @@ function Estimate({ estimated }: { estimated: SyncConfigMeta['estimated'] }) {
 
 /** Aviso cuando Clientes está en «Elegir» sin nada elegido. */
 export const NOTHING_CHOSEN_MESSAGE =
-  'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.';
+  'No elegiste clientes: solo bajarán los negocios que son tuyos. Activa Mis clientes o elige municipios.';
 
 /**
  * Clientes en «Elegir» sin municipios, sin «Mis clientes» y sin ninguno uno a

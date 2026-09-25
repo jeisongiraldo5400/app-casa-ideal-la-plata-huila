@@ -242,7 +242,7 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     const screen = render(<OfflineDataScreen />);
 
     expect(await screen.findByTestId('clientes-nothing-chosen')).toHaveTextContent(
-      'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.'
+      'No elegiste clientes: solo bajarán los negocios que son tuyos. Activa Mis clientes o elige municipios.'
     );
     await act(async () => {
       fireEvent.press(screen.getByText('Descargar'));
@@ -250,7 +250,7 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     expect(requestManualDownload).not.toHaveBeenCalled();
     expect(Alert.alert).toHaveBeenCalledWith(
       '¿Descargar sin clientes?',
-      'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.',
+      'No elegiste clientes: solo bajarán los negocios que son tuyos. Activa Mis clientes o elige municipios.',
       expect.any(Array)
     );
 
