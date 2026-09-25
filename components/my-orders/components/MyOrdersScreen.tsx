@@ -5,7 +5,7 @@ import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store
 // Misma lista de productos que "Todas las órdenes"; sólo cambia de dónde lee los
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
 import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
-import { canTakeOrderOffline } from '@/components/purchase-orders/components/OfflineOrderToggle';
+import { OfflineOrderToggle, canTakeOrderOffline } from '@/components/purchase-orders/components/OfflineOrderToggle';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
@@ -319,6 +319,12 @@ export function MyOrdersScreen() {
         <Text style={[styles.itemsText, { color: colors.text.secondary }]}>
           {item.total_items} {item.total_items === 1 ? 'producto' : 'productos'}
         </Text>
+
+        {/* A la vista en la tarjeta, como en «Todas las órdenes»: antes solo
+            estaba dentro del detalle de productos y no se encontraba. */}
+        {canTakeOrderOffline(item) ? (
+          <OfflineOrderToggle orderId={item.id} orderNumber={item.order_number} />
+        ) : null}
 
         <ProductsButton
           colors={colors}

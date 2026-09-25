@@ -66,6 +66,16 @@ jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: (...args: unknown[]) => mockRpc(...args) },
 }));
 
+// El botón real consulta la selección y la base local; aquí basta saber dónde aparece.
+jest.mock('@/components/purchase-orders/components/OfflineOrderToggle', () => {
+  const actual = jest.requireActual('@/components/purchase-orders/components/OfflineOrderToggle');
+  const { Text } = jest.requireActual('react-native');
+  return {
+    ...actual,
+    OfflineOrderToggle: ({ orderId }: { orderId: string }) => <Text testID={`offline-toggle-${orderId}`}>Llevar en el teléfono</Text>,
+  };
+});
+
 jest.mock('@/components/exits/infrastructure/store/exitsStore', () => ({
   useExitsStore: { getState: () => mockExitState },
 }));
@@ -197,6 +207,23 @@ describe('MyOrdersScreen', () => {
       expect.objectContaining({ id: 'order-1', customer_id: 'customer-1' }),
     );
     expect(mockOpenExitConfirmation).toHaveBeenCalledTimes(1);
+  });
+
+  it('muestra «Llevar en el teléfono» en la tarjeta de la orden asignada', async () => {
+    const screen = render(<MyOrdersScreen />);
+    expect(await screen.findByTestId('offline-toggle-order-1')).toBeTruthy();
+  });
+
+  it('no lo muestra en una orden cancelada', async () => {
+    mockRpc.mockImplementation((functionName: string) =>
+      Promise.resolve({
+        data: functionName === 'get_my_authorized_delivery_orders' ? [{ ...customerOrder, status: 'cancelled' }] : [],
+        error: null,
+      })
+    );
+    const screen = render(<MyOrdersScreen />);
+    await screen.findByTestId('assigned-order-order-1');
+    expect(screen.queryByTestId('offline-toggle-order-1')).toBeNull();
   });
 
   it('ignora un segundo toque mientras prepara la salida', async () => {
