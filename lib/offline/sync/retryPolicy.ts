@@ -63,6 +63,10 @@ export function isDefinitiveOriginError(message: string): boolean {
     (aboutOrder && text.includes('cancelada')) ||
     (aboutOrder && /no existe/.test(text)) ||
     /ya est[aá] vinculada/.test(text) ||
+    // Otro negocio ya tomó la misma OE de cliente (índice único de
+    // 20260813200000): pasa cuando dos teléfonos sin señal venden la misma.
+    text.includes('idx_negocios_unique_customer_source_oe') ||
+    /ya la tom[oó] un negocio/.test(text) ||
     /solo se puede enviar el negocio en una remisi[oó]n pendiente/.test(text) ||
     /no puede adem[aá]s enviarse en una remisi[oó]n/.test(text) ||
     text.includes('debe coincidir con el de la orden') ||

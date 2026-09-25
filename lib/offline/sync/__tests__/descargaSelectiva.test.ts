@@ -966,6 +966,9 @@ describe('errores definitivos del origen del negocio', () => {
     'El cliente del negocio debe coincidir con el de la orden de entrega',
     'La orden no cuenta con suficiente cantidad para "Mesa". Disponible: 1, solicitado: 2.',
     'Saldo insuficiente de Mesa en la remisión OE-0010. Disponible: 0, solicitado: 1.',
+    // Dos teléfonos sin señal vendieron la misma OE de cliente.
+    'duplicate key value violates unique constraint "idx_negocios_unique_customer_source_oe"',
+    'La orden ya la tomó un negocio sin activar',
   ])('«%s» es rechazo definitivo', (message) => {
     expect(isDefinitiveOriginError(message)).toBe(true);
     expect(classifyPushError(message)).toBe('fail');
