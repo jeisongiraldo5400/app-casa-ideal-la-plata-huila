@@ -1,4 +1,3 @@
-import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { fetchCustomersPage, type CustomerDirectoryRow } from '@/components/customers/infrastructure/services/customersDirectoryService';
 import { useTheme } from '@/components/theme';
 import { Button, Card, OptionPickerField, SearchField, SectionHeader, SegmentedControl, StatusChip } from '@/components/ui';
@@ -7,15 +6,15 @@ import { errorMessage } from '@/lib/errorMessage';
 import { EMPTY_LOCATION_MASTERS, fetchLocationMasters, type LocationMasters } from '@/lib/locations/locationsService';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { OfflineSelectionToggle } from '../OfflineSelectionToggle';
-import { estimateSelection, fetchCustomerCandidates, type SelectionEstimate } from '../infrastructure/bulkSelectionService';
 import {
   SELECTION_LIMITS,
+  setMisClientes,
   setSyncMode,
-  setSyncSelection,
   useOfflineSelection,
   type SyncConfig,
+  type SyncConfigMeta,
   type SyncMode,
 } from '../infrastructure/syncPrefsService';
 import { carriedLabel, SelectedList } from './SelectedList';
@@ -159,71 +158,64 @@ function CustomerSearch({ online }: { online: boolean }) {
   );
 }
 
-function MyCustomersButton({ online }: { online: boolean }) {
-  const { user } = useAuth();
+/**
+ * «Mis clientes»: flag del servidor (`set_mobile_sync_mis_clientes`). No
+ * marca ids: no gasta el tope y los clientes que te asignen después entran
+ * solos en la próxima descarga.
+ */
+function MyCustomersToggle({ online, enabled }: { online: boolean; enabled: boolean }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   const [busy, setBusy] = useState(false);
 
-  const run = async () => {
+  const change = async (value: boolean) => {
+    if (!online) {
+      Alert.alert('Sin conexión', 'Necesitas señal para cambiar qué llevar en el teléfono.');
+      return;
+    }
     setBusy(true);
     try {
-      const candidates = await fetchCustomerCandidates({ sellerId: user?.id ?? null });
-      if (!candidates.ids.length) {
-        Alert.alert('Mis clientes', 'No tienes clientes asignados.');
-        return;
-      }
-      const result = await setSyncSelection('clientes', candidates.ids, true);
-      Alert.alert(
-        'Mis clientes',
-        `Quedaron elegidos tus ${candidates.ids.length} clientes (${carriedLabel('clientes', result.count)} en total). Pulsa «Descargar» para llevarlos.`
-      );
+      await setMisClientes(value);
     } catch (err) {
-      Alert.alert('No se pudieron elegir tus clientes', errorMessage(err, 'Inténtalo de nuevo.'));
+      Alert.alert('No se pudo cambiar', errorMessage(err, 'Inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Button
-      title="Mis clientes"
-      icon="person"
-      variant="outline"
-      size="sm"
-      loading={busy}
-      disabled={!online || busy}
-      onPress={() => void run()}
-      accessibilityLabel="Elegir todos mis clientes"
-    />
+    <View style={styles.switchRow}>
+      <View style={styles.flex}>
+        <Text style={[styles.subtitle, { color: colors.text.primary }]}>Mis clientes</Text>
+        <Text style={[styles.caption, { color: colors.text.secondary }]}>
+          Todos los clientes asignados a ti, también los que te asignen después.
+        </Text>
+      </View>
+      {busy ? (
+        <ActivityIndicator color={colors.primary.main} />
+      ) : (
+        <Switch
+          testID="mis-clientes-switch"
+          accessibilityLabel="Llevar mis clientes"
+          value={enabled}
+          disabled={!online}
+          onValueChange={(value) => void change(value)}
+          trackColor={{ false: colors.divider, true: colors.primary.light }}
+          thumbColor={enabled ? colors.primary.main : colors.text.secondary}
+        />
+      )}
+    </View>
   );
 }
 
-function Estimate({ municipioIds, markedCount }: { municipioIds: string[]; markedCount: number }) {
+function Estimate({ estimated }: { estimated: SyncConfigMeta['estimated'] }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [estimate, setEstimate] = useState<SelectionEstimate | null>(null);
-  const key = municipioIds.join(',');
-
-  useEffect(() => {
-    let cancelled = false;
-    void estimateSelection({ municipioIds: key ? key.split(',') : [], markedCount })
-      .then((value) => {
-        if (!cancelled) setEstimate(value);
-      })
-      .catch(() => {
-        if (!cancelled) setEstimate(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [key, markedCount]);
-
-  if (!estimate) return null;
-  const prefix = estimate.approximate ? '≈ ' : '';
+  if (!estimated) return null;
   return (
     <Text style={[styles.caption, { color: colors.text.primary }]} testID="selection-estimate">
-      Total estimado: {prefix}
-      {estimate.clientes} clientes
-      {estimate.negocios != null ? ` · ${prefix}${estimate.negocios} negocios` : ''}, además de los de tus negocios.
+      Total estimado al descargar: {estimated.clientes} {estimated.clientes === 1 ? 'cliente' : 'clientes'} ·{' '}
+      {estimated.negocios} {estimated.negocios === 1 ? 'negocio' : 'negocios'}.
     </Text>
   );
 }
@@ -231,10 +223,12 @@ function Estimate({ municipioIds, markedCount }: { municipioIds: string[]; marke
 /** Bloque «Clientes» de «Preparar el teléfono»: Todos / Elegir. */
 export function ClientesBlock({
   config,
+  meta,
   online,
   dateSlot,
 }: {
   config: SyncConfig;
+  meta: SyncConfigMeta;
   online: boolean;
   dateSlot: React.ReactNode;
 }) {
@@ -286,7 +280,7 @@ export function ClientesBlock({
             choosing ? (
               <StatusChip
                 label={carriedLabel('clientes', config.clientes.count)}
-                tone={config.clientes.count || config.municipios.count ? 'success' : 'warning'}
+                tone={config.clientes.count || config.municipios.count || meta.misClientes ? 'success' : 'warning'}
                 icon="people"
               />
             ) : (
@@ -304,20 +298,13 @@ export function ClientesBlock({
         {choosing ? (
           <>
             <MunicipiosPicker online={online} />
-            <View style={styles.group}>
-              <Text style={[styles.subtitle, { color: colors.text.primary }]}>Atajos</Text>
-              <View style={styles.chips}>
-                <MyCustomersButton online={online} />
-              </View>
-            </View>
+            <MyCustomersToggle online={online} enabled={meta.misClientes} />
             <CustomerSearch online={online} />
             <View style={styles.group}>
               <Text style={[styles.subtitle, { color: colors.text.primary }]}>Elegidos uno a uno</Text>
               <SelectedList domain="clientes" count={config.clientes.count} disabled={!online} />
             </View>
-            {online ? (
-              <Estimate municipioIds={config.municipios.ids ?? []} markedCount={config.clientes.count} />
-            ) : null}
+            <Estimate estimated={meta.estimated} />
           </>
         ) : null}
         {dateSlot}
@@ -336,5 +323,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, borderWidth: 1, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 44, borderTopWidth: 1 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  flex: { flex: 1 },
   resultRow: { gap: 2, borderTopWidth: 1, paddingTop: Spacing.sm },
 });

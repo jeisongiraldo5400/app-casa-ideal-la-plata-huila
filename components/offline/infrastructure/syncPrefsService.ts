@@ -50,6 +50,23 @@ export type DomainSyncConfig = {
 
 export type SyncConfig = Record<SyncPrefDomain, DomainSyncConfig>;
 
+/** Lo que `get_mobile_sync_config` manda además de los dominios. */
+export type SyncConfigMeta = {
+  /** Atajo «Mis clientes» (flag del servidor, no ids: no gasta el tope). */
+  misClientes: boolean;
+  /** Total exacto que bajaría la próxima descarga. */
+  estimated: { clientes: number; negocios: number } | null;
+  ordersAllowed: boolean;
+  catalogAllowed: boolean;
+};
+
+export const DEFAULT_CONFIG_META: SyncConfigMeta = {
+  misClientes: false,
+  estimated: null,
+  ordersAllowed: true,
+  catalogAllowed: true,
+};
+
 export type SelectionItem = {
   id: string;
   label: string;
@@ -64,7 +81,7 @@ export const SELECTION_LIMITS: Record<SyncPrefDomain, number> = {
   clientes: 1000,
   productos: 1000,
   ordenes: 100,
-  municipios: 1200,
+  municipios: 200,
 };
 
 const FUNCTION_NOT_FOUND = 'PGRST202';
@@ -98,8 +115,9 @@ async function call(fn: string, args?: Record<string, unknown>) {
   const { data, error } = await rpc(fn, args);
   if (isFunctionMissing(error)) throw new SyncPrefsUnsupportedError();
   if (error) {
-    // Se conserva el mensaje del RAISE («Puedes llevar hasta N …»): ya viene en español.
-    const wrapped = new Error(errorMessage(error, 'No se pudo guardar la preferencia'));
+    // Los RPC de preferencias ya responden en español («Puedes llevar hasta N
+    // …», «Sin permiso …»): se muestran tal cual.
+    const wrapped = new Error(error.message?.trim() || errorMessage(error, 'No se pudo guardar la preferencia'));
     (wrapped as Error & { code?: string }).code = error.code;
     throw wrapped;
   }
@@ -160,6 +178,21 @@ export function parseSyncConfig(data: unknown): SyncConfig {
   return config;
 }
 
+export function parseConfigMeta(data: unknown): SyncConfigMeta {
+  const root = asRecord(data);
+  const clientes = asRecord(root.clientes);
+  const estimated = asRecord(root.estimated);
+  const hasEstimate = estimated.clientes != null;
+  return {
+    misClientes: clientes.mis_clientes === true,
+    estimated: hasEstimate
+      ? { clientes: toNumber(estimated.clientes), negocios: toNumber(estimated.negocios) }
+      : null,
+    ordersAllowed: root.orders_allowed !== false,
+    catalogAllowed: root.catalog_allowed !== false,
+  };
+}
+
 function parseSelectionItems(data: unknown): SelectionItem[] {
   const root = asRecord(data);
   const rows = Array.isArray(data) ? data : Array.isArray(root.items) ? root.items : [];
@@ -170,10 +203,13 @@ function parseSelectionItems(data: unknown): SelectionItem[] {
       const label =
         record.label ?? record.name ?? record.display_name ?? record.order_number ?? record.full_name;
       const detail = record.detail ?? record.id_number ?? record.sku ?? record.customer_name ?? null;
+      const baseDetail = detail != null && String(detail).trim() ? String(detail) : null;
+      // `exists = false`: se eliminó en el servidor; se lista para poder quitarlo.
+      const gone = record.exists === false;
       return {
         id,
         label: label != null && String(label).trim() ? String(label) : 'Sin nombre',
-        detail: detail != null && String(detail).trim() ? String(detail) : null,
+        detail: gone ? [baseDetail, 'ya no existe'].filter(Boolean).join(' · ') : baseDetail,
         selectedAt: record.selected_at ? String(record.selected_at) : null,
       };
     })
@@ -188,6 +224,7 @@ export type SyncPrefsStatus = 'idle' | 'loading' | 'ready' | 'offline' | 'unsupp
 type SyncPrefsState = {
   status: SyncPrefsStatus;
   config: SyncConfig;
+  meta: SyncConfigMeta;
   error: string | null;
   /** Ids con un cambio en curso (para desactivar el botón mientras tanto). */
   busyIds: Record<string, true>;
@@ -206,6 +243,7 @@ function initialState(): SyncPrefsState {
       ordenes: defaultDomainConfig('ordenes'),
       municipios: defaultDomainConfig('municipios'),
     },
+    meta: DEFAULT_CONFIG_META,
     error: null,
     busyIds: {},
     pendingDownload: false,
@@ -247,6 +285,7 @@ function markChanged() {
   // Se ve al instante; la marca persistente la guarda el motor.
   useSyncPrefsStore.setState({ pendingDownload: true });
   void (async () => markChoicesChangedLocally())().catch(() => undefined);
+  void refreshEstimate();
 }
 
 /** Relee si hay elecciones pendientes y la hora de la última descarga manual. */
@@ -295,8 +334,33 @@ export async function getSyncConfig(): Promise<SyncConfig> {
   lastServerConfig = data;
   const config = parseSyncConfig(data);
   await fillMissingIds(config);
-  useSyncPrefsStore.setState({ config, status: 'ready', error: null });
+  useSyncPrefsStore.setState({ config, meta: parseConfigMeta(data), status: 'ready', error: null });
   return config;
+}
+
+/**
+ * Tras un cambio, solo se relee el total estimado (y los flags): los ids ya
+ * quedaron en el store y releerlos todos sería una consulta por marca.
+ */
+async function refreshEstimate() {
+  try {
+    const data = await call('get_mobile_sync_config');
+    lastServerConfig = data;
+    useSyncPrefsStore.setState({ meta: parseConfigMeta(data) });
+  } catch {
+    // El estimado se queda como estaba; no es motivo para avisar.
+  }
+}
+
+/** Enciende o apaga «Mis clientes» (flag del servidor). */
+export async function setMisClientes(enabled: boolean) {
+  const data = asRecord(await call('set_mobile_sync_mis_clientes', { p_enabled: enabled }));
+  useSyncPrefsStore.setState((state) => ({ meta: { ...state.meta, misClientes: data.mis_clientes !== undefined ? data.mis_clientes === true : enabled } }));
+  patchDomain('clientes', {
+    revision: toNumber(data.revision, useSyncPrefsStore.getState().config.clientes.revision),
+    count: toNumber(data.count, useSyncPrefsStore.getState().config.clientes.count),
+  });
+  markChanged();
 }
 
 let inFlightLoad: Promise<void> | null = null;
@@ -415,6 +479,7 @@ export function useSyncPrefs() {
   const status = useSyncPrefsStore((state) => state.status);
   const config = useSyncPrefsStore((state) => state.config);
   const error = useSyncPrefsStore((state) => state.error);
+  const meta = useSyncPrefsStore((state) => state.meta);
   const pendingDownload = useSyncPrefsStore(isDownloadPending);
   const lastManualAt = useSyncPrefsStore((state) => state.lastManualAt);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
@@ -428,6 +493,7 @@ export function useSyncPrefs() {
   return {
     status,
     config,
+    meta,
     error,
     pendingDownload,
     lastManualAt,

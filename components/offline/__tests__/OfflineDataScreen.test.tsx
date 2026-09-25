@@ -34,10 +34,6 @@ jest.mock('@/lib/locations/locationsService', () => ({
 jest.mock('@/components/customers/infrastructure/services/customersDirectoryService', () => ({
   fetchCustomersPage: jest.fn(async () => ({ customers: [], totalCount: 0, hasMore: false, fromCache: false })),
 }));
-jest.mock('../infrastructure/bulkSelectionService', () => ({
-  estimateSelection: jest.fn(async () => ({ clientes: 120, negocios: 15, approximate: false })),
-  fetchCustomerCandidates: jest.fn(async () => ({ ids: [], total: 0 })),
-}));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 jest.mock('react-native-safe-area-context', () => ({
@@ -64,10 +60,13 @@ beforeEach(() => {
   resetSyncPrefs();
   mockRecaudador = false;
   config = {
-    clientes: { mode: 'todo', revision: 1, count: 4, ids: ['c1', 'c2', 'c3', 'c4'] },
+    clientes: { mode: 'todo', revision: 1, count: 4, ids: ['c1', 'c2', 'c3', 'c4'], mis_clientes: false },
     productos: { mode: 'todo', revision: 1, count: 0, ids: [] },
     ordenes: { revision: 1, count: 1, ids: ['o1'] },
     municipios: { revision: 1, count: 0, ids: [] },
+    estimated: { clientes: 120, negocios: 15 },
+    orders_allowed: true,
+    catalog_allowed: true,
   };
   useSyncStore.setState({ online: true, status: 'idle', lastSyncedAt: Date.now(), userId: 'u1' });
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
@@ -79,6 +78,10 @@ beforeEach(() => {
         : { data: [{ entity_id: 'c1', name: 'Ana Pérez', detail: '111' }], error: null };
     }
     if (fn === 'set_mobile_sync_mode') return { data: { domain: args?.p_domain, revision: 2 }, error: null };
+    if (fn === 'set_mobile_sync_mis_clientes') {
+      config.clientes = { ...(config.clientes as object), mis_clientes: args?.p_enabled };
+      return { data: { domain: 'clientes', mis_clientes: args?.p_enabled, revision: 3, count: 4 }, error: null };
+    }
     if (fn === 'set_mobile_sync_selection') {
       return { data: { domain: args?.p_domain, count: args?.p_selected ? 1 : 0, revision: 2 }, error: null };
     }
@@ -128,6 +131,8 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     expect(await screen.findByText('Pendiente de descargar')).toBeTruthy();
     expect(screen.getByTestId('prepare-warning')).toBeTruthy();
     expect(await screen.findByTestId('selection-estimate')).toHaveTextContent(/120 clientes · 15 negocios/);
+    // Tras el cambio se relee el estimado exacto del servidor.
+    expect(rpc.mock.calls.filter(([fn]) => fn === 'get_mobile_sync_config').length).toBeGreaterThan(1);
     expect(runSync).not.toHaveBeenCalled();
   });
 
@@ -150,6 +155,51 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
       expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', { p_domain: 'municipios', p_ids: ['m1'], p_selected: true })
     );
     expect(await screen.findByLabelText('Quitar municipio Rionegro')).toBeTruthy();
+  });
+
+  it('«Mis clientes» es un flag del servidor, no ids', async () => {
+    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
+    const screen = render(<OfflineDataScreen />);
+    const toggle = await screen.findByTestId('mis-clientes-switch');
+
+    await act(async () => {
+      fireEvent(toggle, 'valueChange', true);
+    });
+
+    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mis_clientes', { p_enabled: true });
+    expect(rpc).not.toHaveBeenCalledWith('set_mobile_sync_selection', expect.anything());
+    await waitFor(() => expect(screen.getByTestId('mis-clientes-switch').props.value).toBe(true));
+  });
+
+  it('muestra tal cual el mensaje del servidor al pasar el tope', async () => {
+    config.clientes = { mode: 'seleccion', revision: 1, count: 1, ids: ['c1'], mis_clientes: false };
+    const base = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (fn: string, args?: Record<string, unknown>) =>
+      fn === 'set_mobile_sync_selection'
+        ? { data: null, error: { code: '42501', message: 'Puedes llevar hasta 200 municipios en el teléfono.' } }
+        : base(fn, args)
+    );
+    const screen = render(<OfflineDataScreen />);
+    fireEvent.press(await screen.findByText('Elige un departamento'));
+    fireEvent.press(await screen.findByText('Antioquia'));
+    await act(async () => {
+      fireEvent.press(await screen.findByText('Rionegro'));
+    });
+    await waitFor(() =>
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'No se pudo llevar al teléfono',
+        'Puedes llevar hasta 200 municipios en el teléfono.'
+      )
+    );
+  });
+
+  it('sin catálogo ni órdenes permitidos por el servidor, oculta esos bloques', async () => {
+    config.catalog_allowed = false;
+    config.orders_allowed = false;
+    const screen = render(<OfflineDataScreen />);
+    await screen.findByTestId('domain-card-clientes');
+    expect(screen.queryByTestId('domain-card-productos')).toBeNull();
+    expect(screen.queryByTestId('domain-card-ordenes')).toBeNull();
   });
 
   it('el interruptor de productos pasa a «ninguno»', async () => {
