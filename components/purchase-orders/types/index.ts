@@ -1,3 +1,4 @@
+import { deliveryOrderStatusLabel } from '@/lib/inventoryOrderLabels';
 // Tipos compartidos para órdenes de entrega (Delivery Orders)
 
 export interface DeliveryOrderItem {
@@ -144,26 +145,28 @@ export function getStatusColor(status: string, colors: any): string {
       return colors.warning.main;
     case 'cancelled':
       return colors.error.main;
+    case 'approved':
+    case 'in_transit':
+      return colors.info.main;
+    case 'returned':
+      return colors.warning.main;
     default:
       return colors.text.secondary;
   }
 }
 
 // Helper para obtener etiqueta del estado
+// Los estados de las órdenes de entrega salen de la lista común en español
+// (`lib/inventoryOrderLabels`): antes aquí faltaban «sent_by_remission»,
+// «approved», «in_transit» y «returned», y la tarjeta los mostraba en inglés.
 export function getStatusLabel(status: string): string {
   switch (status) {
-    case 'delivered':
-      return 'Entregada';
     case 'ready':
       return 'Lista';
     case 'preparing':
       return 'Preparando';
-    case 'pending':
-      return 'Pendiente';
-    case 'cancelled':
-      return 'Cancelada';
     default:
-      return status;
+      return deliveryOrderStatusLabel(status);
   }
 }
 
