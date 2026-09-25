@@ -271,7 +271,11 @@ async function applyLocalFallback() {
  */
 export function loadSyncPrefs(options: { force?: boolean } = {}): Promise<void> {
   const { status } = useSyncPrefsStore.getState();
-  if (!options.force && (status === 'ready' || status === 'unsupported')) return Promise.resolve();
+  // Una sola carga compartida: las tarjetas de una lista larga montan el hook
+  // cada una, y solo la primera (estado `idle`) llega al servidor. Los
+  // reintentos tras `offline`/`error` los pide la franja de sincronización
+  // al volver la señal (o la pantalla de ajustes con «Reintentar»).
+  if (!options.force && status !== 'idle') return Promise.resolve();
   // Sin base local (antes de iniciar sesión, o en pruebas) no hay descarga que
   // ajustar: se espera a la próxima vez sin fijar ningún estado.
   if (!isDatabaseOpen()) return Promise.resolve();

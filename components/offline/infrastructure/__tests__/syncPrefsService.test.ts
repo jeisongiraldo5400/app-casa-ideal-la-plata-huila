@@ -217,3 +217,20 @@ describe('useOfflineSelection', () => {
     expect(result.current.supported).toBe(false);
   });
 });
+
+describe('estado compartido', () => {
+  it('muchas tarjetas con el hook hacen una sola llamada a get_mobile_sync_config', async () => {
+    rpc.mockResolvedValue({ data: CONFIG, error: null });
+    const hooks = Array.from({ length: 20 }, () => renderHook(() => useOfflineSelection('clientes')));
+    await act(async () => {
+      await loadSyncPrefs();
+    });
+    // Tarjetas montadas después (al hacer scroll) tampoco vuelven a preguntar.
+    renderHook(() => useOfflineSelection('clientes'));
+    await act(async () => undefined);
+
+    const configCalls = rpc.mock.calls.filter(([fn]) => fn === 'get_mobile_sync_config');
+    expect(configCalls).toHaveLength(1);
+    expect(hooks[19].result.current.isSelected('c1')).toBe(true);
+  });
+});

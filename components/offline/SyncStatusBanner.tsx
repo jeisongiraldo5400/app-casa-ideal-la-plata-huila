@@ -46,7 +46,9 @@ export function SyncStatusBanner() {
   const { isAdmin, isVendedor, onlyFindsBySearch } = useUserRoles();
 
   useEffect(() => {
-    if (online) void loadSyncPrefs();
+    if (!online) return;
+    const current = useSyncPrefsStore.getState().status;
+    void loadSyncPrefs({ force: current === 'offline' || current === 'error' });
   }, [online, lastSyncedAt]);
 
   const markable: ('clientes' | 'productos')[] =
