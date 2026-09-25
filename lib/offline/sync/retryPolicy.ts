@@ -47,6 +47,35 @@ export function isNetworkErrorMessage(message: string): boolean {
 }
 
 /**
+ * Rechazos definitivos del ORIGEN de un negocio creado sin señal: la orden de
+ * entrega o la remisión de la que sale (o a la que va) cambió mientras el
+ * teléfono estaba sin red. Reintentar no lo arregla; antes caían en «retry» y
+ * la cola insistía medio día antes de avisar. Ahora el negocio queda rechazado
+ * con el motivo del servidor («No se pudo enviar»).
+ *
+ * Textos de `create_negocio` / `activate_negocio` (20261013120000,
+ * 20261028120000) y de la foto de órdenes (20261130*).
+ */
+export function isDefinitiveOriginError(message: string): boolean {
+  const text = message.toLowerCase();
+  const aboutOrder = /orden|remisi[oó]n|\boe\b/.test(text);
+  return (
+    (aboutOrder && text.includes('cancelada')) ||
+    (aboutOrder && /no existe/.test(text)) ||
+    /ya est[aá] vinculada/.test(text) ||
+    /solo se puede enviar el negocio en una remisi[oó]n pendiente/.test(text) ||
+    /no puede adem[aá]s enviarse en una remisi[oó]n/.test(text) ||
+    text.includes('debe coincidir con el de la orden') ||
+    /no es v[aá]lid[oa] como origen/.test(text) ||
+    // Falta de disponible en la orden o remisión de origen.
+    text.includes('no cuenta con suficiente') ||
+    text.includes('insuficiente') ||
+    /no est[aá] presente en la (orden|remisi[oó]n)/.test(text) ||
+    /(sin|no hay|ya no (hay|tiene|queda)) (saldo |cantidad )?disponible/.test(text)
+  );
+}
+
+/**
  * Clasifica el mensaje devuelto por el servidor.
  * - network: la petición no llegó; se reintenta sin consumir intentos.
  * - conflict: el dato ya existe con otra identidad; requiere revisión.
@@ -64,6 +93,7 @@ export function classifyPushError(message: string): RetryDecision {
   ) {
     return 'conflict';
   }
+  if (isDefinitiveOriginError(text)) return 'fail';
   if (
     text.includes('saldo') ||
     text.includes('sin permiso') ||

@@ -14,6 +14,7 @@ import { FileUpload, Negocio, SyncOutboxItem } from '../models';
 import { persistNegocioSignatureFile, deleteLocalPagoSupportFile } from '../security/localFiles';
 import { requireLocalUserId } from '../security/localSession';
 import { prepareOutboxRecord, parseOutboxPayload } from './outbox';
+import { isDefinitiveOriginError } from './retryPolicy';
 import type { PreparedChanges } from './reconcile';
 import {
   REJECTED_ROW_SYNC_STATUS,
@@ -305,11 +306,13 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
     p_items: payload.items as never,
   });
   if (error) {
-    // Falta de existencias: insistir no lo arregla, así que se marca rechazado
-    // en el acto en vez de reintentar medio día (`classifyPushError` no conoce
-    // este texto y lo trataría como transitorio).
+    // Falta de existencias, o el origen (orden de entrega / remisión) cambió
+    // mientras no había señal: cancelada, ya vinculada, inexistente, remisión
+    // que ya salió o sin disponible. Insistir no lo arregla, así que se marca
+    // rechazado en el acto, con el motivo del servidor, en vez de reintentar
+    // medio día.
     const message = String((error as { message?: unknown })?.message || error);
-    if (/stock|existencias/i.test(message)) {
+    if (/stock|existencias/i.test(message) || isDefinitiveOriginError(message)) {
       return { outcome: 'fail' as const, message };
     }
     throw error;

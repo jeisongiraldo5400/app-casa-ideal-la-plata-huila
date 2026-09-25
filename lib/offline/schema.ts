@@ -1,7 +1,8 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
+import { OFFLINE_ORDER_TABLES } from './migrations';
 
 export const schema = appSchema({
-  version: 10,
+  version: 11,
   tables: [
     tableSchema({
       name: 'customers',
@@ -292,5 +293,8 @@ export const schema = appSchema({
         { name: 'last_error', type: 'string', isOptional: true },
       ],
     }),
+    // Órdenes llevadas en el teléfono y remisiones pendientes (v11): foto que
+    // el servidor recalcula entera en cada descarga. Ver `ordersSnapshot.ts`.
+    ...OFFLINE_ORDER_TABLES.map((table) => tableSchema(table)),
   ],
 });

@@ -363,6 +363,80 @@ export type PullWarehouseStock = {
   updated_at: string | null;
 };
 
+/** Dominios que la persona elige qué llevar en el teléfono (20261130120000). */
+export type SelectiveDomain = 'clientes' | 'productos';
+export const SELECTIVE_DOMAINS: SelectiveDomain[] = ['clientes', 'productos'];
+export type SyncDomainMode = 'todo' | 'seleccion';
+
+/** Preferencias vigentes en el servidor, tal como llegan en `sync_config`. */
+export type PullSyncConfig = {
+  clientes?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
+  productos?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
+  ordenes?: { revision?: number | string | null; count?: number | null } | null;
+};
+
+/** `p_options` de `pull_mobile_sync` (20261130140000). */
+export type PullOptions = {
+  full_domains: SelectiveDomain[];
+  orders: boolean;
+};
+
+/** Línea de una orden llevada (`delivery_orders_snapshot[].lines[]`). */
+export type PullOfflineOrderLine = {
+  group_kind: string;
+  source_order_id?: string | null;
+  /** Alias con el que `get_remission_origin_products` nombra el mismo dato. */
+  source_delivery_order_id?: string | null;
+  source_order_number?: string | null;
+  source_customer_id?: string | null;
+  source_customer_name?: string | null;
+  source_has_negocio?: boolean | null;
+  product_id: string;
+  product_name?: string | null;
+  product_sku?: string | null;
+  warehouse_id: string;
+  warehouse_name?: string | null;
+  quantity: number | string;
+  available_quantity: number | string;
+};
+
+/** Orden marcada «Llevar en el teléfono», recalculada entera en cada pull. */
+export type PullOfflineOrder = {
+  id: string;
+  order_number: string | null;
+  order_type: string;
+  status: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  municipio_id?: string | null;
+  vereda_id?: string | null;
+  delivery_address?: string | null;
+  usable: boolean;
+  unusable_reason?: string | null;
+  lines?: PullOfflineOrderLine[] | null;
+};
+
+/**
+ * Remisión pendiente (lista ligera y completa). El contrato sólo fija «asignado
+ * / conductor si existe» y «nº de órdenes anidadas»: se aceptan los nombres de
+ * columna con los que el servidor ya los expone en otras funciones.
+ */
+export type PullPendingRemission = {
+  id: string;
+  order_number: string | null;
+  status: string;
+  created_at: string | null;
+  assigned_user_id?: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_user_name?: string | null;
+  assigned_to_name?: string | null;
+  driver_name?: string | null;
+  zone_name?: string | null;
+  nested_orders_count?: number | string | null;
+  child_orders_count?: number | string | null;
+  orders_count?: number | string | null;
+};
+
 export type PullPayload = {
   server_time: string;
   must_wipe: boolean;
@@ -403,6 +477,19 @@ export type PullPayload = {
   products?: CollectionChanges<PullProduct>;
   warehouses?: CollectionChanges<PullWarehouse>;
   warehouse_stock?: CollectionChanges<PullWarehouseStock>;
+  /**
+   * Descarga selectiva (20261130140000). Todas opcionales: sin `p_options`, o
+   * con un servidor anterior, no llegan y la app sigue como antes.
+   */
+  sync_config?: PullSyncConfig | null;
+  /**
+   * Dominios que vinieron COMPLETOS: sólo para ellos, y sólo si el paquete no
+   * vino recortado, se borra lo `synced` que no llegó.
+   */
+  full_domains_sent?: string[] | null;
+  pending_remissions?: PullPendingRemission[] | null;
+  delivery_orders_snapshot?: PullOfflineOrder[] | null;
+  snapshot_at?: string | null;
 };
 
 /**
@@ -454,8 +541,12 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
  *
  * 8: quién creó el negocio (`created_by`, `created_by_name`, 20261128120000),
  * para el «CREADO POR» del contrato impreso sin señal.
+ *
+ * 9: descarga selectiva (20261130140000): `p_options`, `sync_config`, foto de
+ * órdenes llevadas y remisiones pendientes. La descarga completa única deja
+ * el teléfono coherente con las preferencias de la persona.
  */
-export const PULL_PAYLOAD_VERSION = '8';
+export const PULL_PAYLOAD_VERSION = '9';
 export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
 
 export type PullScope = 'cobro' | 'completo';

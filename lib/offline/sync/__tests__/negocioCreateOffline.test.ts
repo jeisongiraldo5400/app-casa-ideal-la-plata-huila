@@ -235,6 +235,33 @@ describe('negocio creado sin señal', () => {
     expect(result.outcome === 'fail' && result.message).toMatch(/Stock insuficiente/);
   });
 
+  it.each([
+    'La orden de entrega está cancelada',
+    'La orden de cliente ya está vinculada a un negocio',
+    'La orden de entrega de origen no existe',
+    'La remisión de destino no existe o no es válida',
+    'Solo se puede enviar el negocio en una remisión pendiente',
+    'La remisión no cuenta con suficiente saldo para "Mesa". Disponible en remisión: 1, Solicitado: 3.',
+  ])('un origen que cambió sin señal es rechazo definitivo con motivo: %s', async (message) => {
+    await enqueue();
+    for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
+    (supabase.rpc as jest.Mock).mockResolvedValue({ data: null, error: { message } });
+
+    const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
+
+    expect(result).toEqual({ outcome: 'fail', message });
+  });
+
+  it('un error desconocido del servidor sigue siendo reintentable', async () => {
+    await enqueue();
+    for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
+    (supabase.rpc as jest.Mock).mockResolvedValue({ data: null, error: { message: 'deadlock detected' } });
+
+    await expect(pushCreateNegocio(queuedPayload(), 'idem-1')).rejects.toMatchObject({
+      message: 'deadlock detected',
+    });
+  });
+
   it('sube cada firma a la ruta ya decidida y pisa lo subido en un reintento', async () => {
     await enqueue();
     const firma = JSON.parse(

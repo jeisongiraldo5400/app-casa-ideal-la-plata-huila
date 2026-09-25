@@ -19,8 +19,10 @@ import {
   NegocioItem,
   NegocioPago,
   Profile,
+  SyncOutboxItem,
   UserProfileCache,
 } from '../models';
+import { fullDomainsSent } from './syncPrefs';
 
 type SyncAware = Model & { rowSyncStatus?: string };
 
@@ -512,4 +514,130 @@ export async function applyCatalogPayload(database: Database, payload: PullPaylo
     await database.batch(...operations.filter(Boolean));
   });
   return true;
+}
+
+/** Comandos que todavía cuentan: en cola, en vuelo o a la espera de revisión. */
+const OUTBOX_STATUSES_THAT_HOLD_DATA = ['pending', 'syncing', 'error', 'failed', 'conflict'];
+
+function payloadRecord(item: SyncOutboxItem): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(item.payloadJson);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function addId(target: Set<string>, value: unknown) {
+  if (typeof value === 'string' && value) target.add(value);
+}
+
+/**
+ * Lo que el teléfono no puede perder aunque ya no esté en la selección:
+ * clientes de negocios locales o de comandos sin enviar, y productos de los
+ * negocios que aún no confirma el servidor.
+ */
+async function protectedSelectiveIds(database: Database) {
+  const [negocios, items, outbox] = await Promise.all([
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<NegocioItem>('negocio_items').query().fetch(),
+    database
+      .get<SyncOutboxItem>('sync_outbox')
+      .query(Q.where('status', Q.oneOf(OUTBOX_STATUSES_THAT_HOLD_DATA)))
+      .fetch(),
+  ]);
+  const customers = new Set<string>();
+  const products = new Set<string>();
+  const unconfirmedNegocios = new Set<string>();
+  for (const negocio of negocios) {
+    addId(customers, negocio.customerId);
+    addId(customers, negocio.codeudorCustomerId);
+    if (negocio.rowSyncStatus !== 'synced') unconfirmedNegocios.add(negocio.id);
+  }
+  for (const item of items) {
+    if (item.rowSyncStatus !== 'synced' || unconfirmedNegocios.has(item.negocioId)) {
+      addId(products, item.productId);
+    }
+  }
+  for (const command of outbox) {
+    const payload = payloadRecord(command);
+    addId(customers, payload.customerId);
+    const negocio = (payload.negocio || {}) as Record<string, unknown>;
+    addId(customers, negocio.customer_id);
+    addId(customers, negocio.codeudor_customer_id);
+    if (Array.isArray(payload.items)) {
+      for (const item of payload.items as Record<string, unknown>[]) addId(products, item?.product_id);
+    }
+  }
+  return { customers, products };
+}
+
+/**
+ * Descarga selectiva (20261130140000): tras un paquete NO recortado, en cada
+ * dominio que vino completo (`full_domains_sent`) se borra lo `synced` que no
+ * llegó, porque ya no está en lo que la persona lleva en el teléfono.
+ *
+ * Nunca se borra: una fila pendiente o rechazada (todavía no existe en el
+ * servidor, o espera revisión), un cliente de un negocio local o de un
+ * comando sin enviar, ni un producto de un negocio pendiente. `productos`
+ * sólo se poda si el catálogo llegó en este paquete (tiene su propio cursor:
+ * ver `catalogPull.ts`).
+ *
+ * Debe correr DESPUÉS de `pruneOutOfScopeNegocios`, con los negocios al día,
+ * igual que `pruneCustomersOutsideNegocios`.
+ */
+export async function purgeUnselectedDomains(
+  database: Database,
+  payload: PullPayload,
+  input: { catalogApplied: boolean }
+): Promise<{ customers: number; products: number; stock: number }> {
+  const result = { customers: 0, products: 0, stock: 0 };
+  if (payload.truncated) return result;
+  const sent = new Set(fullDomainsSent(payload));
+  const purgeCustomers = sent.has('clientes');
+  const purgeProducts =
+    sent.has('productos') && input.catalogApplied && Boolean(payload.catalog_included && payload.products);
+  if (!purgeCustomers && !purgeProducts) return result;
+
+  const keep = await protectedSelectiveIds(database);
+  const operations: Model[] = [];
+
+  if (purgeCustomers) {
+    const received = new Set(payload.customers.upserts.map((row) => row.id));
+    const customers = await database.get<Customer>('customers').query().fetch();
+    for (const row of customers) {
+      if (row.rowSyncStatus !== 'synced') continue;
+      if (received.has(row.id) || keep.customers.has(row.id)) continue;
+      operations.push(row.prepareDestroyPermanently());
+      result.customers += 1;
+    }
+  }
+
+  if (purgeProducts && payload.products) {
+    const receivedProducts = new Set(payload.products.upserts.map((row) => row.id));
+    const receivedStock = new Set((payload.warehouse_stock?.upserts || []).map((row) => row.id));
+    const [products, stock] = await Promise.all([
+      database.get<CatalogProduct>('catalog_products').query().fetch(),
+      database.get<CatalogWarehouseStock>('catalog_warehouse_stock').query().fetch(),
+    ]);
+    const removed = new Set<string>();
+    for (const row of products) {
+      if (receivedProducts.has(row.id) || keep.products.has(row.id)) continue;
+      operations.push(row.prepareDestroyPermanently());
+      removed.add(row.id);
+      result.products += 1;
+    }
+    for (const row of stock) {
+      if (keep.products.has(row.productId)) continue;
+      if (!removed.has(row.productId) && receivedStock.has(row.id)) continue;
+      operations.push(row.prepareDestroyPermanently());
+      result.stock += 1;
+    }
+  }
+
+  if (!operations.length) return result;
+  await database.write(async () => {
+    await database.batch(...operations);
+  });
+  return result;
 }

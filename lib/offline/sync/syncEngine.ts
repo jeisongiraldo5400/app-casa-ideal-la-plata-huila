@@ -9,7 +9,20 @@ import {
   applyPullPayload,
   pruneCustomersOutsideNegocios,
   pruneOutOfScopeNegocios,
+  purgeUnselectedDomains,
 } from './applyPull';
+import { applyOrdersSnapshot } from './ordersSnapshot';
+import { requestPull } from './pullRequest';
+import {
+  markSelectiveSupport,
+  mustRefreshCatalogForSelection,
+  planFullDomains,
+  readAppliedRevisions,
+  readSelectiveSupport,
+  readSyncConfig,
+  shouldSendSelectiveOptions,
+  storeSyncConfigFromPayload,
+} from './syncPrefs';
 import {
   clearCatalogRequest,
   cursorForCatalogPull,
@@ -184,19 +197,6 @@ export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
   return inFlight;
 }
 
-/**
- * ¿El servidor no conoce `p_include_catalog`? PostgREST resuelve la función por
- * los nombres de sus argumentos: con un servidor sin la migración del catálogo
- * la llamada falla con PGRST202 en vez de ignorar el parámetro.
- */
-function isMissingCatalogParamError(error: unknown): boolean {
-  const record = (error || {}) as { code?: unknown; message?: unknown };
-  if (String(record.code || '') === 'PGRST202') return true;
-  return /p_include_catalog|could not find the function|does not exist/i.test(
-    String(record.message || '')
-  );
-}
-
 /** Devuelve el aviso de descarga recortada, o `null` si vino completa. */
 async function pullRemote(
   userId: string,
@@ -218,31 +218,56 @@ async function pullRemote(
   // pedirlo sólo haría que cada «Descargar información» bajara todo desde cero,
   // porque su cursor de catálogo nunca avanza.
   const storedScope = await getMeta(database, PULL_SCOPE_META_KEY);
+  const lastCatalogAt = await getCatalogPulledAt(database);
+  // Descarga selectiva: si la selección de un dominio cambió en el servidor
+  // (otra revisión), ese dominio se pide completo para poder borrar lo que ya
+  // no se lleva. Con productos, eso obliga a traer el catálogo.
+  const selectiveSupport = await readSelectiveSupport(database);
+  const sendOptions = shouldSendSelectiveOptions({
+    supported: selectiveSupport.supported,
+    checkedAt: selectiveSupport.checkedAt,
+    manual: reason === 'manual',
+  });
+  const syncConfig = await readSyncConfig(database);
+  const appliedRevisions = await readAppliedRevisions(database);
   const includeCatalog =
     storedScope !== 'cobro' &&
-    shouldIncludeCatalog({
-      reason,
-      requested: catalogRequested,
-      lastCatalogAt: await getCatalogPulledAt(database),
-    });
+    (shouldIncludeCatalog({ reason, requested: catalogRequested, lastCatalogAt }) ||
+      (sendOptions &&
+        mustRefreshCatalogForSelection({
+          config: syncConfig,
+          applied: appliedRevisions,
+          hasCatalog: lastCatalogAt != null,
+        })));
   const catalogCursor = includeCatalog
     ? cursorForCatalogPull(lastPulledAt, await getCatalogCursor(database))
     : null;
-  let { data, error } = await supabase.rpc('pull_mobile_sync', {
-    p_last_pulled_at: includeCatalog ? catalogCursor : lastPulledAt,
-    p_limit: PULL_LIMIT,
-    ...(includeCatalog ? { p_include_catalog: true } : {}),
-  });
-  if (error && includeCatalog && isMissingCatalogParamError(error)) {
-    // Servidor anterior a 20261122120000: no conoce el tercer parámetro. Se
-    // sincroniza sin catálogo en vez de dejar el teléfono sin descargar nada.
-    ({ data, error } = await supabase.rpc('pull_mobile_sync', {
-      p_last_pulled_at: lastPulledAt,
-      p_limit: PULL_LIMIT,
-    }));
+  const request = await requestPull(
+    (fn, args) => supabase.rpc(fn, args as never) as never,
+    {
+      lastPulledAt,
+      catalogCursor,
+      includeCatalog,
+      limit: PULL_LIMIT,
+      options: sendOptions
+        ? {
+            full_domains: planFullDomains({
+              config: syncConfig,
+              applied: appliedRevisions,
+              includeCatalog,
+            }),
+            orders: true,
+          }
+        : null,
+    }
+  );
+  if (request.error) throw request.error;
+  // La pantalla de preferencias sólo se muestra si el servidor la entiende.
+  if (request.selective === 'supported' && selectiveSupport.supported !== 'true') {
+    await markSelectiveSupport(database, true);
   }
-  if (error) throw error;
-  const payload = data as PullPayload;
+  if (request.selective === 'unsupported') await markSelectiveSupport(database, false);
+  const payload = request.data as PullPayload;
   if (payload.must_wipe) {
     await wipeLocalOfflineData();
     useSyncStore.getState().setUserId(null);
@@ -256,9 +281,12 @@ async function pullRemote(
   const truncationWarning = pullTruncationWarning(payload, PULL_LIMIT);
   await applyPullPayload(database, payload, userId);
   // El catálogo sólo avanza su cursor si de verdad vino en el paquete.
-  if (await applyCatalogPayload(database, payload)) {
+  const catalogApplied = await applyCatalogPayload(database, payload);
+  if (catalogApplied) {
     await markCatalogPulled(database, payload.server_time);
   }
+  // Foto de órdenes llevadas y remisiones pendientes: reemplazo completo.
+  await applyOrdersSnapshot(database, payload);
   // Sólo se borra la petición que esta descarga atendió.
   if (catalogRequested) clearCatalogRequest();
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
@@ -290,7 +318,13 @@ async function pullRemote(
     // Recaudador puro: fuera los clientes que no son de ningún negocio suyo
     // (20261128120000). Va después de la poda de negocios, ya al día.
     if (payload.pull_scope === 'cobro') await pruneCustomersOutsideNegocios(database);
+    // Descarga selectiva: fuera lo que ya no se lleva, sólo en los dominios
+    // que vinieron completos. También después de la poda de negocios.
+    await purgeUnselectedDomains(database, payload, { catalogApplied });
   }
+  // Preferencias y revisiones aplicadas. La revisión de un dominio sólo se da
+  // por aplicada si vino completo y sin recortar: si no, se vuelve a pedir.
+  await storeSyncConfigFromPayload(database, payload, { catalogApplied });
   return truncationWarning;
 }
 

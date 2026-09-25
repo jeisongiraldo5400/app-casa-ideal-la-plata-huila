@@ -78,8 +78,80 @@ export const CATALOG_PRODUCT_TABLES = [
   },
 ];
 
+/**
+ * Tablas de la descarga selectiva añadidas en la versión 11 (también en
+ * `schema.ts`). Son una foto que el servidor recalcula completa en cada
+ * descarga (`delivery_orders_snapshot`, `pending_remissions`): la app las
+ * reemplaza enteras, nunca las edita.
+ */
+export const OFFLINE_ORDER_TABLES = [
+  {
+    // Órdenes de entrega marcadas «Llevar en el teléfono»; el id es el de la orden.
+    name: 'delivery_orders_local',
+    columns: [
+      { name: 'order_number', type: 'string' as const, isOptional: true },
+      { name: 'order_type', type: 'string' as const },
+      { name: 'status', type: 'string' as const },
+      { name: 'customer_id', type: 'string' as const, isOptional: true },
+      { name: 'customer_name', type: 'string' as const, isOptional: true },
+      { name: 'municipio_id', type: 'string' as const, isOptional: true },
+      { name: 'vereda_id', type: 'string' as const, isOptional: true },
+      { name: 'delivery_address', type: 'string' as const, isOptional: true },
+      // Si todavía sirve como origen de un negocio y, si no, por qué.
+      { name: 'usable', type: 'boolean' as const },
+      { name: 'unusable_reason', type: 'string' as const, isOptional: true },
+      { name: 'snapshot_at', type: 'number' as const, isOptional: true },
+    ],
+  },
+  {
+    // Líneas de cada orden por grupo (propios / OE hija / la propia orden),
+    // con lo disponible según la misma regla del servidor.
+    name: 'delivery_order_lines',
+    columns: [
+      { name: 'order_id', type: 'string' as const, isIndexed: true },
+      { name: 'position', type: 'number' as const },
+      { name: 'group_kind', type: 'string' as const },
+      { name: 'source_order_id', type: 'string' as const, isOptional: true },
+      { name: 'source_order_number', type: 'string' as const, isOptional: true },
+      { name: 'source_customer_id', type: 'string' as const, isOptional: true },
+      { name: 'source_customer_name', type: 'string' as const, isOptional: true },
+      { name: 'source_has_negocio', type: 'boolean' as const },
+      { name: 'product_id', type: 'string' as const },
+      { name: 'product_name', type: 'string' as const, isOptional: true },
+      { name: 'product_sku', type: 'string' as const, isOptional: true },
+      { name: 'warehouse_id', type: 'string' as const },
+      { name: 'warehouse_name', type: 'string' as const, isOptional: true },
+      { name: 'quantity', type: 'number' as const },
+      { name: 'available_quantity', type: 'number' as const },
+    ],
+  },
+  {
+    // Remisiones pendientes (destino de «Enviar en remisión»); lista ligera.
+    // `created_at`/`updated_at` son columnas reservadas de WatermelonDB (número):
+    // la fecha de creación de la remisión va en `remission_created_at`.
+    name: 'pending_remissions',
+    columns: [
+      { name: 'order_number', type: 'string' as const, isOptional: true },
+      { name: 'status', type: 'string' as const },
+      { name: 'remission_created_at', type: 'string' as const, isOptional: true },
+      { name: 'assigned_user_id', type: 'string' as const, isOptional: true },
+      { name: 'assigned_user_name', type: 'string' as const, isOptional: true },
+      { name: 'driver_name', type: 'string' as const, isOptional: true },
+      { name: 'zone_name', type: 'string' as const, isOptional: true },
+      { name: 'nested_orders_count', type: 'number' as const },
+    ],
+  },
+];
+
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Descarga selectiva «Qué llevar en el teléfono» (20261130*): foto de
+      // las órdenes llevadas y de las remisiones pendientes para armar un
+      // negocio sin señal desde una orden existente.
+      toVersion: 11,
+      steps: OFFLINE_ORDER_TABLES.map((table) => createTable(table)),
+    },
     {
       // Quién creó el negocio (20261128120000): sin él el contrato impreso sin
       // señal ponía «—» en «CREADO POR».

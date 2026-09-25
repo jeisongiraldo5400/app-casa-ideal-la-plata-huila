@@ -261,6 +261,61 @@ export class FileUpload extends Model {
   @field('last_error') lastError!: string | null;
 }
 
+/**
+ * Orden de entrega llevada en el teléfono (v11). Es la foto de la última
+ * descarga: se reemplaza entera en cada pull que la trae.
+ */
+export class DeliveryOrderLocal extends Model {
+  static table = 'delivery_orders_local';
+  @field('order_number') orderNumber!: string | null;
+  /** 'customer' | 'remission'. */
+  @field('order_type') orderType!: string;
+  @field('status') status!: string;
+  @field('customer_id') customerId!: string | null;
+  @field('customer_name') customerName!: string | null;
+  @field('municipio_id') municipioId!: string | null;
+  @field('vereda_id') veredaId!: string | null;
+  @field('delivery_address') deliveryAddress!: string | null;
+  /** false si ya no sirve como origen (cancelada, vinculada…); ver `unusableReason`. */
+  @field('usable') usable!: boolean;
+  @field('unusable_reason') unusableReason!: string | null;
+  @field('snapshot_at') snapshotAt!: number | null;
+}
+
+/** Línea de una orden llevada, por grupo de origen (v11). */
+export class DeliveryOrderLine extends Model {
+  static table = 'delivery_order_lines';
+  @field('order_id') orderId!: string;
+  @field('position') position!: number;
+  /** 'own' | 'child' | 'self'. */
+  @field('group_kind') groupKind!: string;
+  @field('source_order_id') sourceOrderId!: string | null;
+  @field('source_order_number') sourceOrderNumber!: string | null;
+  @field('source_customer_id') sourceCustomerId!: string | null;
+  @field('source_customer_name') sourceCustomerName!: string | null;
+  @field('source_has_negocio') sourceHasNegocio!: boolean;
+  @field('product_id') productId!: string;
+  @field('product_name') productName!: string | null;
+  @field('product_sku') productSku!: string | null;
+  @field('warehouse_id') warehouseId!: string;
+  @field('warehouse_name') warehouseName!: string | null;
+  @field('quantity') quantity!: number;
+  @field('available_quantity') availableQuantity!: number;
+}
+
+/** Remisión pendiente, destino posible de «Enviar en remisión» (v11). */
+export class PendingRemission extends Model {
+  static table = 'pending_remissions';
+  @field('order_number') orderNumber!: string | null;
+  @field('status') status!: string;
+  @field('remission_created_at') remissionCreatedAt!: string | null;
+  @field('assigned_user_id') assignedUserId!: string | null;
+  @field('assigned_user_name') assignedUserName!: string | null;
+  @field('driver_name') driverName!: string | null;
+  @field('zone_name') zoneName!: string | null;
+  @field('nested_orders_count') nestedOrdersCount!: number;
+}
+
 export const modelClasses = [
   Customer,
   Negocio,
@@ -283,4 +338,7 @@ export const modelClasses = [
   SyncOutboxItem,
   SyncMeta,
   FileUpload,
+  DeliveryOrderLocal,
+  DeliveryOrderLine,
+  PendingRemission,
 ];

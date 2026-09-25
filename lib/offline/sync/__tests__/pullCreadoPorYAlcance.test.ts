@@ -25,7 +25,7 @@ function emptyChanges() {
 
 describe('esquema local v10: quién creó el negocio', () => {
   it('la migración a 10 agrega created_by y created_by_name a negocios, opcionales', () => {
-    expect(schema.version).toBe(10);
+    expect(schema.version).toBeGreaterThanOrEqual(10);
     const toTen = migrations.sortedMigrations.find((migration) => migration.toVersion === 10);
     expect(toTen).toBeDefined();
     const steps = toTen!.steps as unknown as AddColumnsStep[];
@@ -42,7 +42,7 @@ describe('esquema local v10: quién creó el negocio', () => {
   });
 
   it('la versión 8 del paquete fuerza una descarga completa a quien tenía la 7', () => {
-    expect(PULL_PAYLOAD_VERSION).toBe('8');
+    expect(Number(PULL_PAYLOAD_VERSION)).toBeGreaterThanOrEqual(8);
     expect(pullCursorForPayloadVersion('2026-09-24T00:00:00Z', '7')).toBeNull();
   });
 });
