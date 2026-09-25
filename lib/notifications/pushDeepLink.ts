@@ -60,6 +60,12 @@ export function buildPushDeepLink(
     return `/(tabs)/all-orders?tab=${tab}${query}`;
   }
 
+  // Un cliente abrió el catálogo que el vendedor le compartió: se abre esa
+  // edición, donde se ven sus enlaces y cuántas veces se abrió cada uno.
+  if (kind === "catalogo") {
+    return id ? `/catalogo/${encodeURIComponent(id)}` : null;
+  }
+
   if (kind === "cartera_vencimientos") {
     const due = parseCarteraDueParam(data.due_date);
     if (!due) return null;

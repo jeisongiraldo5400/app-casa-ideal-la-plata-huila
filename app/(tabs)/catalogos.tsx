@@ -4,7 +4,7 @@ import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { Button, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
+import { Button, HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { CatalogListCard, useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import {
   CATALOG_LIST_FILTERS,
@@ -110,6 +110,17 @@ function CatalogosScreenInner() {
 
   const header = (
     <View style={styles.header}>
+      {/* Lo más común es mandar UN producto: 4 de cada 5 ediciones en
+          producción tenían uno solo. Va arriba, a un toque. */}
+      {access.canManageCatalog && access.canCreateShareLink ? (
+        <HeroActionCard
+          compact
+          title="Enviar un producto"
+          subtitle="Por WhatsApp, en un paso"
+          icon="send"
+          onPress={() => router.push('/catalogo/enviar-producto' as never)}
+        />
+      ) : null}
       <View style={styles.searchRow}>
         <SearchField
           value={query}

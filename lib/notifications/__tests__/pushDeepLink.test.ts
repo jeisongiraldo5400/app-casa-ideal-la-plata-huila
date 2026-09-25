@@ -1,6 +1,16 @@
 import { buildPushDeepLink } from '../pushDeepLink';
 
 describe('buildPushDeepLink', () => {
+  // Pedido del usuario (2026-09-24): avisar al vendedor cuando su cliente abre
+  // el catálogo (migración 20261127120000).
+  it('un catálogo abierto lleva a esa edición', () => {
+    expect(buildPushDeepLink({ kind: 'catalogo', id: 'cat-123' })).toBe('/catalogo/cat-123');
+  });
+
+  it('un aviso de catálogo sin id no lleva a ninguna parte', () => {
+    expect(buildPushDeepLink({ kind: 'catalogo' })).toBeNull();
+  });
+
   it('abre el detalle del negocio, que sí tiene pantalla propia', () => {
     expect(buildPushDeepLink({ kind: 'negocio', id: 'n-1', numero: 2026016 })).toBe('/negocio/n-1');
   });
