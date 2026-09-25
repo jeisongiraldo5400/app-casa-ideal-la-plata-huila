@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { runSync } from '@/lib/offline/sync/syncEngine';
@@ -14,7 +14,9 @@ import {
   isDownloadPending,
   loadSyncPrefs,
   refreshDownloadState,
+  parseConfigMeta,
   parseSyncConfig,
+  setMisClientes,
   resetSyncPrefs,
   setSyncMode,
   setSyncSelection,
@@ -71,6 +73,36 @@ describe('parseSyncConfig', () => {
       selected: { clientes: ['c9'] },
     });
     expect(config.clientes.ids).toEqual(['c9']);
+  });
+});
+
+describe('parseConfigMeta', () => {
+  it('lee mis_clientes, el estimado exacto y los permisos', () => {
+    expect(
+      parseConfigMeta({
+        clientes: { mode: 'seleccion', mis_clientes: true },
+        estimated: { clientes: 340, negocios: 22 },
+        orders_allowed: false,
+        catalog_allowed: true,
+      })
+    ).toEqual({ misClientes: true, estimated: { clientes: 340, negocios: 22 }, ordersAllowed: false, catalogAllowed: true });
+  });
+});
+
+describe('setMisClientes', () => {
+  it('llama al RPC del flag y deja la elección pendiente de descargar', async () => {
+    rpc.mockImplementation(async (fn: string) =>
+      fn === 'set_mobile_sync_mis_clientes'
+        ? { data: { domain: 'clientes', mis_clientes: true, revision: 4, count: 0 }, error: null }
+        : { data: { ...CONFIG, estimated: { clientes: 50, negocios: 3 } }, error: null }
+    );
+    await setMisClientes(true);
+    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mis_clientes', { p_enabled: true });
+    expect(useSyncPrefsStore.getState().meta.misClientes).toBe(true);
+    expect(useSyncPrefsStore.getState().config.clientes.revision).toBe(4);
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
+    expect(mockedMarkChanged).toHaveBeenCalled();
+    await waitFor(() => expect(useSyncPrefsStore.getState().meta.estimated).toEqual({ clientes: 50, negocios: 3 }));
   });
 });
 
@@ -178,9 +210,10 @@ describe('setSyncMode / setSyncSelection', () => {
 
     const result = await setSyncSelection('clientes', ids, true);
 
-    expect(rpc).toHaveBeenCalledTimes(3);
-    expect(rpc.mock.calls[0][1].p_ids).toHaveLength(200);
-    expect(rpc.mock.calls[2][1].p_ids).toHaveLength(50);
+    const setCalls = rpc.mock.calls.filter(([fn]) => fn === 'set_mobile_sync_selection');
+    expect(setCalls).toHaveLength(3);
+    expect(setCalls[0][1].p_ids).toHaveLength(200);
+    expect(setCalls[2][1].p_ids).toHaveLength(50);
     expect(result.count).toBe(450);
     expect(useSyncPrefsStore.getState().config.clientes.ids).toHaveLength(450);
     expect(mockedRunSync).not.toHaveBeenCalled();
@@ -232,7 +265,7 @@ describe('useOfflineSelection', () => {
     await act(async () => {
       await result.current.toggle('c1');
     });
-    expect(rpc).toHaveBeenLastCalledWith('set_mobile_sync_selection', {
+    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', {
       p_domain: 'clientes',
       p_ids: ['c1'],
       p_selected: false,

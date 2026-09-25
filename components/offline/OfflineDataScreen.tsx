@@ -60,7 +60,9 @@ export function OfflineDataScreen() {
 
   const lastDownload = prefs.lastManualAt ?? lastSyncedAt;
   const recaudador = onlyFindsBySearch();
-  const canOrders = !recaudador && (isAdmin() || isVendedor() || isBodeguero());
+  // El servidor dice qué aplica a este usuario; los roles quedan de respaldo.
+  const canOrders = prefs.meta.ordersAllowed && !recaudador && (isAdmin() || isVendedor() || isBodeguero());
+  const canCatalog = prefs.meta.catalogAllowed && !recaudador;
   const stale = lastDownload != null && Date.now() - lastDownload > PREPARE_PHONE_AFTER_MS;
 
   useEffect(() => {
@@ -173,11 +175,12 @@ export function OfflineDataScreen() {
           <>
             <ClientesBlock
               config={prefs.config}
+              meta={prefs.meta}
               online={online}
               dateSlot={<BlockDate label="Clientes descargados" at={lastDownload} />}
             />
 
-            {!recaudador ? (
+            {canCatalog ? (
               <Card style={styles.card}>
                 <View testID="domain-card-productos" style={styles.cardBody}>
                   <SectionHeader
