@@ -17,7 +17,7 @@ import {
   pendingOriginKey,
   searchLocalOfflineOrders,
 } from '../negociosOfflineOrdersService';
-import { REMISSION_OWN_GROUP_LABEL } from '../negociosDeliveryOrdersService';
+import { REMISSION_OWN_GROUP_LABEL, formatDeliveryOrderOptionMeta } from '../negociosDeliveryOrdersService';
 
 jest.mock('@/lib/supabase', () => ({ supabase: {} }));
 
@@ -57,6 +57,11 @@ const remission: LocalOfflineOrder = {
   municipioId: null,
   veredaId: null,
   deliveryAddress: null,
+  createdAt: null,
+  customerIdNumber: null,
+  assignedUserName: null,
+  zoneName: null,
+  notes: null,
   usable: true,
   unusableReason: null,
   snapshotAt: 1_000,
@@ -220,6 +225,8 @@ describe('órdenes llevadas en el teléfono · armado sin señal', () => {
         createdAt: '2026-09-24T10:00:00Z',
         assignedToUserId: 'u-chofer',
         assignedUserName: 'PEDRO',
+        zoneName: 'Oriente',
+        notes: 'Sale el jueves',
         nestedOrdersCount: 3,
       },
     ]);
@@ -230,10 +237,57 @@ describe('órdenes llevadas en el teléfono · armado sin señal', () => {
         order_number: 'REM-0020',
         assigned_to_user_id: 'u-chofer',
         assigned_user_name: 'PEDRO',
-        zone_name: null,
+        zone_name: 'Oriente',
         created_at: '2026-09-24T10:00:00Z',
-        notes: null,
+        notes: 'Sale el jueves',
       },
     ]);
+  });
+
+  it('la tarjeta sin señal lleva la fecha, el documento y el asesor que mandó el servidor', () => {
+    const order: LocalOfflineOrder = {
+      ...remission,
+      id: 'oe-9',
+      orderNumber: 'OE-0009',
+      orderType: 'customer',
+      customerId: 'c-marta',
+      customerName: 'MARTA',
+      createdAt: '2026-09-20T15:30:00Z',
+      customerIdNumber: '1036000111',
+      assignedUserName: 'LUIS',
+    };
+    const option = buildLocalOrderOption(
+      order,
+      [line({ orderId: 'oe-9', groupKind: 'self', sourceOrderId: 'oe-9' })],
+      new Map()
+    );
+    expect(option).toMatchObject({
+      created_at: '2026-09-20T15:30:00Z',
+      customer_id_number: '1036000111',
+      assigned_user_name: 'LUIS',
+    });
+    expect(formatDeliveryOrderOptionMeta(option)).toBe('20/09/2026 · Doc. 1036000111');
+    // Sin fecha ni documento (foto de un servidor anterior) no hay segunda línea.
+    expect(formatDeliveryOrderOptionMeta(buildLocalOrderOption(remission, remissionLines, new Map()))).toBe('');
+  });
+
+  it('busca también por documento del cliente y por asesor asignado', async () => {
+    const customerOrder: LocalOfflineOrder = {
+      ...remission,
+      id: 'oe-9',
+      orderNumber: 'OE-0009',
+      orderType: 'customer',
+      customerName: 'MARTA',
+      customerIdNumber: '1036000111',
+    };
+    const truck: LocalOfflineOrder = { ...remission, assignedUserName: 'PEDRO PÉREZ' };
+    (listLocalOfflineOrders as jest.Mock).mockResolvedValue([truck, customerOrder]);
+    (pendingLocalQuantitiesByOrigin as jest.Mock).mockResolvedValue(new Map());
+    (getLocalOfflineOrderLines as jest.Mock).mockImplementation(async (id: string) =>
+      id === 'rem-1' ? remissionLines : [line({ orderId: 'oe-9', groupKind: 'self', sourceOrderId: 'oe-9' })]
+    );
+
+    expect((await searchLocalOfflineOrders('1036000')).orders.map((o) => o.id)).toEqual(['oe-9']);
+    expect((await searchLocalOfflineOrders('pedro perez')).orders.map((o) => o.id)).toEqual(['rem-1']);
   });
 });

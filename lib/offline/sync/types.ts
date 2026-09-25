@@ -371,7 +371,13 @@ export type SyncDomainMode = 'todo' | 'seleccion' | 'ninguno';
 
 /** Preferencias vigentes en el servidor, tal como llegan en `sync_config`. */
 export type PullSyncConfig = {
-  clientes?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
+  clientes?: {
+    mode?: string | null;
+    revision?: number | string | null;
+    count?: number | null;
+    /** Atajo «Mis clientes» (flag de `mobile_sync_prefs`, no ids). */
+    mis_clientes?: boolean | null;
+  } | null;
   productos?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
   ordenes?: { revision?: number | string | null; count?: number | null } | null;
   /** Municipios elegidos para clientes (v2). */
@@ -414,15 +420,20 @@ export type PullOfflineOrder = {
   municipio_id?: string | null;
   vereda_id?: string | null;
   delivery_address?: string | null;
+  created_at?: string | null;
+  customer_id_number?: string | null;
+  assigned_user_name?: string | null;
+  zone_name?: string | null;
+  notes?: string | null;
   usable: boolean;
   unusable_reason?: string | null;
   lines?: PullOfflineOrderLine[] | null;
 };
 
 /**
- * Remisión pendiente (lista ligera y completa). El contrato sólo fija «asignado
- * / conductor si existe» y «nº de órdenes anidadas»: se aceptan los nombres de
- * columna con los que el servidor ya los expone en otras funciones.
+ * Remisión pendiente (lista ligera y completa), tal como la manda
+ * 20261130140000. No hay conductor en el servidor. Se aceptan también los
+ * nombres de columna con los que el servidor expone lo mismo en otras funciones.
  */
 export type PullPendingRemission = {
   id: string;
@@ -433,8 +444,8 @@ export type PullPendingRemission = {
   assigned_to_user_id?: string | null;
   assigned_user_name?: string | null;
   assigned_to_name?: string | null;
-  driver_name?: string | null;
   zone_name?: string | null;
+  notes?: string | null;
   nested_orders_count?: number | string | null;
   child_orders_count?: number | string | null;
   orders_count?: number | string | null;
@@ -485,6 +496,8 @@ export type PullPayload = {
    * con un servidor anterior, no llegan y la app sigue como antes.
    */
   sync_config?: PullSyncConfig | null;
+  /** true si el servidor aplicó lo elegido (la llamada llevó `p_options`). */
+  selective_applied?: boolean | null;
   /**
    * Dominios que vinieron COMPLETOS: sólo para ellos, y sólo si el paquete no
    * vino recortado, se borra lo `synced` que no llegó.
@@ -509,9 +522,18 @@ export function pullTruncationWarning(payload: PullPayload, limit: number): stri
   return `Descarga incompleta: solo caben ${limit} negocios. Se guardaron los de actividad más reciente; el resto no está en el teléfono.`;
 }
 
+/** Fecha y hora sin zona (columnas `timestamp without time zone`, p. ej. `products.updated_at`). */
+const NAIVE_DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
+/**
+ * Milisegundos de una fecha del servidor. Las columnas sin zona horaria llegan
+ * sin desfase y el servidor las guarda en UTC; `Date.parse` las tomaría como
+ * hora local del teléfono (5 h de error en Colombia), así que se leen en UTC.
+ */
 export function toEpoch(value: string | null | undefined): number | null {
   if (!value) return null;
-  const parsed = Date.parse(value);
+  const text = NAIVE_DATE_TIME.test(value) ? `${value.replace(' ', 'T')}Z` : value;
+  const parsed = Date.parse(text);
   return Number.isNaN(parsed) ? null : parsed;
 }
 

@@ -4,6 +4,7 @@ import { SearchField } from '@/components/ui';
 import {
   DELIVERY_ORDER_SEARCH_LIMIT,
   formatDeliveryOrderOptionLabel,
+  formatDeliveryOrderOptionMeta,
   type DeliveryOrderOption,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import { OfflineOrderToggle } from '@/components/purchase-orders/components/OfflineOrderToggle';
@@ -170,6 +171,11 @@ export function NegocioOriginOrderPicker({
                   <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
                     {formatDeliveryOrderOptionLabel(order)}
                   </Text>
+                  {formatDeliveryOrderOptionMeta(order) ? (
+                    <Text style={[styles.cardMeta, { color: colors.text.secondary }]}>
+                      {formatDeliveryOrderOptionMeta(order)}
+                    </Text>
+                  ) : null}
                   {unusable ? (
                     <Text style={[styles.cardMeta, { color: warningColor }]}>{order.unusable_reason}</Text>
                   ) : (

@@ -1,5 +1,6 @@
 import { sanitizeSearchTerm } from '@/components/exits/infrastructure/services/exitsService';
 import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
+import { bogotaDateValue } from '@/lib/localDate';
 import { supabase } from '@/lib/supabase';
 import type { ProductWarehouseStock } from './negociosStockService';
 
@@ -206,6 +207,23 @@ export function formatDeliveryOrderOptionLabel(order: DeliveryOrderOption): stri
       ? order.assigned_user_name || 'sin asignar'
       : order.customer_name || 'sin cliente';
   return `#${order.order_number} · ${typeLabel} · ${party}`;
+}
+
+/**
+ * Segunda línea de la tarjeta: fecha de la orden y documento del cliente
+ * (con y sin señal). Vacía si no hay ninguno de los dos.
+ */
+export function formatDeliveryOrderOptionMeta(order: Pick<DeliveryOrderOption, 'created_at' | 'customer_id_number' | 'order_type'>): string {
+  const parts: string[] = [];
+  const created = order.created_at ? new Date(order.created_at) : null;
+  if (created && !Number.isNaN(created.getTime())) {
+    const [year, month, day] = bogotaDateValue(created).split('-');
+    parts.push(`${day}/${month}/${year}`);
+  }
+  if (order.order_type !== 'remission' && order.customer_id_number) {
+    parts.push(`Doc. ${order.customer_id_number}`);
+  }
+  return parts.join(' · ');
 }
 
 /** Coincidencias que se muestran; se piden unas cuantas más porque una remisión

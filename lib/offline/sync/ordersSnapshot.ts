@@ -16,6 +16,10 @@ import type {
  * valga. Cada paquete que las trae reemplaza todo lo local; uno que no las
  * trae (servidor anterior o descarga sin `p_options`) deja lo que había, con
  * su hora, para que el asistente diga de cuándo es.
+ *
+ * Excepción: si el servidor aplicó lo elegido (`selective_applied = true`) y
+ * aun así no manda la foto o las remisiones, es que el usuario ya no puede usar
+ * órdenes (le quitaron el rol): lo que quedó en el teléfono se borra.
  */
 export const ORDERS_SNAPSHOT_AT_META_KEY = 'delivery_orders_snapshot_at';
 
@@ -41,6 +45,41 @@ function remissionCount(row: PullPendingRemission): number {
 
 function lineSourceOrderId(line: PullOfflineOrderLine): string | null {
   return str(line.source_order_id ?? line.source_delivery_order_id);
+}
+
+/**
+ * Qué reemplazar con este paquete: la lista a guardar (vacía = borrar lo local)
+ * o `null` para dejar lo que había.
+ *
+ * - Foto de órdenes: si viene (también `[]` explícito) se usa. Si no viene y el
+ *   servidor aplicó lo elegido (`selective_applied = true`, la app siempre pide
+ *   `"orders": true`) o es el recaudador puro, se borra: el usuario no puede
+ *   usar órdenes.
+ * - Remisiones pendientes: el servidor nuevo las manda SIEMPRE a quien puede
+ *   usar órdenes. Si no vienen y el servidor aplicó lo elegido, mandó la foto
+ *   (aunque sea `[]`) o es el recaudador, se borran.
+ *   Un servidor anterior (sin `selective_applied`) no las conoce: se dejan.
+ */
+export function ordersSnapshotParts(payload: PullPayload): {
+  orders: PullOfflineOrder[] | null;
+  remissions: PullPendingRemission[] | null;
+} {
+  const cobro = payload.pull_scope === 'cobro';
+  const applied = payload.selective_applied === true;
+  // Foto presente sin remisiones: el servidor que conoce la foto manda
+  // remisiones a todo el que puede usar órdenes; si faltan, no puede.
+  const snapshotSent = Array.isArray(payload.delivery_orders_snapshot);
+  const orders: PullOfflineOrder[] | null = Array.isArray(payload.delivery_orders_snapshot)
+    ? payload.delivery_orders_snapshot
+    : cobro || applied
+      ? []
+      : null;
+  const remissions: PullPendingRemission[] | null = Array.isArray(payload.pending_remissions)
+    ? payload.pending_remissions
+    : cobro || applied || snapshotSent
+      ? []
+      : null;
+  return { orders, remissions };
 }
 
 type ReplacementRow<T> = { id: string; fill: (record: T) => void };
@@ -89,17 +128,7 @@ export async function applyOrdersSnapshot(
   database: Database,
   payload: PullPayload
 ): Promise<{ orders: boolean; remissions: boolean }> {
-  const cobro = payload.pull_scope === 'cobro';
-  const orders: PullOfflineOrder[] | null = Array.isArray(payload.delivery_orders_snapshot)
-    ? payload.delivery_orders_snapshot
-    : cobro
-      ? []
-      : null;
-  const remissions: PullPendingRemission[] | null = Array.isArray(payload.pending_remissions)
-    ? payload.pending_remissions
-    : cobro
-      ? []
-      : null;
+  const { orders, remissions } = ordersSnapshotParts(payload);
   if (!orders && !remissions) return { orders: false, remissions: false };
 
   const operations: Model[] = [];
@@ -123,6 +152,11 @@ export async function applyOrdersSnapshot(
           record.municipioId = str(order.municipio_id);
           record.veredaId = str(order.vereda_id);
           record.deliveryAddress = str(order.delivery_address);
+          record.orderCreatedAt = str(order.created_at);
+          record.customerIdNumber = str(order.customer_id_number);
+          record.assignedUserName = str(order.assigned_user_name);
+          record.zoneName = str(order.zone_name);
+          record.notes = str(order.notes);
           record.usable = order.usable !== false;
           record.unusableReason = order.usable === false ? str(order.unusable_reason) : null;
           record.snapshotAt = at;
@@ -171,8 +205,8 @@ export async function applyOrdersSnapshot(
           record.remissionCreatedAt = str(row.created_at);
           record.assignedUserId = str(row.assigned_user_id ?? row.assigned_to_user_id);
           record.assignedUserName = str(row.assigned_user_name ?? row.assigned_to_name);
-          record.driverName = str(row.driver_name);
           record.zoneName = str(row.zone_name);
+          record.notes = str(row.notes);
           record.nestedOrdersCount = remissionCount(row);
         },
       });

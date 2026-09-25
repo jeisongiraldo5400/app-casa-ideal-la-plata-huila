@@ -77,6 +77,11 @@ const localRemission: LocalOfflineOrder = {
   municipioId: null,
   veredaId: null,
   deliveryAddress: null,
+  createdAt: null,
+  customerIdNumber: null,
+  assignedUserName: null,
+  zoneName: null,
+  notes: null,
   usable: true,
   unusableReason: null,
   snapshotAt: 1,
@@ -179,6 +184,8 @@ describe('origen del negocio · igual con señal y sin ella', () => {
       createdAt: null,
       assignedToUserId: null,
       assignedUserName: null,
+      zoneName: null,
+      notes: null,
       nestedOrdersCount: 0,
     });
     const offline = buildNegocioOriginPayload({

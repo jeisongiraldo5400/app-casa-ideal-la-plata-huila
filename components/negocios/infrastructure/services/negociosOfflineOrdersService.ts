@@ -115,13 +115,13 @@ export function buildLocalOrderOption(
   return {
     id: order.id,
     order_number: order.orderNumber || order.id,
-    created_at: '',
+    created_at: order.createdAt || '',
     order_type: order.orderType,
     status: order.status,
     customer_id: order.customerId,
     customer_name: order.customerName,
-    customer_id_number: null,
-    assigned_user_name: null,
+    customer_id_number: order.customerIdNumber,
+    assigned_user_name: order.assignedUserName,
     municipio_id: order.municipioId,
     vereda_id: order.veredaId,
     delivery_address: order.deliveryAddress?.trim() || null,
@@ -134,7 +134,8 @@ export function buildLocalOrderOption(
 function matchesQuery(order: DeliveryOrderOption, query: string): boolean {
   const term = normalizeText(query.trim());
   if (!term) return true;
-  return [order.order_number, order.customer_name]
+  // Como con señal: número, cliente, su documento o el asesor asignado.
+  return [order.order_number, order.customer_name, order.customer_id_number, order.assigned_user_name]
     .filter(Boolean)
     .some((value) => normalizeText(String(value)).includes(term));
 }
@@ -179,9 +180,9 @@ export function toPendingRemissionOption(row: LocalPendingRemission): PendingRem
     order_number: row.orderNumber || row.id,
     assigned_to_user_id: row.assignedToUserId,
     assigned_user_name: row.assignedUserName,
-    zone_name: null,
+    zone_name: row.zoneName,
     created_at: row.createdAt || '',
-    notes: null,
+    notes: row.notes,
   };
 }
 

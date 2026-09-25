@@ -31,6 +31,13 @@ export interface LocalOfflineOrder {
   municipioId: string | null;
   veredaId: string | null;
   deliveryAddress: string | null;
+  /** Fecha de creación de la orden (ISO); null si el servidor no la mandó. */
+  createdAt: string | null;
+  /** Documento del cliente de la orden. */
+  customerIdNumber: string | null;
+  assignedUserName: string | null;
+  zoneName: string | null;
+  notes: string | null;
   /** El servidor dice si todavía sirve de origen de un negocio. */
   usable: boolean;
   /** Motivo por el que ya no sirve (sólo si `usable` es false). */
@@ -66,6 +73,8 @@ export interface LocalPendingRemission {
   createdAt: string | null;
   assignedToUserId: string | null;
   assignedUserName: string | null;
+  zoneName: string | null;
+  notes: string | null;
   nestedOrdersCount: number;
 }
 
@@ -94,6 +103,11 @@ export async function listLocalOfflineOrders(): Promise<LocalOfflineOrder[]> {
       municipioId: row.municipioId ?? null,
       veredaId: row.veredaId ?? null,
       deliveryAddress: row.deliveryAddress ?? null,
+      createdAt: row.orderCreatedAt ?? null,
+      customerIdNumber: row.customerIdNumber ?? null,
+      assignedUserName: row.assignedUserName ?? null,
+      zoneName: row.zoneName ?? null,
+      notes: row.notes ?? null,
       usable: row.usable !== false,
       unusableReason: row.usable === false ? row.unusableReason ?? null : null,
       snapshotAt: row.snapshotAt ?? null,
@@ -138,6 +152,8 @@ export async function listLocalPendingRemissions(): Promise<LocalPendingRemissio
       createdAt: row.remissionCreatedAt ?? null,
       assignedToUserId: row.assignedUserId ?? null,
       assignedUserName: row.assignedUserName ?? null,
+      zoneName: row.zoneName ?? null,
+      notes: row.notes ?? null,
       nestedOrdersCount: Number(row.nestedOrdersCount) || 0,
     }))
     .sort(byOrderNumber);

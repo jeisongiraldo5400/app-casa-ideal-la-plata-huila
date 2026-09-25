@@ -276,6 +276,12 @@ export class DeliveryOrderLocal extends Model {
   @field('municipio_id') municipioId!: string | null;
   @field('vereda_id') veredaId!: string | null;
   @field('delivery_address') deliveryAddress!: string | null;
+  /** Fecha de creación de la orden (ISO del servidor). */
+  @field('order_created_at') orderCreatedAt!: string | null;
+  @field('customer_id_number') customerIdNumber!: string | null;
+  @field('assigned_user_name') assignedUserName!: string | null;
+  @field('zone_name') zoneName!: string | null;
+  @field('notes') notes!: string | null;
   /** false si ya no sirve como origen (cancelada, vinculada…); ver `unusableReason`. */
   @field('usable') usable!: boolean;
   @field('unusable_reason') unusableReason!: string | null;
@@ -311,8 +317,8 @@ export class PendingRemission extends Model {
   @field('remission_created_at') remissionCreatedAt!: string | null;
   @field('assigned_user_id') assignedUserId!: string | null;
   @field('assigned_user_name') assignedUserName!: string | null;
-  @field('driver_name') driverName!: string | null;
   @field('zone_name') zoneName!: string | null;
+  @field('notes') notes!: string | null;
   @field('nested_orders_count') nestedOrdersCount!: number;
 }
 

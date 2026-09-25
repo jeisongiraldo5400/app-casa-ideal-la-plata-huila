@@ -97,6 +97,12 @@ export const OFFLINE_ORDER_TABLES = [
       { name: 'municipio_id', type: 'string' as const, isOptional: true },
       { name: 'vereda_id', type: 'string' as const, isOptional: true },
       { name: 'delivery_address', type: 'string' as const, isOptional: true },
+      // `created_at` es reservada en WatermelonDB: la fecha de la orden va aquí.
+      { name: 'order_created_at', type: 'string' as const, isOptional: true },
+      { name: 'customer_id_number', type: 'string' as const, isOptional: true },
+      { name: 'assigned_user_name', type: 'string' as const, isOptional: true },
+      { name: 'zone_name', type: 'string' as const, isOptional: true },
+      { name: 'notes', type: 'string' as const, isOptional: true },
       // Si todavía sirve como origen de un negocio y, si no, por qué.
       { name: 'usable', type: 'boolean' as const },
       { name: 'unusable_reason', type: 'string' as const, isOptional: true },
@@ -136,8 +142,8 @@ export const OFFLINE_ORDER_TABLES = [
       { name: 'remission_created_at', type: 'string' as const, isOptional: true },
       { name: 'assigned_user_id', type: 'string' as const, isOptional: true },
       { name: 'assigned_user_name', type: 'string' as const, isOptional: true },
-      { name: 'driver_name', type: 'string' as const, isOptional: true },
       { name: 'zone_name', type: 'string' as const, isOptional: true },
+      { name: 'notes', type: 'string' as const, isOptional: true },
       { name: 'nested_orders_count', type: 'number' as const },
     ],
   },

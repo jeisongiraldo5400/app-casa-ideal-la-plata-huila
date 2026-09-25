@@ -318,7 +318,7 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   }
   // Preferencias y revisiones aplicadas. La revisión de un dominio sólo se da
   // por aplicada si vino completo y sin recortar: si no, se vuelve a pedir.
-  await storeSyncConfigFromPayload(database, payload, { catalogApplied });
+  await storeSyncConfigFromPayload(database, payload, { catalogApplied, catalogWiped: productsNone });
   await markManualDownloadDone(database);
   return truncationWarning;
 }

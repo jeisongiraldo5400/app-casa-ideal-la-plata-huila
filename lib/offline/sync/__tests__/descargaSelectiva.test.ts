@@ -31,7 +31,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { runSync } from '../syncEngine';
 import { useSyncStore } from '../../store/syncStore';
-import { PULL_PAYLOAD_VERSION, pullCursorForPayloadVersion, type PullPayload } from '../types';
+import { PULL_PAYLOAD_VERSION, pullCursorForPayloadVersion, toEpoch, type PullPayload } from '../types';
 
 /**
  * Descarga selectiva «Qué llevar en el teléfono» (20261130*): el motor pide
@@ -159,7 +159,7 @@ function product(id: string) {
 }
 
 const CONFIG: LocalSyncConfig = {
-  clientes: { mode: 'seleccion', revision: 3, count: 12 },
+  clientes: { mode: 'seleccion', revision: 3, count: 12, misClientes: false },
   productos: { mode: 'todo', revision: 1, count: null },
   ordenes: { revision: 2, count: 1 },
   municipios: null,
@@ -189,6 +189,17 @@ describe('esquema local v11', () => {
     }
     const lines = tables.find((candidate) => candidate.name === 'delivery_order_lines')!;
     expect(lines.columns.find((column) => column.name === 'order_id')?.isIndexed).toBe(true);
+  });
+
+  it('la foto guarda los datos que manda el servidor y no el conductor, que no existe', () => {
+    const columns = (name: string) =>
+      OFFLINE_ORDER_TABLES.find((table) => table.name === name)!.columns.map((column) => column.name);
+    expect(columns('delivery_orders_local')).toEqual(
+      expect.arrayContaining(['order_created_at', 'customer_id_number', 'assigned_user_name', 'zone_name', 'notes'])
+    );
+    expect(columns('delivery_orders_local')).not.toContain('created_at');
+    expect(columns('pending_remissions')).toEqual(expect.arrayContaining(['zone_name', 'notes']));
+    expect(columns('pending_remissions')).not.toContain('driver_name');
   });
 
   it('la versión 9 del paquete fuerza una descarga completa a quien tenía la 8', () => {
@@ -318,7 +329,7 @@ describe('preferencias y revisiones', () => {
 
     expect(await readAppliedRevisions(mockDb as never)).toEqual({ clientes: 3, productos: null });
     expect(await getLocalSyncConfig()).toEqual({
-      clientes: { mode: 'seleccion', revision: 3, count: null },
+      clientes: { mode: 'seleccion', revision: 3, count: null, misClientes: null },
       productos: { mode: 'todo', revision: 1, count: null },
       ordenes: { revision: 2, count: null },
       municipios: null,
@@ -352,7 +363,71 @@ describe('preferencias y revisiones', () => {
       mode: 'todo',
       revision: 7,
       count: null,
+      misClientes: null,
     });
+  });
+
+  it('con productos en «ninguno» y el catálogo borrado, la revisión queda aplicada', () => {
+    const payload = basePayload({
+      sync_config: { clientes: { mode: 'todo', revision: 1 }, productos: { mode: 'ninguno', revision: 4 } },
+      full_domains_sent: ['clientes', 'negocios', 'productos'],
+    });
+    // Antes: sin catálogo aplicado nunca se marcaba y quedaba pendiente para siempre.
+    expect(domainsToMarkApplied(payload, { catalogApplied: false })).toEqual(['clientes']);
+    expect(domainsToMarkApplied(payload, { catalogApplied: false, catalogWiped: true })).toEqual(['clientes', 'productos']);
+    // Aunque el servidor no diga que productos vino completo, borrar es estar al día.
+    const sinProductos = { ...payload, full_domains_sent: ['clientes'] };
+    expect(domainsToMarkApplied(sinProductos, { catalogApplied: false, catalogWiped: true })).toEqual(['clientes', 'productos']);
+    // «todo» no se da por aplicado sólo por haber borrado.
+    const todo = basePayload({ sync_config: { productos: { mode: 'todo', revision: 4 } }, full_domains_sent: [] });
+    expect(domainsToMarkApplied(todo, { catalogApplied: false, catalogWiped: true })).toEqual([]);
+    // Recortado: nada.
+    expect(domainsToMarkApplied({ ...payload, truncated: true }, { catalogApplied: false, catalogWiped: true })).toEqual([]);
+  });
+});
+
+describe('«Mis clientes» en la configuración descargada', () => {
+  const server = {
+    clientes: { mode: 'seleccion', revision: 3, count: 0, mis_clientes: false },
+    productos: { mode: 'todo', revision: 1 },
+    ordenes: { revision: 1, count: 0 },
+    municipios: { revision: 3, count: 0 },
+  };
+
+  it('se guarda y se relee de sync_meta', async () => {
+    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: { ...server, clientes: { ...server.clientes, mis_clientes: true } } }), {
+      catalogApplied: false,
+    });
+    expect((await getLocalSyncConfig())?.clientes.misClientes).toBe(true);
+  });
+
+  it('encenderlo desde otro teléfono (misma revisión y conteo) sale como pendiente de descargar', async () => {
+    await storeSyncConfigFromPayload(mockDb as never, basePayload({ sync_config: server }), { catalogApplied: false });
+    await markManualDownloadDone(mockDb as never, 1000);
+    const downloaded = await getLocalSyncConfig();
+
+    expect(serverConfigDiffers(downloaded, server)).toBe(false);
+    const encendido = { ...server, clientes: { ...server.clientes, mis_clientes: true } };
+    expect(serverConfigDiffers(downloaded, encendido)).toBe(true);
+    expect(await hasPendingChoicesToDownload(encendido)).toBe(true);
+  });
+
+  it('un servidor que no lo manda no cuenta como cambio', () => {
+    const downloaded = parseSyncConfig(server);
+    const { mis_clientes: _omit, ...sinFlag } = server.clientes;
+    expect(serverConfigDiffers(downloaded, { ...server, clientes: sinFlag })).toBe(false);
+  });
+});
+
+describe('fechas sin zona horaria del servidor', () => {
+  it('se leen en UTC, igual que las que traen desfase', () => {
+    expect(toEpoch('2026-09-25T15:00:00')).toBe(Date.parse('2026-09-25T15:00:00Z'));
+    expect(toEpoch('2026-09-25 15:00:00.123456')).toBe(Date.parse('2026-09-25T15:00:00.123Z'));
+    expect(toEpoch('2026-09-25T15:00:00+00:00')).toBe(Date.parse('2026-09-25T15:00:00Z'));
+    expect(toEpoch('2026-09-25T10:00:00-05:00')).toBe(Date.parse('2026-09-25T15:00:00Z'));
+    expect(toEpoch('2026-09-25')).toBe(Date.parse('2026-09-25T00:00:00Z'));
+    expect(toEpoch('')).toBeNull();
+    expect(toEpoch('no es fecha')).toBeNull();
   });
 });
 
@@ -662,6 +737,11 @@ const SNAPSHOT_PAYLOAD = basePayload({
       status: 'cancelled',
       customer_id: 'c9',
       customer_name: 'Beto',
+      customer_id_number: '900',
+      created_at: '2026-09-18T14:00:00Z',
+      assigned_user_name: 'Luis',
+      zone_name: 'Norte',
+      notes: 'Llamar antes',
       delivery_address: 'Vereda La Esperanza',
       usable: false,
       unusable_reason: 'La orden fue cancelada',
@@ -669,7 +749,16 @@ const SNAPSHOT_PAYLOAD = basePayload({
     },
   ],
   pending_remissions: [
-    { id: 'r1', order_number: 'OE-0010', status: 'pending', created_at: '2026-09-20T00:00:00Z', assigned_user_name: 'Ruta', nested_orders_count: 2 },
+    {
+      id: 'r1',
+      order_number: 'OE-0010',
+      status: 'pending',
+      created_at: '2026-09-20T00:00:00Z',
+      assigned_user_name: 'Ruta',
+      zone_name: 'Oriente',
+      notes: 'Camión grande',
+      nested_orders_count: 2,
+    },
   ],
 });
 
@@ -682,6 +771,11 @@ describe('foto de órdenes y remisiones', () => {
     expect(orders[0]).toMatchObject({
       orderType: 'customer',
       customerName: 'Beto',
+      customerIdNumber: '900',
+      createdAt: '2026-09-18T14:00:00Z',
+      assignedUserName: 'Luis',
+      zoneName: 'Norte',
+      notes: 'Llamar antes',
       deliveryAddress: 'Vereda La Esperanza',
       usable: false,
       unusableReason: 'La orden fue cancelada',
@@ -721,6 +815,8 @@ describe('foto de órdenes y remisiones', () => {
         createdAt: '2026-09-20T00:00:00Z',
         assignedToUserId: null,
         assignedUserName: 'Ruta',
+        zoneName: 'Oriente',
+        notes: 'Camión grande',
         nestedOrdersCount: 2,
       },
     ]);
@@ -763,6 +859,58 @@ describe('foto de órdenes y remisiones', () => {
 
     expect(result).toEqual({ orders: false, remissions: false });
     expect(mockDb.ids('delivery_orders_local')).toEqual(['oe9', 'r1']);
+  });
+
+  it('una remisión o foto de un servidor anterior (sin los datos nuevos) queda en null', async () => {
+    await applyOrdersSnapshot(mockDb as never, SNAPSHOT_PAYLOAD);
+    const r1 = (await listLocalOfflineOrders()).find((order) => order.id === 'r1')!;
+    expect(r1).toMatchObject({ createdAt: null, customerIdNumber: null, assignedUserName: null, zoneName: null, notes: null });
+    // Ya no se guarda un conductor que el servidor no manda.
+    expect(mockDb.rows('pending_remissions')[0]).not.toHaveProperty('driverName');
+  });
+
+  it('una foto vacía explícita borra la local, y sin remisiones también las borra', async () => {
+    await applyOrdersSnapshot(mockDb as never, SNAPSHOT_PAYLOAD);
+
+    const result = await applyOrdersSnapshot(mockDb as never, basePayload({ delivery_orders_snapshot: [] }));
+
+    expect(result).toEqual({ orders: true, remissions: true });
+    expect(mockDb.ids('delivery_orders_local')).toEqual([]);
+    expect(mockDb.ids('delivery_order_lines')).toEqual([]);
+    expect(mockDb.ids('pending_remissions')).toEqual([]);
+  });
+
+  it('una foto vacía con remisiones sólo vacía la foto', async () => {
+    await applyOrdersSnapshot(mockDb as never, SNAPSHOT_PAYLOAD);
+
+    await applyOrdersSnapshot(
+      mockDb as never,
+      basePayload({ delivery_orders_snapshot: [], pending_remissions: SNAPSHOT_PAYLOAD.pending_remissions })
+    );
+
+    expect(mockDb.ids('delivery_orders_local')).toEqual([]);
+    expect(mockDb.ids('pending_remissions')).toEqual(['r1']);
+  });
+
+  it('selective_applied sin foto ni remisiones: el usuario ya no puede usar órdenes y se borran', async () => {
+    await applyOrdersSnapshot(mockDb as never, SNAPSHOT_PAYLOAD);
+
+    const result = await applyOrdersSnapshot(mockDb as never, basePayload({ selective_applied: true }));
+
+    expect(result).toEqual({ orders: true, remissions: true });
+    expect(mockDb.ids('delivery_orders_local')).toEqual([]);
+    expect(mockDb.ids('delivery_order_lines')).toEqual([]);
+    expect(mockDb.ids('pending_remissions')).toEqual([]);
+  });
+
+  it('selective_applied = false (sin p_options) deja lo que había', async () => {
+    await applyOrdersSnapshot(mockDb as never, SNAPSHOT_PAYLOAD);
+
+    const result = await applyOrdersSnapshot(mockDb as never, basePayload({ selective_applied: false }));
+
+    expect(result).toEqual({ orders: false, remissions: false });
+    expect(mockDb.ids('delivery_orders_local')).toEqual(['oe9', 'r1']);
+    expect(mockDb.ids('pending_remissions')).toEqual(['r1']);
   });
 
   it('al recaudador puro se le borra lo que quedó de otro rol', async () => {
@@ -895,6 +1043,8 @@ describe('el motor sólo descarga cuando la persona pulsa «Descargar»', () => 
 
     await runSync('manual');
     expect(mockDb.ids('catalog_products')).toEqual([]);
+    // El catálogo borrado deja la revisión de productos al día (no queda pendiente).
+    expect(await readAppliedRevisions(mockDb as never)).toEqual({ clientes: null, productos: 2 });
 
     rpc.mockClear();
     await runSync('manual');

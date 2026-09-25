@@ -41,8 +41,11 @@ export const SELECTIVE_RECHECK_MS = 24 * 60 * 60 * 1000;
 export type LocalDomainConfig = { mode: SyncDomainMode; revision: number; count: number | null };
 
 export type LocalSyncConfig = {
-  /** 'todo' | 'seleccion'. */
-  clientes: LocalDomainConfig;
+  /**
+   * 'todo' | 'seleccion'. `misClientes`: atajo «Mis clientes»; `null` si el
+   * servidor no lo manda (encenderlo no sube la revisión: hay que compararlo).
+   */
+  clientes: LocalDomainConfig & { misClientes: boolean | null };
   /** 'todo' | 'ninguno' (v2: ya no hay selección por producto). */
   productos: LocalDomainConfig;
   ordenes: { revision: number; count: number | null };
@@ -61,14 +64,23 @@ function toCount(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Normaliza el `sync_config` del servidor. `null` si no vino. */
+function toFlag(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+/**
+ * Normaliza el `sync_config` del servidor. `null` si no vino. También lee lo
+ * guardado en `sync_meta` (que ya es un `LocalSyncConfig`, con `misClientes`).
+ */
 export function parseSyncConfig(raw: PullSyncConfig | null | undefined): LocalSyncConfig | null {
   if (!raw || typeof raw !== 'object') return null;
+  const clientes = raw.clientes as (NonNullable<PullSyncConfig['clientes']> & { misClientes?: unknown }) | null | undefined;
   return {
     clientes: {
-      mode: raw.clientes?.mode === 'seleccion' ? 'seleccion' : 'todo',
-      revision: toInt(raw.clientes?.revision, 0),
-      count: toCount(raw.clientes?.count),
+      mode: clientes?.mode === 'seleccion' ? 'seleccion' : 'todo',
+      revision: toInt(clientes?.revision, 0),
+      count: toCount(clientes?.count),
+      misClientes: toFlag(clientes?.mis_clientes ?? clientes?.misClientes),
     },
     productos: {
       mode: raw.productos?.mode === 'ninguno' ? 'ninguno' : 'todo',
@@ -133,17 +145,23 @@ export function fullDomainsSent(payload: PullPayload): SelectiveDomain[] {
 /**
  * Tras un paquete no recortado, los dominios que vinieron completos quedan al
  * día con la revisión del servidor. `productos` además exige que el catálogo
- * haya llegado de verdad en el paquete.
+ * haya llegado de verdad en el paquete o, con productos en «ninguno», que el
+ * teléfono lo haya borrado (`catalogWiped`): también es estar al día.
  */
 export function domainsToMarkApplied(
   payload: PullPayload,
-  input: { catalogApplied: boolean }
+  input: { catalogApplied: boolean; catalogWiped?: boolean }
 ): SelectiveDomain[] {
   if (payload.truncated) return [];
-  if (!parseSyncConfig(payload.sync_config)) return [];
-  return fullDomainsSent(payload).filter(
+  const config = parseSyncConfig(payload.sync_config);
+  if (!config) return [];
+  const domains = fullDomainsSent(payload).filter(
     (domain) => domain !== 'productos' || input.catalogApplied
   );
+  if (input.catalogWiped && config.productos.mode === 'ninguno' && !domains.includes('productos')) {
+    domains.push('productos');
+  }
+  return SELECTIVE_DOMAINS.filter((domain) => domains.includes(domain));
 }
 
 /**
@@ -153,7 +171,7 @@ export function domainsToMarkApplied(
 export async function storeSyncConfigFromPayload(
   database: Database,
   payload: PullPayload,
-  input: { catalogApplied: boolean }
+  input: { catalogApplied: boolean; catalogWiped?: boolean }
 ): Promise<LocalSyncConfig | null> {
   const config = parseSyncConfig(payload.sync_config);
   if (!config) return null;
@@ -211,7 +229,7 @@ export type ServerSyncConfigLike = PullSyncConfig | null | undefined;
 /**
  * ¿La configuración del servidor difiere de la que se descargó? Compara modo y
  * revisión de cada dominio y, si ambos lo tienen, el conteo (marcar algo no
- * sube la revisión, pero sí el conteo).
+ * sube la revisión, pero sí el conteo) y el atajo «Mis clientes».
  */
 export function serverConfigDiffers(
   downloaded: LocalSyncConfig | null,
@@ -228,6 +246,14 @@ export function serverConfigDiffers(
   for (const [before, now] of domains) {
     if (before.mode !== now.mode || before.revision !== now.revision) return true;
     if (!sameCount(before.count, now.count)) return true;
+  }
+  // «Mis clientes» encendido desde otro teléfono no sube la revisión.
+  if (
+    downloaded.clientes.misClientes != null &&
+    current.clientes.misClientes != null &&
+    downloaded.clientes.misClientes !== current.clientes.misClientes
+  ) {
+    return true;
   }
   if (downloaded.ordenes.revision !== current.ordenes.revision) return true;
   if (!sameCount(downloaded.ordenes.count, current.ordenes.count)) return true;
