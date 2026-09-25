@@ -14,6 +14,8 @@ jest.mock('@/lib/offline/sync/syncPrefs', () => ({
   getLocalSyncConfig: jest.fn(async () => null),
   isSelectiveSyncSupported: jest.fn(async () => true),
   lastManualDownloadAt: jest.fn(async () => null),
+  markChoicesChangedLocally: jest.fn(async () => undefined),
+  hasPendingChoicesToDownload: jest.fn(async () => false),
 }));
 jest.mock('@/lib/offline/database', () => ({ isDatabaseOpen: jest.fn(() => true) }));
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));

@@ -2,7 +2,12 @@ import { act, renderHook } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { runSync } from '@/lib/offline/sync/syncEngine';
-import { getLocalSyncConfig, lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
+import {
+  getLocalSyncConfig,
+  hasPendingChoicesToDownload,
+  lastManualDownloadAt,
+  markChoicesChangedLocally,
+} from '@/lib/offline/sync/syncPrefs';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
   getSyncConfig,
@@ -23,12 +28,16 @@ jest.mock('@/lib/offline/sync/syncPrefs', () => ({
   getLocalSyncConfig: jest.fn(async () => null),
   isSelectiveSyncSupported: jest.fn(async () => false),
   lastManualDownloadAt: jest.fn(async () => null),
+  markChoicesChangedLocally: jest.fn(async () => undefined),
+  hasPendingChoicesToDownload: jest.fn(async () => false),
 }));
 jest.mock('@/lib/offline/database', () => ({ isDatabaseOpen: jest.fn(() => true) }));
 
 const rpc = supabase.rpc as unknown as jest.Mock;
 const mockedRunSync = runSync as jest.MockedFunction<typeof runSync>;
 const mockedManualAt = lastManualDownloadAt as jest.MockedFunction<typeof lastManualDownloadAt>;
+const mockedPending = hasPendingChoicesToDownload as jest.MockedFunction<typeof hasPendingChoicesToDownload>;
+const mockedMarkChanged = markChoicesChangedLocally as jest.MockedFunction<typeof markChoicesChangedLocally>;
 const mockedLocal = getLocalSyncConfig as jest.MockedFunction<typeof getLocalSyncConfig>;
 
 const CONFIG = {
@@ -42,6 +51,7 @@ beforeEach(() => {
   resetSyncPrefs();
   useSyncStore.setState({ online: true });
   mockedManualAt.mockResolvedValue(null);
+  mockedPending.mockResolvedValue(false);
   mockedLocal.mockResolvedValue(null);
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
 });
@@ -131,14 +141,27 @@ describe('setSyncMode / setSyncSelection', () => {
     expect(useSyncPrefsStore.getState().config.productos.mode).toBe('ninguno');
   });
 
+  it('pasa al motor la configuración leída del servidor para detectar cambios de otro teléfono', async () => {
+    rpc.mockResolvedValue({ data: CONFIG, error: null });
+    mockedPending.mockResolvedValue(true);
+    await loadSyncPrefs();
+    await refreshDownloadState();
+    expect(mockedPending).toHaveBeenCalledWith(CONFIG);
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
+  });
+
   it('el pendiente se apaga tras una descarga manual posterior al cambio', async () => {
     rpc.mockResolvedValue({ data: { domain: 'municipios', count: 1, revision: 1 }, error: null });
     await setSyncSelection('municipios', ['m1'], true);
     expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
+    expect(mockedMarkChanged).toHaveBeenCalledTimes(1);
 
+    // Tras «Descargar» el motor ya no ve cambios pendientes.
     mockedManualAt.mockResolvedValue(Date.now() + 1000);
+    mockedPending.mockResolvedValue(false);
     await refreshDownloadState();
     expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(false);
+    expect(useSyncPrefsStore.getState().lastManualAt).not.toBeNull();
     expect(useSyncPrefsStore.getState().config.municipios.ids).toEqual(['m1']);
   });
 
