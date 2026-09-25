@@ -539,9 +539,20 @@ describe('foto de órdenes y remisiones', () => {
 
     const lines = await getLocalOfflineOrderLines('r1');
     expect(lines).toEqual([
-      expect.objectContaining({ groupKind: 'own', sourceOrderId: 'r1', productName: 'Mesa', quantity: 7, availableQuantity: 4 }),
       expect.objectContaining({
+        orderId: 'r1',
+        groupKind: 'own',
+        sourceOrderId: 'r1',
+        productName: 'Mesa',
+        warehouseName: 'Andes',
+        quantity: 7,
+        availableQuantity: 4,
+      }),
+      expect.objectContaining({
+        orderId: 'r1',
         groupKind: 'child',
+        productName: 'Producto',
+        warehouseName: 'Bodega',
         sourceOrderId: 'k1',
         sourceCustomerName: 'Ana',
         sourceHasNegocio: false,
@@ -556,10 +567,8 @@ describe('foto de órdenes y remisiones', () => {
         orderNumber: 'OE-0010',
         status: 'pending',
         createdAt: '2026-09-20T00:00:00Z',
-        assignedUserId: null,
+        assignedToUserId: null,
         assignedUserName: 'Ruta',
-        driverName: null,
-        zoneName: null,
         nestedOrdersCount: 2,
       },
     ]);

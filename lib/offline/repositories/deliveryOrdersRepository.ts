@@ -14,57 +14,65 @@ import { getMeta } from '../sync/outbox';
 
 export type LocalOfflineOrderGroupKind = 'own' | 'child' | 'self';
 
-export type LocalOfflineOrder = {
+/*
+ * Tipos idénticos a los que ya consume el paquete E (asistente de negocio).
+ * Donde el servidor no manda un dato se rellena con un valor legible en vez de
+ * null, para que el asistente no tenga que comprobarlo en cada pantalla.
+ */
+
+/** Cabecera de una orden llevada en el teléfono (`delivery_orders_snapshot`). */
+export interface LocalOfflineOrder {
   id: string;
-  orderNumber: string | null;
-  /** 'customer' | 'remission'. */
-  orderType: string;
+  orderNumber: string;
+  orderType: 'remission' | 'customer';
   status: string;
   customerId: string | null;
   customerName: string | null;
   municipioId: string | null;
   veredaId: string | null;
   deliveryAddress: string | null;
-  /** false si ya no sirve como origen de un negocio. */
+  /** El servidor dice si todavía sirve de origen de un negocio. */
   usable: boolean;
   /** Motivo por el que ya no sirve (sólo si `usable` es false). */
   unusableReason: string | null;
-  /** Momento (ms) de la foto; null si no se conoce. */
+  /** Momento (ms) de la foto que se descargó. */
   snapshotAt: number | null;
-};
+}
 
-export type LocalOfflineOrderLine = {
+/** Línea de origen de una orden llevada (grupo propio, OE hija o la orden misma). */
+export interface LocalOfflineOrderLine {
+  orderId: string;
   groupKind: LocalOfflineOrderGroupKind;
-  sourceOrderId: string | null;
+  /** Orden de la que sale el producto; la propia orden si el servidor no la da. */
+  sourceOrderId: string;
   sourceOrderNumber: string | null;
   sourceCustomerId: string | null;
   sourceCustomerName: string | null;
   sourceHasNegocio: boolean;
   productId: string;
-  productName: string | null;
+  productName: string;
   productSku: string | null;
   warehouseId: string;
-  warehouseName: string | null;
+  warehouseName: string;
   quantity: number;
   availableQuantity: number;
-};
+}
 
-export type LocalPendingRemission = {
+/** Remisión `pending` de la lista ligera (Enviar en remisión). */
+export interface LocalPendingRemission {
   id: string;
-  orderNumber: string | null;
+  orderNumber: string;
   status: string;
   createdAt: string | null;
-  assignedUserId: string | null;
+  assignedToUserId: string | null;
   assignedUserName: string | null;
-  driverName: string | null;
-  zoneName: string | null;
   nestedOrdersCount: number;
-};
+}
 
 /** Comandos de negocio que el servidor todavía no ha recibido. */
 const UNSENT_OUTBOX_STATUSES = ['pending', 'syncing', 'error'];
 
-function byOrderNumber<T extends { orderNumber: string | null }>(a: T, b: T) {
+function byOrderNumber<T extends { orderNumber: string }>(a: T, b: T) {
   return (a.orderNumber || '').localeCompare(b.orderNumber || '', 'es', { numeric: true });
 }
 
@@ -78,8 +86,8 @@ export async function listLocalOfflineOrders(): Promise<LocalOfflineOrder[]> {
   return rows
     .map((row) => ({
       id: row.id,
-      orderNumber: row.orderNumber ?? null,
-      orderType: row.orderType,
+      orderNumber: row.orderNumber || row.id.slice(0, 8),
+      orderType: (row.orderType === 'remission' ? 'remission' : 'customer') as LocalOfflineOrder['orderType'],
       status: row.status,
       customerId: row.customerId ?? null,
       customerName: row.customerName ?? null,
@@ -102,17 +110,18 @@ export async function getLocalOfflineOrderLines(orderId: string): Promise<LocalO
   return [...rows]
     .sort((a, b) => Number(a.position) - Number(b.position))
     .map((row) => ({
+      orderId: row.orderId,
       groupKind: groupKind(row.groupKind),
-      sourceOrderId: row.sourceOrderId ?? null,
+      sourceOrderId: row.sourceOrderId || row.orderId,
       sourceOrderNumber: row.sourceOrderNumber ?? null,
       sourceCustomerId: row.sourceCustomerId ?? null,
       sourceCustomerName: row.sourceCustomerName ?? null,
       sourceHasNegocio: row.sourceHasNegocio === true,
       productId: row.productId,
-      productName: row.productName ?? null,
+      productName: row.productName || 'Producto',
       productSku: row.productSku ?? null,
       warehouseId: row.warehouseId,
-      warehouseName: row.warehouseName ?? null,
+      warehouseName: row.warehouseName || 'Bodega',
       quantity: Number(row.quantity) || 0,
       availableQuantity: Math.max(0, Number(row.availableQuantity) || 0),
     }));
@@ -124,13 +133,11 @@ export async function listLocalPendingRemissions(): Promise<LocalPendingRemissio
   return rows
     .map((row) => ({
       id: row.id,
-      orderNumber: row.orderNumber ?? null,
+      orderNumber: row.orderNumber || row.id.slice(0, 8),
       status: row.status,
       createdAt: row.remissionCreatedAt ?? null,
-      assignedUserId: row.assignedUserId ?? null,
+      assignedToUserId: row.assignedUserId ?? null,
       assignedUserName: row.assignedUserName ?? null,
-      driverName: row.driverName ?? null,
-      zoneName: row.zoneName ?? null,
       nestedOrdersCount: Number(row.nestedOrdersCount) || 0,
     }))
     .sort(byOrderNumber);
