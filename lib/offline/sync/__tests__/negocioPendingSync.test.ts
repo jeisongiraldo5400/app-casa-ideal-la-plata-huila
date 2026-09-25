@@ -1,4 +1,4 @@
-import { buildNegocioSyncStateMap, outboxAffectsNegocio } from '../negocioPendingSync';
+import { buildNegocioSyncStateMap, discardedNegocioIds, outboxAffectsNegocio } from '../negocioPendingSync';
 
 const command = (type: string, payload: Record<string, unknown>, status = 'pending') => ({ type, status, payload });
 
@@ -68,7 +68,7 @@ describe('buildNegocioSyncStateMap', () => {
     ).toEqual({});
   });
 
-  it('sin comando en la cola usa la fila local (p. ej. un negocio descartado)', () => {
+  it('sin comando en la cola usa la fila local', () => {
     expect(
       buildNegocioSyncStateMap([], [
         { id: 'n1', rowSyncStatus: 'pending' },
@@ -88,5 +88,29 @@ describe('buildNegocioSyncStateMap', () => {
         ]
       )
     ).toEqual({ n1: 'pending' });
+  });
+});
+
+describe('negocios descartados por el usuario', () => {
+  it('no salen en el mapa aunque la fila local quede marcada como rechazada', () => {
+    expect(
+      buildNegocioSyncStateMap(
+        [command('create_negocio', { negocioId: 'n1' }, 'discarded'), command('create_negocio', { negocioId: 'n2' }, 'failed')],
+        [
+          { id: 'n1', rowSyncStatus: 'rejected' },
+          { id: 'n2', rowSyncStatus: 'rejected' },
+        ]
+      )
+    ).toEqual({ n2: 'rejected' });
+  });
+
+  it('discardedNegocioIds solo cuenta creaciones descartadas sin otra viva', () => {
+    const ids = discardedNegocioIds([
+      command('create_negocio', { negocioId: 'n1' }, 'discarded'),
+      command('create_negocio', { negocioId: 'n2' }, 'discarded'),
+      command('create_negocio', { negocioId: 'n2' }, 'pending'),
+      command('register_pago', { negocioId: 'n3' }, 'discarded'),
+    ]);
+    expect([...ids]).toEqual(['n1']);
   });
 });

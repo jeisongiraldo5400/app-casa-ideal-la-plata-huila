@@ -56,6 +56,7 @@ import { PreparedChanges, prepareRevertCommand } from '../sync/reconcile';
 import { prepareRejectedNegocio } from '../sync/negocioCreateCommand';
 import {
   buildNegocioSyncStateMap,
+  discardedNegocioIds,
   outboxAffectsNegocio,
   UNSETTLED_OUTBOX_STATUSES,
   type NegocioSyncState,
@@ -360,14 +361,35 @@ export async function createCustomerOffline(input: {
   return { id: customerId, name: input.name, id_number: input.idNumber };
 }
 
+/**
+ * Comandos `create_negocio` de la cola en cualquier estado (también los
+ * descartados, que `listReviewableOutbox` no trae). La cola nunca borra
+ * filas, pero solo hay una por negocio creado sin señal: son pocas.
+ */
+async function listCreateNegocioOutbox(database: ReturnType<typeof getDatabase>) {
+  const items = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('type', 'create_negocio'))
+    .fetch();
+  return items.map((item) => ({
+    type: item.type,
+    status: item.status,
+    payload: parseOutboxPayload<Record<string, unknown>>(item),
+  }));
+}
+
 export async function fetchNegociosListFromLocal() {
   if (!canUseLocalDb()) return [];
   const database = getDatabase();
-  const [negocios, customers, cuotas] = await Promise.all([
+  const [allNegocios, customers, cuotas, createCommands] = await Promise.all([
     database.get<Negocio>('negocios').query().fetch(),
     database.get<Customer>('customers').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    listCreateNegocioOutbox(database),
   ]);
+  // Un negocio descartado por el usuario sigue en el teléfono, pero no en la lista.
+  const discarded = discardedNegocioIds(createCommands);
+  const negocios = discarded.size ? allNegocios.filter((row) => !discarded.has(row.id)) : allNegocios;
   return mapNegociosListFromLocal(
     negocios.map((row) => ({
       id: row.id,
@@ -406,8 +428,9 @@ export async function fetchNegociosListFromLocal() {
  * Negocios creados en el teléfono que el servidor aún no confirma, para el
  * distintivo de la lista: `states` (id → pendiente/rechazado) y `items`, sus
  * filas ya con la forma de la lista (con señal la lista viene del servidor y
- * no los trae). Lee la misma cola que «Cambios sin sincronizar» y solo las
- * filas locales sin confirmar: una lectura para toda la lista, no por tarjeta.
+ * no los trae). Lee los `create_negocio` de la cola (la fuente de «Cambios sin
+ * sincronizar») y solo las filas locales sin confirmar: una lectura para toda
+ * la lista, no por tarjeta. Los descartados por el usuario quedan fuera.
  */
 export async function loadNegocioSyncOverlay(): Promise<{
   states: Record<string, NegocioSyncState>;
@@ -416,17 +439,13 @@ export async function loadNegocioSyncOverlay(): Promise<{
   if (!canUseLocalDb()) return { states: {}, items: [] };
   const database = getDatabase();
   const [outbox, unsynced] = await Promise.all([
-    listReviewableOutbox(database),
+    // Los mismos comandos que «Cambios sin sincronizar», más los descartados
+    // para poder excluirlos.
+    listCreateNegocioOutbox(database),
     database.get<Negocio>('negocios').query(Q.where('sync_status', Q.notEq('synced'))).fetch(),
   ]);
   const states = buildNegocioSyncStateMap(
-    outbox
-      .filter((item) => item.type === 'create_negocio')
-      .map((item) => ({
-        type: item.type,
-        status: item.status,
-        payload: parseOutboxPayload<Record<string, unknown>>(item),
-      })),
+    outbox,
     unsynced.map((row) => ({ id: row.id, rowSyncStatus: row.rowSyncStatus }))
   );
   const rows = unsynced.filter((row) => states[row.id]);
