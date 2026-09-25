@@ -97,6 +97,11 @@ import {
   type RejectedPagoRow,
 } from '@/lib/offline/repositories/offlineRepository';
 import { RejectedPagoCard } from '@/components/offline/RejectedPagoCard';
+import {
+  fetchNegocioRemisionVigente,
+  labelRemisionVigente,
+  type NegocioRemisionVigente,
+} from '@/lib/negocios/negocioRemision';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
@@ -147,6 +152,8 @@ function NegocioDetailScreenInner() {
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   /** Número de la orden de la que salió la mercancía (remisión u OE de cliente). */
   const [originOrderNumber, setOriginOrderNumber] = useState<string | null>(null);
+  /** Remisión en la que viaja hoy la orden del negocio; sin señal no se conoce. */
+  const [remisionVigente, setRemisionVigente] = useState<NegocioRemisionVigente | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
@@ -255,6 +262,7 @@ function NegocioDetailScreenInner() {
       setCreatedByName('');
       setOrderNumber(null);
       setOriginOrderNumber(null);
+      setRemisionVigente(null);
       setLoadWarning(formatLocalDataLabel(useSyncStore.getState().lastSyncedAt));
     },
     []
@@ -446,6 +454,12 @@ function NegocioDetailScreenInner() {
       // un borrador solo existe la de origen; por eso se piden juntos con `in`
       // en vez de una consulta por campo.
       const origen = resolveNegocioOrigen(n);
+      // Remisión vigente de la orden del negocio, en paralelo con los números.
+      // Opcional: nunca lanza, y con un servidor sin la función (20261129120000)
+      // la línea no aparece.
+      const remisionPromise = n.delivery_order_id
+        ? fetchNegocioRemisionVigente(supabase, n.id)
+        : Promise.resolve(null);
       const orderIds = Array.from(
         new Set([n.delivery_order_id, origen.orderId].filter(Boolean) as string[])
       );
@@ -465,6 +479,7 @@ function NegocioDetailScreenInner() {
         setOrderNumber(null);
         setOriginOrderNumber(null);
       }
+      setRemisionVigente(await remisionPromise);
       // mark_cuotas_en_mora exige can_manage_collection_for_negocio; un usuario
       // que solo puede ver el negocio recibe "Sin permiso" y no es un fallo real.
       const warnings = [
@@ -1539,6 +1554,11 @@ function NegocioDetailScreenInner() {
                 <Text style={[styles.helper, { color: colors.text.secondary }]}>
                   Origen: {labelNegocioOrigen(origen, originOrderNumber)}
                 </Text>
+                {remisionVigente && !fromLocal ? (
+                  <Text style={[styles.helper, { color: colors.text.secondary }]}>
+                    {labelRemisionVigente(remisionVigente)}
+                  </Text>
+                ) : null}
               </View>
             </View>
           </Card>
