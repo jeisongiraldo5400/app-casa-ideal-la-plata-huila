@@ -7,23 +7,30 @@ import {
   localOrdersSnapshotAt,
   pendingLocalQuantitiesByOrigin,
 } from '../../repositories/deliveryOrdersRepository';
-import { purgeUnselectedDomains } from '../applyPull';
+import { purgeUnselectedDomains, purgeUnsentNegocios, wipeLocalCatalog } from '../applyPull';
 import { applyOrdersSnapshot } from '../ordersSnapshot';
 import { requestPull, type PullRpc } from '../pullRequest';
 import { classifyPushError, isDefinitiveOriginError } from '../retryPolicy';
 import {
   domainsToMarkApplied,
   getLocalSyncConfig,
+  hasPendingChoicesToDownload,
   isSelectiveSyncSupported,
+  lastManualDownloadAt,
+  manualFullDomains,
+  markChoicesChangedLocally,
+  markManualDownloadDone,
   markSelectiveSupport,
-  mustRefreshCatalogForSelection,
   parseSyncConfig,
-  planFullDomains,
   readAppliedRevisions,
+  serverConfigDiffers,
   shouldSendSelectiveOptions,
   storeSyncConfigFromPayload,
   type LocalSyncConfig,
 } from '../syncPrefs';
+import { supabase } from '@/lib/supabase';
+import { runSync } from '../syncEngine';
+import { useSyncStore } from '../../store/syncStore';
 import { PULL_PAYLOAD_VERSION, pullCursorForPayloadVersion, type PullPayload } from '../types';
 
 /**
@@ -40,6 +47,18 @@ jest.mock('../../database', () => ({
   getDatabase: () => mockDb,
   isDatabaseOpen: () => true,
 }));
+
+jest.mock('@/lib/supabase', () => ({
+  supabase: { rpc: jest.fn(), auth: { signOut: jest.fn(async () => undefined) } },
+}));
+
+jest.mock('../../security/secureKeys', () => ({
+  setCachedProfileName: jest.fn(async () => undefined),
+  setCachedRoles: jest.fn(async () => undefined),
+  setLastOnlineVerifiedAt: jest.fn(async () => undefined),
+}));
+
+jest.mock('../../security/wipe', () => ({ wipeLocalOfflineData: jest.fn(async () => undefined) }));
 
 function createFakeDatabase() {
   const tables = new Map<string, Map<string, Row>>();
@@ -143,6 +162,7 @@ const CONFIG: LocalSyncConfig = {
   clientes: { mode: 'seleccion', revision: 3, count: 12 },
   productos: { mode: 'todo', revision: 1, count: null },
   ordenes: { revision: 2, count: 1 },
+  municipios: null,
 };
 
 beforeEach(() => {
@@ -268,42 +288,23 @@ describe('petición del pull con p_options', () => {
     expect(result.error).toMatchObject({ code: '57014' });
   });
 
-  it('se vuelve a probar p_options al día siguiente o con «Descargar información»', () => {
+  it('con un servidor antiguo se vuelve a probar p_options al día siguiente', () => {
     const now = Date.parse('2026-09-25T12:00:00Z');
-    expect(shouldSendSelectiveOptions({ supported: null, checkedAt: null, manual: false, now })).toBe(true);
-    expect(shouldSendSelectiveOptions({ supported: 'true', checkedAt: now, manual: false, now })).toBe(true);
-    expect(shouldSendSelectiveOptions({ supported: 'false', checkedAt: now - 1000, manual: false, now })).toBe(false);
-    expect(shouldSendSelectiveOptions({ supported: 'false', checkedAt: now - 1000, manual: true, now })).toBe(true);
-    expect(
-      shouldSendSelectiveOptions({ supported: 'false', checkedAt: now - 25 * 3600 * 1000, manual: false, now })
-    ).toBe(true);
+    expect(shouldSendSelectiveOptions({ supported: null, checkedAt: null, now })).toBe(true);
+    expect(shouldSendSelectiveOptions({ supported: 'true', checkedAt: now, now })).toBe(true);
+    expect(shouldSendSelectiveOptions({ supported: 'false', checkedAt: now - 1000, now })).toBe(false);
+    expect(shouldSendSelectiveOptions({ supported: 'false', checkedAt: now - 25 * 3600 * 1000, now })).toBe(true);
   });
 });
 
-describe('revisiones → full_domains', () => {
-  it('sin revisión aplicada (primera descarga con la v9) pide completo cada dominio', () => {
-    const applied = { clientes: null, productos: null };
-    expect(planFullDomains({ config: null, applied, includeCatalog: true })).toEqual(['clientes', 'productos']);
-    // Productos sólo viaja con el catálogo.
-    expect(planFullDomains({ config: null, applied, includeCatalog: false })).toEqual(['clientes']);
+describe('preferencias y revisiones', () => {
+  it('toda descarga manual pide completos los clientes', () => {
+    expect(manualFullDomains()).toEqual(['clientes']);
   });
 
-  it('pide completo sólo el dominio cuya revisión cambió', () => {
-    expect(
-      planFullDomains({ config: CONFIG, applied: { clientes: 2, productos: 1 }, includeCatalog: true })
-    ).toEqual(['clientes']);
-    expect(
-      planFullDomains({ config: CONFIG, applied: { clientes: 3, productos: 1 }, includeCatalog: true })
-    ).toEqual([]);
-  });
-
-  it('una selección de productos cambiada trae el catálogo sólo si el teléfono ya lo tiene', () => {
-    const applied = { clientes: 3, productos: 0 };
-    expect(mustRefreshCatalogForSelection({ config: CONFIG, applied, hasCatalog: true })).toBe(true);
-    expect(mustRefreshCatalogForSelection({ config: CONFIG, applied, hasCatalog: false })).toBe(false);
-    expect(
-      mustRefreshCatalogForSelection({ config: CONFIG, applied: { clientes: 3, productos: 1 }, hasCatalog: true })
-    ).toBe(false);
+  it('productos entiende «ninguno»; lo desconocido cuenta como «todo»', () => {
+    expect(parseSyncConfig({ productos: { mode: 'ninguno', revision: 2 } })?.productos.mode).toBe('ninguno');
+    expect(parseSyncConfig({ productos: { mode: 'seleccion', revision: 2 } })?.productos.mode).toBe('todo');
   });
 
   it('guarda sync_config y la revisión de lo que vino completo y sin recortar', async () => {
@@ -320,6 +321,7 @@ describe('revisiones → full_domains', () => {
       clientes: { mode: 'seleccion', revision: 3, count: null },
       productos: { mode: 'todo', revision: 1, count: null },
       ordenes: { revision: 2, count: null },
+      municipios: null,
     });
   });
 
@@ -351,6 +353,156 @@ describe('revisiones → full_domains', () => {
       revision: 7,
       count: null,
     });
+  });
+});
+
+describe('última descarga y elecciones pendientes de descargar', () => {
+  it('lastManualDownloadAt es null hasta la primera descarga manual', async () => {
+    expect(await lastManualDownloadAt()).toBeNull();
+    await markManualDownloadDone(mockDb as never, 1000);
+    expect(await lastManualDownloadAt()).toBe(1000);
+  });
+
+  it('marcar desde este teléfono deja «pendiente de descargar» hasta la siguiente descarga', async () => {
+    await markManualDownloadDone(mockDb as never, 1000);
+    expect(await hasPendingChoicesToDownload()).toBe(false);
+    await markChoicesChangedLocally(2000);
+    expect(await hasPendingChoicesToDownload()).toBe(true);
+    await markManualDownloadDone(mockDb as never, 3000);
+    expect(await hasPendingChoicesToDownload()).toBe(false);
+  });
+
+  it('también avisa si la configuración del servidor ya no es la descargada', async () => {
+    await storeSyncConfigFromPayload(
+      mockDb as never,
+      basePayload({ sync_config: { clientes: { mode: 'seleccion', revision: 3, count: 10 }, ordenes: { revision: 1 } } }),
+      { catalogApplied: false }
+    );
+    await markManualDownloadDone(mockDb as never, 1000);
+    const same = { clientes: { mode: 'seleccion', revision: 3, count: 10 }, ordenes: { revision: 1 } };
+    expect(await hasPendingChoicesToDownload(same)).toBe(false);
+    // Marcar un cliente no sube la revisión, pero sí el conteo.
+    expect(await hasPendingChoicesToDownload({ ...same, clientes: { mode: 'seleccion', revision: 3, count: 11 } })).toBe(true);
+    expect(await hasPendingChoicesToDownload({ ...same, productos: { mode: 'ninguno', revision: 2 } })).toBe(true);
+    expect(await hasPendingChoicesToDownload({ ...same, ordenes: { revision: 2 } })).toBe(true);
+  });
+
+  it('nunca descargado: cualquier configuración del servidor está pendiente', () => {
+    expect(serverConfigDiffers(null, { clientes: { mode: 'todo', revision: 1 } })).toBe(true);
+    expect(serverConfigDiffers(CONFIG, null)).toBe(false);
+  });
+});
+
+describe('purga de negocios tras una descarga manual completa', () => {
+  function seedNegocios() {
+    mockDb.seed('negocios', 'n-viene', { customerId: 'c1', rowSyncStatus: 'synced' });
+    mockDb.seed('negocios', 'n-fuera', { customerId: 'c2', rowSyncStatus: 'synced' });
+    mockDb.seed('negocios', 'n-pendiente', { customerId: 'c3', rowSyncStatus: 'pending' });
+    mockDb.seed('negocios', 'n-rechazado', { customerId: 'c3', rowSyncStatus: 'rejected' });
+    mockDb.seed('negocios', 'n-cobro-pendiente', { customerId: 'c4', rowSyncStatus: 'synced' });
+    mockDb.seed('negocios', 'n-outbox', { customerId: 'c5', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_cuotas', 'q-viene', { negocioId: 'n-viene', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_cuotas', 'q-vieja', { negocioId: 'n-viene', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_cuotas', 'q-fuera', { negocioId: 'n-fuera', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_cuotas', 'q-cobro', { negocioId: 'n-cobro-pendiente', rowSyncStatus: 'pending' });
+    mockDb.seed('negocio_pagos', 'p-fuera', { negocioId: 'n-fuera', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_pagos', 'p-rechazado', { negocioId: 'n-cobro-pendiente', rowSyncStatus: 'rejected' });
+    mockDb.seed('negocio_items', 'i-fuera', { negocioId: 'n-fuera', rowSyncStatus: 'synced' });
+    mockDb.seed('negocio_items', 'i-viejo', { negocioId: 'n-viene', rowSyncStatus: 'synced' });
+    mockDb.seed('sync_outbox', 'o-pago', {
+      type: 'register_pago',
+      status: 'failed',
+      payloadJson: JSON.stringify({ negocioId: 'n-outbox', amount: 1 }),
+    });
+  }
+
+  const negocio = (id: string) => ({
+    id,
+    numero: 1,
+    status: 'activo',
+    deal_date: null,
+    total_credit: 1,
+    remaining_balance: 1,
+    customer_id: 'c1',
+    codeudor_customer_id: null,
+    direccion: null,
+    municipio_id: null,
+    municipio_name: null,
+    seller_id: null,
+    gestor_cobro_id: null,
+    updated_at: null,
+    deleted_at: null,
+  });
+
+  function negociosPayload(overrides: Partial<PullPayload> = {}) {
+    return basePayload({
+      full_domains_sent: ['clientes', 'negocios'],
+      negocios: { upserts: [negocio('n-viene')], deleted: [] },
+      negocio_cuotas: {
+        upserts: [
+          {
+            id: 'q-viene',
+            negocio_id: 'n-viene',
+            installment_number: 1,
+            due_date: '2026-10-01',
+            amount: 1,
+            paid_amount: 0,
+            late_fee_amount: 0,
+            status: 'pendiente',
+            updated_at: null,
+            deleted_at: null,
+          },
+        ],
+        deleted: [],
+      },
+      negocio_items: emptyChanges(),
+      ...overrides,
+    });
+  }
+
+  it('borra negocios, cuotas, pagos e ítems que no vinieron, nunca lo pendiente', async () => {
+    seedNegocios();
+
+    expect(await purgeUnsentNegocios(mockDb as never, negociosPayload())).toBe(true);
+
+    expect(mockDb.ids('negocios')).toEqual(
+      ['n-cobro-pendiente', 'n-outbox', 'n-pendiente', 'n-rechazado', 'n-viene'].sort()
+    );
+    expect(mockDb.ids('negocio_cuotas')).toEqual(['q-cobro', 'q-viene']);
+    expect(mockDb.ids('negocio_pagos')).toEqual(['p-rechazado']);
+    expect(mockDb.ids('negocio_items')).toEqual([]);
+  });
+
+  it('sin negocios completos o con el paquete recortado no se purga (queda la poda por alcance)', async () => {
+    seedNegocios();
+
+    expect(await purgeUnsentNegocios(mockDb as never, negociosPayload({ full_domains_sent: ['clientes'] }))).toBe(false);
+    expect(await purgeUnsentNegocios(mockDb as never, negociosPayload({ truncated: true }))).toBe(false);
+    expect(mockDb.ids('negocios')).toContain('n-fuera');
+    expect(mockDb.ids('negocio_cuotas')).toContain('q-vieja');
+  });
+});
+
+describe('productos en «ninguno»', () => {
+  it('borra el catálogo local salvo los productos de negocios sin confirmar', async () => {
+    mockDb.seed('negocios', 'n-local', { customerId: 'c1', rowSyncStatus: 'pending' });
+    mockDb.seed('negocio_items', 'i1', { negocioId: 'n-local', productId: 'p-local', rowSyncStatus: 'pending' });
+    mockDb.seed('sync_outbox', 'o1', {
+      type: 'create_negocio',
+      status: 'pending',
+      payloadJson: JSON.stringify({ negocio: {}, items: [{ product_id: 'p-cola' }] }),
+    });
+    for (const id of ['p-local', 'p-cola', 'p-otro']) mockDb.seed('catalog_products', id, {});
+    mockDb.seed('catalog_warehouse_stock', 's-otro', { productId: 'p-otro' });
+    mockDb.seed('catalog_warehouse_stock', 's-cola', { productId: 'p-cola' });
+    mockDb.seed('catalog_warehouses', 'w1', { name: 'Andes' });
+
+    await wipeLocalCatalog(mockDb as never);
+
+    expect(mockDb.ids('catalog_products')).toEqual(['p-cola', 'p-local']);
+    expect(mockDb.ids('catalog_warehouse_stock')).toEqual(['s-cola']);
+    // Las bodegas se quedan: nombran los ítems de los negocios.
+    expect(mockDb.ids('catalog_warehouses')).toEqual(['w1']);
   });
 });
 
@@ -676,5 +828,76 @@ describe('errores definitivos del origen del negocio', () => {
     expect(isDefinitiveOriginError('deadlock detected')).toBe(false);
     expect(classifyPushError('deadlock detected')).toBe('retry');
     expect(isDefinitiveOriginError('El cliente no existe o fue eliminado')).toBe(false);
+  });
+});
+
+describe('el motor sólo descarga cuando la persona pulsa «Descargar»', () => {
+  const rpc = supabase.rpc as jest.Mock;
+
+  beforeEach(() => {
+    rpc.mockReset();
+    useSyncStore.setState({ userId: 'u1', lastSyncedAt: null, lastError: null });
+  });
+
+  it.each(['foreground', 'reconnect', 'mutation', 'retry'] as const)(
+    '«%s» sólo sube la cola: no llama a pull_mobile_sync',
+    async (reason) => {
+      await runSync(reason);
+
+      expect(rpc).not.toHaveBeenCalled();
+      expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+      expect(await lastManualDownloadAt()).toBeNull();
+    }
+  );
+
+  it('«manual» descarga con p_options, catálogo y deja el teléfono sólo con lo elegido', async () => {
+    mockDb.seed('customers', 'c-viejo', { rowSyncStatus: 'synced' });
+    rpc.mockImplementation(async (fn: string) => {
+      if (fn === 'pull_mobile_scope') return { data: [], error: null };
+      return {
+        data: basePayload({
+          customers: { upserts: [customer('c-sel')], deleted: [] },
+          full_domains_sent: ['clientes'],
+          sync_config: { clientes: { mode: 'seleccion', revision: 5 }, productos: { mode: 'todo', revision: 1 } },
+          pending_remissions: [],
+          delivery_orders_snapshot: [],
+        }),
+        error: null,
+      };
+    });
+
+    await runSync('manual');
+
+    expect(rpc.mock.calls[0][0]).toBe('pull_mobile_sync');
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_last_pulled_at: null,
+      p_include_catalog: true,
+      p_options: { full_domains: ['clientes'], orders: true },
+    });
+    expect(mockDb.ids('customers')).toEqual(['c-sel']);
+    expect(await lastManualDownloadAt()).toEqual(expect.any(Number));
+    expect(await isSelectiveSyncSupported()).toBe(true);
+    expect(await readAppliedRevisions(mockDb as never)).toEqual({ clientes: 5, productos: null });
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(expect.any(Number));
+  });
+
+  it('con productos en «ninguno» borra el catálogo y no lo vuelve a pedir', async () => {
+    mockDb.seed('catalog_products', 'p1', {});
+    rpc.mockImplementation(async (fn: string) => {
+      if (fn === 'pull_mobile_scope') return { data: [], error: null };
+      return {
+        data: basePayload({
+          sync_config: { clientes: { mode: 'todo', revision: 1 }, productos: { mode: 'ninguno', revision: 2 } },
+        }),
+        error: null,
+      };
+    });
+
+    await runSync('manual');
+    expect(mockDb.ids('catalog_products')).toEqual([]);
+
+    rpc.mockClear();
+    await runSync('manual');
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('p_include_catalog');
   });
 });

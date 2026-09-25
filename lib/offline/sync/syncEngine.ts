@@ -10,25 +10,28 @@ import {
   pruneCustomersOutsideNegocios,
   pruneOutOfScopeNegocios,
   purgeUnselectedDomains,
+  purgeUnsentNegocios,
+  wipeLocalCatalog,
 } from './applyPull';
 import { applyOrdersSnapshot } from './ordersSnapshot';
 import { requestPull } from './pullRequest';
 import {
+  choicesChangedSinceDownload,
+  fullDomainsSent,
+  manualFullDomains,
+  markManualDownloadDone,
   markSelectiveSupport,
-  mustRefreshCatalogForSelection,
-  planFullDomains,
-  readAppliedRevisions,
+  parseSyncConfig,
   readSelectiveSupport,
   readSyncConfig,
   shouldSendSelectiveOptions,
   storeSyncConfigFromPayload,
 } from './syncPrefs';
 import {
-  clearCatalogRequest,
   cursorForCatalogPull,
+  forgetCatalogPull,
   getCatalogCursor,
-  getCatalogPulledAt,
-  isCatalogRequested,
+  isDownloadReason,
   markCatalogPulled,
   mustRerunAfterInFlight,
   shouldIncludeCatalog,
@@ -126,11 +129,7 @@ export async function refreshPendingCount() {
 export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
   if (!isDatabaseOpen()) return;
   if (inFlight) {
-    const catalogRequested = isCatalogRequested();
-    if (
-      inFlightMeta &&
-      mustRerunAfterInFlight({ inFlight: inFlightMeta, reason, catalogRequested })
-    ) {
+    if (inFlightMeta && mustRerunAfterInFlight({ inFlight: inFlightMeta, reason })) {
       // Se espera a que termine la que corre y se lanza la propia; si varias
       // esperan, la primera arranca y las demás se suman a ella.
       const current = inFlight;
@@ -138,10 +137,11 @@ export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
     }
     return inFlight;
   }
-  // La petición de catálogo se toma AL ARRANCAR: si llega a mitad de camino,
-  // ésta ya no la atiende y no debe borrarla.
-  const catalogRequested = isCatalogRequested();
-  inFlightMeta = { reason, catalogRequested };
+  // Descarga selectiva v2: sólo «Descargar» (reason 'manual') baja datos. Las
+  // automáticas (al abrir la app, al volver la señal, tras un cobro, el
+  // reintento) únicamente SUBEN la cola: nada llega al teléfono sin que la
+  // persona lo pida.
+  inFlightMeta = { reason };
   inFlight = (async () => {
     const net = await NetInfo.fetch();
     const online = isNetInfoOnline(net);
@@ -169,7 +169,14 @@ export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
         nextDueAt = Date.now() + NETWORK_RETRY_DELAY_MS;
         return;
       }
-      const truncationWarning = await pullRemote(userId, reason, catalogRequested);
+      if (push.contacted) await setLastOnlineVerifiedAt();
+      if (!isDownloadReason(reason)) {
+        await refreshPendingCount();
+        useSyncStore.getState().setStatus('idle');
+        useSyncStore.getState().setLastError(null);
+        return;
+      }
+      const truncationWarning = await pullRemote(userId, reason);
       await refreshPendingCount();
       useSyncStore.getState().setStatus('idle');
       // El aviso de descarga recortada viaja por `lastError`: la franja de
@@ -197,48 +204,31 @@ export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
   return inFlight;
 }
 
-/** Devuelve el aviso de descarga recortada, o `null` si vino completa. */
-async function pullRemote(
-  userId: string,
-  reason: SyncReason = 'manual',
-  catalogRequested = false
-): Promise<string | null> {
+/** Descarga manual. Devuelve el aviso de descarga recortada, o `null` si vino completa. */
+async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promise<string | null> {
   const database = getDatabase();
   const lastPulledAt = pullCursorForPayloadVersion(
     await getMeta(database, 'last_pulled_at'),
     await getMeta(database, PULL_PAYLOAD_VERSION_META_KEY)
   );
-  // El catálogo de producto sólo viaja si hace falta (ver `catalogPull.ts`).
-  // Cuando viaja se pide desde SU cursor, que es más viejo que el general: con
-  // el cursor general el servidor contestaría «sin novedades» y el teléfono se
-  // quedaría sin catálogo para siempre. Lo que se repite del resto del paquete
-  // son upserts idempotentes de, como mucho, un día.
-  //
-  // Al recaudador puro (alcance 'cobro') el servidor nunca le manda catálogo:
-  // pedirlo sólo haría que cada «Descargar información» bajara todo desde cero,
-  // porque su cursor de catálogo nunca avanza.
+  // El catálogo viaja en toda descarga manual salvo al recaudador puro o con
+  // productos en «ninguno» (ver `catalogPull.ts`). Cuando viaja se pide desde
+  // SU cursor, que es más viejo que el general: con el cursor general el
+  // servidor contestaría «sin novedades» y el teléfono se quedaría sin
+  // catálogo. Lo que se repite del resto del paquete son upserts idempotentes.
   const storedScope = await getMeta(database, PULL_SCOPE_META_KEY);
-  const lastCatalogAt = await getCatalogPulledAt(database);
-  // Descarga selectiva: si la selección de un dominio cambió en el servidor
-  // (otra revisión), ese dominio se pide completo para poder borrar lo que ya
-  // no se lleva. Con productos, eso obliga a traer el catálogo.
   const selectiveSupport = await readSelectiveSupport(database);
   const sendOptions = shouldSendSelectiveOptions({
     supported: selectiveSupport.supported,
     checkedAt: selectiveSupport.checkedAt,
-    manual: reason === 'manual',
   });
   const syncConfig = await readSyncConfig(database);
-  const appliedRevisions = await readAppliedRevisions(database);
-  const includeCatalog =
-    storedScope !== 'cobro' &&
-    (shouldIncludeCatalog({ reason, requested: catalogRequested, lastCatalogAt }) ||
-      (sendOptions &&
-        mustRefreshCatalogForSelection({
-          config: syncConfig,
-          applied: appliedRevisions,
-          hasCatalog: lastCatalogAt != null,
-        })));
+  const includeCatalog = shouldIncludeCatalog({
+    reason,
+    scope: storedScope,
+    productsMode: syncConfig?.productos.mode ?? null,
+    choicesChanged: await choicesChangedSinceDownload(database),
+  });
   const catalogCursor = includeCatalog
     ? cursorForCatalogPull(lastPulledAt, await getCatalogCursor(database))
     : null;
@@ -249,16 +239,9 @@ async function pullRemote(
       catalogCursor,
       includeCatalog,
       limit: PULL_LIMIT,
-      options: sendOptions
-        ? {
-            full_domains: planFullDomains({
-              config: syncConfig,
-              applied: appliedRevisions,
-              includeCatalog,
-            }),
-            orders: true,
-          }
-        : null,
+      // Toda descarga manual pide completos los dominios seleccionables: el
+      // teléfono queda sólo con lo elegido.
+      options: sendOptions ? { full_domains: manualFullDomains(), orders: true } : null,
     }
   );
   if (request.error) throw request.error;
@@ -281,14 +264,20 @@ async function pullRemote(
   const truncationWarning = pullTruncationWarning(payload, PULL_LIMIT);
   await applyPullPayload(database, payload, userId);
   // El catálogo sólo avanza su cursor si de verdad vino en el paquete.
-  const catalogApplied = await applyCatalogPayload(database, payload);
-  if (catalogApplied) {
+  // Productos en «ninguno»: fuera el catálogo del teléfono (salvo lo de
+  // negocios sin confirmar) y se olvida su cursor para bajarlo entero si
+  // vuelve a «todo».
+  const receivedConfig = parseSyncConfig(payload.sync_config);
+  const productsNone = receivedConfig?.productos.mode === 'ninguno';
+  const catalogApplied = productsNone ? false : await applyCatalogPayload(database, payload);
+  if (productsNone) {
+    await wipeLocalCatalog(database);
+    await forgetCatalogPull(database);
+  } else if (catalogApplied) {
     await markCatalogPulled(database, payload.server_time);
   }
   // Foto de órdenes llevadas y remisiones pendientes: reemplazo completo.
   await applyOrdersSnapshot(database, payload);
-  // Sólo se borra la petición que esta descarga atendió.
-  if (catalogRequested) clearCatalogRequest();
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
   // Si el alcance cambió (le dieron o le quitaron un rol), la próxima descarga
   // es completa: el cursor delta no traería los clientes viejos que ahora sí le
@@ -314,17 +303,23 @@ async function pullRemote(
   // es autoridad para borrar, así que la poda se salta hasta la próxima
   // descarga completa.
   if (!truncationWarning) {
-    await pruneScope(database);
-    // Recaudador puro: fuera los clientes que no son de ningún negocio suyo
-    // (20261128120000). Va después de la poda de negocios, ya al día.
-    if (payload.pull_scope === 'cobro') await pruneCustomersOutsideNegocios(database);
+    // Negocios, cuotas, pagos e ítems: si el servidor los mandó completos se
+    // borra lo que no vino; si no, la poda por `pull_mobile_scope` de siempre.
+    if (!(await purgeUnsentNegocios(database, payload))) await pruneScope(database);
+    // Recaudador puro sin descarga selectiva: fuera los clientes que no son
+    // de ningún negocio suyo (20261128120000). Con clientes completos manda
+    // la selección (v2: el recaudador también elige clientes o municipios).
+    if (payload.pull_scope === 'cobro' && !fullDomainsSent(payload).includes('clientes')) {
+      await pruneCustomersOutsideNegocios(database);
+    }
     // Descarga selectiva: fuera lo que ya no se lleva, sólo en los dominios
-    // que vinieron completos. También después de la poda de negocios.
+    // que vinieron completos. Después de la poda de negocios, ya al día.
     await purgeUnselectedDomains(database, payload, { catalogApplied });
   }
   // Preferencias y revisiones aplicadas. La revisión de un dominio sólo se da
   // por aplicada si vino completo y sin recortar: si no, se vuelve a pedir.
   await storeSyncConfigFromPayload(database, payload, { catalogApplied });
+  await markManualDownloadDone(database);
   return truncationWarning;
 }
 
@@ -336,7 +331,8 @@ async function pruneScope(database: ReturnType<typeof getDatabase>) {
   await pruneOutOfScopeNegocios(database, data.map((id) => String(id)));
 }
 
-type PushSummary = { networkDown: boolean; nextDueAt: number | null };
+/** `contacted`: al menos un comando llegó al servidor y obtuvo respuesta. */
+type PushSummary = { networkDown: boolean; nextDueAt: number | null; contacted: boolean };
 
 async function pushDueOutbox(): Promise<PushSummary> {
   const database = getDatabase();
@@ -356,6 +352,7 @@ async function pushDueOutbox(): Promise<PushSummary> {
   );
   const blocked = new Set(plan.blockedLanes);
   let nextDueAt = plan.nextDueAt;
+  let contacted = false;
 
   for (const entry of plan.runnable) {
     if (blocked.has(entry.lane)) continue;
@@ -365,8 +362,9 @@ async function pushDueOutbox(): Promise<PushSummary> {
 
     if (result.outcome === 'network') {
       await database.write(async () => markOutboxNetworkRetry(item, result.message, Date.now()));
-      return { networkDown: true, nextDueAt: Date.now() + NETWORK_RETRY_DELAY_MS };
+      return { networkDown: true, nextDueAt: Date.now() + NETWORK_RETRY_DELAY_MS, contacted };
     }
+    contacted = true;
 
     await database.write(async () => {
       const operations = await settleOutboxItem(database, item, result);
@@ -382,7 +380,7 @@ async function pushDueOutbox(): Promise<PushSummary> {
     }
   }
 
-  return { networkDown: false, nextDueAt };
+  return { networkDown: false, nextDueAt, contacted };
 }
 
 /** Traduce el resultado del servidor a cambios locales (outbox + filas optimistas). */
@@ -413,7 +411,12 @@ async function settleOutboxItem(
       );
     }
     if (item.type === 'create_negocio') {
-      await prepareConfirmNegocio(database, payload as unknown as CreateNegocioPayload, changes);
+      await prepareConfirmNegocio(
+        database,
+        payload as unknown as CreateNegocioPayload,
+        changes,
+        (result.result || {}) as { numero?: number; status?: string }
+      );
     }
     await prepareReleaseSnapshot(database, payload.snapshot, changes);
     changes.update(item, (record) => {

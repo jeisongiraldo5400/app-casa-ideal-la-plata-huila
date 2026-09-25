@@ -366,13 +366,16 @@ export type PullWarehouseStock = {
 /** Dominios que la persona elige qué llevar en el teléfono (20261130120000). */
 export type SelectiveDomain = 'clientes' | 'productos';
 export const SELECTIVE_DOMAINS: SelectiveDomain[] = ['clientes', 'productos'];
-export type SyncDomainMode = 'todo' | 'seleccion';
+/** Clientes: 'todo' | 'seleccion'. Productos (v2): 'todo' | 'ninguno'. */
+export type SyncDomainMode = 'todo' | 'seleccion' | 'ninguno';
 
 /** Preferencias vigentes en el servidor, tal como llegan en `sync_config`. */
 export type PullSyncConfig = {
   clientes?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
   productos?: { mode?: string | null; revision?: number | string | null; count?: number | null } | null;
   ordenes?: { revision?: number | string | null; count?: number | null } | null;
+  /** Municipios elegidos para clientes (v2). */
+  municipios?: { revision?: number | string | null; count?: number | null } | null;
 };
 
 /** `p_options` de `pull_mobile_sync` (20261130140000). */

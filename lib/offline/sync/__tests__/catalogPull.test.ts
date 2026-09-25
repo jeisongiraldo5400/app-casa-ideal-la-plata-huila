@@ -1,12 +1,5 @@
 import { applyCatalogPayload, pruneOutOfScopeNegocios } from '../applyPull';
-import {
-  CATALOG_REFRESH_MS,
-  clearCatalogRequest,
-  requestCatalogOnNextSync,
-  isCatalogRequested,
-  shouldIncludeCatalog,
-  mustRerunAfterInFlight,
-} from '../catalogPull';
+import { isDownloadReason, shouldIncludeCatalog, mustRerunAfterInFlight } from '../catalogPull';
 import { filterCatalogProducts, stockRowsForProduct } from '../../domain/catalogLocal';
 import type { PullPayload } from '../types';
 
@@ -15,54 +8,35 @@ import type { PullPayload } from '../types';
  * sincronización. Y lo que baja son «las existencias de la última descarga».
  */
 
-const HOY = Date.UTC(2026, 8, 23, 12, 0, 0);
+describe('cuándo viaja el catálogo (descarga selectiva v2: sólo a mano)', () => {
+  const base = { scope: 'completo', productsMode: 'todo', choicesChanged: false };
 
-describe('cuándo viaja el catálogo', () => {
-  afterEach(() => clearCatalogRequest());
-
-  it('no viaja en una sincronización cualquiera si nunca se bajó', () => {
-    expect(
-      shouldIncludeCatalog({ reason: 'foreground', requested: false, lastCatalogAt: null, now: HOY })
-    ).toBe(false);
-    expect(
-      shouldIncludeCatalog({ reason: 'reconnect', requested: false, lastCatalogAt: null, now: HOY })
-    ).toBe(false);
+  it('nunca viaja en una sincronización automática', () => {
+    for (const reason of ['foreground', 'reconnect', 'mutation', 'retry'] as const) {
+      expect(isDownloadReason(reason)).toBe(false);
+      expect(shouldIncludeCatalog({ ...base, reason })).toBe(false);
+    }
   });
 
-  it('viaja cuando la persona pulsa «Descargar información»', () => {
-    expect(
-      shouldIncludeCatalog({ reason: 'manual', requested: false, lastCatalogAt: null, now: HOY })
-    ).toBe(true);
+  it('viaja cuando la persona pulsa «Descargar»', () => {
+    expect(isDownloadReason('manual')).toBe(true);
+    expect(shouldIncludeCatalog({ ...base, reason: 'manual' })).toBe(true);
+    // Primera descarga: todavía no se sabe el modo de productos.
+    expect(shouldIncludeCatalog({ ...base, reason: 'manual', productsMode: null })).toBe(true);
   });
 
-  it('viaja cuando lo pide una pantalla (el asistente de negocio)', () => {
-    requestCatalogOnNextSync();
-    expect(isCatalogRequested()).toBe(true);
-    expect(
-      shouldIncludeCatalog({
-        reason: 'mutation',
-        requested: isCatalogRequested(),
-        lastCatalogAt: HOY,
-        now: HOY,
-      })
-    ).toBe(true);
+  it('no viaja al recaudador puro ni con productos en «ninguno»', () => {
+    expect(shouldIncludeCatalog({ ...base, reason: 'manual', scope: 'cobro' })).toBe(false);
+    expect(shouldIncludeCatalog({ ...base, reason: 'manual', productsMode: 'ninguno' })).toBe(false);
   });
 
-  it('se refresca solo una vez al día cuando ya está descargado', () => {
-    const casiUnDia = HOY - CATALOG_REFRESH_MS + 1000;
+  it('con «ninguno» guardado pero elecciones cambiadas se pide (pudo volver a «todo»)', () => {
     expect(
-      shouldIncludeCatalog({ reason: 'foreground', requested: false, lastCatalogAt: casiUnDia, now: HOY })
-    ).toBe(false);
-    expect(
-      shouldIncludeCatalog({
-        reason: 'foreground',
-        requested: false,
-        lastCatalogAt: HOY - CATALOG_REFRESH_MS,
-        now: HOY,
-      })
+      shouldIncludeCatalog({ ...base, reason: 'manual', productsMode: 'ninguno', choicesChanged: true })
     ).toBe(true);
   });
 });
+
 
 type FakeRecord = Record<string, any>;
 
@@ -260,47 +234,13 @@ describe('buscar en el catálogo descargado', () => {
 });
 
 describe('mustRerunAfterInFlight', () => {
-  it('«Descargar información» durante una sincronización automática vuelve a sincronizar (con catálogo)', () => {
-    expect(
-      mustRerunAfterInFlight({
-        inFlight: { reason: 'reconnect', catalogRequested: false },
-        reason: 'manual',
-        catalogRequested: false,
-      })
-    ).toBe(true);
+  it('«Descargar» durante una subida automática vuelve a correr (la automática no baja nada)', () => {
+    expect(mustRerunAfterInFlight({ inFlight: { reason: 'reconnect' }, reason: 'manual' })).toBe(true);
   });
 
-  it('el asistente que pide catálogo a mitad de una automática no se pierde', () => {
-    expect(
-      mustRerunAfterInFlight({
-        inFlight: { reason: 'foreground', catalogRequested: false },
-        reason: 'mutation',
-        catalogRequested: true,
-      })
-    ).toBe(true);
-  });
-
-  it('si la que corre ya es manual o ya llevaba el catálogo, basta con esperarla', () => {
-    expect(
-      mustRerunAfterInFlight({
-        inFlight: { reason: 'manual', catalogRequested: false },
-        reason: 'manual',
-        catalogRequested: true,
-      })
-    ).toBe(false);
-    expect(
-      mustRerunAfterInFlight({
-        inFlight: { reason: 'mutation', catalogRequested: true },
-        reason: 'mutation',
-        catalogRequested: true,
-      })
-    ).toBe(false);
-    expect(
-      mustRerunAfterInFlight({
-        inFlight: { reason: 'foreground', catalogRequested: false },
-        reason: 'mutation',
-        catalogRequested: false,
-      })
-    ).toBe(false);
+  it('si la que corre ya es una descarga, o lo nuevo es automático, basta con esperarla', () => {
+    expect(mustRerunAfterInFlight({ inFlight: { reason: 'manual' }, reason: 'manual' })).toBe(false);
+    expect(mustRerunAfterInFlight({ inFlight: { reason: 'foreground' }, reason: 'mutation' })).toBe(false);
+    expect(mustRerunAfterInFlight({ inFlight: { reason: 'manual' }, reason: 'retry' })).toBe(false);
   });
 });

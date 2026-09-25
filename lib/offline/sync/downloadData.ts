@@ -1,8 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
 import { isNetInfoOnline } from '../network';
 import { useSyncStore } from '../store/syncStore';
-import { CATALOG_REFRESH_MS, requestCatalogOnNextSync } from './catalogPull';
-import { canUseLocalCatalog, localCatalogPulledAt } from '../repositories/catalogRepository';
 import { runSync } from './syncEngine';
 
 export { isNetInfoOnline };
@@ -29,22 +27,14 @@ export async function requestManualDownload(): Promise<ManualDownloadResult> {
 }
 
 /**
- * Asegura que el catálogo de producto esté en el teléfono, sin castigar la red.
+ * Ya no hace nada (descarga selectiva v2): el catálogo sólo baja al pulsar
+ * «Descargar». Se conserva porque el asistente de negocio todavía lo llama;
+ * cuando deje de hacerlo se puede borrar.
  *
- * Lo llama el asistente de creación de negocio al abrirse: si el catálogo
- * falta o ya tiene más de un día y hay señal, se pide en una sincronización;
- * si está al día o no hay red, no hace nada (y el asistente trabaja con lo que
- * haya descargado). Devuelve true si lanzó la descarga.
+ * @deprecated El catálogo ya no se descarga automáticamente.
  */
 export async function ensureCatalogForOffline(): Promise<boolean> {
-  if (!canUseLocalCatalog()) return false;
-  const pulledAt = await localCatalogPulledAt();
-  if (pulledAt && Date.now() - pulledAt < CATALOG_REFRESH_MS) return false;
-  const net = await NetInfo.fetch();
-  if (!isNetInfoOnline(net)) return false;
-  requestCatalogOnNextSync();
-  await runSync('mutation');
-  return true;
+  return false;
 }
 
 function startOfDay(ms: number) {

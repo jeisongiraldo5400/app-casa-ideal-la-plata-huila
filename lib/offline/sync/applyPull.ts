@@ -22,7 +22,7 @@ import {
   SyncOutboxItem,
   UserProfileCache,
 } from '../models';
-import { fullDomainsSent } from './syncPrefs';
+import { fullDomainsSent, fullDomainsSentNames } from './syncPrefs';
 
 type SyncAware = Model & { rowSyncStatus?: string };
 
@@ -362,21 +362,14 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
  */
 export async function pruneOutOfScopeNegocios(database: Database, scopedIds: string[]) {
   const scope = new Set(scopedIds);
-  const [negocios, cuotas, pagos, items] = await Promise.all([
+  const [negocios, cuotas, pagos, items, held] = await Promise.all([
     database.get<Negocio>('negocios').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     database.get<NegocioPago>('negocio_pagos').query().fetch(),
     database.get<NegocioItem>('negocio_items').query().fetch(),
+    heldOutbox(database),
   ]);
-  const withPendingChanges = new Set<string>();
-  for (const row of cuotas) if (row.rowSyncStatus === 'pending') withPendingChanges.add(row.negocioId);
-  // Un pago rechazado es la única constancia de un recibo ya entregado: el
-  // negocio no se borra del teléfono mientras siga ahí sin que nadie lo revise.
-  for (const row of pagos) {
-    if (row.rowSyncStatus === 'pending' || row.rowSyncStatus === REJECTED_ROW_SYNC_STATUS) {
-      withPendingChanges.add(row.negocioId);
-    }
-  }
+  const withPendingChanges = negociosWithLocalWork(cuotas, pagos, held);
 
   const toRemove = new Set(
     negocios
@@ -405,6 +398,98 @@ export async function pruneOutOfScopeNegocios(database: Database, scopedIds: str
     await database.batch(...operations);
   });
   return toRemove.size;
+}
+
+/**
+ * Negocios con trabajo local sin cerrar: una cuota o un pago pendiente, un
+ * pago rechazado (única constancia de un recibo ya entregado) o un comando de
+ * la cola que lo nombra. No se borran del teléfono.
+ */
+function negociosWithLocalWork(
+  cuotas: NegocioCuota[],
+  pagos: NegocioPago[],
+  held: SyncOutboxItem[]
+): Set<string> {
+  const result = new Set<string>();
+  for (const row of cuotas) if (row.rowSyncStatus === 'pending') result.add(row.negocioId);
+  for (const row of pagos) {
+    if (row.rowSyncStatus === 'pending' || row.rowSyncStatus === REJECTED_ROW_SYNC_STATUS) {
+      result.add(row.negocioId);
+    }
+  }
+  for (const command of held) {
+    const payload = payloadRecord(command);
+    addId(result, payload.negocioId);
+  }
+  return result;
+}
+
+/**
+ * Descarga manual v2: si el servidor mandó los negocios COMPLETOS
+ * (`full_domains_sent` incluye 'negocios') y el paquete no vino recortado, se
+ * borra lo `synced` que no llegó: negocios, cuotas, pagos e ítems. Nunca lo
+ * pendiente o rechazado, ni un negocio con trabajo local sin cerrar.
+ *
+ * Devuelve false si el paquete no permite purgar (entonces sigue valiendo la
+ * poda por `pull_mobile_scope`).
+ */
+export async function purgeUnsentNegocios(database: Database, payload: PullPayload): Promise<boolean> {
+  if (payload.truncated) return false;
+  if (!fullDomainsSentNames(payload).includes('negocios')) return false;
+  await pruneOutOfScopeNegocios(
+    database,
+    payload.negocios.upserts.map((row) => row.id)
+  );
+
+  const [negocios, cuotas, pagos, items, held] = await Promise.all([
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    database.get<NegocioPago>('negocio_pagos').query().fetch(),
+    database.get<NegocioItem>('negocio_items').query().fetch(),
+    heldOutbox(database),
+  ]);
+  const keep = negociosWithLocalWork(cuotas, pagos, held);
+  for (const row of negocios) if (row.rowSyncStatus !== 'synced') keep.add(row.id);
+  const received = {
+    cuotas: new Set(payload.negocio_cuotas.upserts.map((row) => row.id)),
+    pagos: new Set(payload.negocio_pagos.upserts.map((row) => row.id)),
+    items: payload.negocio_items ? new Set(payload.negocio_items.upserts.map((row) => row.id)) : null,
+  };
+  const stale = (row: { id: string; negocioId: string; rowSyncStatus: string }, got: Set<string>) =>
+    row.rowSyncStatus === 'synced' && !got.has(row.id) && !keep.has(row.negocioId);
+  const operations: Model[] = [];
+  for (const row of cuotas) if (stale(row, received.cuotas)) operations.push(row.prepareDestroyPermanently());
+  for (const row of pagos) if (stale(row, received.pagos)) operations.push(row.prepareDestroyPermanently());
+  if (received.items) {
+    for (const row of items) if (stale(row, received.items)) operations.push(row.prepareDestroyPermanently());
+  }
+  if (operations.length) {
+    await database.write(async () => {
+      await database.batch(...operations);
+    });
+  }
+  return true;
+}
+
+/**
+ * Productos en «ninguno» (v2): se borra el catálogo del teléfono (productos y
+ * existencias) salvo los productos de negocios que aún no confirma el
+ * servidor. Las bodegas se quedan: son pocas y nombran los ítems de negocios.
+ */
+export async function wipeLocalCatalog(database: Database): Promise<number> {
+  const keep = await protectedSelectiveIds(database);
+  const [products, stock] = await Promise.all([
+    database.get<CatalogProduct>('catalog_products').query().fetch(),
+    database.get<CatalogWarehouseStock>('catalog_warehouse_stock').query().fetch(),
+  ]);
+  const operations: Model[] = [];
+  for (const row of products) if (!keep.products.has(row.id)) operations.push(row.prepareDestroyPermanently());
+  for (const row of stock) if (!keep.products.has(row.productId)) operations.push(row.prepareDestroyPermanently());
+  if (!operations.length) return 0;
+  await database.write(async () => {
+    await database.batch(...operations);
+  });
+  return operations.length;
 }
 
 /**
@@ -537,14 +622,18 @@ function addId(target: Set<string>, value: unknown) {
  * clientes de negocios locales o de comandos sin enviar, y productos de los
  * negocios que aún no confirma el servidor.
  */
+function heldOutbox(database: Database) {
+  return database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('status', Q.oneOf(OUTBOX_STATUSES_THAT_HOLD_DATA)))
+    .fetch();
+}
+
 async function protectedSelectiveIds(database: Database) {
   const [negocios, items, outbox] = await Promise.all([
     database.get<Negocio>('negocios').query().fetch(),
     database.get<NegocioItem>('negocio_items').query().fetch(),
-    database
-      .get<SyncOutboxItem>('sync_outbox')
-      .query(Q.where('status', Q.oneOf(OUTBOX_STATUSES_THAT_HOLD_DATA)))
-      .fetch(),
+    heldOutbox(database),
   ]);
   const customers = new Set<string>();
   const products = new Set<string>();

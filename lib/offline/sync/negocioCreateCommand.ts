@@ -318,7 +318,33 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
     throw error;
   }
   const negocioId = String(data || payload.negocioId);
-  return { outcome: 'done' as const, result: { negocioId } };
+  // Desde la descarga selectiva v2 nada baja solo: sin esto el negocio se
+  // quedaría sin número en el teléfono hasta la próxima «Descargar». Es un
+  // extra: si falla, el negocio igual queda confirmado.
+  const confirmed = await fetchConfirmedNegocio(negocioId);
+  return { outcome: 'done' as const, result: { negocioId, ...confirmed } };
+}
+
+/** Número y estado que el servidor le asignó al negocio recién creado. */
+async function fetchConfirmedNegocio(
+  negocioId: string
+): Promise<{ numero?: number; status?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('negocios')
+      .select('numero, status')
+      .eq('id', negocioId)
+      .maybeSingle();
+    if (error || !data) return {};
+    const row = data as { numero?: unknown; status?: unknown };
+    const numero = Number(row.numero);
+    return {
+      ...(Number.isFinite(numero) && numero > 0 ? { numero } : {}),
+      ...(typeof row.status === 'string' && row.status ? { status: row.status } : {}),
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -328,11 +354,14 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
 export async function prepareConfirmNegocio(
   database: Database,
   payload: CreateNegocioPayload,
-  changes: PreparedChanges
+  changes: PreparedChanges,
+  confirmed: { numero?: number; status?: string } = {}
 ) {
   const negocio = await findNegocio(database, payload.negocioId);
   if (!negocio || negocio.rowSyncStatus === 'synced') return;
   changes.update(negocio, (row) => {
+    if (confirmed.numero) row.numero = confirmed.numero;
+    if (confirmed.status) row.status = confirmed.status;
     row.rowSyncStatus = 'synced';
     row.rejectedReason = null;
     row.rejectedAt = null;

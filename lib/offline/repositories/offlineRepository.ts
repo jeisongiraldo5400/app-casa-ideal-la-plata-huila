@@ -1339,7 +1339,8 @@ export async function retrySyncQueueItem(id: string) {
   if (!item) return;
   await getDatabase().write(async () => resetOutboxItem(item));
   void refreshPendingCount();
-  void runSync('manual');
+  // Reintentar sólo sube la cola: bajar datos es cosa de «Descargar».
+  void runSync('retry');
 }
 
 /** Descarta un comando y revierte su efecto local. */
