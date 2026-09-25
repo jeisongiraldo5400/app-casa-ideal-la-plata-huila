@@ -1,9 +1,7 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import { NegocioDeliveryModeSection } from '../NegocioDeliveryModeSection';
-import {
-  filterPendingRemissions,
-  type PendingRemissionOption,
-} from '../../infrastructure/services/negociosDeliveryOrdersService';
+import { filterPendingRemissions } from '../../domain/pendingRemissionSearch';
+import type { PendingRemissionOption } from '../../infrastructure/services/negociosDeliveryOrdersService';
 
 // El Icon real carga la fuente de forma asíncrona y hace setState fuera de act(...).
 jest.mock('@expo/vector-icons', () => {

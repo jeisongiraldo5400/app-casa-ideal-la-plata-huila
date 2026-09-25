@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SearchField } from '@/components/ui/SearchField';
+import { filterPendingRemissions } from '@/components/negocios/domain/pendingRemissionSearch';
 import {
-  filterPendingRemissions,
   formatPendingRemissionLabel,
   type PendingRemissionOption,
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';

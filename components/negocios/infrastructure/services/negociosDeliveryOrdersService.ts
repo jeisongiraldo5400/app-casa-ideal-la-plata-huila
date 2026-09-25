@@ -1,4 +1,3 @@
-import { normalizeText } from '@/lib/search/normalizeText';
 import { sanitizeSearchTerm } from '@/components/exits/infrastructure/services/exitsService';
 import { fetchInChunks, IN_FILTER_PAGE_SIZE } from '@/lib/inChunks';
 import { bogotaDateValue } from '@/lib/localDate';
@@ -448,27 +447,6 @@ export function formatPendingRemissionLabel(remission: PendingRemissionOption): 
   const parts = [remission.order_number, remission.assigned_user_name || 'sin asignar'];
   if (remission.zone_name) parts.push(remission.zone_name);
   return parts.join(' · ');
-}
-
-/**
- * Buscador de «Enviar en remisión»: por número, responsable, zona o notas,
- * sin tildes ni mayúsculas. Término vacío devuelve la lista tal cual.
- */
-export function filterPendingRemissions(
-  remissions: readonly PendingRemissionOption[],
-  term: string
-): PendingRemissionOption[] {
-  const needle = normalizeText(term);
-  if (!needle) return [...remissions];
-  const words = needle.split(/\s+/).filter(Boolean);
-  return remissions.filter((remission) => {
-    const haystack = normalizeText(
-      [remission.order_number, remission.assigned_user_name, remission.zone_name, remission.notes]
-        .filter(Boolean)
-        .join(' ')
-    );
-    return words.every((word) => haystack.includes(word));
-  });
 }
 
 export function mapPendingRemissionRows(rows: unknown): PendingRemissionOption[] {
