@@ -21,7 +21,7 @@ export function MisCobrosEntryButton() {
       accessibilityRole="button"
       accessibilityLabel="Mis cobros"
       accessibilityHint="Pagos que registraste, con filtros por fecha, método y cierre"
-      onPress={() => router.push('/mis-cobros')}
+      onPress={() => router.push('/mis-cobros' as never)}
       style={({ pressed }) => [styles.button, { backgroundColor: colors.background.paper, borderColor: colors.divider }, pressed && styles.pressed]}>
       <View style={[styles.icon, { backgroundColor: `${colors.primary.main}16` }]}>
         <MaterialIcons name="receipt-long" size={IconSize.sm} color={colors.primary.main} />
