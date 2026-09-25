@@ -302,6 +302,26 @@ describe('ExitScanningWorkspace', () => {
     expect(screen.queryByText('Productos de la orden')).toBeNull();
   });
 
+  it('«Ya salieron» muestra lo que la orden ya entregó en salidas anteriores', async () => {
+    const screen = await renderSettled();
+
+    fireEvent.press(screen.getByText('Ya salieron'));
+
+    expect(screen.getByText(/Lo que ya salió de la orden en salidas anteriores · 1 unidades/)).toBeTruthy();
+    expect(screen.getByText('Silla comedor')).toBeTruthy();
+    expect(screen.getByText(/Salieron 1 de 4/)).toBeTruthy();
+    expect(screen.getByText('Ver productos de la orden (con seriales)')).toBeTruthy();
+  });
+
+  it('«Ya salieron» sin salidas previas explica que es la primera', async () => {
+    useExitsStore.setState({ registeredExitsCache: { [order.id]: {} } });
+    const screen = await renderSettled();
+
+    fireEvent.press(screen.getByText('Ya salieron'));
+
+    expect(screen.getByText('Todavía no ha salido nada de esta orden')).toBeTruthy();
+  });
+
   describe('remisión mixta (propios + OE de cliente)', () => {
     beforeEach(() => {
       useExitsStore.setState({

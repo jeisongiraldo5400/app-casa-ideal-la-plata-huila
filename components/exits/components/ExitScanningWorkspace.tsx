@@ -21,6 +21,7 @@ import {
   SuccessScreen,
   UndoToast,
 } from '@/components/inventory-flow';
+import { DeliveryOrderProductsModal } from '@/components/purchase-orders';
 import { BarcodeScanner } from '@/components/scanning';
 import { useTheme } from '@/components/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -35,11 +36,12 @@ import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View }
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Stage = 'idle' | 'exit_review' | 'success';
-type DashboardTab = 'session' | 'pending';
+type DashboardTab = 'session' | 'pending' | 'delivered';
 type DashboardRow =
   | { kind: 'header'; key: string; title: string }
   | { kind: 'session'; key: string; item: ExitItem; index: number; groupLabel: string | null }
-  | { kind: 'pending'; key: string; progress: SelectedDeliveryOrderProgressItem; groupLabel: string | null };
+  | { kind: 'pending'; key: string; progress: SelectedDeliveryOrderProgressItem; groupLabel: string | null }
+  | { kind: 'delivered'; key: string; progress: SelectedDeliveryOrderProgressItem };
 
 const OWN_GROUP = 'own';
 
@@ -65,6 +67,7 @@ export function ExitScanningWorkspace() {
   const [undo, setUndo] = useState<{ item: ExitItem; index: number } | null>(null);
   const [serialScannerOpen, setSerialScannerOpen] = useState(false);
   const [serialError, setSerialError] = useState<string | null>(null);
+  const [orderProductsOpen, setOrderProductsOpen] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanGuardRef = useRef(false);
   const finalizeGuardRef = useRef(false);
@@ -126,7 +129,24 @@ export function ExitScanningWorkspace() {
     });
     return rows;
   }, [pendingItems, visiblePendingCount, hasSections, groupLabels]);
-  const rows = activeTab === 'session' ? sessionRows : pendingRows;
+  // «Ya salieron»: lo que la orden ya entregó en salidas anteriores (sale del
+  // progreso que ya está cargado; no hace falta otra consulta).
+  const deliveredItems = useMemo(() => (progress?.items || []).filter((item) => item.registered > 0), [progress?.items]);
+  const deliveredRows = useMemo<DashboardRow[]>(() => {
+    const rows: DashboardRow[] = [];
+    let lastGroup: string | null = null;
+    deliveredItems.forEach((item) => {
+      const groupKey = item.item.group_key || OWN_GROUP;
+      if (hasSections && groupKey !== lastGroup) {
+        rows.push({ kind: 'header', key: `header-delivered-${groupKey}`, title: groupLabels.get(groupKey) || groupKey });
+        lastGroup = groupKey;
+      }
+      rows.push({ kind: 'delivered', key: `delivered-${item.item.id}`, progress: item });
+    });
+    return rows;
+  }, [deliveredItems, hasSections, groupLabels]);
+  const deliveredUnits = deliveredItems.reduce((sum, item) => sum + item.registered, 0);
+  const rows = activeTab === 'session' ? sessionRows : activeTab === 'pending' ? pendingRows : deliveredRows;
 
   const openScanner = () => {
     store.clearError();
@@ -359,6 +379,20 @@ export function ExitScanningWorkspace() {
               onIncrease={() => store.updateProductQuantity(item.index, item.item.quantity + 1)}
               onRemove={() => removeSessionItem(item)}
             />
+          ) : item.kind === 'delivered' ? (
+            <PendingItemCard
+              name={item.progress.item.product_name}
+              meta={`${item.progress.item.warehouse_name} · Salieron ${item.progress.registered} de ${item.progress.orderQuantity}`}
+              note={item.progress.item.notes}
+              tone={item.progress.registered >= item.progress.orderQuantity ? 'complete' : 'partial'}
+              expanded={expandedItemId === `delivered-${item.progress.item.id}`}
+              metrics={[
+                { label: 'Orden', value: item.progress.orderQuantity },
+                { label: 'Ya salieron', value: item.progress.registered, primary: true },
+                { label: 'Pendiente', value: Math.max(item.progress.orderQuantity - item.progress.registered, 0) },
+              ]}
+              onPress={() => setExpandedItemId((current) => current === `delivered-${item.progress.item.id}` ? null : `delivered-${item.progress.item.id}`)}
+            />
           ) : (
             <PendingItemCard
               name={item.progress.item.product_name}
@@ -402,16 +436,31 @@ export function ExitScanningWorkspace() {
                 items={[
                   { value: 'session', label: 'Esta salida', icon: 'shopping-cart', badge: store.exitItems.length },
                   { value: 'pending', label: 'Pendientes', icon: 'inventory-2', badge: pendingItems.length },
+                  { value: 'delivered', label: 'Ya salieron', icon: 'local-shipping', badge: deliveredItems.length },
                 ]}
               />
-              <Text style={[styles.sectionHint, { color: colors.text.secondary }]}>{activeTab === 'session' ? 'Productos preparados para registrar' : 'Lo que falta por entregar de la orden'}</Text>
+              <Text style={[styles.sectionHint, { color: colors.text.secondary }]}>
+                {activeTab === 'session'
+                  ? 'Productos preparados para registrar'
+                  : activeTab === 'pending'
+                  ? 'Lo que falta por entregar de la orden'
+                  : `Lo que ya salió de la orden en salidas anteriores · ${deliveredUnits} unidades`}
+              </Text>
+              {activeTab === 'delivered' && order ? (
+                <Button
+                  title="Ver productos de la orden (con seriales)"
+                  variant="outline"
+                  onPress={() => setOrderProductsOpen(true)}
+                  style={styles.loadMore}
+                />
+              ) : null}
             </View>
           }
           ListEmptyComponent={
             <View style={[styles.emptyCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-              <MaterialIcons name={activeTab === 'session' ? 'qr-code-scanner' : 'inventory-2'} size={34} color={colors.primary.main} />
-              <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>{activeTab === 'session' ? 'Aún no has agregado productos' : 'No hay productos pendientes'}</Text>
-              <Text style={[styles.emptyText, { color: colors.text.secondary }]}>{activeTab === 'session' ? 'Escanea el primer producto o consulta lo que falta en la orden.' : progress ? 'Todos los productos de la orden están completos.' : 'No se encontró información de progreso.'}</Text>
+              <MaterialIcons name={activeTab === 'session' ? 'qr-code-scanner' : activeTab === 'pending' ? 'inventory-2' : 'local-shipping'} size={34} color={colors.primary.main} />
+              <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>{activeTab === 'session' ? 'Aún no has agregado productos' : activeTab === 'pending' ? 'No hay productos pendientes' : 'Todavía no ha salido nada de esta orden'}</Text>
+              <Text style={[styles.emptyText, { color: colors.text.secondary }]}>{activeTab === 'session' ? 'Escanea el primer producto o consulta lo que falta en la orden.' : activeTab === 'pending' ? (progress ? 'Todos los productos de la orden están completos.' : 'No se encontró información de progreso.') : 'Esta es la primera salida de la orden.'}</Text>
               {activeTab === 'session' && pendingItems.length > 0 ? (
                 <Button title={`Ver productos pendientes (${pendingItems.length})`} variant="outline" onPress={() => setActiveTab('pending')} style={styles.emptyAction} />
               ) : null}
@@ -441,6 +490,15 @@ export function ExitScanningWorkspace() {
             ) : null}
           </View>
         </View>
+
+        {order ? (
+          <DeliveryOrderProductsModal
+            visible={orderProductsOpen}
+            onClose={() => setOrderProductsOpen(false)}
+            orderId={order.id}
+            orderNumber={orderNumber}
+          />
+        ) : null}
 
         <UndoToast
           visible={Boolean(undo)}
