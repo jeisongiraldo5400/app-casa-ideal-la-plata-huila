@@ -1,6 +1,6 @@
 import { fetchCustomersPage, type CustomerDirectoryRow } from '@/components/customers/infrastructure/services/customersDirectoryService';
 import { useTheme } from '@/components/theme';
-import { Button, Card, OptionPickerField, SearchField, SectionHeader, SegmentedControl, StatusChip } from '@/components/ui';
+import { Card, OptionPickerField, SearchField, SectionHeader, SegmentedControl, StatusChip } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { errorMessage } from '@/lib/errorMessage';
 import { EMPTY_LOCATION_MASTERS, fetchLocationMasters, type LocationMasters } from '@/lib/locations/locationsService';
