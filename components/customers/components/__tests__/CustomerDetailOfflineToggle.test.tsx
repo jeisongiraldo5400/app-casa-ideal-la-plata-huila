@@ -3,6 +3,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { runSync } from '@/lib/offline/sync/syncEngine';
 import { EMPTY_CARTERA } from '@/lib/customers/customerSummary';
 import { loadSyncPrefs, resetSyncPrefs } from '@/components/offline/infrastructure/syncPrefsService';
 import { CustomerDetailScreen } from '../CustomerDetailScreen';
@@ -12,6 +13,7 @@ jest.mock('@/lib/offline/sync/syncEngine', () => ({ runSync: jest.fn(async () =>
 jest.mock('@/lib/offline/sync/syncPrefs', () => ({
   getLocalSyncConfig: jest.fn(async () => null),
   isSelectiveSyncSupported: jest.fn(async () => true),
+  lastManualDownloadAt: jest.fn(async () => null),
 }));
 jest.mock('@/lib/offline/database', () => ({ isDatabaseOpen: jest.fn(() => true) }));
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
@@ -89,7 +91,7 @@ beforeEach(() => {
 });
 
 describe('Ficha de cliente · Llevar en el teléfono', () => {
-  it('en «Solo lo que elijo» ofrece llevarlo y lo marca en el servidor', async () => {
+  it('en «Elegir» ofrece llevarlo, lo marca en el servidor y queda pendiente de descargar', async () => {
     mockConfig('seleccion', []);
     const screen = render(<CustomerDetailScreen customerId="c1" />);
     await act(async () => {
@@ -105,11 +107,22 @@ describe('Ficha de cliente · Llevar en el teléfono', () => {
         p_selected: true,
       })
     );
-    expect(await screen.findByText('En el teléfono')).toBeTruthy();
+    // Marcar no descarga (contrato v2): hasta pulsar «Descargar» queda pendiente.
+    expect(await screen.findByText('Pendiente de descargar')).toBeTruthy();
     expect(screen.getByText('Quitar del teléfono')).toBeTruthy();
+    expect(runSync).not.toHaveBeenCalled();
   });
 
-  it('en modo «Todo» no muestra el botón ni el chip', async () => {
+  it('ya descargado muestra «En el teléfono»', async () => {
+    mockConfig('seleccion', ['c1']);
+    const screen = render(<CustomerDetailScreen customerId="c1" />);
+    await act(async () => {
+      await loadSyncPrefs();
+    });
+    expect(await screen.findByText('En el teléfono')).toBeTruthy();
+  });
+
+  it('en modo «Todos» no muestra el botón ni el chip', async () => {
     mockConfig('todo', ['c1']);
     const screen = render(<CustomerDetailScreen customerId="c1" />);
     await act(async () => {

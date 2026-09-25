@@ -1,24 +1,15 @@
 /**
- * Selección masiva de «Qué llevar en el teléfono»: resuelve en el servidor los
- * ids de un criterio (mis clientes, por vendedor, por municipio o vereda; por
- * categoría o bodega) para marcarlos de una vez con `setSyncSelection`.
+ * Ayudas de «Preparar el teléfono» que consultan el servidor (en modo «Elegir»
+ * el teléfono no tiene precisamente lo que se quiere elegir):
  *
- * Se consulta el servidor y no la base local: en modo «Solo lo que elijo» el
- * teléfono no tiene precisamente lo que se quiere marcar.
+ * - `fetchCustomerCandidates`: ids de los clientes de un vendedor, para el
+ *   atajo «Mis clientes». Decisión v2: el atajo MARCA esos ids uno a uno (con
+ *   el mismo RPC y el mismo tope de 1000), en vez de un flag de preferencias;
+ *   así funciona sin otra migración y se ve igual en la lista de elegidos.
+ * - `estimateSelection`: total estimado de clientes y negocios que bajarán.
  */
 import { supabase } from '@/lib/supabase';
 import { SELECTION_LIMITS } from './syncPrefsService';
-
-export type CustomerCriteria = {
-  sellerId?: string | null;
-  municipioId?: string | null;
-  veredaId?: string | null;
-};
-
-export type ProductCriteria = {
-  categoryId?: string | null;
-  warehouseId?: string | null;
-};
 
 export type BulkCandidates = {
   ids: string[];
@@ -26,69 +17,72 @@ export type BulkCandidates = {
   total: number;
 };
 
-export type NamedOption = { id: string; name: string };
-
-export async function fetchCustomerCandidates(criteria: CustomerCriteria): Promise<BulkCandidates> {
-  if (!criteria.sellerId && !criteria.municipioId && !criteria.veredaId) {
-    return { ids: [], total: 0 };
-  }
-  let query = supabase
+export async function fetchCustomerCandidates(criteria: { sellerId: string | null }): Promise<BulkCandidates> {
+  if (!criteria.sellerId) return { ids: [], total: 0 };
+  const { data, error, count } = await supabase
     .from('customers')
     .select('id', { count: 'exact' })
-    .is('deleted_at', null);
-  if (criteria.sellerId) query = query.eq('seller_id', criteria.sellerId);
-  if (criteria.veredaId) query = query.eq('vereda_id', criteria.veredaId);
-  else if (criteria.municipioId) query = query.eq('municipio_id', criteria.municipioId);
-  const { data, error, count } = await query.order('name').limit(SELECTION_LIMITS.clientes);
-  if (error) throw new Error(error.message || 'No se pudieron contar los clientes');
+    .is('deleted_at', null)
+    .eq('seller_id', criteria.sellerId)
+    .order('name')
+    .limit(SELECTION_LIMITS.clientes);
+  if (error) throw new Error(error.message || 'No se pudieron contar tus clientes');
   const ids = (data || []).map((row) => row.id);
   return { ids, total: count ?? ids.length };
 }
 
-export async function fetchProductCandidates(criteria: ProductCriteria): Promise<BulkCandidates> {
-  if (criteria.warehouseId) {
-    // Productos con existencias en la bodega: los que sirven para vender desde allí.
-    const { data, error } = await supabase
-      .from('warehouse_stock')
-      .select('product_id')
-      .eq('warehouse_id', criteria.warehouseId)
-      .gt('quantity', 0)
-      .limit(5000);
-    if (error) throw new Error(error.message || 'No se pudieron contar los productos');
-    const all = Array.from(new Set((data || []).map((row) => row.product_id)));
-    return { ids: all.slice(0, SELECTION_LIMITS.productos), total: all.length };
-  }
-  if (criteria.categoryId) {
-    const { data, error, count } = await supabase
-      .from('products')
-      .select('id', { count: 'exact' })
-      .eq('category_id', criteria.categoryId)
-      .is('deleted_at', null)
-      .order('name')
-      .limit(SELECTION_LIMITS.productos);
-    if (error) throw new Error(error.message || 'No se pudieron contar los productos');
-    const ids = (data || []).map((row) => row.id);
-    return { ids, total: count ?? ids.length };
-  }
-  return { ids: [], total: 0 };
-}
+export type SelectionEstimate = {
+  clientes: number;
+  /** `null` si no se pudo estimar. */
+  negocios: number | null;
+  /** true si es una suma aproximada hecha en el teléfono (puede contar dos veces). */
+  approximate: boolean;
+};
 
-export async function fetchCategoryOptions(): Promise<NamedOption[]> {
-  const { data, error } = await supabase
-    .from('category')
-    .select('id, name')
-    .is('deleted_at', null)
-    .order('name');
-  if (error) throw new Error(error.message || 'No se pudieron cargar las categorías');
-  return (data || []).map((row) => ({ id: row.id, name: row.name || 'Sin nombre' }));
-}
+type UntypedRpc = (
+  fn: string,
+  args?: Record<string, unknown>
+) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
 
-export async function fetchWarehouseOptions(): Promise<NamedOption[]> {
-  const { data, error } = await supabase
-    .from('warehouses')
-    .select('id, name')
-    .eq('is_active', true)
-    .order('name');
-  if (error) throw new Error(error.message || 'No se pudieron cargar las bodegas');
-  return (data || []).map((row) => ({ id: row.id, name: row.name || 'Sin nombre' }));
+/**
+ * Total estimado. Si el servidor tiene `estimate_mobile_sync_scope` (paquete A)
+ * se usa; si no, se suman en el teléfono los marcados uno a uno y los clientes
+ * de los municipios elegidos, y los negocios de esos municipios.
+ */
+export async function estimateSelection(input: {
+  municipioIds: string[];
+  markedCount: number;
+}): Promise<SelectionEstimate> {
+  try {
+    const { data, error } = await (supabase.rpc as unknown as UntypedRpc)('estimate_mobile_sync_scope');
+    if (!error && data && typeof data === 'object') {
+      const record = data as Record<string, unknown>;
+      const clientes = Number(record.clientes);
+      const negocios = Number(record.negocios);
+      if (Number.isFinite(clientes)) {
+        return { clientes, negocios: Number.isFinite(negocios) ? negocios : null, approximate: false };
+      }
+    }
+  } catch {
+    // Sin la función en el servidor: estimación local.
+  }
+
+  let fromMunicipios = 0;
+  let negocios: number | null = null;
+  if (input.municipioIds.length) {
+    const [customers, deals] = await Promise.all([
+      supabase
+        .from('customers')
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null)
+        .in('municipio_id', input.municipioIds),
+      supabase
+        .from('negocios')
+        .select('id', { count: 'exact', head: true })
+        .in('municipio_id', input.municipioIds),
+    ]);
+    fromMunicipios = customers.count ?? 0;
+    negocios = deals.error ? null : (deals.count ?? 0);
+  }
+  return { clientes: input.markedCount + fromMunicipios, negocios, approximate: true };
 }

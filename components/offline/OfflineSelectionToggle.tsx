@@ -18,8 +18,9 @@ type Props = {
  * «Llevar en el teléfono / Quitar del teléfono» + chip «En el teléfono».
  *
  * Solo aparece si el servidor admite la descarga selectiva y el dominio está en
- * «Solo lo que elijo» (las órdenes siempre lo están): en modo «Todo» ya va todo
- * y el botón solo confundiría.
+ * «Elegir» (las órdenes siempre lo están): en modo «Todos» ya va todo y el
+ * botón solo confundiría. Marcar no descarga: hasta pulsar «Descargar» el chip
+ * dice «Pendiente de descargar».
  */
 export function OfflineSelectionToggle({ domain, id, compact = false }: Props) {
   const selection = useOfflineSelection(domain);
@@ -30,7 +31,13 @@ export function OfflineSelectionToggle({ domain, id, compact = false }: Props) {
 
   return (
     <View style={[styles.row, compact && styles.compact]} testID={`offline-toggle-${id}`}>
-      {selected ? <StatusChip label="En el teléfono" tone="success" icon="offline-pin" /> : null}
+      {selected ? (
+        selection.pendingDownload ? (
+          <StatusChip label="Pendiente de descargar" tone="warning" icon="schedule" />
+        ) : (
+          <StatusChip label="En el teléfono" tone="success" icon="offline-pin" />
+        )
+      ) : null}
       <Button
         title={selected ? 'Quitar del teléfono' : 'Llevar en el teléfono'}
         icon={selected ? 'phonelink-erase' : 'download-for-offline'}

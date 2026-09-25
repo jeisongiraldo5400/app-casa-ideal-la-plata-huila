@@ -14,8 +14,8 @@ import {
 type DownloadDataButtonProps = {
   variant?: 'row' | 'cta';
   /**
-   * Si se da, la fila abre «Qué llevar en el teléfono» en vez de descargar
-   * (allí está «Descargar ahora»). Solo cuando el servidor admite la descarga
+   * Si se da, la fila abre «Preparar el teléfono» en vez de descargar
+   * (allí está «Descargar»). Solo cuando el servidor admite la descarga
    * selectiva; si no, la fila descarga como siempre.
    */
   onOpen?: () => void;

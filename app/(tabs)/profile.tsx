@@ -30,11 +30,11 @@ function ProfileScreenInner() {
   const { isDark, setThemeMode } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
-  const { roles, onlyFindsBySearch } = useUserRoles();
-  // «Qué llevar en el teléfono» solo si el servidor admite la descarga
-  // selectiva; el recaudador puro siempre lleva todo lo de cobro.
+  const { roles } = useUserRoles();
+  // «Preparar el teléfono» solo si el servidor admite la descarga selectiva;
+  // si no, la fila descarga todo como siempre.
   const syncPrefs = useSyncPrefs();
-  const canChooseOfflineData = syncPrefs.supported && !onlyFindsBySearch();
+  const canChooseOfflineData = syncPrefs.supported;
   const pendingCount = useSyncStore((state) => state.pendingCount);
   const failedCount = useSyncStore((state) => state.failedCount);
   const setQueueVisible = useSyncStore((state) => state.setQueueVisible);

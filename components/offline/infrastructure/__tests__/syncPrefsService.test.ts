@@ -2,11 +2,13 @@ import { act, renderHook } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { runSync } from '@/lib/offline/sync/syncEngine';
-import { getLocalSyncConfig, isSelectiveSyncSupported } from '@/lib/offline/sync/syncPrefs';
+import { getLocalSyncConfig, lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
   getSyncConfig,
+  isDownloadPending,
   loadSyncPrefs,
+  refreshDownloadState,
   parseSyncConfig,
   resetSyncPrefs,
   setSyncMode,
@@ -19,13 +21,14 @@ jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn(), from: jest.fn()
 jest.mock('@/lib/offline/sync/syncEngine', () => ({ runSync: jest.fn(async () => undefined) }));
 jest.mock('@/lib/offline/sync/syncPrefs', () => ({
   getLocalSyncConfig: jest.fn(async () => null),
-  isSelectiveSyncSupported: jest.fn(async () => true),
+  isSelectiveSyncSupported: jest.fn(async () => false),
+  lastManualDownloadAt: jest.fn(async () => null),
 }));
 jest.mock('@/lib/offline/database', () => ({ isDatabaseOpen: jest.fn(() => true) }));
 
 const rpc = supabase.rpc as unknown as jest.Mock;
 const mockedRunSync = runSync as jest.MockedFunction<typeof runSync>;
-const mockedSupported = isSelectiveSyncSupported as jest.MockedFunction<typeof isSelectiveSyncSupported>;
+const mockedManualAt = lastManualDownloadAt as jest.MockedFunction<typeof lastManualDownloadAt>;
 const mockedLocal = getLocalSyncConfig as jest.MockedFunction<typeof getLocalSyncConfig>;
 
 const CONFIG = {
@@ -38,7 +41,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   resetSyncPrefs();
   useSyncStore.setState({ online: true });
-  mockedSupported.mockResolvedValue(true);
+  mockedManualAt.mockResolvedValue(null);
   mockedLocal.mockResolvedValue(null);
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
 });
@@ -88,11 +91,12 @@ describe('loadSyncPrefs', () => {
     expect(useSyncPrefsStore.getState().status).toBe('unsupported');
   });
 
-  it('no llama al servidor si el motor marcó que no admite la descarga selectiva', async () => {
-    mockedSupported.mockResolvedValue(false);
+  it('con los RPC en el servidor la pantalla está disponible antes de la primera descarga', async () => {
+    // isSelectiveSyncSupported() es false hasta el primer pull con p_options;
+    // con la descarga solo manual no puede decidir si se muestra la pantalla.
+    rpc.mockResolvedValue({ data: CONFIG, error: null });
     await loadSyncPrefs();
-    expect(rpc).not.toHaveBeenCalled();
-    expect(useSyncPrefsStore.getState().status).toBe('unsupported');
+    expect(useSyncPrefsStore.getState().status).toBe('ready');
   });
 
   it('sin señal usa el modo que guardó el último pull', async () => {
@@ -110,12 +114,31 @@ describe('loadSyncPrefs', () => {
 });
 
 describe('setSyncMode / setSyncSelection', () => {
-  it('cambia el modo y pide una sincronización manual', async () => {
+  it('cambia el modo sin descargar: queda pendiente de descargar', async () => {
     rpc.mockResolvedValue({ data: { domain: 'clientes', revision: 7 }, error: null });
     await setSyncMode('clientes', 'seleccion');
     expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'clientes', p_mode: 'seleccion' });
     expect(useSyncPrefsStore.getState().config.clientes).toMatchObject({ mode: 'seleccion', revision: 7 });
-    expect(mockedRunSync).toHaveBeenCalledWith('manual');
+    expect(mockedRunSync).not.toHaveBeenCalled();
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
+  });
+
+  it('productos acepta «ninguno»', async () => {
+    rpc.mockResolvedValue({ data: { domain: 'productos', revision: 2 }, error: null });
+    await setSyncMode('productos', 'ninguno');
+    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'productos', p_mode: 'ninguno' });
+    expect(useSyncPrefsStore.getState().config.productos.mode).toBe('ninguno');
+  });
+
+  it('el pendiente se apaga tras una descarga manual posterior al cambio', async () => {
+    rpc.mockResolvedValue({ data: { domain: 'municipios', count: 1, revision: 1 }, error: null });
+    await setSyncSelection('municipios', ['m1'], true);
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
+
+    mockedManualAt.mockResolvedValue(Date.now() + 1000);
+    await refreshDownloadState();
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(false);
+    expect(useSyncPrefsStore.getState().config.municipios.ids).toEqual(['m1']);
   });
 
   it('parte los lotes en 200 ids y guarda el conteo del servidor', async () => {
@@ -136,13 +159,13 @@ describe('setSyncMode / setSyncSelection', () => {
     expect(rpc.mock.calls[2][1].p_ids).toHaveLength(50);
     expect(result.count).toBe(450);
     expect(useSyncPrefsStore.getState().config.clientes.ids).toHaveLength(450);
-    expect(mockedRunSync).toHaveBeenCalledTimes(1);
+    expect(mockedRunSync).not.toHaveBeenCalled();
   });
 
-  it('propaga el mensaje del tope sin sincronizar si nada se aplicó', async () => {
+  it('propaga el mensaje del tope y no marca pendiente si nada se aplicó', async () => {
     rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'Puedes llevar hasta 100 órdenes' } });
     await expect(setSyncSelection('ordenes', ['o2'], true)).rejects.toThrow('Puedes llevar hasta 100 órdenes');
-    expect(mockedRunSync).not.toHaveBeenCalled();
+    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(false);
   });
 });
 
@@ -179,6 +202,8 @@ describe('useOfflineSelection', () => {
     });
     expect(result.current.isSelected('c3')).toBe(true);
     expect(result.current.count).toBe(3);
+    expect(result.current.pendingDownload).toBe(true);
+    expect(mockedRunSync).not.toHaveBeenCalled();
 
     await act(async () => {
       await result.current.toggle('c1');
@@ -208,8 +233,8 @@ describe('useOfflineSelection', () => {
     expect(rpc).not.toHaveBeenCalledWith('set_mobile_sync_selection', expect.anything());
   });
 
-  it('supported=false si el servidor no admite la descarga selectiva', async () => {
-    mockedSupported.mockResolvedValue(false);
+  it('supported=false si el servidor no tiene los RPC', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
     const { result } = renderHook(() => useOfflineSelection('ordenes'));
     await act(async () => {
       await loadSyncPrefs();

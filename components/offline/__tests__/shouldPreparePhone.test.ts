@@ -1,54 +1,38 @@
 import { PREPARE_PHONE_AFTER_MS, shouldPreparePhone } from '../SyncStatusBanner';
-import { defaultDomainConfig, type SyncConfig } from '../infrastructure/syncPrefsService';
 
 jest.mock('@/lib/offline/sync/syncEngine', () => ({ runSync: jest.fn() }));
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 const NOW = Date.parse('2026-09-25T12:00:00Z');
 
-function config(overrides: Partial<SyncConfig> = {}): SyncConfig {
-  return {
-    clientes: defaultDomainConfig('clientes'),
-    productos: defaultDomainConfig('productos'),
-    ordenes: defaultDomainConfig('ordenes'),
-    ...overrides,
-  };
-}
-
 describe('shouldPreparePhone', () => {
+  it('primer inicio de sesión: invita a preparar el teléfono (no descarga sola)', () => {
+    expect(shouldPreparePhone({ loggedIn: true, lastDownloadAt: null, pendingDownload: false, now: NOW })).toBe('first');
+  });
+
+  it('sin sesión no avisa', () => {
+    expect(shouldPreparePhone({ loggedIn: false, lastDownloadAt: null, pendingDownload: true, now: NOW })).toBeNull();
+  });
+
+  it('avisa si hay elecciones pendientes de descargar', () => {
+    expect(shouldPreparePhone({ loggedIn: true, lastDownloadAt: NOW - 1000, pendingDownload: true, now: NOW })).toBe(
+      'pending'
+    );
+  });
+
   it('avisa si la última descarga tiene más de 24 h', () => {
     expect(
       shouldPreparePhone({
-        lastSyncedAt: NOW - PREPARE_PHONE_AFTER_MS - 1,
-        prefsReady: false,
-        config: config(),
-        markable: [],
+        loggedIn: true,
+        lastDownloadAt: NOW - PREPARE_PHONE_AFTER_MS - 1,
+        pendingDownload: false,
         now: NOW,
       })
-    ).toBe(true);
+    ).toBe('stale');
   });
 
-  it('avisa si un dominio marcable está en selección sin nada llevado', () => {
-    const input = {
-      lastSyncedAt: NOW - 1000,
-      prefsReady: true,
-      config: config({ productos: { mode: 'seleccion', revision: 1, count: 0, ids: [] } }),
-      now: NOW,
-    };
-    expect(shouldPreparePhone({ ...input, markable: ['clientes', 'productos'] })).toBe(true);
-    // Un gestor de cobro no marca: no se le deja un aviso que no puede apagar.
-    expect(shouldPreparePhone({ ...input, markable: [] })).toBe(false);
-  });
-
-  it('no avisa con descarga reciente y todo en modo «Todo»', () => {
-    expect(
-      shouldPreparePhone({
-        lastSyncedAt: NOW - 1000,
-        prefsReady: true,
-        config: config(),
-        markable: ['clientes', 'productos'],
-        now: NOW,
-      })
-    ).toBe(false);
+  it('no avisa con descarga reciente y nada pendiente', () => {
+    expect(shouldPreparePhone({ loggedIn: true, lastDownloadAt: NOW - 1000, pendingDownload: false, now: NOW })).toBeNull();
   });
 });

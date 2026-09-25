@@ -7,9 +7,11 @@
  *   `sync_meta.sync_config_json` (o `null` si aún no hay).
  * - `isSelectiveSyncSupported()`: `false` si el motor detectó que el servidor
  *   no conoce `p_options` (`sync_meta.selective_supported = 'false'`).
+ * - `lastManualDownloadAt()`: hora de la última descarga manual (v2).
  */
 import { getDatabase, isDatabaseOpen } from '../database';
 import { getMeta } from './outbox';
+import { useSyncStore } from '../store/syncStore';
 
 export type LocalSyncMode = 'todo' | 'seleccion';
 
@@ -39,4 +41,24 @@ export async function isSelectiveSyncSupported(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export const LAST_MANUAL_DOWNLOAD_META_KEY = 'last_manual_download_at';
+
+/**
+ * STUB (v2): hora (ms) de la última descarga manual completa. BC la expone de
+ * verdad; aquí se lee de `sync_meta` y, si no está, se toma la última
+ * descarga conocida (con la descarga solo manual, son la misma).
+ */
+export async function lastManualDownloadAt(): Promise<number | null> {
+  if (isDatabaseOpen()) {
+    try {
+      const raw = await getMeta(getDatabase(), LAST_MANUAL_DOWNLOAD_META_KEY);
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed)) return parsed;
+    } catch {
+      // cae a la hora conocida
+    }
+  }
+  return useSyncStore.getState().lastSyncedAt;
 }

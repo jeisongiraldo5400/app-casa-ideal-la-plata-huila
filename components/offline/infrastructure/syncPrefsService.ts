@@ -1,20 +1,23 @@
 /**
- * Preferencias de la descarga selectiva («Qué llevar en el teléfono»).
+ * Preferencias de la descarga selectiva («Preparar el teléfono»).
  *
  * Única puerta de la app a los RPC de preferencias (migración
  * 20261130120000): `get_mobile_sync_config`, `set_mobile_sync_mode`,
  * `set_mobile_sync_selection` y `list_mobile_sync_selection`. Tras cada cambio
- * se pide una sincronización (`runSync('manual')`) para que el teléfono baje o
- * suelte lo marcado sin esperar a la próxima.
+ * NO se descarga nada (contrato v2): la elección queda «Pendiente de descargar»
+ * hasta que la persona pulse «Descargar» en «Preparar el teléfono».
  *
  * El estado vive en un store de zustand compartido: la ficha de un cliente, su
  * fila en la lista y la pantalla de ajustes ven la misma marca sin volver a
  * preguntar al servidor. `useOfflineSelection(domain)` es el hook que usan las
  * pantallas (clientes, productos y, en el paquete E, órdenes).
  *
- * Si el servidor no tiene los RPC (PGRST202) o el motor marcó que no entiende
- * `p_options`, `supported` queda en `false` y la UI se oculta sin romper nada.
+ * Si el servidor no tiene los RPC (PGRST202), `supported` queda en `false` y la
+ * UI se oculta sin romper nada. No se exige `isSelectiveSyncSupported()`: con
+ * la descarga solo manual, antes del primer «Descargar» aún no se sabe, y la
+ * pantalla es justo donde se prepara esa primera descarga.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { create } from 'zustand';
@@ -23,11 +26,15 @@ import { errorMessage } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { isDatabaseOpen } from '@/lib/offline/database';
-import { runSync } from '@/lib/offline/sync/syncEngine';
-import { getLocalSyncConfig, isSelectiveSyncSupported } from '@/lib/offline/sync/syncPrefs';
+import { getLocalSyncConfig, lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
 
-export type SyncPrefDomain = 'clientes' | 'productos' | 'ordenes';
-export type SyncMode = 'todo' | 'seleccion';
+/**
+ * Dominios de preferencia. `municipios` es un dominio de selección (v2): los
+ * clientes cuyo municipio está elegido bajan sin marcarlos uno a uno.
+ */
+export type SyncPrefDomain = 'clientes' | 'productos' | 'ordenes' | 'municipios';
+/** clientes: todo | seleccion · productos: todo | ninguno · ordenes/municipios: seleccion. */
+export type SyncMode = 'todo' | 'seleccion' | 'ninguno';
 
 export type DomainSyncConfig = {
   mode: SyncMode;
@@ -53,6 +60,7 @@ export const SELECTION_LIMITS: Record<SyncPrefDomain, number> = {
   clientes: 1000,
   productos: 1000,
   ordenes: 100,
+  municipios: 1200,
 };
 
 const FUNCTION_NOT_FOUND = 'PGRST202';
@@ -116,10 +124,18 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const DOMAINS: SyncPrefDomain[] = ['clientes', 'productos', 'ordenes'];
+const DOMAINS: SyncPrefDomain[] = ['clientes', 'productos', 'ordenes', 'municipios'];
+const SELECTION_ONLY: SyncPrefDomain[] = ['ordenes', 'municipios'];
 
 export function defaultDomainConfig(domain: SyncPrefDomain): DomainSyncConfig {
-  return { mode: domain === 'ordenes' ? 'seleccion' : 'todo', revision: 0, count: 0, ids: domain === 'ordenes' ? [] : null };
+  const selectionOnly = SELECTION_ONLY.includes(domain);
+  return { mode: selectionOnly ? 'seleccion' : 'todo', revision: 0, count: 0, ids: selectionOnly ? [] : null };
+}
+
+function parseMode(domain: SyncPrefDomain, raw: unknown): SyncMode {
+  if (SELECTION_ONLY.includes(domain)) return 'seleccion';
+  if (domain === 'productos') return raw === 'ninguno' ? 'ninguno' : 'todo';
+  return raw === 'seleccion' ? 'seleccion' : 'todo';
 }
 
 export function parseSyncConfig(data: unknown): SyncConfig {
@@ -129,8 +145,7 @@ export function parseSyncConfig(data: unknown): SyncConfig {
   for (const domain of DOMAINS) {
     const raw = asRecord(root[domain]);
     const ids = asIds(raw.ids) ?? asIds(selected[domain]);
-    const mode: SyncMode =
-      domain === 'ordenes' ? 'seleccion' : raw.mode === 'seleccion' ? 'seleccion' : 'todo';
+    const mode = parseMode(domain, raw.mode);
     config[domain] = {
       mode,
       revision: toNumber(raw.revision),
@@ -172,6 +187,10 @@ type SyncPrefsState = {
   error: string | null;
   /** Ids con un cambio en curso (para desactivar el botón mientras tanto). */
   busyIds: Record<string, true>;
+  /** Cuándo se cambió por última vez la elección (ms). */
+  changedAt: number | null;
+  /** Última descarga manual (ms), según el motor. */
+  lastManualAt: number | null;
 };
 
 function initialState(): SyncPrefsState {
@@ -181,9 +200,12 @@ function initialState(): SyncPrefsState {
       clientes: defaultDomainConfig('clientes'),
       productos: defaultDomainConfig('productos'),
       ordenes: defaultDomainConfig('ordenes'),
+      municipios: defaultDomainConfig('municipios'),
     },
     error: null,
     busyIds: {},
+    changedAt: null,
+    lastManualAt: null,
   };
 }
 
@@ -201,10 +223,40 @@ function patchDomain(domain: SyncPrefDomain, patch: Partial<DomainSyncConfig>) {
   }));
 }
 
-function requestSync() {
-  // Sin esperar: una sincronización completa puede tardar y la marca ya quedó
-  // en el servidor. `runSync` coalesce las llamadas seguidas.
-  void Promise.resolve(runSync('manual')).catch(() => undefined);
+// ---------------------------------------------------------------------------
+// «Pendiente de descargar»: la elección cambió después de la última descarga
+// manual. La hora del cambio se guarda por usuario en AsyncStorage para que el
+// aviso sobreviva a un reinicio de la app.
+
+const CHANGED_AT_KEY = 'casa_ideal.sync_prefs.changed_at';
+
+function changedAtKey() {
+  return `${CHANGED_AT_KEY}:${useSyncStore.getState().userId ?? 'anon'}`;
+}
+
+/** true si hay elecciones hechas después de la última descarga manual. */
+export function isDownloadPending(state: Pick<SyncPrefsState, 'changedAt' | 'lastManualAt'>) {
+  if (!state.changedAt) return false;
+  return !state.lastManualAt || state.changedAt > state.lastManualAt;
+}
+
+function markChanged() {
+  const now = Date.now();
+  useSyncPrefsStore.setState({ changedAt: now });
+  void AsyncStorage.setItem(changedAtKey(), String(now)).catch(() => undefined);
+}
+
+/** Relee la hora del último cambio y de la última descarga manual. */
+export async function refreshDownloadState() {
+  const [storedChanged, manualAt] = await Promise.all([
+    AsyncStorage.getItem(changedAtKey()).catch(() => null),
+    (async () => lastManualDownloadAt())().catch(() => null),
+  ]);
+  const parsed = storedChanged ? Number(storedChanged) : NaN;
+  useSyncPrefsStore.setState((state) => ({
+    changedAt: Number.isFinite(parsed) ? Math.max(parsed, state.changedAt ?? 0) : state.changedAt,
+    lastManualAt: manualAt ?? null,
+  }));
 }
 
 /** Pagina `list_mobile_sync_selection` con nombre para la pantalla de ajustes. */
@@ -257,8 +309,8 @@ async function applyLocalFallback() {
     const config = { ...state.config };
     for (const domain of ['clientes', 'productos'] as const) {
       const raw = asRecord(localRecord[domain]);
-      if (raw.mode === 'todo' || raw.mode === 'seleccion') {
-        config[domain] = { ...config[domain], mode: raw.mode };
+      if (raw.mode === 'todo' || raw.mode === 'seleccion' || raw.mode === 'ninguno') {
+        config[domain] = { ...config[domain], mode: parseMode(domain, raw.mode) };
       }
     }
     return { config, status: 'offline' };
@@ -281,11 +333,7 @@ export function loadSyncPrefs(options: { force?: boolean } = {}): Promise<void> 
   if (!isDatabaseOpen()) return Promise.resolve();
   if (inFlightLoad) return inFlightLoad;
   inFlightLoad = (async () => {
-    const supported = await Promise.resolve(isSelectiveSyncSupported()).catch(() => false);
-    if (!supported) {
-      useSyncPrefsStore.setState({ status: 'unsupported' });
-      return;
-    }
+    void refreshDownloadState();
     if (useSyncPrefsStore.getState().status === 'idle') {
       useSyncPrefsStore.setState({ status: 'loading' });
     }
@@ -307,17 +355,17 @@ export function loadSyncPrefs(options: { force?: boolean } = {}): Promise<void> 
 }
 
 export async function setSyncMode(domain: SyncPrefDomain, mode: SyncMode) {
-  if (domain === 'ordenes') throw new Error('Las órdenes siempre se eligen una a una.');
+  if (SELECTION_ONLY.includes(domain)) throw new Error('Este dominio siempre se elige uno a uno.');
   const data = asRecord(await call('set_mobile_sync_mode', { p_domain: domain, p_mode: mode }));
   patchDomain(domain, {
     mode,
     revision: toNumber(data.revision, useSyncPrefsStore.getState().config[domain].revision + 1),
   });
-  requestSync();
+  markChanged();
 }
 
 /**
- * Marca o desmarca ids (en lotes de 200) y pide una sincronización. Devuelve
+ * Marca o desmarca ids (en lotes de 200); queda pendiente de descargar. Devuelve
  * el conteo y la revisión que respondió el servidor en el último lote.
  */
 export async function setSyncSelection(
@@ -349,7 +397,7 @@ export async function setSyncSelection(
     // Aunque un lote falle (tope alcanzado), los anteriores ya quedaron.
     if (anyApplied) {
       patchDomain(domain, { ids: before.ids === null ? null : Array.from(applied), count, revision });
-      requestSync();
+      markChanged();
     }
   }
   return { count, revision };
@@ -363,13 +411,22 @@ export function useSyncPrefs() {
   const status = useSyncPrefsStore((state) => state.status);
   const config = useSyncPrefsStore((state) => state.config);
   const error = useSyncPrefsStore((state) => state.error);
+  const pendingDownload = useSyncPrefsStore(isDownloadPending);
+  const lastManualAt = useSyncPrefsStore((state) => state.lastManualAt);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   useEffect(() => {
     void loadSyncPrefs();
   }, []);
+  // Tras una descarga se relee su hora: el «Pendiente de descargar» se apaga solo.
+  useEffect(() => {
+    void refreshDownloadState();
+  }, [lastSyncedAt]);
   return {
     status,
     config,
     error,
+    pendingDownload,
+    lastManualAt,
     supported: status === 'ready' || status === 'offline',
     reload: () => loadSyncPrefs({ force: true }),
   };
@@ -384,12 +441,19 @@ export type OfflineSelection = {
   supported: boolean;
   /** true mientras ese id se está guardando. */
   isBusy: (id: string | null | undefined) => boolean;
+  /** Hay elecciones hechas que aún no se descargan. */
+  pendingDownload: boolean;
+  /** Ids elegidos conocidos (vacío si solo se sabe el conteo). */
+  selectedIds: string[];
 };
+
+const EMPTY_IDS: string[] = [];
 
 const DOMAIN_NOUN: Record<SyncPrefDomain, string> = {
   clientes: 'el cliente',
   productos: 'el producto',
   ordenes: 'la orden',
+  municipios: 'el municipio',
 };
 
 /**
@@ -401,6 +465,7 @@ export function useOfflineSelection(domain: SyncPrefDomain): OfflineSelection {
   const status = useSyncPrefsStore((state) => state.status);
   const domainConfig = useSyncPrefsStore((state) => state.config[domain]);
   const busyIds = useSyncPrefsStore((state) => state.busyIds);
+  const pendingDownload = useSyncPrefsStore(isDownloadPending);
 
   useEffect(() => {
     void loadSyncPrefs();
@@ -450,5 +515,7 @@ export function useOfflineSelection(domain: SyncPrefDomain): OfflineSelection {
     mode: domainConfig.mode,
     supported: status === 'ready' || status === 'offline',
     isBusy,
+    pendingDownload,
+    selectedIds: domainConfig.ids ?? EMPTY_IDS,
   };
 }

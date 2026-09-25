@@ -1,35 +1,54 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { runSync } from '@/lib/offline/sync/syncEngine';
-import { useUserRoles } from '@/hooks/useUserRoles';
-import { loadSyncPrefs, useSyncPrefsStore, type SyncConfig } from './infrastructure/syncPrefsService';
+import {
+  isDownloadPending,
+  loadSyncPrefs,
+  refreshDownloadState,
+  useSyncPrefsStore,
+} from './infrastructure/syncPrefsService';
 
 /** Pasado este tiempo sin descargar se pide preparar el teléfono. */
 export const PREPARE_PHONE_AFTER_MS = 24 * 60 * 60 * 1000;
 
+export type PrepareReason = 'first' | 'stale' | 'pending';
+
 /**
- * «Prepara el teléfono antes de salir»: la última descarga tiene más de 24 h
- * o un dominio está en «Solo lo que elijo» sin nada marcado. Solo cuentan los
- * dominios que el usuario marca de verdad (`markable`): al gestor de cobro los
- * clientes le llegan por sus negocios y no tendría cómo apagar el aviso.
+ * «Prepara el teléfono antes de salir» (contrato v2): nunca se ha descargado
+ * (primer inicio de sesión: invitación, no descarga sola), la última descarga
+ * tiene más de 24 h, o hay elecciones pendientes de descargar.
  */
 export function shouldPreparePhone(input: {
-  lastSyncedAt: number | null;
-  prefsReady: boolean;
-  config: SyncConfig;
-  markable: ('clientes' | 'productos')[];
+  loggedIn: boolean;
+  lastDownloadAt: number | null;
+  pendingDownload: boolean;
   now?: number;
-}) {
+}): PrepareReason | null {
+  if (!input.loggedIn) return null;
   const now = input.now ?? Date.now();
-  if (input.lastSyncedAt && now - input.lastSyncedAt > PREPARE_PHONE_AFTER_MS) return true;
-  if (!input.prefsReady) return false;
-  return input.markable.some(
-    (domain) => input.config[domain].mode === 'seleccion' && input.config[domain].count === 0
-  );
+  if (!input.lastDownloadAt) return 'first';
+  if (input.pendingDownload) return 'pending';
+  if (now - input.lastDownloadAt > PREPARE_PHONE_AFTER_MS) return 'stale';
+  return null;
+}
+
+const PREPARE_LABELS: Record<PrepareReason, string> = {
+  first: 'Prepara el teléfono antes de salir · elige qué llevar y descarga',
+  stale: 'Prepara el teléfono antes de salir · la última descarga tiene más de 24 h',
+  pending: 'Prepara el teléfono antes de salir · hay elecciones sin descargar',
+};
+
+function openPreparePhone() {
+  try {
+    router.push('/datos-sin-conexion' as never);
+  } catch {
+    void runSync('manual');
+  }
 }
 
 function plural(count: number, singular: string, pluralForm: string) {
@@ -41,23 +60,21 @@ export function SyncStatusBanner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { online, status, pendingCount, failedCount, lastError, lastSyncedAt, setQueueVisible } = useSyncStore();
-  const prefsStatus = useSyncPrefsStore((state) => state.status);
-  const prefsConfig = useSyncPrefsStore((state) => state.config);
-  const { isAdmin, isVendedor, onlyFindsBySearch } = useUserRoles();
+  const userId = useSyncStore((state) => state.userId);
+  const pendingDownload = useSyncPrefsStore(isDownloadPending);
+  const lastManualAt = useSyncPrefsStore((state) => state.lastManualAt);
 
   useEffect(() => {
+    void refreshDownloadState();
     if (!online) return;
     const current = useSyncPrefsStore.getState().status;
     void loadSyncPrefs({ force: current === 'offline' || current === 'error' });
-  }, [online, lastSyncedAt]);
+  }, [online, lastSyncedAt, userId]);
 
-  const markable: ('clientes' | 'productos')[] =
-    !onlyFindsBySearch() && (isAdmin() || isVendedor()) ? ['clientes', 'productos'] : [];
   const prepare = shouldPreparePhone({
-    lastSyncedAt,
-    prefsReady: prefsStatus === 'ready',
-    config: prefsConfig,
-    markable,
+    loggedIn: Boolean(userId),
+    lastDownloadAt: lastManualAt ?? lastSyncedAt,
+    pendingDownload,
   });
   const quiet = online && status === 'idle' && pendingCount === 0 && failedCount === 0 && !lastError;
 
@@ -93,7 +110,7 @@ export function SyncStatusBanner() {
   } else if (pendingCount) {
     label = `${plural(pendingCount, 'cambio', 'cambios')} por sincronizar`;
   } else if (prepare) {
-    label = 'Prepara el teléfono antes de salir · toca para descargar';
+    label = PREPARE_LABELS[prepare];
   } else {
     label = lastSyncedAt ? 'Sincronizado' : 'Sincronización';
   }
@@ -101,6 +118,11 @@ export function SyncStatusBanner() {
   const onPress = () => {
     if (failedCount || pendingCount) {
       setQueueVisible(true);
+      return;
+    }
+    // v2: la descarga es solo manual y se prepara en su pantalla.
+    if (prepare) {
+      openPreparePhone();
       return;
     }
     void runSync('manual');

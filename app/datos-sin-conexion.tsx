@@ -8,7 +8,8 @@ import { Stack } from 'expo-router';
 import React from 'react';
 
 /**
- * «Qué llevar en el teléfono»: se abre desde Perfil → Datos sin conexión.
+ * «Preparar el teléfono»: se abre desde Perfil → Datos sin conexión y desde
+ * el aviso «Prepara el teléfono antes de salir».
  * El Stack raíz no la declara (no hace falta tocar `_layout.tsx`): el header
  * se define aquí con el mismo `StackHeader` de las demás pantallas de detalle.
  */
@@ -20,7 +21,7 @@ export default function DatosSinConexionScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'Qué llevar en el teléfono',
+          title: 'Preparar el teléfono',
           header: (props: NativeStackHeaderProps) => <StackHeader {...props} />,
           headerLeft: () => <BackButton />,
           headerStyle: { backgroundColor: colors.background.default },
