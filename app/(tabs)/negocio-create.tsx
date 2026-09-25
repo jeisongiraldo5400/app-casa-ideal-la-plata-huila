@@ -80,6 +80,12 @@ import {
 import { NegocioOriginGroupsSection } from '@/components/negocios/components/NegocioOriginGroupsSection';
 import { NegocioOriginOrderPicker } from '@/components/negocios/components/NegocioOriginOrderPicker';
 import { NegocioDraftBanner } from '@/components/negocios/components/NegocioDraftBanner';
+import { NegocioPeopleLines } from '@/components/negocios/components/NegocioPeopleLines';
+import {
+  customerSellerLabel,
+  fetchCustomerSellerLookup,
+  type CustomerSellerLookup,
+} from '@/components/customers/infrastructure/services/customerSellerLookup';
 import { hasNegocioDraft, negocioDraftSummary } from '@/components/negocios/domain/negocioDraft';
 import { useOriginOrderSearch } from '@/components/negocios/infrastructure/hooks/useOriginOrderSearch';
 import {
@@ -189,6 +195,8 @@ function NegocioCreateScreenInner() {
   /** '' = usuario actual. */
   const [sellerId, setSellerId] = useState('');
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
+  /** Vendedor dueño del cliente elegido; `null` mientras se consulta. */
+  const [customerSeller, setCustomerSeller] = useState<CustomerSellerLookup | null>(null);
   const [installments, setInstallments] = useState('3');
   const [frequency, setFrequency] = useState<CreditFrequency>('mensual');
   const [firstDueDate, setFirstDueDate] = useState('');
@@ -470,6 +478,19 @@ function NegocioCreateScreenInner() {
     };
   }, [customer?.id, selectedDeliveryOrder, municipios]);
 
+  // Solo informativo: el vendedor del cliente no cambia quién queda como
+  // vendedor del negocio (por defecto, quien lo crea).
+  useEffect(() => {
+    const customerId = customer?.id;
+    setCustomerSeller(null);
+    if (!customerId) return;
+    let cancelled = false;
+    fetchCustomerSellerLookup(customerId)
+      .then((lookup) => { if (!cancelled) setCustomerSeller(lookup); })
+      .catch(() => { if (!cancelled) setCustomerSeller({ status: 'unknown' }); });
+    return () => { cancelled = true; };
+  }, [customer?.id]);
+
   useEffect(() => {
     const query = customerQuery.trim();
     if (!query) { setCustomers([]); return; }
@@ -628,6 +649,11 @@ function NegocioCreateScreenInner() {
   // qué falta. "Guardar borrador" incluido: la base exige la firma al insertar.
   const saveBlockedReason = negocioSaveBlockedBySignature(signature, sellerSignature);
   const effectiveSellerId = sellerId || user?.id || '';
+  const createdByName =
+    sellerOptions.find((option) => option.id === user?.id)?.full_name || user?.email || null;
+  const effectiveSellerName =
+    sellerOptions.find((option) => option.id === effectiveSellerId)?.full_name ?? null;
+  const customerSellerText = customer ? customerSellerLabel(customerSeller) : null;
   const calc = calculateCredit({
     productsSubtotal: subtotal,
     downPayment: downPaymentTotal,
@@ -897,8 +923,7 @@ function NegocioCreateScreenInner() {
         activate,
         // Para poder pintar el negocio pendiente sin volver a preguntar.
         customer_name: customer.name,
-        seller_name:
-          sellerOptions.find((option) => option.id === effectiveSellerId)?.full_name ?? null,
+        seller_name: effectiveSellerName,
         municipio_name: municipios.find((m) => m.id === municipioId)?.nombre ?? null,
       });
       if (result?.queued) {
@@ -1304,7 +1329,7 @@ function NegocioCreateScreenInner() {
 
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
-                    Vendedor *
+                    Vendedor del negocio *
                   </Text>
                   <OptionPickerField
                     value={effectiveSellerId}
@@ -1314,12 +1339,17 @@ function NegocioCreateScreenInner() {
                       label: seller.full_name,
                     }))}
                     placeholder="Seleccione vendedor"
-                    modalTitle="Vendedor"
+                    modalTitle="Vendedor del negocio"
                     colors={colors}
                   />
                   <Text style={{ fontSize: 12, color: colors.text.secondary }}>
-                    Usuario que realizó la venta; por defecto usted.
+                    Quien hizo la venta; por defecto, usted.
                   </Text>
+                  <NegocioPeopleLines
+                    createdByName={createdByName}
+                    customerSellerText={customerSellerText}
+                    colors={colors}
+                  />
                 </View>
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
@@ -1680,9 +1710,15 @@ function NegocioCreateScreenInner() {
               Cliente: {customer?.name} · Total: {formatCOP(calc.totalCredit)} ·{' '}
               {planRequired ? `${installments} cuotas` : 'sin cuotas'}
             </Text>
+            <NegocioPeopleLines
+              sellerName={effectiveSellerName}
+              createdByName={createdByName}
+              customerSellerText={customerSellerText}
+              colors={colors}
+            />
             <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 8 }}>
               Puede dibujar las firmas en pantalla o subir un PNG transparente. Si el cliente no firma
-              ahora, la firma del vendedor es obligatoria; la firma del cliente podrá registrarse
+              ahora, la firma del vendedor del negocio es obligatoria; la firma del cliente podrá registrarse
               después desde el detalle, incluso con el negocio activo.
             </Text>
             {saveBlockedReason ? (
@@ -1703,7 +1739,11 @@ function NegocioCreateScreenInner() {
               />
             )}
             <SignaturePad
-              label={signature ? 'Firma del vendedor' : 'Firma del vendedor (obligatoria)'}
+              label={
+                signature
+                  ? 'Firma del vendedor del negocio'
+                  : 'Firma del vendedor del negocio (obligatoria)'
+              }
               value={sellerSignature}
               onChange={setSellerSignature}
             />
