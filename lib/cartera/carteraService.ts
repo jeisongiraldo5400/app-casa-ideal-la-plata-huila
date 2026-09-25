@@ -1,4 +1,5 @@
 import type { CarteraPageQuery, CarteraRow } from './types';
+import { normalizeCarteraSearch } from './carteraFilters';
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
@@ -94,11 +95,12 @@ export function markCuotasEnMora(): Promise<void> {
 export async function fetchCarteraPage(params: CarteraPageQuery) {
   try {
     const { data, error } = await supabase.rpc('get_cartera_cuotas', {
-      p_filter: params.filter, p_days: params.days, p_search: params.search,
+      p_filter: params.filter, p_days: params.days, p_search: normalizeCarteraSearch(params.search),
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
       p_seller_id: params.sellerId || null,
       p_customer_seller_id: params.customerSellerId || null,
       p_payment_method_id: params.paymentMethodId || null,
+      p_gestor_id: params.gestorId || null,
       p_due_from: params.dueFrom || null,
       p_due_to: params.dueTo || null,
     });

@@ -11,6 +11,7 @@ type Props = {
   onChange: (value: string) => void;
   colors: any;
   placeholder?: string;
+  accessibilityLabel?: string;
 };
 
 /**
@@ -18,13 +19,15 @@ type Props = {
  * su propio estado: un campo definido dentro del render de la pantalla se
  * remonta en cada tecla y pierde el foco.
  */
-export function CarteraSearchField({ value, onChange, colors, placeholder }: Props) {
+export function CarteraSearchField({ value, onChange, colors, placeholder, accessibilityLabel }: Props) {
   const [text, setText] = useState(value);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cambios que no vienen del teclado (limpiar filtros, un enlace directo).
+  // Cambios que no vienen del teclado (limpiar, un enlace directo). Se compara
+  // sin espacios en los extremos porque la pantalla recibe el término recortado:
+  // comparar tal cual borraba el espacio de «maria » a mitad de escribir.
   useEffect(() => {
-    setText((current) => (current === value ? current : value));
+    setText((current) => (current.trim() === value ? current : value));
   }, [value]);
 
   useEffect(() => () => {
@@ -50,12 +53,12 @@ export function CarteraSearchField({ value, onChange, colors, placeholder }: Pro
         style={[styles.input, { color: colors.text.primary }]}
         value={text}
         onChangeText={handleChange}
-        placeholder={placeholder || 'Número de negocio o cédula'}
+        placeholder={placeholder || 'Cédula, cliente o número de negocio'}
         placeholderTextColor={colors.text.secondary}
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
-        accessibilityLabel="Buscar negocio para cobrar"
+        accessibilityLabel={accessibilityLabel || 'Buscar cuotas'}
       />
       {text.length > 0 && (
         <Pressable onPress={clear} accessibilityRole="button" accessibilityLabel="Limpiar búsqueda">

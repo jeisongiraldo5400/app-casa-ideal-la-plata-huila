@@ -726,6 +726,7 @@ export async function fetchCarteraFromLocal(
       municipioId: negocio?.municipioId || null,
       sellerId: negocio?.sellerId || null,
       customerSellerId: customer?.sellerId || null,
+      gestorId: negocio?.gestorCobroId || null,
       negocioPaymentMethodIds: methodsByNegocio.get(cuota.negocioId) || [],
       installmentNumber: cuota.installmentNumber,
       negocioNumero: negocio?.numero || 0,

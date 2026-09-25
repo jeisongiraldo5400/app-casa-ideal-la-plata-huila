@@ -22,6 +22,14 @@ type Props = {
   colors: ThemeColors;
   label?: string;
   accessibilityLabel?: string;
+  /**
+   * Primer día elegible (aaaa-mm-dd). Por defecto hoy: los negocios no se
+   * pactan en el pasado. `null` quita el límite (p. ej. filtros de cartera,
+   * que consultan vencimientos pasados).
+   */
+  minDate?: string | null;
+  /** Último día elegible (aaaa-mm-dd); sin límite por defecto. */
+  maxDate?: string | null;
 };
 
 const MONTHS = [
@@ -68,7 +76,7 @@ const displayDate = (value: string) => {
   }).format(date);
 };
 
-export function NegocioDatePicker({ value, onChange, colors, label = 'Seleccionar fecha', accessibilityLabel }: Props) {
+export function NegocioDatePicker({ value, onChange, colors, label = 'Seleccionar fecha', accessibilityLabel, minDate, maxDate = null }: Props) {
   const [visible, setVisible] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const selected = fromDateValue(value);
@@ -77,6 +85,7 @@ export function NegocioDatePicker({ value, onChange, colors, label = 'Selecciona
   });
 
   const todayValue = toDateValue(new Date());
+  const lowerBound = minDate === undefined ? todayValue : minDate;
   const days = useMemo(() => {
     const year = visibleMonth.getFullYear();
     const month = visibleMonth.getMonth();
@@ -170,11 +179,14 @@ export function NegocioDatePicker({ value, onChange, colors, label = 'Selecciona
                 );
                 const dateValue = toDateValue(date);
                 const selected = dateValue === value;
-                const disabled = dateValue < todayValue;
+                const disabled = (lowerBound !== null && dateValue < lowerBound) || (maxDate !== null && dateValue > maxDate);
                 return (
                   <Pressable
                     key={dateValue}
                     disabled={disabled}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Día ${dateValue}`}
+                    accessibilityState={{ disabled, selected }}
                     onPress={() => {
                       onChange(dateValue);
                       setVisible(false);

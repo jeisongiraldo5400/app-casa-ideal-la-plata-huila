@@ -6,7 +6,9 @@ import type { Municipio } from '@/lib/cartera/carteraService';
 import type { CarteraFilter, CarteraQuery } from '@/lib/cartera/types';
 import type { SellerOption } from '@/lib/users/sellersService';
 import type { PaymentMethodOption } from '@/components/negocios/infrastructure/services/paymentMethodsService';
-import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
+import { CARTERA_STATUS_LABELS, clearCarteraFilters, countActiveCarteraFilters, dueRangeError } from '@/lib/cartera/carteraFilters';
+import { CarteraDateRangeField } from './CarteraDateRangeField';
+import { CarteraGestorFilter } from './CarteraGestorFilter';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -20,6 +22,8 @@ export type CarteraFilterValues = Required<CarteraQuery> & {
   searchMunicipio: string;
   searchSeller: string;
   searchCustomerSeller: string;
+  /** Nombre del gestor elegido, para mostrarlo sin volver a consultarlo. */
+  gestorName: string;
 };
 
 type Props = {
@@ -29,16 +33,17 @@ type Props = {
   paymentMethods?: PaymentMethodOption[];
   values: CarteraFilterValues;
   onChange: (next: CarteraFilterValues) => void;
+  /** «Aplicar filtros»: solo se llama con un rango de fechas válido. */
+  onApply: () => void;
+  /** Cerrar (X o atrás) descarta lo que no se aplicó. */
   onClose: () => void;
+  /** Filtro por gestor de cobro: solo administradores. */
+  showGestor?: boolean;
 };
 
-const FILTERS: { id: CarteraFilter; label: string }[] = [
-  { id: 'todas', label: 'Todas abiertas' },
-  { id: 'por_vencer', label: 'Por vencer' },
-  { id: 'vencidas', label: 'Vencidas' },
-  { id: 'mora', label: 'En mora' },
-  { id: 'pagadas', label: 'Pagadas' },
-];
+const FILTERS: { id: CarteraFilter; label: string }[] = (
+  ['todas', 'por_vencer', 'vencidas', 'mora', 'pagadas'] as const
+).map((id) => ({ id, label: CARTERA_STATUS_LABELS[id] }));
 
 const DAYS = [7, 15, 30].map((days) => ({ value: String(days), label: `${days} días` }));
 
@@ -53,12 +58,18 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   customerSellerId: '',
   searchCustomerSeller: '',
   paymentMethodId: '',
+  gestorId: '',
+  gestorName: '',
   dueFrom: '',
   dueTo: '',
 };
 
-/** Filtros de cartera a pantalla completa (estado, búsqueda, municipio, vendedor, días). */
-export function CarteraFilterModal({ visible, municipios, sellers = [], paymentMethods = [], values, onChange, onClose }: Props) {
+/**
+ * Filtros de cartera a pantalla completa (estado, días, vencimiento, municipio,
+ * vendedores, método de pago y gestor). La búsqueda NO está aquí: vive en la
+ * pantalla, encima de la lista, y «Limpiar» la conserva.
+ */
+export function CarteraFilterModal({ visible, municipios, sellers = [], paymentMethods = [], values, onChange, onApply, onClose, showGestor = false }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const selectedMunicipio = municipios.find((item) => item.id === values.municipioId);
@@ -78,16 +89,19 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
     .filter((item) => matchesNormalized(searchMunicipio, item.nombre))
     .slice(0, 30);
   const patch = (next: Partial<CarteraFilterValues>) => onChange({ ...values, ...next });
+  const rangeError = dueRangeError(values.dueFrom, values.dueTo);
+  const activeCount = countActiveCarteraFilters(values);
 
   return (
     <FullScreenModal
       visible={visible}
       onClose={onClose}
       title="Filtros de cartera"
+      subtitle={activeCount ? `${activeCount} ${activeCount === 1 ? 'filtro activo' : 'filtros activos'}` : undefined}
       footer={
         <>
-          <Button title="Limpiar" variant="outline" onPress={() => onChange(DEFAULT_CARTERA_FILTERS)} style={styles.footerButton} />
-          <Button title="Aplicar filtros" onPress={onClose} style={styles.footerButton} />
+          <Button title="Limpiar" variant="outline" onPress={() => onChange(clearCarteraFilters(values, DEFAULT_CARTERA_FILTERS))} style={styles.footerButton} />
+          <Button title="Aplicar filtros" onPress={onApply} disabled={Boolean(rangeError)} style={styles.footerButton} />
         </>
       }>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -122,13 +136,12 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
         ) : null}
 
         <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Buscar cuota</Text>
-          <SearchField
-            value={values.search}
-            onChangeText={(search) => patch({ search })}
-            placeholder="Negocio, cliente o documento"
-            autoCapitalize="none"
-            autoCorrect={false}
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vencimiento</Text>
+          <CarteraDateRangeField
+            dueFrom={values.dueFrom}
+            dueTo={values.dueTo}
+            onChange={(range) => patch(range)}
+            colors={colors}
           />
         </View>
 
@@ -167,30 +180,6 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
             {!available.length ? (
               <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>Sin municipios para “{searchMunicipio}”</Text>
             ) : null}
-          </View>
-        </View>
-
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vencimiento</Text>
-          <View style={styles.dates}>
-            <View style={styles.date}>
-              <NegocioDatePicker
-                value={values.dueFrom}
-                onChange={(value) => patch({ dueFrom: value })}
-                colors={colors}
-                label="Desde"
-                accessibilityLabel="Vence desde"
-              />
-            </View>
-            <View style={styles.date}>
-              <NegocioDatePicker
-                value={values.dueTo}
-                onChange={(value) => patch({ dueTo: value })}
-                colors={colors}
-                label="Hasta"
-                accessibilityLabel="Vence hasta"
-              />
-            </View>
           </View>
         </View>
 
@@ -309,6 +298,19 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
             </Text>
           ) : null}
         </View>
+
+        {showGestor ? (
+          <View style={styles.group}>
+            <Text style={[styles.label, { color: colors.text.secondary }]}>Gestor de cobro</Text>
+            <CarteraGestorFilter
+              active={visible}
+              gestorId={values.gestorId}
+              gestorName={values.gestorName}
+              onChange={(next) => patch(next)}
+              colors={colors}
+            />
+          </View>
+        ) : null}
       </ScrollView>
     </FullScreenModal>
   );
@@ -316,8 +318,6 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
 
 const styles = StyleSheet.create({
   content: { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxl },
-  dates: { flexDirection: 'row', gap: Spacing.sm },
-  date: { flex: 1 },
   group: { gap: Spacing.sm },
   label: { ...Typography.label },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },

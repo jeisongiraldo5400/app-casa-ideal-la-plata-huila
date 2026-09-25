@@ -26,6 +26,8 @@ export type CarteraQuery = {
   customerSellerId?: string;
   /** Cuotas de negocios con al menos un abono vigente de ese método. */
   paymentMethodId?: string;
+  /** Gestor de cobro del negocio (`p_gestor_id`); el filtro solo lo ofrece a administradores. */
+  gestorId?: string;
   /** Rango sobre la fecha de vencimiento de la cuota. */
   dueFrom?: string;
   dueTo?: string;

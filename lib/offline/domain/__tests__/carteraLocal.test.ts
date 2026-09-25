@@ -92,6 +92,26 @@ describe('filterCarteraCuotas', () => {
     expect(filterCarteraCuotas(conMetodos, base)).toHaveLength(3);
   });
 
+  it('filtra por gestor de cobro sin conexión', () => {
+    const withGestor = [
+      { ...rows[0], gestorId: 'g1' },
+      { ...rows[1], gestorId: 'g2' },
+    ];
+    const result = filterCarteraCuotas(withGestor, { filter: 'todas', search: '', days: 15, municipioId: '', gestorId: 'g1', today: '2026-09-01' });
+    expect(result.map((row) => row.id)).toEqual(['c1']);
+  });
+
+  it('busca por cédula escrita con puntos, por nombre sin tildes y por número de negocio', () => {
+    const people = [
+      { ...rows[0], customerName: 'MARÍA PÉREZ', customerIdNumber: '1023456', negocioNumero: 20260012 },
+      { ...rows[1], customerName: 'Luis', customerIdNumber: '999', negocioNumero: 20260013 },
+    ];
+    const params = { filter: 'todas' as const, days: 15, municipioId: '', today: '2026-09-01' };
+    expect(filterCarteraCuotas(people, { ...params, search: '1.023.456' }).map((r) => r.id)).toEqual(['c1']);
+    expect(filterCarteraCuotas(people, { ...params, search: 'maria perez' }).map((r) => r.id)).toEqual(['c1']);
+    expect(filterCarteraCuotas(people, { ...params, search: '20260013' }).map((r) => r.id)).toEqual(['c2']);
+  });
+
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);

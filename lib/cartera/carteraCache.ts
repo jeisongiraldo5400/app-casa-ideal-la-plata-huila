@@ -38,6 +38,7 @@ export function carteraFiltersKey(filters: CarteraQuery): string {
     filters.sellerId || '',
     filters.customerSellerId || '',
     filters.paymentMethodId || '',
+    filters.gestorId || '',
     filters.dueFrom || '',
     filters.dueTo || '',
   ]);

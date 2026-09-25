@@ -61,6 +61,8 @@ export function filterCarteraCuotas<
     sellerId?: string | null;
     /** Vendedor del CLIENTE, distinto del vendedor del negocio. */
     customerSellerId?: string | null;
+    /** Gestor de cobro del negocio. */
+    gestorId?: string | null;
     /**
      * Métodos de pago con abonos vigentes en el negocio de la cuota. El RPC
      * resuelve este filtro por negocio (los abonos son FIFO y no quedan atados
@@ -91,6 +93,7 @@ export function filterCarteraCuotas<
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
     if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
     if (params.customerSellerId && (row.customerSellerId ?? null) !== params.customerSellerId) return false;
+    if (params.gestorId && (row.gestorId ?? null) !== params.gestorId) return false;
     if (
       params.paymentMethodId &&
       !(row.negocioPaymentMethodIds ?? []).includes(params.paymentMethodId)
