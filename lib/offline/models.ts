@@ -37,6 +37,9 @@ export class Negocio extends Model {
   /** Motivo con el que el servidor rechazó el negocio creado sin señal. */
   @field('rejected_reason') rejectedReason!: string | null;
   @field('rejected_at') rejectedAt!: number | null;
+  /** Quién registró el negocio y su nombre ya resuelto (null en filas anteriores a v10). */
+  @field('created_by') createdBy!: string | null;
+  @field('created_by_name') createdByName!: string | null;
   /** 'synced' | 'pending' (creado sin señal, sin confirmar) | 'rejected'. */
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;

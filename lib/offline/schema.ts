@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 9,
+  version: 10,
   tables: [
     tableSchema({
       name: 'customers',
@@ -46,6 +46,10 @@ export const schema = appSchema({
         // se borra, queda marcada con el motivo. `sync_status` vale 'rejected'.
         { name: 'rejected_reason', type: 'string', isOptional: true },
         { name: 'rejected_at', type: 'number', isOptional: true },
+        // Quién registró el negocio (v10), con su nombre ya resuelto: el
+        // contrato impreso sin señal ponía «—» en «CREADO POR».
+        { name: 'created_by', type: 'string', isOptional: true },
+        { name: 'created_by_name', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string' },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],

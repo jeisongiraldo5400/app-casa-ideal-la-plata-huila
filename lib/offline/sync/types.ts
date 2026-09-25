@@ -214,6 +214,9 @@ export type PullNegocio = {
   /** Nombres ya resueltos por el servidor (20261122120000); opcionales. */
   seller_name?: string | null;
   gestor_cobro_name?: string | null;
+  /** Quién registró el negocio, con su nombre resuelto (20261128120000); opcionales. */
+  created_by?: string | null;
+  created_by_name?: string | null;
   updated_at: string | null;
   deleted_at: string | null;
 };
@@ -391,6 +394,12 @@ export type PullPayload = {
    * avanzar.
    */
   catalog_included?: boolean;
+  /**
+   * Alcance que aplicó el servidor (20261128120000). 'cobro' = recaudador puro:
+   * sólo bajan los clientes de sus negocios y nunca el catálogo. Ausente en un
+   * servidor anterior a esa migración.
+   */
+  pull_scope?: PullScope;
   products?: CollectionChanges<PullProduct>;
   warehouses?: CollectionChanges<PullWarehouse>;
   warehouse_stock?: CollectionChanges<PullWarehouseStock>;
@@ -442,9 +451,37 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
  * 7: perfiles, productos del negocio, veredas, departamentos, configuración de
  * crédito, nombres de vendedor/gestor y el directorio completo de clientes con
  * contacto y ubicación (20261122120000).
+ *
+ * 8: quién creó el negocio (`created_by`, `created_by_name`, 20261128120000),
+ * para el «CREADO POR» del contrato impreso sin señal.
  */
-export const PULL_PAYLOAD_VERSION = '7';
+export const PULL_PAYLOAD_VERSION = '8';
 export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
+
+export type PullScope = 'cobro' | 'completo';
+
+/** Alcance con el que se hizo la última descarga (ver `pull_scope`). */
+export const PULL_SCOPE_META_KEY = 'pull_scope';
+
+/**
+ * Valor que se guarda en la versión del paquete cuando cambió el alcance: no
+ * coincide con ninguna versión real, así que la próxima descarga es completa.
+ */
+export const PULL_SCOPE_CHANGED_MARKER = 'alcance-cambiado';
+
+/**
+ * ¿Cambió el alcance entre la descarga anterior y esta? Pasa cuando a alguien
+ * le dan o le quitan un rol: el recaudador puro que pasa a ser vendedor
+ * necesita el directorio completo, y el cursor delta sólo traería lo que
+ * cambió desde ayer. Sin alcance anterior (primera descarga, o servidor sin
+ * 20261128120000) no hay cambio que detectar.
+ */
+export function pullScopeChanged(
+  storedScope: string | null,
+  receivedScope: string | null | undefined
+): boolean {
+  return Boolean(storedScope && receivedScope && storedScope !== receivedScope);
+}
 
 export function pullCursorForPayloadVersion(
   storedCursor: string | null,

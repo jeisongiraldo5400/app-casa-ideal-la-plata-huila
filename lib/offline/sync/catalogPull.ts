@@ -69,6 +69,23 @@ export async function getCatalogCursor(database: Database): Promise<string | nul
   return getMeta(database, CATALOG_CURSOR_META_KEY);
 }
 
+/**
+ * Cursor con el que se pide un paquete que trae el catálogo: el más viejo de
+ * los dos, y `null` (bajada completa) si cualquiera de ellos lo es.
+ *
+ * Antes se usaba el del catálogo tal cual. Si la app se actualizaba con una
+ * versión nueva del paquete (el cursor general vuelve a `null` para bajar todo
+ * otra vez) y la primera sincronización traía el catálogo, se pedía desde el
+ * cursor del catálogo: los negocios viejos nunca recibían los campos nuevos.
+ */
+export function cursorForCatalogPull(
+  generalCursor: string | null,
+  catalogCursor: string | null
+): string | null {
+  if (!generalCursor || !catalogCursor) return null;
+  return Date.parse(catalogCursor) < Date.parse(generalCursor) ? catalogCursor : generalCursor;
+}
+
 export async function getCatalogPulledAt(database: Database): Promise<number | null> {
   const raw = await getMeta(database, CATALOG_PULLED_AT_META_KEY);
   const parsed = raw ? Number(raw) : NaN;

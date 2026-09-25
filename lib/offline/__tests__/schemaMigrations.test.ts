@@ -96,8 +96,9 @@ describe('pullCursorForPayloadVersion', () => {
   });
 
   it('fuerza una descarga completa tras actualizar la app (versión ausente o anterior)', () => {
-    expect(PULL_PAYLOAD_VERSION).toBe('7');
+    expect(PULL_PAYLOAD_VERSION).toBe('8');
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', null)).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '6')).toBeNull();
+    expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '7')).toBeNull();
   });
 });

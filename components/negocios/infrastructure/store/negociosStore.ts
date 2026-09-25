@@ -538,6 +538,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           municipioName: input.municipio_name ?? null,
           sellerId: input.seller_id || userId,
           sellerName: input.seller_name ?? null,
+          createdBy: userId,
         },
       });
       pendingCreateRequests.delete(requestFingerprint);

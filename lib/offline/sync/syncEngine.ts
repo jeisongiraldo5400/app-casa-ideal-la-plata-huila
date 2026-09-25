@@ -4,9 +4,15 @@ import type { Model } from '@nozbe/watermelondb';
 import { supabase } from '@/lib/supabase';
 import { getDatabase, isDatabaseOpen } from '../database';
 import { isNetInfoOnline } from '../network';
-import { applyCatalogPayload, applyPullPayload, pruneOutOfScopeNegocios } from './applyPull';
+import {
+  applyCatalogPayload,
+  applyPullPayload,
+  pruneCustomersOutsideNegocios,
+  pruneOutOfScopeNegocios,
+} from './applyPull';
 import {
   clearCatalogRequest,
+  cursorForCatalogPull,
   getCatalogCursor,
   getCatalogPulledAt,
   isCatalogRequested,
@@ -44,8 +50,11 @@ import {
   pullTruncationWarning,
   cursorFromServerTime,
   pullCursorForPayloadVersion,
+  pullScopeChanged,
   PULL_PAYLOAD_VERSION,
   PULL_PAYLOAD_VERSION_META_KEY,
+  PULL_SCOPE_CHANGED_MARKER,
+  PULL_SCOPE_META_KEY,
   type CreateCustomerPayload,
   type CreateNegocioPayload,
   type OutboxPayloadBase,
@@ -180,12 +189,21 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   // el cursor general el servidor contestaría «sin novedades» y el teléfono se
   // quedaría sin catálogo para siempre. Lo que se repite del resto del paquete
   // son upserts idempotentes de, como mucho, un día.
-  const includeCatalog = shouldIncludeCatalog({
-    reason,
-    requested: isCatalogRequested(),
-    lastCatalogAt: await getCatalogPulledAt(database),
-  });
-  const catalogCursor = includeCatalog ? await getCatalogCursor(database) : null;
+  //
+  // Al recaudador puro (alcance 'cobro') el servidor nunca le manda catálogo:
+  // pedirlo sólo haría que cada «Descargar información» bajara todo desde cero,
+  // porque su cursor de catálogo nunca avanza.
+  const storedScope = await getMeta(database, PULL_SCOPE_META_KEY);
+  const includeCatalog =
+    storedScope !== 'cobro' &&
+    shouldIncludeCatalog({
+      reason,
+      requested: isCatalogRequested(),
+      lastCatalogAt: await getCatalogPulledAt(database),
+    });
+  const catalogCursor = includeCatalog
+    ? cursorForCatalogPull(lastPulledAt, await getCatalogCursor(database))
+    : null;
   let { data, error } = await supabase.rpc('pull_mobile_sync', {
     p_last_pulled_at: includeCatalog ? catalogCursor : lastPulledAt,
     p_limit: PULL_LIMIT,
@@ -219,7 +237,16 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   }
   clearCatalogRequest();
   await setMeta(database, 'last_pulled_at', cursorFromServerTime(payload.server_time));
-  await setMeta(database, PULL_PAYLOAD_VERSION_META_KEY, PULL_PAYLOAD_VERSION);
+  // Si el alcance cambió (le dieron o le quitaron un rol), la próxima descarga
+  // es completa: el cursor delta no traería los clientes viejos que ahora sí le
+  // tocan. Se consigue guardando una versión de paquete que no existe.
+  const scopeChanged = pullScopeChanged(storedScope, payload.pull_scope);
+  await setMeta(
+    database,
+    PULL_PAYLOAD_VERSION_META_KEY,
+    scopeChanged ? PULL_SCOPE_CHANGED_MARKER : PULL_PAYLOAD_VERSION
+  );
+  if (payload.pull_scope) await setMeta(database, PULL_SCOPE_META_KEY, payload.pull_scope);
   await setLastOnlineVerifiedAt();
   if (payload.profile_name !== undefined) await setCachedProfileName(payload.profile_name);
   await setCachedRoles({
@@ -233,7 +260,12 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   // Con la descarga recortada la lista de alcance también viene recortada: no
   // es autoridad para borrar, así que la poda se salta hasta la próxima
   // descarga completa.
-  if (!truncationWarning) await pruneScope(database);
+  if (!truncationWarning) {
+    await pruneScope(database);
+    // Recaudador puro: fuera los clientes que no son de ningún negocio suyo
+    // (20261128120000). Va después de la poda de negocios, ya al día.
+    if (payload.pull_scope === 'cobro') await pruneCustomersOutsideNegocios(database);
+  }
   return truncationWarning;
 }
 
