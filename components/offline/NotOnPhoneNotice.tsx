@@ -2,35 +2,25 @@ import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
-import {
-  useOfflineSelection,
-  type SyncPrefDomain,
-} from './infrastructure/syncPrefsService';
-
-export const NOT_ON_PHONE_TITLE = 'No está en el teléfono';
-export const NOT_ON_PHONE_MESSAGE =
-  'No está en el teléfono. Con señal, márcalo con «Llevar en el teléfono».';
 
 /**
- * ¿Hay que explicar que algo puede faltar porque el dominio está en «Solo lo
- * que elijo»? Solo tiene sentido con datos locales (sin señal).
+ * «Preparar el teléfono» v3: la descarga no trae los negocios cerrados ni los
+ * anulados (con sus cuotas y pagos). Sin señal, que no aparezcan es lo
+ * esperable y no un fallo de la descarga.
  */
-export function useNotOnPhone(domain: SyncPrefDomain, fromCache: boolean) {
-  const selection = useOfflineSelection(domain);
-  return fromCache && selection.supported && selection.mode === 'seleccion';
-}
+export const CLOSED_NEGOCIOS_NOT_ON_PHONE_MESSAGE =
+  'Sin señal solo están los negocios abiertos: los cerrados y los anulados no se llevan en el teléfono.';
 
-type Props = { domain: SyncPrefDomain; fromCache: boolean };
+type Props = { fromCache: boolean };
 
-/** Línea para estados vacíos sin señal cuando el dominio está en selección. */
-export function NotOnPhoneNotice({ domain, fromCache }: Props) {
+/** Línea para estados vacíos sin señal (lista de negocios filtrada o buscada). */
+export function NotOnPhoneNotice({ fromCache }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const show = useNotOnPhone(domain, fromCache);
-  if (!show) return null;
+  if (!fromCache) return null;
   return (
     <Text style={[styles.text, { color: colors.text.secondary }]} testID="not-on-phone-notice">
-      {NOT_ON_PHONE_MESSAGE}
+      {CLOSED_NEGOCIOS_NOT_ON_PHONE_MESSAGE}
     </Text>
   );
 }

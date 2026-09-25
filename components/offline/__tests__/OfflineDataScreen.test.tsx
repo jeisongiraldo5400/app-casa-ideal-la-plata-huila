@@ -1,4 +1,4 @@
-import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -22,17 +22,6 @@ jest.mock('@/lib/offline/repositories/catalogRepository', () => ({ localCatalogP
 jest.mock('@/lib/offline/sync/downloadData', () => ({
   formatLastDownloadTime: jest.fn((at: number | null) => (at ? '10:30 a. m.' : null)),
   requestManualDownload: jest.fn(async () => ({ ok: true })),
-}));
-jest.mock('@/lib/locations/locationsService', () => ({
-  EMPTY_LOCATION_MASTERS: { departamentos: [], municipios: [], veredas: [] },
-  fetchLocationMasters: jest.fn(async () => ({
-    departamentos: [{ id: 'd1', nombre: 'Antioquia' }],
-    municipios: [{ id: 'm1', nombre: 'Rionegro', departamento_id: 'd1' }],
-    veredas: [],
-  })),
-}));
-jest.mock('@/components/customers/infrastructure/services/customersDirectoryService', () => ({
-  fetchCustomersPage: jest.fn(async () => ({ customers: [], totalCount: 0, hasMore: false, fromCache: false })),
 }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
@@ -60,11 +49,11 @@ beforeEach(() => {
   resetSyncPrefs();
   mockRecaudador = false;
   config = {
-    clientes: { mode: 'todo', revision: 1, count: 4, ids: ['c1', 'c2', 'c3', 'c4'], mis_clientes: false },
-    productos: { mode: 'todo', revision: 1, count: 0, ids: [] },
+    clientes: { mode: 'todo', revision: 1, count: 0, ids: [], mis_clientes: false },
+    productos: { mode: 'todo', revision: 1 },
     ordenes: { revision: 1, count: 1, ids: ['o1'] },
     municipios: { revision: 1, count: 0, ids: [] },
-    estimated: { clientes: 120, negocios: 15 },
+    estimated: { clientes: 2123, negocios: 64 },
     orders_allowed: true,
     catalog_allowed: true,
   };
@@ -73,15 +62,9 @@ beforeEach(() => {
   rpc.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
     if (fn === 'get_mobile_sync_config') return { data: config, error: null };
     if (fn === 'list_mobile_sync_selection') {
-      return args?.p_domain === 'ordenes'
-        ? { data: [{ entity_id: 'o1', name: 'OE-000123', detail: 'customer · approved' }], error: null }
-        : { data: [{ entity_id: 'c1', name: 'Ana Pérez', detail: '111' }], error: null };
+      return { data: [{ entity_id: 'o1', name: 'OE-000123', detail: 'customer · approved' }], error: null };
     }
     if (fn === 'set_mobile_sync_mode') return { data: { domain: args?.p_domain, revision: 2 }, error: null };
-    if (fn === 'set_mobile_sync_mis_clientes') {
-      config.clientes = { ...(config.clientes as object), mis_clientes: args?.p_enabled };
-      return { data: { domain: 'clientes', mis_clientes: args?.p_enabled, revision: 3, count: 4 }, error: null };
-    }
     if (fn === 'set_mobile_sync_selection') {
       return { data: { domain: args?.p_domain, count: args?.p_selected ? 1 : 0, revision: 2 }, error: null };
     }
@@ -89,120 +72,60 @@ beforeEach(() => {
   });
 });
 
-describe('OfflineDataScreen · Preparar el teléfono', () => {
-  it('muestra los bloques: siempre incluido, clientes, productos y órdenes', async () => {
+describe('OfflineDataScreen · Preparar el teléfono (v3)', () => {
+  it('muestra siempre incluido (clientes y negocios abiertos), productos, órdenes y la última descarga', async () => {
     const screen = render(<OfflineDataScreen />);
 
-    await screen.findByTestId('domain-card-clientes');
+    await screen.findByTestId('domain-card-productos');
     expect(screen.getByText('Siempre incluido')).toBeTruthy();
-    expect(screen.getByTestId('domain-card-productos')).toBeTruthy();
+    expect(screen.getByText(/Todos los clientes, con sus direcciones/)).toBeTruthy();
+    expect(screen.getByText(/Negocios abiertos con sus cuotas y pagos \(los cerrados y anulados no se llevan\)/)).toBeTruthy();
+    expect(screen.getByText(/Remisiones pendientes/)).toBeTruthy();
+    expect(screen.getByTestId('prepare-estimate')).toHaveTextContent(
+      'Se descargarán unos 2123 clientes y 64 negocios abiertos.'
+    );
     expect(screen.getByTestId('products-switch').props.value).toBe(true);
     expect(screen.getByTestId('domain-card-ordenes')).toBeTruthy();
     expect(screen.getByText('1 llevada')).toBeTruthy();
     expect(await screen.findByText('OE-000123')).toBeTruthy();
+    expect(screen.getByText('Última descarga')).toBeTruthy();
     expect(screen.getByText('Descargar')).toBeTruthy();
-    // Ya no hay selección por producto, categoría ni bodega.
-    expect(screen.queryByText('Por categoría')).toBeNull();
-    expect(screen.queryByText('Por bodega')).toBeNull();
   });
 
-  it('pide confirmación con el conteo antes de pasar a «Elegir» y no descarga sola', async () => {
+  it('ya no hay bloque de clientes: ni «Elegir», ni municipios, ni «Mis clientes», ni el aviso de nada elegido', async () => {
+    // Aunque el servidor todavía mande restos de v2, no se ofrecen.
+    config.clientes = { mode: 'seleccion', revision: 1, count: 3, ids: ['c1'], mis_clientes: true };
     const screen = render(<OfflineDataScreen />);
-    const card = await screen.findByTestId('domain-card-clientes');
+    await screen.findByTestId('domain-card-productos');
 
-    fireEvent.press(within(card).getByText('Elegir'));
+    expect(screen.queryByTestId('domain-card-clientes')).toBeNull();
+    expect(screen.queryByText('Elegir')).toBeNull();
+    expect(screen.queryByTestId('municipios-picker')).toBeNull();
+    expect(screen.queryByTestId('mis-clientes-switch')).toBeNull();
+    expect(screen.queryByTestId('clientes-nothing-chosen')).toBeNull();
+    expect(rpc).not.toHaveBeenCalledWith('list_mobile_sync_selection', expect.objectContaining({ p_domain: 'clientes' }));
+  });
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Elegir clientes',
-      expect.stringContaining('Hoy tienes 4 clientes elegidos y 0 municipios'),
-      expect.any(Array)
-    );
-    expect(rpc).not.toHaveBeenCalledWith('set_mobile_sync_mode', expect.anything());
-
-    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2] as { text: string; onPress?: () => void }[];
-    await act(async () => {
-      buttons.find((button) => button.text === 'Cambiar')?.onPress?.();
-    });
-
+  it('quita una orden de la lista', async () => {
+    const screen = render(<OfflineDataScreen />);
+    fireEvent.press(await screen.findByLabelText('Quitar OE-000123 del teléfono'));
     await waitFor(() =>
-      expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'clientes', p_mode: 'seleccion' })
+      expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', { p_domain: 'ordenes', p_ids: ['o1'], p_selected: false })
     );
-    expect(await screen.findByTestId('municipios-picker')).toBeTruthy();
     expect(await screen.findByText('Pendiente de descargar')).toBeTruthy();
-    expect(screen.getByTestId('prepare-warning')).toBeTruthy();
-    expect(await screen.findByTestId('selection-estimate')).toHaveTextContent(/120 clientes · 15 negocios/);
-    // Tras el cambio se relee el estimado exacto del servidor.
-    expect(rpc.mock.calls.filter(([fn]) => fn === 'get_mobile_sync_config').length).toBeGreaterThan(1);
     expect(runSync).not.toHaveBeenCalled();
-  });
-
-  it('en «Elegir» marca municipios y quita clientes de la lista', async () => {
-    config.clientes = { mode: 'seleccion', revision: 1, count: 1, ids: ['c1'] };
-    const screen = render(<OfflineDataScreen />);
-    await screen.findByText('Ana Pérez');
-
-    fireEvent.press(screen.getByLabelText('Quitar Ana Pérez del teléfono'));
-    await waitFor(() =>
-      expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', { p_domain: 'clientes', p_ids: ['c1'], p_selected: false })
-    );
-
-    fireEvent.press(await screen.findByText('Elige un departamento'));
-    fireEvent.press(await screen.findByText('Antioquia'));
-    await act(async () => {
-      fireEvent.press(await screen.findByText('Rionegro'));
-    });
-    await waitFor(() =>
-      expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', { p_domain: 'municipios', p_ids: ['m1'], p_selected: true })
-    );
-    expect(await screen.findByLabelText('Quitar municipio Rionegro')).toBeTruthy();
-  });
-
-  it('«Mis clientes» es un flag del servidor, no ids', async () => {
-    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
-    const screen = render(<OfflineDataScreen />);
-    const toggle = await screen.findByTestId('mis-clientes-switch');
-
-    await act(async () => {
-      fireEvent(toggle, 'valueChange', true);
-    });
-
-    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mis_clientes', { p_enabled: true });
-    expect(rpc).not.toHaveBeenCalledWith('set_mobile_sync_selection', expect.anything());
-    await waitFor(() => expect(screen.getByTestId('mis-clientes-switch').props.value).toBe(true));
-  });
-
-  it('muestra tal cual el mensaje del servidor al pasar el tope', async () => {
-    config.clientes = { mode: 'seleccion', revision: 1, count: 1, ids: ['c1'], mis_clientes: false };
-    const base = rpc.getMockImplementation()!;
-    rpc.mockImplementation(async (fn: string, args?: Record<string, unknown>) =>
-      fn === 'set_mobile_sync_selection'
-        ? { data: null, error: { code: '42501', message: 'Puedes llevar hasta 200 municipios en el teléfono.' } }
-        : base(fn, args)
-    );
-    const screen = render(<OfflineDataScreen />);
-    fireEvent.press(await screen.findByText('Elige un departamento'));
-    fireEvent.press(await screen.findByText('Antioquia'));
-    await act(async () => {
-      fireEvent.press(await screen.findByText('Rionegro'));
-    });
-    await waitFor(() =>
-      expect(Alert.alert).toHaveBeenCalledWith(
-        'No se pudo llevar al teléfono',
-        'Puedes llevar hasta 200 municipios en el teléfono.'
-      )
-    );
   });
 
   it('sin catálogo ni órdenes permitidos por el servidor, oculta esos bloques', async () => {
     config.catalog_allowed = false;
     config.orders_allowed = false;
     const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('domain-card-clientes');
+    await screen.findByTestId('prepare-estimate');
     expect(screen.queryByTestId('domain-card-productos')).toBeNull();
     expect(screen.queryByTestId('domain-card-ordenes')).toBeNull();
   });
 
-  it('el interruptor de productos pasa a «ninguno»', async () => {
+  it('el interruptor de productos pasa a «ninguno» sin descargar', async () => {
     const screen = render(<OfflineDataScreen />);
     const toggle = await screen.findByTestId('products-switch');
 
@@ -211,14 +134,17 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     });
 
     expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'productos', p_mode: 'ninguno' });
+    expect(await screen.findByText('Pendiente de descargar')).toBeTruthy();
+    expect(runSync).not.toHaveBeenCalled();
   });
 
-  it('«Descargar» lanza la descarga manual', async () => {
+  it('«Descargar» lanza la descarga manual sin preguntar', async () => {
     const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('domain-card-clientes');
+    await screen.findByTestId('domain-card-productos');
     await act(async () => {
       fireEvent.press(screen.getByText('Descargar'));
     });
+    expect(Alert.alert).not.toHaveBeenCalled();
     expect(requestManualDownload).toHaveBeenCalledTimes(1);
   });
 
@@ -233,74 +159,19 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     const screen = render(<OfflineDataScreen />);
 
     expect(await screen.findByText('Aún no disponible')).toBeTruthy();
-    expect(screen.queryByTestId('domain-card-clientes')).toBeNull();
+    expect(screen.queryByTestId('domain-card-productos')).toBeNull();
     expect(screen.getByText('Descargar')).toBeTruthy();
   });
 
-  it('«Elegir» sin nada elegido avisa y pide confirmación antes de descargar', async () => {
-    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
-    const screen = render(<OfflineDataScreen />);
-
-    expect(await screen.findByTestId('clientes-nothing-chosen')).toHaveTextContent(
-      'No elegiste clientes: solo bajarán los negocios que son tuyos. Activa Mis clientes o elige municipios.'
-    );
-    await act(async () => {
-      fireEvent.press(screen.getByText('Descargar'));
-    });
-    expect(requestManualDownload).not.toHaveBeenCalled();
-    expect(Alert.alert).toHaveBeenCalledWith(
-      '¿Descargar sin clientes?',
-      'No elegiste clientes: solo bajarán los negocios que son tuyos. Activa Mis clientes o elige municipios.',
-      expect.any(Array)
-    );
-
-    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2] as { text: string; onPress?: () => void }[];
-    expect(buttons.map((button) => button.text)).toEqual(['Cancelar', 'Descargar igual']);
-    await act(async () => {
-      buttons.find((button) => button.text === 'Descargar igual')?.onPress?.();
-    });
-    expect(requestManualDownload).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['municipios', { municipios: { revision: 1, count: 1, ids: ['m1'] } }],
-    ['Mis clientes', { clientes: { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: true } }],
-    ['uno a uno', { clientes: { mode: 'seleccion', revision: 1, count: 1, ids: ['c1'], mis_clientes: false } }],
-  ])('con %s elegidos no avisa ni pregunta', async (_label, patch) => {
-    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
-    Object.assign(config, patch);
-    const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('municipios-picker');
-
-    expect(screen.queryByTestId('clientes-nothing-chosen')).toBeNull();
-    await act(async () => {
-      fireEvent.press(screen.getByText('Descargar'));
-    });
-    expect(Alert.alert).not.toHaveBeenCalled();
-    expect(requestManualDownload).toHaveBeenCalledTimes(1);
-  });
-
-  it('en «Todos» no avisa', async () => {
-    const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('domain-card-clientes');
-    expect(screen.queryByTestId('clientes-nothing-chosen')).toBeNull();
-  });
-
-  it('al recaudador le explica que solo bajan clientes de negocios que puede cobrar', async () => {
+  it('al recaudador: solo los clientes de los negocios que cobra, sin productos, órdenes ni remisiones', async () => {
     mockRecaudador = true;
     config.orders_allowed = false;
     config.catalog_allowed = false;
     const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('domain-card-clientes');
-    expect(screen.getByText(/solo bajan los clientes de los negocios que puedes cobrar/)).toBeTruthy();
-    // No recibe remisiones: no se le promete la lista.
+    await screen.findByTestId('prepare-estimate');
+    expect(screen.getByText(/Los clientes de los negocios que cobras/)).toBeTruthy();
+    expect(screen.queryByText(/Todos los clientes/)).toBeNull();
     expect(screen.queryByText(/Remisiones pendientes/)).toBeNull();
-  });
-
-  it('el recaudador elige clientes, pero no ve productos ni órdenes', async () => {
-    mockRecaudador = true;
-    const screen = render(<OfflineDataScreen />);
-    await screen.findByTestId('domain-card-clientes');
     expect(screen.queryByTestId('domain-card-productos')).toBeNull();
     expect(screen.queryByTestId('domain-card-ordenes')).toBeNull();
   });

@@ -10,7 +10,10 @@ import {
 } from './types';
 
 /**
- * «Preparar el teléfono» (descarga selectiva v2) tal como lo conoce el teléfono.
+ * «Preparar el teléfono» (descarga selectiva v2 + v3) tal como lo conoce el
+ * teléfono. Desde v3 (20261205120000) los clientes van siempre todos: su modo
+ * sólo se guarda para notar que un teléfono descargado en v2 («Elegir») tiene
+ * que volver a descargar.
  *
  * El servidor es la fuente de verdad (`mobile_sync_prefs`). Cada descarga
  * manual devuelve `sync_config` y aquí se guarda en `sync_meta`: es «lo que
@@ -41,16 +44,11 @@ export const SELECTIVE_RECHECK_MS = 24 * 60 * 60 * 1000;
 export type LocalDomainConfig = { mode: SyncDomainMode; revision: number; count: number | null };
 
 export type LocalSyncConfig = {
-  /**
-   * 'todo' | 'seleccion'. `misClientes`: atajo «Mis clientes»; `null` si el
-   * servidor no lo manda (encenderlo no sube la revisión: hay que compararlo).
-   */
-  clientes: LocalDomainConfig & { misClientes: boolean | null };
+  /** 'todo' desde v3; 'seleccion' sólo en lo descargado con un servidor v2. */
+  clientes: LocalDomainConfig;
   /** 'todo' | 'ninguno' (v2: ya no hay selección por producto). */
   productos: LocalDomainConfig;
   ordenes: { revision: number; count: number | null };
-  /** Municipios elegidos para clientes (v2); `null` si el servidor no lo manda. */
-  municipios: { revision: number; count: number | null } | null;
 };
 
 function toInt(value: unknown, fallback: number): number {
@@ -64,23 +62,19 @@ function toCount(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toFlag(value: unknown): boolean | null {
-  return typeof value === 'boolean' ? value : null;
-}
-
 /**
  * Normaliza el `sync_config` del servidor. `null` si no vino. También lee lo
- * guardado en `sync_meta` (que ya es un `LocalSyncConfig`, con `misClientes`).
+ * guardado en `sync_meta` (que ya es un `LocalSyncConfig`). Lo que v2 mandaba
+ * de más (`mis_clientes`, `municipios`) se ignora.
  */
 export function parseSyncConfig(raw: PullSyncConfig | null | undefined): LocalSyncConfig | null {
   if (!raw || typeof raw !== 'object') return null;
-  const clientes = raw.clientes as (NonNullable<PullSyncConfig['clientes']> & { misClientes?: unknown }) | null | undefined;
+  const clientes = raw.clientes;
   return {
     clientes: {
       mode: clientes?.mode === 'seleccion' ? 'seleccion' : 'todo',
       revision: toInt(clientes?.revision, 0),
       count: toCount(clientes?.count),
-      misClientes: toFlag(clientes?.mis_clientes ?? clientes?.misClientes),
     },
     productos: {
       mode: raw.productos?.mode === 'ninguno' ? 'ninguno' : 'todo',
@@ -88,9 +82,6 @@ export function parseSyncConfig(raw: PullSyncConfig | null | undefined): LocalSy
       count: toCount(raw.productos?.count),
     },
     ordenes: { revision: toInt(raw.ordenes?.revision, 0), count: toCount(raw.ordenes?.count) },
-    municipios: raw.municipios
-      ? { revision: toInt(raw.municipios.revision, 0), count: toCount(raw.municipios.count) }
-      : null,
   };
 }
 
@@ -123,7 +114,9 @@ export async function readAppliedRevisions(database: Database): Promise<AppliedR
 
 /**
  * Dominios que una descarga manual pide completos: SIEMPRE los clientes, para
- * que el teléfono quede sólo con lo elegido (se borra lo que no vino).
+ * que el teléfono quede sólo con lo que manda el servidor (se borra lo que no
+ * vino: clientes eliminados o, al recaudador, los que ya no son de sus
+ * negocios).
  * Productos no hace falta: en «todo» basta el delta del catálogo con su
  * cursor, y en «ninguno» el teléfono borra el catálogo entero.
  */
@@ -229,7 +222,8 @@ export type ServerSyncConfigLike = PullSyncConfig | null | undefined;
 /**
  * ¿La configuración del servidor difiere de la que se descargó? Compara modo y
  * revisión de cada dominio y, si ambos lo tienen, el conteo (marcar algo no
- * sube la revisión, pero sí el conteo) y el atajo «Mis clientes».
+ * sube la revisión, pero sí el conteo). Un teléfono descargado en v2 con
+ * clientes en «Elegir» difiere del 'todo' de v3: queda pendiente de descargar.
  */
 export function serverConfigDiffers(
   downloaded: LocalSyncConfig | null,
@@ -247,20 +241,8 @@ export function serverConfigDiffers(
     if (before.mode !== now.mode || before.revision !== now.revision) return true;
     if (!sameCount(before.count, now.count)) return true;
   }
-  // «Mis clientes» encendido desde otro teléfono no sube la revisión.
-  if (
-    downloaded.clientes.misClientes != null &&
-    current.clientes.misClientes != null &&
-    downloaded.clientes.misClientes !== current.clientes.misClientes
-  ) {
-    return true;
-  }
   if (downloaded.ordenes.revision !== current.ordenes.revision) return true;
   if (!sameCount(downloaded.ordenes.count, current.ordenes.count)) return true;
-  if (downloaded.municipios && current.municipios) {
-    if (downloaded.municipios.revision !== current.municipios.revision) return true;
-    if (!sameCount(downloaded.municipios.count, current.municipios.count)) return true;
-  }
   return false;
 }
 

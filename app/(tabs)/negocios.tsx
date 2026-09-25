@@ -136,7 +136,7 @@ function NegociosScreenInner() {
             setQuery('');
             setFilter('all');
           }}>
-          <NotOnPhoneNotice domain="clientes" fromCache={fromCache} />
+          <NotOnPhoneNotice fromCache={fromCache} />
         </ScreenState>
       );
     }
@@ -146,7 +146,6 @@ function NegociosScreenInner() {
           icon="cloud-off"
           title="Sin datos locales"
           description="Conéctese y descargue la información para trabajar sin conexión.">
-          <NotOnPhoneNotice domain="clientes" fromCache={fromCache} />
           <DownloadDataButton variant="cta" />
         </ScreenState>
       );

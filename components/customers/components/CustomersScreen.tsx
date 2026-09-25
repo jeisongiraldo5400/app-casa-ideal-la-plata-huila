@@ -1,6 +1,5 @@
 import { useTheme } from '@/components/theme';
 import { DownloadDataButton } from '@/components/offline';
-import { NOT_ON_PHONE_MESSAGE, NOT_ON_PHONE_TITLE, useNotOnPhone } from '@/components/offline/NotOnPhoneNotice';
 import {
   HeroActionCard,
   OptionPickerField,
@@ -31,9 +30,6 @@ export function CustomersScreen() {
   const [sellers, setSellers] = useState<SellerOption[]>([]);
 
   const list = useCustomersList();
-  // Clientes en «Solo lo que elijo» y sin señal: lo que no aparece puede no
-  // estar en el teléfono; se dice en vez de un «sin coincidencias» a secas.
-  const notOnPhone = useNotOnPhone('clientes', list.fromCache);
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(rolesLoading || list.loading);
 
@@ -82,16 +78,6 @@ export function CustomersScreen() {
         />
       );
     }
-    if (list.hasFilters && notOnPhone) {
-      return (
-        <ScreenState
-          variant="inline"
-          icon="phonelink-off"
-          title={NOT_ON_PHONE_TITLE}
-          description={NOT_ON_PHONE_MESSAGE}
-        />
-      );
-    }
     if (list.hasFilters) {
       return (
         <ScreenState
@@ -111,11 +97,7 @@ export function CustomersScreen() {
           variant="inline"
           icon="cloud-off"
           title="Sin conexión"
-          description={
-            notOnPhone
-              ? `No hay clientes en la última descarga. ${NOT_ON_PHONE_MESSAGE}`
-              : 'No hay clientes en la última descarga. Conéctate y pulsa «Descargar información» para tener el directorio en el teléfono.'
-          }
+          description="No hay clientes en la última descarga. Conéctate y pulsa «Descargar información» para tener el directorio en el teléfono."
         >
           <DownloadDataButton variant="cta" />
         </ScreenState>

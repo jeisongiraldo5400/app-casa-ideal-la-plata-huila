@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { runSync } from '@/lib/offline/sync/syncEngine';
@@ -16,7 +16,6 @@ import {
   refreshDownloadState,
   parseConfigMeta,
   parseSyncConfig,
-  setMisClientes,
   resetSyncPrefs,
   setSyncMode,
   setSyncSelection,
@@ -42,10 +41,13 @@ const mockedPending = hasPendingChoicesToDownload as jest.MockedFunction<typeof 
 const mockedMarkChanged = markChoicesChangedLocally as jest.MockedFunction<typeof markChoicesChangedLocally>;
 const mockedLocal = getLocalSyncConfig as jest.MockedFunction<typeof getLocalSyncConfig>;
 
+
+// v3 (20261205120000): el servidor manda clientes siempre en 'todo' sin ids.
 const CONFIG = {
-  clientes: { mode: 'seleccion', revision: 3, count: 2, ids: ['c1', 'c2'] },
-  productos: { mode: 'todo', revision: 1, count: 0 },
-  ordenes: { revision: 5, count: 1, ids: ['o1'] },
+  clientes: { mode: 'todo', revision: 3, count: 0, ids: [], mis_clientes: false },
+  municipios: { revision: 3, count: 0, ids: [] },
+  productos: { mode: 'todo', revision: 1 },
+  ordenes: { revision: 5, count: 2, ids: ['o1', 'o2'] },
 };
 
 beforeEach(() => {
@@ -59,69 +61,54 @@ beforeEach(() => {
 });
 
 describe('parseSyncConfig', () => {
-  it('lee modo, revisión, conteo e ids; órdenes siempre en selección', () => {
+  it('lee productos (modo) y órdenes (revisión, conteo e ids); clientes ya no es preferencia', () => {
     const config = parseSyncConfig(CONFIG);
-    expect(config.clientes).toEqual({ mode: 'seleccion', revision: 3, count: 2, ids: ['c1', 'c2'] });
-    expect(config.productos).toEqual({ mode: 'todo', revision: 1, count: 0, ids: [] });
-    expect(config.ordenes.mode).toBe('seleccion');
-    expect(config.ordenes.ids).toEqual(['o1']);
+    expect(config).toEqual({
+      productos: { mode: 'todo', revision: 1, count: 0, ids: [] },
+      ordenes: { mode: 'seleccion', revision: 5, count: 2, ids: ['o1', 'o2'] },
+    });
   });
 
   it('acepta los ids aparte, en `selected`', () => {
-    const config = parseSyncConfig({
-      clientes: { mode: 'seleccion', revision: 1, count: 1 },
-      selected: { clientes: ['c9'] },
-    });
-    expect(config.clientes.ids).toEqual(['c9']);
+    const config = parseSyncConfig({ ordenes: { revision: 1, count: 1 }, selected: { ordenes: ['o9'] } });
+    expect(config.ordenes.ids).toEqual(['o9']);
+  });
+
+  it('productos en «ninguno»', () => {
+    expect(parseSyncConfig({ productos: { mode: 'ninguno', revision: 2 } }).productos.mode).toBe('ninguno');
   });
 });
 
 describe('parseConfigMeta', () => {
-  it('lee mis_clientes, el estimado exacto y los permisos', () => {
+  it('lee el estimado exacto y los permisos', () => {
     expect(
       parseConfigMeta({
-        clientes: { mode: 'seleccion', mis_clientes: true },
+        clientes: { mode: 'todo', mis_clientes: false },
         estimated: { clientes: 340, negocios: 22 },
         orders_allowed: false,
         catalog_allowed: true,
       })
-    ).toEqual({ misClientes: true, estimated: { clientes: 340, negocios: 22 }, ordersAllowed: false, catalogAllowed: true });
-  });
-});
-
-describe('setMisClientes', () => {
-  it('llama al RPC del flag y deja la elección pendiente de descargar', async () => {
-    rpc.mockImplementation(async (fn: string) =>
-      fn === 'set_mobile_sync_mis_clientes'
-        ? { data: { domain: 'clientes', mis_clientes: true, revision: 4, count: 0 }, error: null }
-        : { data: { ...CONFIG, estimated: { clientes: 50, negocios: 3 } }, error: null }
-    );
-    await setMisClientes(true);
-    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mis_clientes', { p_enabled: true });
-    expect(useSyncPrefsStore.getState().meta.misClientes).toBe(true);
-    expect(useSyncPrefsStore.getState().config.clientes.revision).toBe(4);
-    expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
-    expect(mockedMarkChanged).toHaveBeenCalled();
-    await waitFor(() => expect(useSyncPrefsStore.getState().meta.estimated).toEqual({ clientes: 50, negocios: 3 }));
+    ).toEqual({ estimated: { clientes: 340, negocios: 22 }, ordersAllowed: false, catalogAllowed: true });
   });
 });
 
 describe('getSyncConfig', () => {
-  it('pide los ids con list_mobile_sync_selection si solo llegó el conteo', async () => {
+  it('pide los ids de órdenes con list_mobile_sync_selection si solo llegó el conteo', async () => {
     rpc.mockImplementation(async (fn: string) => {
       if (fn === 'get_mobile_sync_config') {
-        return { data: { ...CONFIG, productos: { mode: 'seleccion', revision: 2, count: 2 } }, error: null };
+        return { data: { ...CONFIG, ordenes: { revision: 2, count: 2 } }, error: null };
       }
       if (fn === 'list_mobile_sync_selection') {
-        return { data: [{ entity_id: 'p1', name: 'Silla' }, { entity_id: 'p2', name: 'Mesa' }], error: null };
+        return { data: [{ entity_id: 'o7', name: 'OE-7' }, { entity_id: 'o8', name: 'OE-8' }], error: null };
       }
       return { data: null, error: null };
     });
 
     const config = await getSyncConfig();
 
-    expect(rpc).toHaveBeenCalledWith('list_mobile_sync_selection', { p_domain: 'productos', p_limit: 200, p_offset: 0 });
-    expect(config.productos.ids).toEqual(['p1', 'p2']);
+    expect(rpc).toHaveBeenCalledWith('list_mobile_sync_selection', { p_domain: 'ordenes', p_limit: 200, p_offset: 0 });
+    expect(rpc).not.toHaveBeenCalledWith('list_mobile_sync_selection', expect.objectContaining({ p_domain: 'clientes' }));
+    expect(config.ordenes.ids).toEqual(['o7', 'o8']);
     expect(useSyncPrefsStore.getState().status).toBe('ready');
   });
 });
@@ -141,36 +128,33 @@ describe('loadSyncPrefs', () => {
     expect(useSyncPrefsStore.getState().status).toBe('ready');
   });
 
-  it('sin señal usa el modo que guardó el último pull', async () => {
+  it('sin señal usa el modo de productos que guardó el último pull', async () => {
     rpc.mockRejectedValue(new Error('Network request failed'));
     mockedLocal.mockResolvedValue({
-      clientes: { mode: 'seleccion', revision: 2, count: null, misClientes: null },
-      productos: { mode: 'todo', revision: 1, count: null },
+      clientes: { mode: 'todo', revision: 2, count: null },
+      productos: { mode: 'ninguno', revision: 1, count: null },
       ordenes: { revision: 1, count: null },
-      municipios: null,
     });
     await loadSyncPrefs();
     const state = useSyncPrefsStore.getState();
     expect(state.status).toBe('offline');
-    expect(state.config.clientes.mode).toBe('seleccion');
+    expect(state.config.productos.mode).toBe('ninguno');
   });
 });
 
 describe('setSyncMode / setSyncSelection', () => {
-  it('cambia el modo sin descargar: queda pendiente de descargar', async () => {
-    rpc.mockResolvedValue({ data: { domain: 'clientes', revision: 7 }, error: null });
-    await setSyncMode('clientes', 'seleccion');
-    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'clientes', p_mode: 'seleccion' });
-    expect(useSyncPrefsStore.getState().config.clientes).toMatchObject({ mode: 'seleccion', revision: 7 });
+  it('productos acepta «ninguno» sin descargar: queda pendiente de descargar', async () => {
+    rpc.mockResolvedValue({ data: { domain: 'productos', revision: 2 }, error: null });
+    await setSyncMode('productos', 'ninguno');
+    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'productos', p_mode: 'ninguno' });
+    expect(useSyncPrefsStore.getState().config.productos).toMatchObject({ mode: 'ninguno', revision: 2 });
     expect(mockedRunSync).not.toHaveBeenCalled();
     expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
   });
 
-  it('productos acepta «ninguno»', async () => {
-    rpc.mockResolvedValue({ data: { domain: 'productos', revision: 2 }, error: null });
-    await setSyncMode('productos', 'ninguno');
-    expect(rpc).toHaveBeenCalledWith('set_mobile_sync_mode', { p_domain: 'productos', p_mode: 'ninguno' });
-    expect(useSyncPrefsStore.getState().config.productos.mode).toBe('ninguno');
+  it('las órdenes no tienen modo', async () => {
+    await expect(setSyncMode('ordenes', 'todo')).rejects.toThrow('Este dominio siempre se elige uno a uno.');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('pasa al motor la configuración leída del servidor para detectar cambios de otro teléfono', async () => {
@@ -183,8 +167,8 @@ describe('setSyncMode / setSyncSelection', () => {
   });
 
   it('el pendiente se apaga tras una descarga manual posterior al cambio', async () => {
-    rpc.mockResolvedValue({ data: { domain: 'municipios', count: 1, revision: 1 }, error: null });
-    await setSyncSelection('municipios', ['m1'], true);
+    rpc.mockResolvedValue({ data: { domain: 'ordenes', count: 1, revision: 1 }, error: null });
+    await setSyncSelection('ordenes', ['o1'], true);
     expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(true);
     expect(mockedMarkChanged).toHaveBeenCalledTimes(1);
 
@@ -194,28 +178,25 @@ describe('setSyncMode / setSyncSelection', () => {
     await refreshDownloadState();
     expect(isDownloadPending(useSyncPrefsStore.getState())).toBe(false);
     expect(useSyncPrefsStore.getState().lastManualAt).not.toBeNull();
-    expect(useSyncPrefsStore.getState().config.municipios.ids).toEqual(['m1']);
+    expect(useSyncPrefsStore.getState().config.ordenes.ids).toEqual(['o1']);
   });
 
   it('parte los lotes en 200 ids y guarda el conteo del servidor', async () => {
-    useSyncPrefsStore.setState({
-      config: { ...useSyncPrefsStore.getState().config, clientes: { mode: 'seleccion', revision: 1, count: 0, ids: [] } },
-    });
     let total = 0;
     rpc.mockImplementation(async (_fn: string, args: { p_ids: string[] }) => {
       total += args.p_ids.length;
-      return { data: { domain: 'clientes', count: total, revision: 1 }, error: null };
+      return { data: { domain: 'ordenes', count: total, revision: 1 }, error: null };
     });
-    const ids = Array.from({ length: 450 }, (_, index) => `c${index}`);
+    const ids = Array.from({ length: 450 }, (_, index) => `o${index}`);
 
-    const result = await setSyncSelection('clientes', ids, true);
+    const result = await setSyncSelection('ordenes', ids, true);
 
     const setCalls = rpc.mock.calls.filter(([fn]) => fn === 'set_mobile_sync_selection');
     expect(setCalls).toHaveLength(3);
     expect(setCalls[0][1].p_ids).toHaveLength(200);
     expect(setCalls[2][1].p_ids).toHaveLength(50);
     expect(result.count).toBe(450);
-    expect(useSyncPrefsStore.getState().config.clientes.ids).toHaveLength(450);
+    expect(useSyncPrefsStore.getState().config.ordenes.ids).toHaveLength(450);
     expect(mockedRunSync).not.toHaveBeenCalled();
   });
 
@@ -231,14 +212,14 @@ describe('useOfflineSelection', () => {
     rpc.mockImplementation(async (fn: string, args?: { p_ids?: string[]; p_selected?: boolean }) => {
       if (fn === 'get_mobile_sync_config') return { data: CONFIG, error: null };
       if (fn === 'set_mobile_sync_selection') {
-        return { data: { domain: 'clientes', count: args?.p_selected ? 3 : 1, revision: 4 }, error: null };
+        return { data: { domain: 'ordenes', count: args?.p_selected ? 3 : 1, revision: 4 }, error: null };
       }
       return { data: null, error: null };
     });
   });
 
   it('expone modo, conteo y marca; toggle marca y desmarca', async () => {
-    const { result } = renderHook(() => useOfflineSelection('clientes'));
+    const { result } = renderHook(() => useOfflineSelection('ordenes'));
     await act(async () => {
       await loadSyncPrefs();
     });
@@ -246,35 +227,49 @@ describe('useOfflineSelection', () => {
     expect(result.current.supported).toBe(true);
     expect(result.current.mode).toBe('seleccion');
     expect(result.current.count).toBe(2);
-    expect(result.current.isSelected('c1')).toBe(true);
-    expect(result.current.isSelected('c3')).toBe(false);
+    expect(result.current.isSelected('o1')).toBe(true);
+    expect(result.current.isSelected('o3')).toBe(false);
 
     await act(async () => {
-      await result.current.toggle('c3');
+      await result.current.toggle('o3');
     });
     expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', {
-      p_domain: 'clientes',
-      p_ids: ['c3'],
+      p_domain: 'ordenes',
+      p_ids: ['o3'],
       p_selected: true,
     });
-    expect(result.current.isSelected('c3')).toBe(true);
+    expect(result.current.isSelected('o3')).toBe(true);
     expect(result.current.count).toBe(3);
     expect(result.current.pendingDownload).toBe(true);
     expect(mockedRunSync).not.toHaveBeenCalled();
 
     await act(async () => {
-      await result.current.toggle('c1');
+      await result.current.toggle('o1');
     });
     expect(rpc).toHaveBeenCalledWith('set_mobile_sync_selection', {
-      p_domain: 'clientes',
-      p_ids: ['c1'],
+      p_domain: 'ordenes',
+      p_ids: ['o1'],
       p_selected: false,
     });
-    expect(result.current.isSelected('c1')).toBe(false);
+    expect(result.current.isSelected('o1')).toBe(false);
+  });
+
+  it('productos no se marca uno a uno: toggle no llama al servidor', async () => {
+    const { result } = renderHook(() => useOfflineSelection('productos'));
+    await act(async () => {
+      await loadSyncPrefs();
+    });
+    let applied = true;
+    await act(async () => {
+      applied = await result.current.toggle('p1');
+    });
+    expect(applied).toBe(false);
+    expect(rpc).not.toHaveBeenCalledWith('set_mobile_sync_selection', expect.anything());
+    expect(result.current.mode).toBe('todo');
   });
 
   it('sin señal no llama al servidor y lo avisa', async () => {
-    const { result } = renderHook(() => useOfflineSelection('clientes'));
+    const { result } = renderHook(() => useOfflineSelection('ordenes'));
     await act(async () => {
       await loadSyncPrefs();
     });
@@ -282,7 +277,7 @@ describe('useOfflineSelection', () => {
 
     let applied = true;
     await act(async () => {
-      applied = await result.current.toggle('c3');
+      applied = await result.current.toggle('o3');
     });
 
     expect(applied).toBe(false);
@@ -303,16 +298,16 @@ describe('useOfflineSelection', () => {
 describe('estado compartido', () => {
   it('muchas tarjetas con el hook hacen una sola llamada a get_mobile_sync_config', async () => {
     rpc.mockResolvedValue({ data: CONFIG, error: null });
-    const hooks = Array.from({ length: 20 }, () => renderHook(() => useOfflineSelection('clientes')));
+    const hooks = Array.from({ length: 20 }, () => renderHook(() => useOfflineSelection('ordenes')));
     await act(async () => {
       await loadSyncPrefs();
     });
     // Tarjetas montadas después (al hacer scroll) tampoco vuelven a preguntar.
-    renderHook(() => useOfflineSelection('clientes'));
+    renderHook(() => useOfflineSelection('ordenes'));
     await act(async () => undefined);
 
     const configCalls = rpc.mock.calls.filter(([fn]) => fn === 'get_mobile_sync_config');
     expect(configCalls).toHaveLength(1);
-    expect(hooks[19].result.current.isSelected('c1')).toBe(true);
+    expect(hooks[19].result.current.isSelected('o1')).toBe(true);
   });
 });
