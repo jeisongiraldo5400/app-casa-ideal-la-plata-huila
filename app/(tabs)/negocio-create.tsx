@@ -448,8 +448,9 @@ function NegocioCreateScreenInner() {
         : null;
     let cancelled = false;
     (async () => {
-      // Sin señal devuelve null (no lanza): el vendedor elige la ubicación a
-      // mano y el paso sigue funcionando.
+      // Sin señal la lee de la base local (última descarga o alta sin señal).
+      // Si no la encuentra devuelve null (no lanza): el vendedor elige la
+      // ubicación a mano y el paso sigue funcionando.
       const saved = await fetchCustomerSavedLocation(customerId);
       if (cancelled) return;
       const current = locationRef.current;

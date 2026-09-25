@@ -3,6 +3,7 @@ import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalDb,
   createCustomerOffline,
+  fetchCustomerFromLocal,
   searchCustomersFromLocal,
 } from '@/lib/offline/repositories/offlineRepository';
 
@@ -89,10 +90,39 @@ export type CustomerSavedLocation = {
   address: string | null;
 };
 
+/** Normaliza la ubicación: ids vacíos y dirección en blanco cuentan como sin dato. */
+function toSavedLocation(row: {
+  municipioId?: string | null;
+  veredaId?: string | null;
+  address?: string | null;
+}): CustomerSavedLocation {
+  return {
+    municipioId: row.municipioId || null,
+    veredaId: row.veredaId || null,
+    address: row.address?.trim() || null,
+  };
+}
+
 /**
- * Ubicación guardada del cliente. Sin conexión o si falla devuelve `null`: la
- * usa el asistente de negocio sólo para rellenar campos vacíos, y no rellenarlos
- * no debe impedir seguir.
+ * Ubicación guardada del cliente en la base local (la última descarga o el alta
+ * sin señal). `null` si no hay base local o el cliente no está descargado.
+ */
+async function fetchCustomerSavedLocationFromLocal(customerId: string): Promise<CustomerSavedLocation | null> {
+  if (!canUseLocalDb()) return null;
+  try {
+    const row = await fetchCustomerFromLocal(customerId);
+    return row ? toSavedLocation(row) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ubicación guardada del cliente. Sin señal la lee de la base local: antes
+ * devolvía `null` y el asistente de negocio no rellenaba departamento,
+ * municipio, vereda ni dirección aunque el cliente ya estuviera descargado.
+ * Si falla por otra causa devuelve `null`: se usa sólo para rellenar campos
+ * vacíos, y no rellenarlos no debe impedir seguir.
  */
 export async function fetchCustomerSavedLocation(customerId: string): Promise<CustomerSavedLocation | null> {
   if (!customerId) return null;
@@ -102,14 +132,16 @@ export async function fetchCustomerSavedLocation(customerId: string): Promise<Cu
       .select('municipio_id, vereda_id, address')
       .eq('id', customerId)
       .maybeSingle();
-    if (error || !data) return null;
-    return {
-      municipioId: data.municipio_id || null,
-      veredaId: data.vereda_id || null,
-      address: data.address?.trim() || null,
-    };
-  } catch {
-    return null;
+    if (error) throw error;
+    if (!data) {
+      // Un cliente creado sin señal aún no existe en el servidor: su ubicación
+      // sólo está en la base local.
+      return await fetchCustomerSavedLocationFromLocal(customerId);
+    }
+    return toSavedLocation({ municipioId: data.municipio_id, veredaId: data.vereda_id, address: data.address });
+  } catch (error) {
+    if (!isNetworkError(error)) return null;
+    return await fetchCustomerSavedLocationFromLocal(customerId);
   }
 }
 

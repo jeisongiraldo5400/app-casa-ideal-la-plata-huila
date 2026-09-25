@@ -326,6 +326,11 @@ export async function createCustomerOffline(input: {
         record.idNumber = input.idNumber;
         record.phone = input.phone;
         record.sellerId = input.sellerId ?? null;
+        // La ubicación también queda en local: el asistente de negocio la usa
+        // para rellenar el paso de ubicación cuando se elige este cliente.
+        record.address = input.address?.trim() || null;
+        record.municipioId = input.municipioId || null;
+        record.veredaId = input.veredaId || null;
         record.rowSyncStatus = 'pending';
         record.localUpdatedAt = Date.now();
         record.serverUpdatedAt = null;
