@@ -178,6 +178,19 @@ export async function fetchCustomersPageFromLocal(params: LocalCustomerQuery) {
 }
 
 /** Nombre visible de cada usuario descargado, por id. Vacío si no hay base local. */
+/**
+ * Nombre de una persona sin señal: el que viajó resuelto en el pull o, si no
+ * está (negocio creado sin señal, datos viejos), el de los perfiles bajados.
+ */
+function localPersonName(
+  resolved: string | null | undefined,
+  id: string | null | undefined,
+  profileNames: Map<string, string>
+): string | null {
+  if (resolved) return resolved;
+  return id ? profileNames.get(id) ?? null : null;
+}
+
 export async function fetchProfileNamesFromLocal(): Promise<Map<string, string>> {
   if (!canUseLocalDb()) return new Map();
   const rows = await getDatabase().get<Profile>('profiles').query().fetch();
@@ -572,12 +585,15 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
   const database = getDatabase();
   const negocio = await findOrNull<Negocio>('negocios', negocioId);
   if (!negocio) return null;
-  const [customers, cuotas, allPagos, items] = await Promise.all([
+  const [customers, cuotas, allPagos, items, profileNames] = await Promise.all([
     database.get<Customer>('customers').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query(Q.where('negocio_id', negocioId)).fetch(),
     database.get<NegocioPago>('negocio_pagos').query(Q.where('negocio_id', negocioId)).fetch(),
     database.get<NegocioItem>('negocio_items').query(Q.where('negocio_id', negocioId)).fetch(),
+    fetchProfileNamesFromLocal(),
   ]);
+  // Vendedor al que pertenece el cliente, distinto del vendedor del negocio.
+  const customerSellerId = customers.find((row) => row.id === negocio.customerId)?.sellerId ?? null;
   // Los rechazados van aparte: no son dinero recibido, así que no pueden sumar
   // en los totales ni en el saldo de los recibos.
   const pagos = allPagos.filter((row) => !isRejectedPago(row));
@@ -602,9 +618,7 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       createdBy: negocio.createdBy,
       // Viaja resuelto en el pull (20261128120000). Un negocio creado sin señal
       // sólo guarda el id: su nombre sale de los perfiles descargados.
-      createdByName:
-        negocio.createdByName ||
-        (negocio.createdBy ? (await fetchProfileNamesFromLocal()).get(negocio.createdBy) ?? null : null),
+      createdByName: localPersonName(negocio.createdByName, negocio.createdBy, profileNames),
     },
     customers: customers.map((row) => ({
       id: row.id,
@@ -664,6 +678,10 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       pending_confirmation: pendingIds.has(pago.id),
     })),
     rejectedPagos: allPagos.filter(isRejectedPago).map(toRejectedPagoRow),
+    customerSeller: {
+      id: customerSellerId,
+      name: localPersonName(null, customerSellerId, profileNames),
+    },
   };
 }
 
@@ -689,11 +707,14 @@ export async function fetchCarteraFromLocal(
 ): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
-  const [cuotas, negocios, customers, pagos] = await Promise.all([
+  const [cuotas, negocios, customers, pagos, profileNames] = await Promise.all([
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     database.get<Negocio>('negocios').query().fetch(),
     database.get<Customer>('customers').query().fetch(),
     database.get<NegocioPago>('negocio_pagos').query().fetch(),
+    // Los usuarios bajan completos en el pull: con ellos se nombran sin señal
+    // el vendedor del cliente y quien registró el negocio.
+    fetchProfileNamesFromLocal(),
   ]);
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
@@ -740,9 +761,11 @@ export async function fetchCarteraFromLocal(
         municipio_id: negocio?.municipioId || null,
         municipio_name: negocio?.municipioName || null,
         seller_id: negocio?.sellerId || null,
-        seller_name: null,
+        seller_name: localPersonName(negocio?.sellerName, negocio?.sellerId, profileNames),
         customer_seller_id: customer?.sellerId || null,
-        customer_seller_name: null,
+        customer_seller_name: localPersonName(null, customer?.sellerId, profileNames),
+        created_by: negocio?.createdBy || null,
+        created_by_name: localPersonName(negocio?.createdByName, negocio?.createdBy, profileNames),
         installment_number: cuota.installmentNumber,
         due_date: cuota.dueDate,
         amount: cuota.amount,

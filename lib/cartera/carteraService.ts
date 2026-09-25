@@ -108,6 +108,8 @@ export async function fetchCarteraPage(params: CarteraPageQuery) {
     const rows = ((data || []) as CarteraRow[]).map((row) => ({
       ...row, seller_id: row.seller_id ?? null, seller_name: row.seller_name ?? null,
       customer_seller_id: row.customer_seller_id ?? null, customer_seller_name: row.customer_seller_name ?? null,
+      // Ausentes antes de desplegar 20261202120000.
+      created_by: row.created_by ?? null, created_by_name: row.created_by_name ?? null,
       amount: Number(row.amount), paid_amount: Number(row.paid_amount),
       late_fee_amount: Number(row.late_fee_amount || 0), saldo: Number(row.saldo), total_count: Number(row.total_count || 0),
     }));
