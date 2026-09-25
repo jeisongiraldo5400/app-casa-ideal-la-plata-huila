@@ -16,7 +16,7 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { formatLastDownloadTime, requestManualDownload } from '@/lib/offline/sync/downloadData';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { ClientesBlock } from './prepare/ClientesBlock';
+import { ClientesBlock, clientesNothingChosen, NOTHING_CHOSEN_MESSAGE } from './prepare/ClientesBlock';
 import { SelectedList } from './prepare/SelectedList';
 import { PREPARE_PHONE_AFTER_MS } from './SyncStatusBanner';
 import { setSyncMode, SELECTION_LIMITS, useSyncPrefs } from './infrastructure/syncPrefsService';
@@ -39,8 +39,9 @@ const ALWAYS_INCLUDED = [
   'Departamentos, municipios y veredas',
   'Métodos de pago y vendedores',
   'Tus rutas de cobro',
-  'Remisiones pendientes (lista ligera)',
 ];
+/** Solo a quien puede usar órdenes (el recaudador puro no las recibe). */
+const ALWAYS_INCLUDED_ORDERS = 'Remisiones pendientes (lista ligera)';
 
 /**
  * «Preparar el teléfono» (contrato v2, punto 8). La persona elige y pulsa
@@ -77,7 +78,7 @@ export function OfflineDataScreen() {
     };
   }, [lastSyncedAt]);
 
-  const download = async () => {
+  const runDownload = async () => {
     if (downloading) return;
     setDownloading(true);
     try {
@@ -90,6 +91,20 @@ export function OfflineDataScreen() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  // Clientes en «Elegir» sin nada elegido: el teléfono se quedaría sin
+  // clientes. Se pregunta antes de descargar (solo si el bloque se ve).
+  const download = () => {
+    if (downloading) return;
+    if (prefs.status === 'ready' && clientesNothingChosen(prefs.config, prefs.meta)) {
+      Alert.alert('¿Descargar sin clientes?', NOTHING_CHOSEN_MESSAGE, [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Descargar igual', onPress: () => void runDownload() },
+      ]);
+      return;
+    }
+    void runDownload();
   };
 
   const toggleProducts = useCallback(async (value: boolean) => {
@@ -164,7 +179,7 @@ export function OfflineDataScreen() {
 
         <Card style={styles.card}>
           <SectionHeader title="Siempre incluido" />
-          {ALWAYS_INCLUDED.map((line) => (
+          {(canOrders ? [...ALWAYS_INCLUDED, ALWAYS_INCLUDED_ORDERS] : ALWAYS_INCLUDED).map((line) => (
             <Text key={line} style={[styles.caption, { color: colors.text.secondary }]}>
               • {line}
             </Text>
@@ -177,6 +192,7 @@ export function OfflineDataScreen() {
               config={prefs.config}
               meta={prefs.meta}
               online={online}
+              recaudador={recaudador}
               dateSlot={<BlockDate label="Clientes descargados" at={lastDownload} />}
             />
 
@@ -246,7 +262,7 @@ export function OfflineDataScreen() {
         <Button
           title={downloading ? 'Descargando…' : 'Descargar'}
           icon="cloud-download"
-          onPress={() => void download()}
+          onPress={download}
           loading={downloading}
           disabled={downloading}
           style={styles.flex}

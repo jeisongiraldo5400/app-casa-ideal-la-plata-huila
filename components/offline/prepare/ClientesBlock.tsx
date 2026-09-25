@@ -220,17 +220,37 @@ function Estimate({ estimated }: { estimated: SyncConfigMeta['estimated'] }) {
   );
 }
 
+/** Aviso cuando Clientes está en «Elegir» sin nada elegido. */
+export const NOTHING_CHOSEN_MESSAGE =
+  'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.';
+
+/**
+ * Clientes en «Elegir» sin municipios, sin «Mis clientes» y sin ninguno uno a
+ * uno: al descargar el teléfono se quedaría sin clientes (ni sus negocios).
+ */
+export function clientesNothingChosen(config: SyncConfig, meta: Pick<SyncConfigMeta, 'misClientes'>): boolean {
+  return (
+    config.clientes.mode === 'seleccion' &&
+    !config.clientes.count &&
+    !config.municipios.count &&
+    !meta.misClientes
+  );
+}
+
 /** Bloque «Clientes» de «Preparar el teléfono»: Todos / Elegir. */
 export function ClientesBlock({
   config,
   meta,
   online,
   dateSlot,
+  recaudador = false,
 }: {
   config: SyncConfig;
   meta: SyncConfigMeta;
   online: boolean;
   dateSlot: React.ReactNode;
+  /** Recaudador puro: solo le bajan clientes de negocios que puede cobrar. */
+  recaudador?: boolean;
 }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -291,10 +311,19 @@ export function ClientesBlock({
         <SegmentedControl items={MODE_ITEMS} value={mode} onChange={onChange} />
         {changing ? <ActivityIndicator color={colors.primary.main} /> : null}
         <Text style={[styles.caption, { color: colors.text.secondary }]}>
-          {choosing
-            ? `Van los clientes de tus negocios, los de los municipios elegidos y los que elijas uno a uno (hasta ${SELECTION_LIMITS.clientes}).`
-            : 'Se lleva el directorio completo de clientes y todos los negocios de tu alcance.'}
+          {recaudador
+            ? choosing
+              ? 'Como recaudador solo bajan clientes de negocios que puedes cobrar: de los municipios y clientes que elijas, van los que tengan un negocio a tu cargo.'
+              : 'Como recaudador solo bajan los clientes de los negocios que puedes cobrar (titular y codeudor), no todo el directorio.'
+            : choosing
+              ? `Van los clientes de tus negocios, los de los municipios elegidos y los que elijas uno a uno (hasta ${SELECTION_LIMITS.clientes}).`
+              : 'Se lleva el directorio completo de clientes y todos los negocios de tu alcance.'}
         </Text>
+        {clientesNothingChosen(config, meta) ? (
+          <Text style={[styles.caption, { color: colors.warning.main }]} testID="clientes-nothing-chosen">
+            {NOTHING_CHOSEN_MESSAGE}
+          </Text>
+        ) : null}
         {choosing ? (
           <>
             <MunicipiosPicker online={online} />

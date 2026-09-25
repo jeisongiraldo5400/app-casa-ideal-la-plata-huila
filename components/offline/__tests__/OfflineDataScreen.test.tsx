@@ -237,6 +237,66 @@ describe('OfflineDataScreen · Preparar el teléfono', () => {
     expect(screen.getByText('Descargar')).toBeTruthy();
   });
 
+  it('«Elegir» sin nada elegido avisa y pide confirmación antes de descargar', async () => {
+    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
+    const screen = render(<OfflineDataScreen />);
+
+    expect(await screen.findByTestId('clientes-nothing-chosen')).toHaveTextContent(
+      'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.'
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByText('Descargar'));
+    });
+    expect(requestManualDownload).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      '¿Descargar sin clientes?',
+      'No llevas ningún cliente ni sus negocios. Activa Mis clientes o elige municipios.',
+      expect.any(Array)
+    );
+
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2] as { text: string; onPress?: () => void }[];
+    expect(buttons.map((button) => button.text)).toEqual(['Cancelar', 'Descargar igual']);
+    await act(async () => {
+      buttons.find((button) => button.text === 'Descargar igual')?.onPress?.();
+    });
+    expect(requestManualDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['municipios', { municipios: { revision: 1, count: 1, ids: ['m1'] } }],
+    ['Mis clientes', { clientes: { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: true } }],
+    ['uno a uno', { clientes: { mode: 'seleccion', revision: 1, count: 1, ids: ['c1'], mis_clientes: false } }],
+  ])('con %s elegidos no avisa ni pregunta', async (_label, patch) => {
+    config.clientes = { mode: 'seleccion', revision: 1, count: 0, ids: [], mis_clientes: false };
+    Object.assign(config, patch);
+    const screen = render(<OfflineDataScreen />);
+    await screen.findByTestId('municipios-picker');
+
+    expect(screen.queryByTestId('clientes-nothing-chosen')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Descargar'));
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(requestManualDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it('en «Todos» no avisa', async () => {
+    const screen = render(<OfflineDataScreen />);
+    await screen.findByTestId('domain-card-clientes');
+    expect(screen.queryByTestId('clientes-nothing-chosen')).toBeNull();
+  });
+
+  it('al recaudador le explica que solo bajan clientes de negocios que puede cobrar', async () => {
+    mockRecaudador = true;
+    config.orders_allowed = false;
+    config.catalog_allowed = false;
+    const screen = render(<OfflineDataScreen />);
+    await screen.findByTestId('domain-card-clientes');
+    expect(screen.getByText(/solo bajan los clientes de los negocios que puedes cobrar/)).toBeTruthy();
+    // No recibe remisiones: no se le promete la lista.
+    expect(screen.queryByText(/Remisiones pendientes/)).toBeNull();
+  });
+
   it('el recaudador elige clientes, pero no ve productos ni órdenes', async () => {
     mockRecaudador = true;
     const screen = render(<OfflineDataScreen />);
