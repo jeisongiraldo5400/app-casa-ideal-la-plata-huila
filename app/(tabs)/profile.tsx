@@ -1,4 +1,5 @@
 import { DownloadDataButton } from '@/components/offline';
+import { useSyncPrefs } from '@/components/offline/infrastructure/syncPrefsService';
 import { ChangePasswordForm } from '@/components/auth/components/ChangePasswordForm';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useTheme } from '@/components/theme';
@@ -30,6 +31,10 @@ function ProfileScreenInner() {
   const colors = getColors(isDark);
   const router = useRouter();
   const { roles } = useUserRoles();
+  // «Preparar el teléfono» solo si el servidor admite la descarga selectiva;
+  // si no, la fila descarga todo como siempre.
+  const syncPrefs = useSyncPrefs();
+  const canChooseOfflineData = syncPrefs.supported;
   const pendingCount = useSyncStore((state) => state.pendingCount);
   const failedCount = useSyncStore((state) => state.failedCount);
   const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
@@ -122,7 +127,9 @@ function ProfileScreenInner() {
 
       <Card style={[styles.card, { backgroundColor: colors.background.paper }]}>
         <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Datos sin conexión</Text>
-        <DownloadDataButton />
+        <DownloadDataButton
+          onOpen={canChooseOfflineData ? () => router.push('/datos-sin-conexion' as never) : undefined}
+        />
         <View style={[styles.divider, { backgroundColor: colors.divider }]} />
         <TouchableOpacity
           style={styles.changePasswordRow}

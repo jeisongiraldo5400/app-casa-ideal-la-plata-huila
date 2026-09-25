@@ -1,9 +1,55 @@
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { useTheme } from '@/components/theme';
 import { getColors } from '@/constants/theme';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { runSync } from '@/lib/offline/sync/syncEngine';
+import {
+  isDownloadPending,
+  loadSyncPrefs,
+  refreshDownloadState,
+  useSyncPrefsStore,
+} from './infrastructure/syncPrefsService';
+
+/** Pasado este tiempo sin descargar se pide preparar el teléfono. */
+export const PREPARE_PHONE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+export type PrepareReason = 'first' | 'stale' | 'pending';
+
+/**
+ * «Prepara el teléfono antes de salir» (contrato v2): nunca se ha descargado
+ * (primer inicio de sesión: invitación, no descarga sola), la última descarga
+ * tiene más de 24 h, o hay elecciones pendientes de descargar.
+ */
+export function shouldPreparePhone(input: {
+  loggedIn: boolean;
+  lastDownloadAt: number | null;
+  pendingDownload: boolean;
+  now?: number;
+}): PrepareReason | null {
+  if (!input.loggedIn) return null;
+  const now = input.now ?? Date.now();
+  if (!input.lastDownloadAt) return 'first';
+  if (input.pendingDownload) return 'pending';
+  if (now - input.lastDownloadAt > PREPARE_PHONE_AFTER_MS) return 'stale';
+  return null;
+}
+
+const PREPARE_LABELS: Record<PrepareReason, string> = {
+  first: 'Prepara el teléfono antes de salir · elige qué llevar y descarga',
+  stale: 'Prepara el teléfono antes de salir · la última descarga tiene más de 24 h',
+  pending: 'Prepara el teléfono antes de salir · hay elecciones sin descargar',
+};
+
+function openPreparePhone() {
+  try {
+    router.push('/datos-sin-conexion' as never);
+  } catch {
+    void runSync('manual');
+  }
+}
 
 function plural(count: number, singular: string, pluralForm: string) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
@@ -14,15 +60,34 @@ export function SyncStatusBanner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { online, status, pendingCount, failedCount, lastError, lastSyncedAt, setQueueVisible } = useSyncStore();
+  const userId = useSyncStore((state) => state.userId);
+  const pendingDownload = useSyncPrefsStore(isDownloadPending);
+  const lastManualAt = useSyncPrefsStore((state) => state.lastManualAt);
 
-  if (online && status === 'idle' && pendingCount === 0 && failedCount === 0 && !lastError) return null;
+  useEffect(() => {
+    void refreshDownloadState();
+    if (!online) return;
+    const current = useSyncPrefsStore.getState().status;
+    void loadSyncPrefs({ force: current === 'offline' || current === 'error' });
+  }, [online, lastSyncedAt, userId]);
+
+  const prepare = shouldPreparePhone({
+    loggedIn: Boolean(userId),
+    lastDownloadAt: lastManualAt ?? lastSyncedAt,
+    pendingDownload,
+  });
+  const quiet = online && status === 'idle' && pendingCount === 0 && failedCount === 0 && !lastError;
+
+  if (quiet && !prepare) return null;
 
   const background =
     !online || status === 'offline'
       ? colors.warning.main
       : status === 'error' || lastError || failedCount
         ? colors.error.main
-        : colors.primary.main;
+        : quiet && prepare
+          ? colors.warning.main
+          : colors.primary.main;
 
   const failedLabel = failedCount ? plural(failedCount, 'cambio rechazado', 'cambios rechazados') : null;
   const pendingLabel = pendingCount ? plural(pendingCount, 'pendiente', 'pendientes') : null;
@@ -44,6 +109,8 @@ export function SyncStatusBanner() {
     label = lastError;
   } else if (pendingCount) {
     label = `${plural(pendingCount, 'cambio', 'cambios')} por sincronizar`;
+  } else if (prepare) {
+    label = PREPARE_LABELS[prepare];
   } else {
     label = lastSyncedAt ? 'Sincronizado' : 'Sincronización';
   }
@@ -53,12 +120,18 @@ export function SyncStatusBanner() {
       setQueueVisible(true);
       return;
     }
+    // v2: la descarga es solo manual y se prepara en su pantalla.
+    if (prepare) {
+      openPreparePhone();
+      return;
+    }
     void runSync('manual');
   };
 
   return (
     <Pressable
       onPress={onPress}
+      testID="sync-status-banner"
       style={[styles.banner, { backgroundColor: background, paddingTop: Math.max(insets.top, 6) }]}
     >
       <Text style={styles.text}>{label}</Text>
