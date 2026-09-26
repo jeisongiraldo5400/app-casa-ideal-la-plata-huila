@@ -464,18 +464,26 @@ export function formatNegocioLocationLine(row: Pick<NegocioListRow, 'address' | 
 // Pestañas por rol
 // ---------------------------------------------------------------------------
 
-export type NegociosRoleFlags = { isAdmin: boolean; isVendedor: boolean; isGestorCobro: boolean };
+export type NegociosRoleFlags = {
+  isAdmin: boolean;
+  isVendedor: boolean;
+  isGestorCobro: boolean;
+  isRecaudador?: boolean;
+};
 
 /**
- * Pestañas que ve cada rol: «Todos» siempre (lo que antes era Negocios);
- * «Míos» el vendedor (antes Mis negocios); «Por cobrar» el gestor de cobro y
- * el admin (que elige el gestor).
+ * Pestañas que ve cada rol (regla del usuario, 2026-09-25):
+ * - «Todos»: SOLO admin y recaudador.
+ * - «Míos»: el vendedor (los negocios que él hizo).
+ * - «Por cobrar»: el gestor de cobro (los asignados a él) y el admin (elige el gestor).
+ * Un rol sin ninguna de esas ve «Míos», nunca todos.
  */
 export function availableNegociosScopes(roles: NegociosRoleFlags): NegociosScope[] {
-  const scopes: NegociosScope[] = ['todos'];
+  const scopes: NegociosScope[] = [];
+  if (roles.isAdmin || roles.isRecaudador) scopes.push('todos');
   if (roles.isVendedor) scopes.push('mios');
   if (roles.isGestorCobro || roles.isAdmin) scopes.push('por_cobrar');
-  return scopes;
+  return scopes.length ? scopes : ['mios'];
 }
 
 /** Pestaña inicial: la pedida por la ruta si el rol la tiene; el gestor abre en «Por cobrar». */
@@ -486,5 +494,5 @@ export function initialNegociosScope(
 ): NegociosScope {
   if (requested && (available as string[]).includes(requested)) return requested as NegociosScope;
   if (roles.isGestorCobro && !roles.isAdmin && available.includes('por_cobrar')) return 'por_cobrar';
-  return 'todos';
+  return available.includes('todos') ? 'todos' : available[0];
 }

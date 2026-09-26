@@ -60,18 +60,19 @@ export function NegociosListScreen() {
   const colors = getColors(isDark);
   const { user } = useAuth();
   const userId = user?.id ?? null;
-  const { isAdmin, isVendedor, isGestorCobro, onlyFindsBySearch } = useUserRoles();
+  const { isAdmin, isVendedor, isGestorCobro, isRecaudador } = useUserRoles();
   const admin = isAdmin();
   const vendedor = isVendedor();
   const gestorCobro = isGestorCobro();
+  const recaudador = isRecaudador();
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
   const syncOverlay = useNegocioSyncOverlay();
   const canCreate = admin || vendedor || gestorCobro;
 
   const roleFlags = useMemo(
-    () => ({ isAdmin: admin, isVendedor: vendedor, isGestorCobro: gestorCobro }),
-    [admin, vendedor, gestorCobro]
+    () => ({ isAdmin: admin, isVendedor: vendedor, isGestorCobro: gestorCobro, isRecaudador: recaudador }),
+    [admin, vendedor, gestorCobro, recaudador]
   );
   const scopes = useMemo(() => availableNegociosScopes(roleFlags), [roleFlags]);
   const requestedScope = typeof params.alcance === 'string' ? params.alcance : null;
@@ -107,9 +108,9 @@ export function NegociosListScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // El recaudador cobra en cualquier negocio, pero no recorre la lista: llega
-  // a uno buscándolo (20261125120000). Sólo aplica a «Todos».
-  const searchOnly = scope === 'todos' && onlyFindsBySearch();
+  // Regla del usuario (2026-09-25): admin y recaudador ven todos los negocios
+  // en «Todos»; ya no es «solo lo que busque» aquí (Cartera sigue igual).
+  const searchOnly = false;
   // El admin que no es gestor tiene que elegir de quién es la cartera.
   const needsGestor = scope === 'por_cobrar' && admin && !gestorCobro && !gestor;
 

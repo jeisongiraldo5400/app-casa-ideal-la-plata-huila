@@ -294,19 +294,25 @@ describe('negociosListQuery · servidor y utilidades', () => {
     expect(statusOptionsForScope('todos').map((option) => option.value)).toContain('cerrado');
   });
 
-  it('pestañas por rol y pestaña inicial', () => {
+  it('pestañas por rol y pestaña inicial: «Todos» solo admin y recaudador', () => {
     const gestor = { isAdmin: false, isVendedor: false, isGestorCobro: true };
     const vendedor = { isAdmin: false, isVendedor: true, isGestorCobro: false };
+    const vendedorGestor = { isAdmin: false, isVendedor: true, isGestorCobro: true };
     const admin = { isAdmin: true, isVendedor: false, isGestorCobro: false };
-    const recaudador = { isAdmin: false, isVendedor: false, isGestorCobro: false };
-    expect(availableNegociosScopes(gestor)).toEqual(['todos', 'por_cobrar']);
-    expect(availableNegociosScopes(vendedor)).toEqual(['todos', 'mios']);
+    const recaudador = { isAdmin: false, isVendedor: false, isGestorCobro: false, isRecaudador: true };
+    const sinRol = { isAdmin: false, isVendedor: false, isGestorCobro: false };
+    expect(availableNegociosScopes(gestor)).toEqual(['por_cobrar']);
+    expect(availableNegociosScopes(vendedor)).toEqual(['mios']);
+    expect(availableNegociosScopes(vendedorGestor)).toEqual(['mios', 'por_cobrar']);
     expect(availableNegociosScopes(admin)).toEqual(['todos', 'por_cobrar']);
     expect(availableNegociosScopes(recaudador)).toEqual(['todos']);
-    expect(initialNegociosScope(['todos', 'por_cobrar'], gestor)).toBe('por_cobrar');
+    expect(availableNegociosScopes(sinRol)).toEqual(['mios']);
+    expect(initialNegociosScope(['por_cobrar'], gestor)).toBe('por_cobrar');
+    expect(initialNegociosScope(['mios', 'por_cobrar'], vendedorGestor)).toBe('por_cobrar');
+    expect(initialNegociosScope(['mios'], vendedor)).toBe('mios');
     expect(initialNegociosScope(['todos', 'por_cobrar'], admin)).toBe('todos');
-    expect(initialNegociosScope(['todos', 'mios'], vendedor, 'mios')).toBe('mios');
     // Una pestaña que el rol no tiene no se abre aunque la pida la ruta.
+    expect(initialNegociosScope(['mios'], vendedor, 'todos')).toBe('mios');
     expect(initialNegociosScope(['todos'], recaudador, 'mios')).toBe('todos');
   });
 
