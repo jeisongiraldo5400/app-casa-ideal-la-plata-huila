@@ -207,14 +207,6 @@ export default function TabLayout() {
           headerLeft: () => <BackButton />,
         }}
       />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          href: null,
-          title: 'Reportes',
-          headerLeft: () => <BackButton />,
-        }}
-      />
       {/*
         Catálogos: el módulo está oculto en esta versión (CATALOGOS_HABILITADOS
         en constants/features.ts). Las dos pantallas se siguen declarando —los

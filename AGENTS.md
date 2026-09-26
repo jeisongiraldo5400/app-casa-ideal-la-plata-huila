@@ -83,7 +83,7 @@ Equivalencia pragmática con Clean/Hexagonal:
 
 ## 2. Modularización y límites claros
 
-- Priorizar features con límites funcionales claros (entries, exits, purchase-orders, negocios, cartera, collection-routes, inventory, auth, reports, catalogos).
+- Priorizar features con límites funcionales claros (entries, exits, purchase-orders, negocios, cartera, collection-routes, inventory, auth, catalogos).
 - **Catálogos en móvil es deliberadamente ligero**: solo crear/editar catálogos propios (textos, productos, enlaces). Sin fotos, videos, portada ni diseño; eso vive en `../catalogo-casa-ideal/`. El snapshot de `lib/catalogos/snapshot.ts` debe seguir alineado con el web.
 - Alta cohesión, bajo acoplamiento; no importar internals profundos de otro feature si se puede exportar desde su `index`.
 - No mover a `components/ui` o `lib/` lógica específica de un flujo de bodega/crédito.
