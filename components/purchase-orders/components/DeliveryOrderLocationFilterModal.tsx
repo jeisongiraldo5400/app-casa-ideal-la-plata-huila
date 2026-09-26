@@ -1,9 +1,10 @@
+import { LocationCascadeFields } from '@/components/locations/LocationCascadeFields';
 import { useTheme } from '@/components/theme';
-import { Button, FullScreenModal, OptionPickerField } from '@/components/ui';
+import { Button, FullScreenModal } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import type { LocationMasters } from '@/lib/locations/locationsService';
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import {
   EMPTY_DELIVERY_LOCATION_FILTER,
   type DeliveryLocationFilter,
@@ -19,9 +20,7 @@ type Props = {
 };
 
 /** Filtro de ubicación de las órdenes de entrega: departamento → municipio →
- *  vereda, encadenados igual que en el web. Elegir un nivel superior descarta
- *  los inferiores, así el filtro nunca queda en un estado imposible (municipio
- *  de otro departamento). */
+ *  vereda, encadenados igual que en el web (ver `LocationCascadeFields`). */
 export function DeliveryOrderLocationFilterModal({
   visible,
   masters,
@@ -32,27 +31,6 @@ export function DeliveryOrderLocationFilterModal({
 }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-
-  const departamentoOptions = useMemo(
-    () => masters.departamentos.map((item) => ({ value: item.id, label: item.nombre })),
-    [masters.departamentos],
-  );
-
-  const municipioOptions = useMemo(
-    () =>
-      masters.municipios
-        .filter((item) => item.departamento_id === value.departamentoId)
-        .map((item) => ({ value: item.id, label: item.nombre })),
-    [masters.municipios, value.departamentoId],
-  );
-
-  const veredaOptions = useMemo(
-    () =>
-      masters.veredas
-        .filter((item) => item.municipio_id === value.municipioId)
-        .map((item) => ({ value: item.id, label: item.nombre })),
-    [masters.veredas, value.municipioId],
-  );
 
   return (
     <FullScreenModal
@@ -77,55 +55,13 @@ export function DeliveryOrderLocationFilterModal({
             : 'Sólo las órdenes de cliente llevan ubicación; las remisiones se localizan por zona.'}
         </Text>
 
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Departamento</Text>
-          <OptionPickerField
-            value={value.departamentoId}
-            onValueChange={(departamentoId) =>
-              // Cambiar de departamento invalida municipio y vereda.
-              onChange({ departamentoId, municipioId: '', veredaId: '' })
-            }
-            options={departamentoOptions}
-            placeholder="Todos los departamentos"
-            modalTitle="Departamento"
-            colors={colors}
-            disabled={mastersLoading}
-          />
-        </View>
-
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Municipio</Text>
-          <OptionPickerField
-            value={value.municipioId}
-            onValueChange={(municipioId) => onChange({ ...value, municipioId, veredaId: '' })}
-            options={municipioOptions}
-            placeholder={
-              value.departamentoId ? 'Todos los municipios' : 'Elija primero un departamento'
-            }
-            modalTitle="Municipio"
-            colors={colors}
-            disabled={mastersLoading || !value.departamentoId}
-          />
-        </View>
-
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vereda</Text>
-          <OptionPickerField
-            value={value.veredaId}
-            onValueChange={(veredaId) => onChange({ ...value, veredaId })}
-            options={veredaOptions}
-            placeholder={
-              !value.municipioId
-                ? 'Elija primero un municipio'
-                : veredaOptions.length === 0
-                  ? 'El municipio no tiene veredas cargadas'
-                  : 'Todas las veredas'
-            }
-            modalTitle="Vereda"
-            colors={colors}
-            disabled={mastersLoading || !value.municipioId || veredaOptions.length === 0}
-          />
-        </View>
+        <LocationCascadeFields
+          masters={masters}
+          mastersLoading={mastersLoading}
+          value={value}
+          onChange={onChange}
+          colors={colors}
+        />
       </ScrollView>
     </FullScreenModal>
   );
@@ -134,7 +70,5 @@ export function DeliveryOrderLocationFilterModal({
 const styles = StyleSheet.create({
   content: { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxl },
   hint: { ...Typography.caption },
-  group: { gap: Spacing.sm },
-  label: { ...Typography.label },
   footerButton: { flex: 1 },
 });

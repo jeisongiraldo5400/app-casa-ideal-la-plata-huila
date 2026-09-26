@@ -109,13 +109,10 @@ function HomeScreenInner() {
               />
             ) : null}
             <View style={styles.actionGrid}>
-              <ActionCard compact title="Negocios" subtitle="Consultar y cobrar" icon="payments" onPress={() => navigate('/(tabs)/negocios')} style={styles.halfCard} />
+              <ActionCard compact title="Negocios" subtitle={isGestorCobro() ? 'Por cobrar y consultar' : 'Consultar y cobrar'} icon="payments" onPress={() => navigate('/(tabs)/negocios')} style={styles.halfCard} />
               <ActionCard compact title="Cartera" subtitle="Saldos y cuotas" icon="account-balance-wallet" onPress={() => navigate('/(tabs)/cartera')} style={styles.halfCard} />
-              {isVendedor() ? (
-                <ActionCard compact title="Mis negocios" subtitle="Los que vendiste" icon="storefront" onPress={() => navigate('/(tabs)/mis-negocios' as never)} style={styles.halfCard} />
-              ) : null}
               {canCreateNegocio ? (
-                <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => navigate('/(tabs)/clientes' as never)} style={isVendedor() ? styles.halfCard : styles.fullCard} />
+                <ActionCard compact title="Clientes" subtitle="Buscar, crear y asignar" icon="groups" onPress={() => navigate('/(tabs)/clientes' as never)} style={styles.fullCard} />
               ) : null}
             </View>
             {isGestorCobro() ? (

@@ -6,6 +6,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelNegocioStatus, negocioStatusTone } from '@/lib/negocioLabels';
 import { describeNegocioOrigen } from '@/lib/negocios/negocioOrigen';
 import { NEGOCIO_SYNC_BADGE, type NegocioSyncState } from '@/lib/negocios/negocioSyncBadge';
+import { NegocioCobroLines } from './NegocioCobroLines';
 
 export function NegocioListCard({
   item,
@@ -50,13 +51,16 @@ export function NegocioListCard({
         <StatusChip label={labelNegocioStatus(item.status)} tone={negocioStatusTone(item.status)} />
       </View>
       {syncBadge ? <StatusChip label={syncBadge.label} tone={syncBadge.tone} icon={syncBadge.icon} /> : null}
-      <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>{customer}</Text>
+      <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>
+        {item.customer?.id_number ? `${customer} · CC ${item.customer.id_number}` : customer}
+      </Text>
       <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>{meta}</Text>
       {origen ? (
         <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
           {origen.texto}
         </Text>
       ) : null}
+      <NegocioCobroLines item={item} colors={colors} />
       <View style={[styles.amounts, { borderTopColor: colors.divider }]}>
         <Metric label="Crédito" value={formatCOP(Number(item.total_credit))} />
         <Metric

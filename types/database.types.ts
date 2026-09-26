@@ -5702,6 +5702,23 @@ export type Database = {
         }
         Returns: Json
       }
+      list_negocios_movil: {
+        Args: {
+          p_cobro?: string
+          p_days?: number
+          p_departamento_id?: string
+          p_gestor_id?: string
+          p_limit?: number
+          p_municipio_id?: string
+          p_offset?: number
+          p_order?: string
+          p_scope?: string
+          p_search?: string
+          p_status?: string
+          p_vereda_id?: string
+        }
+        Returns: Json
+      }
       list_pending_remissions: {
         Args: never
         Returns: {
