@@ -45,9 +45,13 @@ jest.mock('@/hooks/useDashboardStats', () => ({
 }));
 
 // Usuario con rol de catálogo: sin la bandera, igual no debe ver el módulo.
+// Inicio solo consulta con la pestaña a la vista y con red.
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
+
 jest.mock('@/hooks/useUserRoles', () => ({
   useUserRoles: () => ({
-    roles: [],
+    roles: [{ role: { nombre: 'vendedor' } }],
     loading: false,
     isAdmin: () => false,
     isVendedor: () => true,
