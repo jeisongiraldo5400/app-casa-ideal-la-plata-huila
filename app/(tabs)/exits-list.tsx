@@ -1,5 +1,6 @@
 import { ExitsList } from '@/components/exits-list/components/ExitsList';
 import { ExitsSearchBar } from '@/components/exits-list/components/ExitsSearchBar';
+import { exitsListSubtitle } from '@/components/exits-list/utils/exitsListSubtitle';
 import { useExitsList } from '@/components/exits-list/infrastructure/hooks/useExitsList';
 import { useTheme } from '@/components/theme';
 import { ScreenHeader } from '@/components/ui';
@@ -19,26 +20,26 @@ export default function ExitsListScreen() {
 }
 
 function ExitsListScreenInner() {
-  const { loadExits, loading, exits, error } = useExitsList();
+  const { loadExits, loading, exits, error, totalCount } = useExitsList();
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
+  // Única carga al abrir; la búsqueda y «Cargar más» cargan por su cuenta.
   useEffect(() => {
-    loadExits();
+    void loadExits();
   }, [loadExits]);
 
   const handleRefresh = () => {
     loadExits();
   };
 
-  const totalItems = exits.reduce((sum, item) => sum + item.quantity, 0);
   // Con la consulta caída no hay "0 registros" que contar: no se sabe cuántos hay.
   const subtitle = error && exits.length === 0
     ? 'No se pudo consultar el historial'
-    : `${exits.length} registros · ${totalItems} unidades despachadas`;
+    : exitsListSubtitle(exits, totalCount);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background.default }]} edges={['top']}>
