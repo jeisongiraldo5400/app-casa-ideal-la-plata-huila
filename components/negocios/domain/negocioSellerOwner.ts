@@ -178,26 +178,3 @@ export function negocioSellerDiffersFromOwner(
 ): boolean {
   return Boolean(negocioSellerId) && negocioSellerId !== (customerSellerId ?? null);
 }
-
-/**
- * «Alinear con el dueño del cliente» (reemplaza a «Cambiar vendedor»): solo
- * admin, con señal, negocio no anulado, cliente con dueño y distinto del
- * vendedor guardado. El vendedor ya no se elige en el negocio: se cambia
- * reasignando el cliente en Clientes (assign_seller_to_negocio solo acepta al
- * dueño del cliente desde 20261206120000).
- */
-export function canAlignNegocioSellerWithOwner(params: {
-  isAdmin: boolean;
-  online: boolean;
-  status: string | null | undefined;
-  negocioSellerId: string | null | undefined;
-  customerSellerId: string | null | undefined;
-}): boolean {
-  return (
-    params.isAdmin &&
-    params.online &&
-    params.status !== 'anulado' &&
-    Boolean(params.customerSellerId) &&
-    params.negocioSellerId !== params.customerSellerId
-  );
-}

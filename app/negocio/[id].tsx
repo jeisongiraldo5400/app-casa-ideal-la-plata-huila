@@ -37,10 +37,7 @@ import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
-import {
-  canAlignNegocioSellerWithOwner,
-  negocioSellerDiffersFromOwner,
-} from '@/components/negocios/domain/negocioSellerOwner';
+import { negocioSellerDiffersFromOwner } from '@/components/negocios/domain/negocioSellerOwner';
 import { NegocioContactDetailsSheet } from '@/components/negocios/components/NegocioContactDetailsSheet';
 import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
 import { labelNegocioOrigen, resolveNegocioOrigen } from '@/lib/negocios/negocioOrigen';
@@ -169,7 +166,6 @@ function NegocioDetailScreenInner() {
   const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
-  const [sellerSaving, setSellerSaving] = useState(false);
   const [contactSheetOpen, setContactSheetOpen] = useState(false);
 
   useEffect(() => {
@@ -1294,30 +1290,6 @@ function NegocioDetailScreenInner() {
     }
   };
 
-  /**
-   * Alinea el negocio con el dueño actual del cliente (solo admin). El
-   * vendedor ya no se elige en el negocio: se cambia reasignando el cliente
-   * en Clientes, y el servidor solo acepta al dueño del cliente.
-   */
-  const alignSellerWithOwner = async () => {
-    if (!negocio || sellerSaving || !customerSellerId) return;
-    try {
-      setSellerSaving(true);
-      const { error } = await supabase.rpc('assign_seller_to_negocio', {
-        p_negocio_id: negocio.id,
-        p_seller_id: customerSellerId,
-        p_motivo: 'Alinear con el dueño del cliente',
-      });
-      if (error) throw error;
-      await load();
-      Alert.alert('Listo', 'El negocio quedó con el vendedor dueño del cliente.');
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo cambiar el vendedor');
-    } finally {
-      setSellerSaving(false);
-    }
-  };
-
   /** Registra la firma del cliente en un negocio ya activo (RPC dedicado). */
   const registerCustomerSignature = async () => {
     if (!negocio || signatureSaving) return;
@@ -1491,25 +1463,7 @@ function NegocioDetailScreenInner() {
   // sin ese dato el origen queda «desconocido» y la tarjeta no se pinta, en vez
   // de afirmar «Desde bodega» por omisión.
   const origen = resolveNegocioOrigen(negocio, { known: !fromLocal });
-  const canAlignSeller =
-    !fromLocal &&
-    canAlignNegocioSellerWithOwner({
-      isAdmin: isAdmin(),
-      online,
-      status: negocio.status,
-      negocioSellerId: negocio.seller_id,
-      customerSellerId,
-    });
   const sellerDiffers = negocioSellerDiffersFromOwner(negocio.seller_id, customerSellerId);
-  const confirmAlignSeller = () =>
-    Alert.alert(
-      'Alinear con el dueño del cliente',
-      `El vendedor del negocio pasará a ser ${customerSellerName || 'el dueño del cliente'}. Para cambiar el vendedor, reasigne el cliente en Clientes.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Alinear', onPress: () => void alignSellerWithOwner() },
-      ]
-    );
   // Activo, entregado o cerrado: solo dirección, notas y gestor de cobro (el
   // servidor valida admin, vendedor dueño o gestor asignado). Solo con conexión.
   const contactDetailsEditable = canEditNegocioContactDetails(negocio.status);
@@ -1625,9 +1579,6 @@ function NegocioDetailScreenInner() {
                 </Text>
               ) : null}
             </View>
-            {canAlignSeller ? (
-              <Button title="Alinear" variant="outline" size="sm" onPress={confirmAlignSeller} loading={sellerSaving} />
-            ) : null}
           </View>
         </Card>
 

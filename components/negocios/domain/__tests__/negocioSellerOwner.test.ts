@@ -1,6 +1,5 @@
 import {
   buildNegocioSellerInput,
-  canAlignNegocioSellerWithOwner,
   negocioSellerBlockedReason,
   negocioSellerDiffersFromOwner,
   negocioSellerMode,
@@ -143,15 +142,5 @@ describe('vendedor guardado vs dueño', () => {
     expect(negocioSellerDiffersFromOwner('a', 'b')).toBe(true);
     expect(negocioSellerDiffersFromOwner('a', null)).toBe(true);
     expect(negocioSellerDiffersFromOwner(null, 'b')).toBe(false);
-  });
-
-  it('alinear: solo admin, con señal, cliente con dueño distinto y negocio vigente', () => {
-    const base = { isAdmin: true, online: true, status: 'activo', negocioSellerId: 'a', customerSellerId: 'b' };
-    expect(canAlignNegocioSellerWithOwner(base)).toBe(true);
-    expect(canAlignNegocioSellerWithOwner({ ...base, isAdmin: false })).toBe(false);
-    expect(canAlignNegocioSellerWithOwner({ ...base, online: false })).toBe(false);
-    expect(canAlignNegocioSellerWithOwner({ ...base, status: 'anulado' })).toBe(false);
-    expect(canAlignNegocioSellerWithOwner({ ...base, customerSellerId: null })).toBe(false);
-    expect(canAlignNegocioSellerWithOwner({ ...base, customerSellerId: 'a' })).toBe(false);
   });
 });
