@@ -7,6 +7,7 @@ import { formatNegocioCodigo, labelNegocioStatus, negocioStatusTone } from '@/li
 import { describeNegocioOrigen } from '@/lib/negocios/negocioOrigen';
 import { NEGOCIO_SYNC_BADGE, type NegocioSyncState } from '@/lib/negocios/negocioSyncBadge';
 import { summarizeNegocioProducts, type NegocioProductLine } from '@/lib/negocios/negocioProducts';
+import { NegocioCobroLines } from './NegocioCobroLines';
 
 export function NegocioListCard({
   item,
@@ -62,13 +63,16 @@ export function NegocioListCard({
         <StatusChip label={labelNegocioStatus(item.status)} tone={negocioStatusTone(item.status)} />
       </View>
       {syncBadge ? <StatusChip label={syncBadge.label} tone={syncBadge.tone} icon={syncBadge.icon} /> : null}
-      <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>{customer}</Text>
+      <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>
+        {item.customer?.id_number ? `${customer} · CC ${item.customer.id_number}` : customer}
+      </Text>
       <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>{meta}</Text>
       {origen ? (
         <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
           {origen.texto}
         </Text>
       ) : null}
+      <NegocioCobroLines item={item} colors={colors} />
       {productSummary ? (
         <View style={styles.products} testID={`productos-negocio-${item.id}`}>
           {productSummary.lines.map((line, index) => (
