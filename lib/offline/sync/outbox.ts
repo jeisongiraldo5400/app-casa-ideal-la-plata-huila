@@ -89,13 +89,35 @@ export async function listDueOutbox(database: Database, now = Date.now()) {
     .sort((a, b) => a.queuedAt - b.queuedAt);
 }
 
-/** Comandos visibles para el usuario: activos y terminales. */
-export async function listReviewableOutbox(database: Database) {
+/**
+ * Enviados con un aviso para la persona (`last_error` en un comando `done`):
+ * p. ej. «el negocio quedó a nombre del dueño del cliente» o «se usó el cliente
+ * que ya existía». Se muestran en la cola hasta que la persona los da por
+ * vistos; pasado este tiempo dejan de mostrarse solos.
+ */
+export const OUTBOX_NOTICE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function listNoticeOutbox(database: Database, now = Date.now()) {
+  const done = await database.get<SyncOutboxItem>('sync_outbox').query(Q.where('status', 'done')).fetch();
+  return done.filter((item) => Boolean(item.lastError) && now - item.queuedAt <= OUTBOX_NOTICE_TTL_MS);
+}
+
+/** Comandos visibles para el usuario: activos, terminales y avisos recientes. */
+export async function listReviewableOutbox(database: Database, now = Date.now()) {
   const items = await database
     .get<SyncOutboxItem>('sync_outbox')
     .query(Q.where('status', Q.oneOf([...ACTIVE_STATUSES, ...FAILED_STATUSES])))
     .fetch();
-  return items.sort((a, b) => a.queuedAt - b.queuedAt);
+  const notices = await listNoticeOutbox(database, now);
+  return [...items, ...notices].sort((a, b) => a.queuedAt - b.queuedAt);
+}
+
+/** La persona ya leyó el aviso de un comando enviado: deja de mostrarse. */
+export async function dismissOutboxNotice(item: SyncOutboxItem) {
+  if (item.status !== 'done') return;
+  await item.update((record) => {
+    record.lastError = null;
+  });
 }
 
 /**
@@ -124,15 +146,16 @@ export async function recoverInterruptedOutbox(database: Database, now = Date.no
   return interrupted.length;
 }
 
-export type OutboxCounts = { pending: number; failed: number };
+export type OutboxCounts = { pending: number; failed: number; notices: number };
 
-export async function countOutbox(database: Database): Promise<OutboxCounts> {
+export async function countOutbox(database: Database, now = Date.now()): Promise<OutboxCounts> {
   const collection = database.get<SyncOutboxItem>('sync_outbox');
-  const [pending, failed] = await Promise.all([
+  const [pending, failed, notices] = await Promise.all([
     collection.query(Q.where('status', Q.oneOf(ACTIVE_STATUSES))).fetchCount(),
     collection.query(Q.where('status', Q.oneOf(FAILED_STATUSES))).fetchCount(),
+    listNoticeOutbox(database, now).then((items) => items.length),
   ]);
-  return { pending, failed };
+  return { pending, failed, notices };
 }
 
 export async function markOutboxSyncing(item: SyncOutboxItem) {

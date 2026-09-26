@@ -64,6 +64,21 @@ export async function persistPagoSupportFile(sourceUri: string, localId: string,
   return destination;
 }
 
+/**
+ * ¿Sigue en el teléfono el archivo (firma o soporte) guardado sin señal? Si
+ * no se puede comprobar se asume que sí: mejor intentar subirlo que dar por
+ * perdida una firma que existe.
+ */
+export async function localFileExists(uri: string | null | undefined): Promise<boolean> {
+  if (!uri) return false;
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    return Boolean(info.exists);
+  } catch {
+    return true;
+  }
+}
+
 export async function deleteLocalPagoSupportFile(uri: string) {
   await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
 }

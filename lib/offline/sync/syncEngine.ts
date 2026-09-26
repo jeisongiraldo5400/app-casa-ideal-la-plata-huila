@@ -40,8 +40,10 @@ import {
 import { planOutboxRun } from './lanes';
 import {
   prepareConfirmNegocio,
+  prepareRejectDependentNegocios,
   prepareRejectedNegocio,
   prepareRelinkNegocioCustomer,
+  type ConfirmedNegocio,
 } from './negocioCreateCommand';
 import {
   countOutbox,
@@ -79,6 +81,7 @@ import {
   type PullPayload,
   type RegisterPagoPayload,
 } from './types';
+import { EXHAUSTED_RETRIES_PREFIX } from './syncErrorText';
 import { useSyncStore } from '../store/syncStore';
 import { wipeLocalOfflineData } from '../security/wipe';
 import { setCachedProfileName, setCachedRoles, setLastOnlineVerifiedAt } from '../security/secureKeys';
@@ -119,11 +122,13 @@ export async function refreshPendingCount() {
   if (!isDatabaseOpen()) {
     useSyncStore.getState().setPendingCount(0);
     useSyncStore.getState().setFailedCount(0);
+    useSyncStore.getState().setNoticeCount(0);
     return;
   }
   const counts = await countOutbox(getDatabase());
   useSyncStore.getState().setPendingCount(counts.pending);
   useSyncStore.getState().setFailedCount(counts.failed);
+  useSyncStore.getState().setNoticeCount(counts.notices);
 }
 
 export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
@@ -189,6 +194,7 @@ export async function runSync(reason: SyncReason = 'manual'): Promise<void> {
         useSyncStore.getState().setStatus('idle');
         useSyncStore.getState().setPendingCount(0);
         useSyncStore.getState().setFailedCount(0);
+        useSyncStore.getState().setNoticeCount(0);
         useSyncStore.getState().setLastError(null);
         return;
       }
@@ -416,7 +422,7 @@ async function settleOutboxItem(
         database,
         payload as unknown as CreateNegocioPayload,
         changes,
-        (result.result || {}) as { numero?: number; status?: string }
+        (result.result || {}) as ConfirmedNegocio
       );
     }
     await prepareReleaseSnapshot(database, payload.snapshot, changes);
@@ -439,7 +445,7 @@ async function settleOutboxItem(
   // segundo caso puede volver a intentarse desde la cola.
   const message =
     result.outcome === 'retry'
-      ? `No se pudo enviar al servidor después de varios intentos: ${result.message}`
+      ? `${EXHAUSTED_RETRIES_PREFIX}${result.message}`
       : result.message;
   const changes = new PreparedChanges();
   changes.update(item, (record) => {
@@ -451,6 +457,17 @@ async function settleOutboxItem(
   // que un pago rechazado, porque el cliente ya firmó el contrato.
   if (item.type === 'create_negocio') {
     await prepareRejectedNegocio(database, payload as unknown as CreateNegocioPayload, message, changes);
+  }
+  // Cliente creado sin señal que no llegó: los negocios que lo usan quedan
+  // rechazados ya, con el motivo, en vez de enviarse y fallar medio día.
+  if (item.type === 'create_customer') {
+    await prepareRejectDependentNegocios(
+      database,
+      payload as unknown as CreateCustomerPayload,
+      terminal,
+      message,
+      changes
+    );
   }
   return prepareRevertCommand(database, item, message, changes);
 }

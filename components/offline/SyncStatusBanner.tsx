@@ -61,6 +61,7 @@ export function SyncStatusBanner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { online, status, pendingCount, failedCount, lastError, lastSyncedAt, setQueueVisible } = useSyncStore();
+  const noticeCount = useSyncStore((state) => state.noticeCount);
   const userId = useSyncStore((state) => state.userId);
   const pendingDownload = useSyncPrefsStore(isDownloadPending);
   const lastManualAt = useSyncPrefsStore((state) => state.lastManualAt);
@@ -79,7 +80,7 @@ export function SyncStatusBanner() {
   });
   const quiet = online && status === 'idle' && pendingCount === 0 && failedCount === 0 && !lastError;
 
-  if (quiet && !prepare) return null;
+  if (quiet && !prepare && !noticeCount) return null;
 
   const background =
     !online || status === 'offline'
@@ -92,6 +93,7 @@ export function SyncStatusBanner() {
 
   const failedLabel = failedCount ? plural(failedCount, 'cambio rechazado', 'cambios rechazados') : null;
   const pendingLabel = pendingCount ? plural(pendingCount, 'pendiente', 'pendientes') : null;
+  const noticeLabel = noticeCount ? plural(noticeCount, 'aviso de sincronización', 'avisos de sincronización') : null;
 
   let label: string;
   if (!online) {
@@ -110,6 +112,10 @@ export function SyncStatusBanner() {
     label = lastError;
   } else if (pendingCount) {
     label = `${plural(pendingCount, 'cambio', 'cambios')} por sincronizar`;
+  } else if (noticeLabel) {
+    // Algo se envió distinto de lo prometido (p. ej. el negocio quedó a
+    // nombre del dueño del cliente): se invita a leerlo en la cola.
+    label = `${noticeLabel} · toca para ver`;
   } else if (prepare) {
     label = PREPARE_LABELS[prepare];
   } else {
@@ -117,7 +123,7 @@ export function SyncStatusBanner() {
   }
 
   const onPress = () => {
-    if (failedCount || pendingCount) {
+    if (failedCount || pendingCount || noticeCount) {
       setQueueVisible(true);
       return;
     }
@@ -134,6 +140,16 @@ export function SyncStatusBanner() {
     <Pressable
       onPress={onPress}
       testID="sync-status-banner"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={
+        failedCount || pendingCount || noticeCount
+          ? 'Abre la lista de cambios sin sincronizar'
+          : prepare
+            ? 'Abre la preparación del teléfono para trabajar sin señal'
+            : 'Envía ahora los cambios guardados'
+      }
+      accessibilityLiveRegion="polite"
       style={[styles.banner, { backgroundColor: background, paddingTop: Math.max(insets.top, 6) }]}
     >
       <Text style={styles.text}>{label}</Text>

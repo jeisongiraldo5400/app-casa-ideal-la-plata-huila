@@ -17,10 +17,13 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { runSync } from '@/lib/offline/sync/syncEngine';
 import {
   discardSyncQueueItem,
+  dismissSyncQueueNotice,
   listSyncQueue,
+  listSyncQueueDependents,
   retrySyncQueueItem,
   type SyncQueueEntry,
 } from '@/lib/offline/repositories/offlineRepository';
+import { syncErrorText } from '@/lib/offline/sync/syncErrorText';
 
 const TYPE_LABELS: Record<SyncQueueEntry['type'], string> = {
   register_pago: 'Pago',
@@ -47,9 +50,23 @@ function statusLabel(entry: SyncQueueEntry) {
       return 'Rechazado';
     case 'conflict':
       return 'Conflicto';
+    case 'done':
+      return 'Enviado · con aviso';
     default:
       return entry.status;
   }
+}
+
+function formatMoney(value: number) {
+  return `$ ${Math.round(value).toLocaleString('es-CO')}`;
+}
+
+/** Texto del aviso al descartar, según lo que se pierde. */
+export function discardWarning(entry: Pick<SyncQueueEntry, 'type'>, dependents: number): string {
+  if (entry.type === 'create_customer' && dependents > 0) {
+    return `${dependents === 1 ? 'Hay 1 negocio que depende' : `Hay ${dependents} negocios que dependen`} de este cliente. Sin el cliente no pueden enviarse, así que se descartarán juntos: quedarán en el teléfono marcados como no enviados.`;
+  }
+  return 'El cambio no se enviará al servidor. Si era un pago, el saldo volverá a su valor anterior y el pago quedará en el negocio marcado como no aceptado, para que usted decida cuándo eliminarlo.';
 }
 
 function formatDate(value: number) {
@@ -73,6 +90,7 @@ export function SyncQueueModal() {
   const setVisible = useSyncStore((state) => state.setQueueVisible);
   const pendingCount = useSyncStore((state) => state.pendingCount);
   const failedCount = useSyncStore((state) => state.failedCount);
+  const noticeCount = useSyncStore((state) => state.noticeCount);
   const status = useSyncStore((state) => state.status);
   const [entries, setEntries] = useState<SyncQueueEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,26 +109,43 @@ export function SyncQueueModal() {
 
   useEffect(() => {
     if (visible) void refresh();
-  }, [visible, refresh, pendingCount, failedCount, status]);
+  }, [visible, refresh, pendingCount, failedCount, noticeCount, status]);
 
   const retry = async (entry: SyncQueueEntry) => {
     setBusyId(entry.id);
     try {
-      await retrySyncQueueItem(entry.id);
+      const outcome = await retrySyncQueueItem(entry.id);
+      if (!outcome.retried) Alert.alert('No se puede reintentar', outcome.reason);
       await refresh();
     } finally {
       setBusyId(null);
     }
   };
 
-  const discard = (entry: SyncQueueEntry) => {
+  const dismissNotice = async (entry: SyncQueueEntry) => {
+    setBusyId(entry.id);
+    try {
+      await dismissSyncQueueNotice(entry.id);
+      await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const discard = async (entry: SyncQueueEntry) => {
+    // Un cliente creado sin señal arrastra a los negocios que lo usan: se
+    // avisa cuántos son y se descartan juntos, o no se descarta nada.
+    const dependents = entry.type === 'create_customer' ? await listSyncQueueDependents(entry.id) : [];
+    const detail = dependents.length
+      ? `\n\n${dependents.map((row) => `• ${row.customerName || 'Negocio'} · ${formatMoney(row.totalCredit)}`).join('\n')}`
+      : '';
     Alert.alert(
-      'Descartar cambio',
-      'El cambio no se enviará al servidor. Si era un pago, el saldo volverá a su valor anterior y el pago quedará en el negocio marcado como no aceptado, para que usted decida cuándo eliminarlo.',
+      dependents.length ? 'Descartar cliente y sus negocios' : 'Descartar cambio',
+      `${discardWarning(entry, dependents.length)}${detail}`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Descartar',
+          text: dependents.length ? 'Descartar todo' : 'Descartar',
           style: 'destructive',
           onPress: async () => {
             setBusyId(entry.id);
@@ -138,7 +173,12 @@ export function SyncQueueModal() {
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text.primary }]}>Cambios sin sincronizar</Text>
-          <Pressable onPress={() => setVisible(false)} hitSlop={12} accessibilityLabel="Cerrar">
+          <Pressable
+            onPress={() => setVisible(false)}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar la lista de cambios sin sincronizar"
+          >
             <MaterialIcons name="close" size={26} color={colors.text.secondary} />
           </Pressable>
         </View>
@@ -147,11 +187,16 @@ export function SyncQueueModal() {
             ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'} de envío`
             : 'Nada pendiente de envío'}
           {failedCount ? ` · ${failedCount} rechazado${failedCount === 1 ? '' : 's'}` : ''}
+          {noticeCount ? ` · ${noticeCount} aviso${noticeCount === 1 ? '' : 's'}` : ''}
         </Text>
         <Pressable
           // Solo envía la cola; la descarga vive en «Preparar el teléfono» (v2).
           onPress={() => void runSync('retry')}
           disabled={status === 'syncing'}
+          accessibilityRole="button"
+          accessibilityLabel={status === 'syncing' ? 'Sincronizando' : 'Sincronizar ahora'}
+          accessibilityHint="Envía al servidor los cambios guardados en el teléfono"
+          accessibilityState={{ disabled: status === 'syncing', busy: status === 'syncing' }}
           style={[styles.syncButton, { backgroundColor: colors.primary.main, opacity: status === 'syncing' ? 0.6 : 1 }]}
         >
           {status === 'syncing' ? (
@@ -178,18 +223,22 @@ export function SyncQueueModal() {
             }
             renderItem={({ item }) => {
               const terminal = isTerminal(item);
+              const notice = item.status === 'done';
+              const busy = busyId === item.id;
+              const typeLabel = TYPE_LABELS[item.type] || item.type;
+              const errorText = syncErrorText(item.lastError);
               return (
                 <View
                   style={[
                     styles.card,
                     {
                       backgroundColor: colors.background.paper,
-                      borderColor: terminal ? colors.error.main : colors.divider,
+                      borderColor: terminal ? colors.error.main : notice ? colors.warning.main : colors.divider,
                     },
                   ]}
                 >
                   <View style={styles.cardHeader}>
-                    <Text style={[styles.cardType, { color: colors.text.primary }]}>{TYPE_LABELS[item.type] || item.type}</Text>
+                    <Text style={[styles.cardType, { color: colors.text.primary }]}>{typeLabel}</Text>
                     <Text
                       style={[
                         styles.cardStatus,
@@ -201,28 +250,53 @@ export function SyncQueueModal() {
                   </View>
                   <Text style={[styles.cardSummary, { color: colors.text.primary }]}>{item.summary}</Text>
                   <Text style={[styles.cardMeta, { color: colors.text.secondary }]}>Guardado {formatDate(item.queuedAt)}</Text>
-                  {item.lastError ? (
-                    <Text style={[styles.cardError, { color: terminal ? colors.error.main : colors.text.secondary }]}>
-                      {item.lastError}
+                  {errorText ? (
+                    <Text
+                      style={[
+                        styles.cardError,
+                        { color: terminal ? colors.error.main : notice ? colors.text.primary : colors.text.secondary },
+                      ]}
+                    >
+                      {errorText}
                     </Text>
                   ) : null}
                   <View style={styles.actions}>
+                    {notice ? (
+                      <Pressable
+                        onPress={() => void dismissNotice(item)}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Entendido: ocultar el aviso de ${typeLabel}, ${item.summary}`}
+                        accessibilityState={{ disabled: busy }}
+                        style={[styles.actionButton, { backgroundColor: colors.primary.main }]}
+                      >
+                        <Text style={[styles.actionText, { color: colors.primary.contrastText }]}>Entendido</Text>
+                      </Pressable>
+                    ) : null}
                     {terminal ? (
                       <Pressable
                         onPress={() => void retry(item)}
-                        disabled={busyId === item.id}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Reintentar ${typeLabel}, ${item.summary}`}
+                        accessibilityState={{ disabled: busy }}
                         style={[styles.actionButton, { backgroundColor: colors.primary.main }]}
                       >
                         <Text style={[styles.actionText, { color: colors.primary.contrastText }]}>Reintentar</Text>
                       </Pressable>
                     ) : null}
-                    <Pressable
-                      onPress={() => discard(item)}
-                      disabled={busyId === item.id || item.status === 'syncing'}
-                      style={[styles.actionButton, styles.discardButton, { borderColor: colors.error.main }]}
-                    >
-                      <Text style={[styles.actionText, { color: colors.error.main }]}>Descartar</Text>
-                    </Pressable>
+                    {!notice ? (
+                      <Pressable
+                        onPress={() => void discard(item)}
+                        disabled={busy || item.status === 'syncing'}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Descartar ${typeLabel}, ${item.summary}`}
+                        accessibilityState={{ disabled: busy || item.status === 'syncing' }}
+                        style={[styles.actionButton, styles.discardButton, { borderColor: colors.error.main }]}
+                      >
+                        <Text style={[styles.actionText, { color: colors.error.main }]}>Descartar</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
               );

@@ -38,12 +38,86 @@ export function nextRetryAt(attempts: number, now = Date.now()): number {
   return now + BACKOFF_MS[index];
 }
 
+/**
+ * Textos de una petición que NO llegó al servidor (o cuya respuesta nunca
+ * volvió). La lista es estricta a propósito: antes bastaba con que el mensaje
+ * del servidor contuviera «fetch», «offline» o «abort» para darlo por red
+ * caída, y un rechazo como «Could not find the function
+ * create_customer_offline(…)» congelaba toda la cola como si no hubiera señal.
+ */
+const TRANSPORT_FAILURE_PATTERNS: RegExp[] = [
+  // React Native / Hermes: `TypeError: Network request failed`.
+  /network request failed/i,
+  // Navegadores y polyfills de fetch.
+  /failed to fetch/i,
+  /networkerror when attempting to fetch/i,
+  /^(typeerror: )?load failed$/i,
+  // iOS (NSURLErrorDomain) y Android (OkHttp).
+  /the internet connection appears to be offline/i,
+  /the network connection was lost/i,
+  /could not connect to the server/i,
+  /unable to resolve host/i,
+  /failed to connect to/i,
+  /\b(ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|ENETUNREACH|EAI_AGAIN)\b/,
+  /socket hang up/i,
+  /(connection|request) timed out/i,
+  // Corte propio del cliente de Supabase (`REQUEST_TIMEOUT_MESSAGE`) y de los
+  // envoltorios con tiempo límite (`getSession timeout`).
+  /no respondi[óo] a tiempo/i,
+  /^[a-z_.]+ timeout$/i,
+  // `AbortError` de una petición cortada: postgrest lo pinta como
+  // «AbortError: Aborted»; otros como «Aborted» o «The operation was aborted».
+  /^(aborterror|fetcherror)\b/i,
+  /^aborted\.?$/i,
+  /^the (operation|user) (was )?aborted/i,
+];
+
 export function isNetworkErrorMessage(message: string): boolean {
-  // `abort` y «no respondió a tiempo»: petición cortada por el tiempo límite
-  // del cliente de Supabase; no llegó al servidor.
-  return /network|fetch|failed to connect|internet|offline|timeout|timed out|socket|econn|load failed|abort|no respondi[óo] a tiempo/i.test(
-    message
-  );
+  const text = String(message || '').trim();
+  return TRANSPORT_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+type ErrorShape = { name?: unknown; message?: unknown; code?: unknown; status?: unknown; statusCode?: unknown };
+
+function errorShape(error: unknown): ErrorShape {
+  if (error && typeof error === 'object') return error as ErrorShape;
+  return { message: String(error ?? '') };
+}
+
+/** Texto de cualquier error (Error, PostgrestError, texto suelto). */
+export function pushErrorText(error: unknown): string {
+  const shape = errorShape(error);
+  return typeof shape.message === 'string' ? shape.message : String(shape.message ?? '');
+}
+
+/**
+ * ¿La respuesta vino del servidor? Un código SQLSTATE (`P0001`, `23505`,
+ * `42883`…), uno de PostgREST (`PGRST202`) o un estado HTTP prueban que la
+ * petición llegó: nunca es falta de señal, diga lo que diga el texto.
+ */
+function answeredByServer(shape: ErrorShape): boolean {
+  const code = typeof shape.code === 'string' ? shape.code.trim() : '';
+  // Las clases SQLSTATE nunca empiezan por «E»: así `EPIPE` (errno de socket,
+  // también de cinco letras) no pasa por respuesta del servidor.
+  if (/^PGRST/i.test(code) || /^(?!E)[0-9A-Z]{5}$/.test(code)) return true;
+  const status = Number(shape.status ?? shape.statusCode);
+  return Number.isFinite(status) && status >= 100;
+}
+
+/**
+ * Falta de red REAL: error de transporte (TypeError de fetch, AbortError del
+ * tiempo límite, códigos de socket) y nunca una respuesta del servidor.
+ */
+export function isTransportError(error: unknown): boolean {
+  const shape = errorShape(error);
+  if (answeredByServer(shape)) return false;
+  const name = typeof shape.name === 'string' ? shape.name : '';
+  if (name === 'AbortError') return true;
+  // supabase-auth: el refresco del token no llegó (sin estado HTTP).
+  if (name === 'AuthRetryableFetchError') return true;
+  const message = pushErrorText(error);
+  if (error instanceof TypeError && /fetch|network/i.test(message)) return true;
+  return isNetworkErrorMessage(message);
 }
 
 /**
@@ -80,6 +154,51 @@ export function isDefinitiveOriginError(message: string): boolean {
 }
 
 /**
+ * Reglas de negocio de `create_negocio` (y sus ayudantes: vendedor = dueño del
+ * cliente, plan de cuotas, abonos iniciales, cantidades enteras),
+ * `create_customer_offline` y `register_negocio_pago`. Antes caían en «retry»
+ * y la cola insistía medio día contra un rechazo que nunca iba a cambiar.
+ *
+ * Textos de 20261206120000, 20261207120000, 20261214120000 (vendedor dueño),
+ * 20260906120000 (abonos y cuotas), 20261021120000 (unidades enteras),
+ * 20261210120000 (cliente) y 20261111120000 (pagos).
+ */
+export function isDefinitiveBusinessError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    // Vendedor = dueño del cliente.
+    text.includes('ya tiene vendedor') ||
+    text.includes('ya pertenece al vendedor') ||
+    text.includes('no tiene vendedor') ||
+    text.includes('no se cambia desde el negocio') ||
+    text.includes('seleccione ') ||
+    text.includes('indique ') ||
+    // «El cliente del negocio no existe», «La orden … no existe».
+    text.includes('no existe') ||
+    text.includes('no pertenece') ||
+    text.includes('no coincide') ||
+    text.includes('debe tener') ||
+    text.includes('debe ser mayor') ||
+    text.includes('debe ser un número entero') ||
+    text.includes('debe ser un numero entero') ||
+    /inv[aá]lid[oa]s?\b/.test(text) ||
+    text.includes('invalid input syntax') ||
+    text.includes('no puede ser anterior') ||
+    text.includes('no puede ser negativa') ||
+    text.includes('no puede haber') ||
+    text.includes('no pueden superar') ||
+    text.includes('formato válido') ||
+    text.includes('formato valido') ||
+    text.includes('no lleva cuotas') ||
+    text.includes('configuración de crédito') ||
+    text.includes('configuracion de credito') ||
+    text.includes('valores inconsistentes') ||
+    text.includes('ya no puede editarse') ||
+    text.includes('solo el administrador')
+  );
+}
+
+/**
  * Clasifica el mensaje devuelto por el servidor.
  * - network: la petición no llegó; se reintenta sin consumir intentos.
  * - conflict: el dato ya existe con otra identidad; requiere revisión.
@@ -87,8 +206,22 @@ export function isDefinitiveOriginError(message: string): boolean {
  * - retry: error desconocido o transitorio (consume intentos).
  */
 export function classifyPushError(message: string): RetryDecision {
+  if (isNetworkErrorMessage(message)) return 'network';
+  return classifyServerMessage(message);
+}
+
+/**
+ * Igual que `classifyPushError`, pero mirando el error completo: si trae
+ * código SQLSTATE/PostgREST o estado HTTP, lo contestó el servidor y nunca se
+ * toma como falta de señal.
+ */
+export function classifyPushFailure(error: unknown): RetryDecision {
+  if (isTransportError(error)) return 'network';
+  return classifyServerMessage(pushErrorText(error));
+}
+
+function classifyServerMessage(message: string): RetryDecision {
   const text = message.toLowerCase();
-  if (isNetworkErrorMessage(text)) return 'network';
   if (
     text.includes('duplicado') ||
     text.includes('id_number') ||
@@ -98,6 +231,7 @@ export function classifyPushError(message: string): RetryDecision {
     return 'conflict';
   }
   if (isDefinitiveOriginError(text)) return 'fail';
+  if (isDefinitiveBusinessError(text)) return 'fail';
   if (
     text.includes('saldo') ||
     text.includes('sin permiso') ||

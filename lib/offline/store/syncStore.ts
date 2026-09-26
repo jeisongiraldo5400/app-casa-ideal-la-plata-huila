@@ -26,6 +26,8 @@ interface SyncState {
   pendingCount: number;
   /** Comandos rechazados que requieren decisión del usuario. */
   failedCount: number;
+  /** Enviados con un aviso que la persona aún no ha visto (p. ej. otro dueño). */
+  noticeCount: number;
   lastSyncedAt: number | null;
   lastError: string | null;
   locked: boolean;
@@ -35,6 +37,7 @@ interface SyncState {
   setStatus: (status: SyncEngineStatus) => void;
   setPendingCount: (pendingCount: number) => void;
   setFailedCount: (failedCount: number) => void;
+  setNoticeCount: (noticeCount: number) => void;
   setLastSyncedAt: (lastSyncedAt: number | null) => void;
   setLastError: (lastError: string | null) => void;
   setLocked: (locked: boolean) => void;
@@ -55,6 +58,7 @@ export const useSyncStore = create<SyncState>((set) => ({
   status: 'idle',
   pendingCount: 0,
   failedCount: 0,
+  noticeCount: 0,
   lastSyncedAt: null,
   lastError: null,
   locked: false,
@@ -64,6 +68,7 @@ export const useSyncStore = create<SyncState>((set) => ({
   setStatus: (status) => set({ status }),
   setPendingCount: (pendingCount) => set({ pendingCount }),
   setFailedCount: (failedCount) => set({ failedCount }),
+  setNoticeCount: (noticeCount) => set({ noticeCount }),
   setLastSyncedAt: (lastSyncedAt) => set({ lastSyncedAt }),
   setLastError: (lastError) => set({ lastError }),
   setLocked: (locked) => set({ locked }),

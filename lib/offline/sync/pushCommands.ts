@@ -6,7 +6,7 @@ import { FileUpload, SyncOutboxItem } from '../models';
 import { resolveCustomerIdNumberConflict } from './conflictPolicy';
 import { pushCreateNegocio, pushUploadNegocioSignature } from './negocioCreateCommand';
 import { parseOutboxPayload } from './outbox';
-import { classifyPushError } from './retryPolicy';
+import { classifyPushFailure } from './retryPolicy';
 import { deleteLocalPagoSupportFile } from '../security/localFiles';
 import type {
   AttachPagoSupportPayload,
@@ -69,7 +69,10 @@ export async function pushOutboxItem(item: SyncOutboxItem): Promise<PushResult> 
     }
   } catch (error) {
     const message = asErrorMessage(error);
-    const decision = classifyPushError(message);
+    // Se clasifica el error completo, no solo su texto: una respuesta del
+    // servidor (código SQLSTATE/PostgREST) nunca es «sin señal», aunque su
+    // mensaje hable de «fetch» u «offline».
+    const decision = classifyPushFailure(error);
     if (decision === 'network') return { outcome: 'network', message };
     if (decision === 'retry') return { outcome: 'retry', message };
     if (decision === 'conflict') return { outcome: 'conflict', message };

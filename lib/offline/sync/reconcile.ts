@@ -170,6 +170,22 @@ export async function prepareRevertCommand(
   reason: string | null = item.lastError,
   changes = new PreparedChanges()
 ): Promise<Model[]> {
+  await collectRevertCommand(database, item, reason, changes);
+  return changes.build();
+}
+
+/**
+ * Igual que `prepareRevertCommand`, pero solo acumula en `changes` sin
+ * construir el batch: para revertir varios comandos en una misma escritura
+ * (descartar un cliente junto con sus negocios). `build()` debe llamarse una
+ * sola vez por colector.
+ */
+export async function collectRevertCommand(
+  database: Database,
+  item: SyncOutboxItem,
+  reason: string | null,
+  changes: PreparedChanges
+): Promise<void> {
   const payload = parseOutboxPayload<OutboxPayloadBase & Record<string, unknown>>(item);
   await prepareRevertSnapshot(database, payload.snapshot, changes);
 
@@ -209,8 +225,6 @@ export async function prepareRevertCommand(
     const customer = await findOrNull<Customer>(database, 'customers', customerId);
     if (customer && customer.rowSyncStatus === 'pending') changes.add(customer.prepareDestroyPermanently());
   }
-
-  return changes.build();
 }
 
 async function prepareFailPagoSupport(

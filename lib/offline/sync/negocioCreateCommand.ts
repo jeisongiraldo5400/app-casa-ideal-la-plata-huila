@@ -10,14 +10,20 @@ import {
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
 import { getDatabase } from '../database';
-import { FileUpload, Negocio, SyncOutboxItem } from '../models';
-import { persistNegocioSignatureFile, deleteLocalPagoSupportFile } from '../security/localFiles';
+import { FileUpload, Negocio, Profile, SyncOutboxItem } from '../models';
+import {
+  persistNegocioSignatureFile,
+  deleteLocalPagoSupportFile,
+  localFileExists,
+} from '../security/localFiles';
 import { requireLocalUserId } from '../security/localSession';
 import { prepareOutboxRecord, parseOutboxPayload } from './outbox';
 import { isDefinitiveOriginError } from './retryPolicy';
+import { syncErrorText } from './syncErrorText';
 import type { PreparedChanges } from './reconcile';
 import {
   REJECTED_ROW_SYNC_STATUS,
+  type CreateCustomerPayload,
   type CreateNegocioPayload,
   type NegocioSignatureRole,
   type UploadNegocioSignaturePayload,
@@ -212,6 +218,11 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
   if (upload.status === 'failed') {
     return { outcome: 'fail' as const, message: upload.lastError || 'La firma fue descartada' };
   }
+  // Sin el archivo, `fetch(file://…)` falla con «Network request failed» y la
+  // cola creería que no hay señal para siempre.
+  if (!(await localFileExists(upload.localUri))) {
+    return { outcome: 'fail' as const, message: missingSignatureMessage(payload.role) };
+  }
 
   await uploadNegocioSignature(upload.localUri, {
     negocioId: payload.negocioId,
@@ -230,19 +241,32 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
   return { outcome: 'done' as const };
 }
 
-/** Firmas de este negocio que todavía no están en Storage. */
-async function pendingSignatureCount(database: Database, negocioId: string) {
-  const uploads = await database
+/** Rol de la firma a partir del nombre de archivo (`firma-<rol>.png`). */
+function signatureRole(upload: FileUpload): string {
+  return upload.fileName?.match(/^firma-([a-z]+)/)?.[1] || 'cliente';
+}
+
+/** Texto cuando la firma guardada sin señal ya no está en el teléfono. */
+export function missingSignatureMessage(role: string): string {
+  return `Hay que volver a firmar: la firma del ${role} ya no está guardada en el teléfono. Descarte este negocio y créelo de nuevo.`;
+}
+
+async function negocioSignatureUploads(database: Database, negocioId: string) {
+  return database
     .get<FileUpload>('file_uploads')
     .query(Q.where('negocio_id', negocioId), Q.where('bucket', NEGOCIO_SIGNATURE_BUCKET))
     .fetch();
-  return uploads.filter((upload) => upload.status !== 'done').length;
 }
 
-/**
- * Reenvía el RPC tal cual se encoló. El servidor recibe el mismo
- * `p_negocio_id` y la misma `p_idempotency_key`, así que repetirlo no duplica.
- */
+/** Firmas de este negocio que todavía no están en Storage (pendientes y fallidas). */
+async function signatureState(database: Database, negocioId: string) {
+  const uploads = await negocioSignatureUploads(database, negocioId);
+  return {
+    pending: uploads.filter((upload) => upload.status !== 'done' && upload.status !== 'failed').length,
+    failed: uploads.filter((upload) => upload.status === 'failed'),
+  };
+}
+
 /**
  * Comandos de cliente todavía sin confirmar. Si el negocio referencia a uno de
  * ellos, ese cliente aún no existe en el servidor: hay que esperar.
@@ -266,6 +290,99 @@ export async function pendingCustomerLane(
   return null;
 }
 
+/** Estados en los que un cliente creado sin señal ya no va a llegar solo al servidor. */
+const CUSTOMER_BLOCKING_STATUSES = ['failed', 'conflict', 'discarded'];
+
+/** Motivo del rechazo de un negocio cuyo cliente (creado sin señal) no se creó. */
+export function customerNotCreatedMessage(
+  customerName: string | null | undefined,
+  status: string,
+  lastError: string | null | undefined
+): string {
+  const name = customerName?.trim() || 'del negocio';
+  const why =
+    status === 'discarded'
+      ? 'se descartó de la cola de sincronización'
+      : syncErrorText(lastError) || 'el servidor no lo aceptó';
+  return `El cliente ${name} no se pudo crear: ${why}. El negocio no puede enviarse sin él.`;
+}
+
+/**
+ * Si el negocio usa un cliente creado sin señal que el servidor rechazó (o que
+ * la persona descartó), devuelve el motivo; si no, null. Sin esto el negocio
+ * se enviaba igual, el servidor contestaba «El cliente del negocio no existe»
+ * y la cola insistía medio día antes de rendirse.
+ */
+export async function blockedCustomerReason(
+  database: Database,
+  customerIds: (string | null | undefined)[]
+): Promise<string | null> {
+  const wanted = customerIds.filter((id): id is string => Boolean(id));
+  if (!wanted.length) return null;
+  const items = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('type', 'create_customer'), Q.where('status', Q.oneOf([...CUSTOMER_BLOCKING_STATUSES, 'done'])))
+    .fetch();
+  for (const id of wanted) {
+    const latest = items
+      .filter((item) => parseOutboxPayload<{ customerId?: string }>(item).customerId === id)
+      .sort((a, b) => b.queuedAt - a.queuedAt)[0];
+    if (!latest || latest.status === 'done') continue;
+    const customer = parseOutboxPayload<CreateCustomerPayload>(latest);
+    return customerNotCreatedMessage(customer.name, latest.status, latest.lastError);
+  }
+  return null;
+}
+
+/** ¿El negocio encolado usa a este cliente (como cliente o como codeudor)? */
+export function negocioUsesCustomer(payload: CreateNegocioPayload, customerId: string): boolean {
+  if (!customerId) return false;
+  const negocio = (payload.negocio || {}) as Record<string, unknown>;
+  return (
+    payload.customerId === customerId ||
+    negocio.customer_id === customerId ||
+    negocio.codeudor_customer_id === customerId
+  );
+}
+
+/** Negocios de la cola (sin cerrar) que dependen de un cliente creado sin señal. */
+export async function listNegociosDependingOnCustomer(
+  database: Database,
+  customerId: string,
+  statuses: string[] = ['pending', 'syncing', 'error', 'failed', 'conflict']
+): Promise<SyncOutboxItem[]> {
+  if (!customerId) return [];
+  const items = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('type', 'create_negocio'), Q.where('status', Q.oneOf(statuses)))
+    .fetch();
+  return items.filter((item) => negocioUsesCustomer(parseOutboxPayload<CreateNegocioPayload>(item), customerId));
+}
+
+/**
+ * El servidor rechazó (o hubo conflicto con) un cliente creado sin señal: los
+ * negocios que lo usan quedan rechazados en el acto, con un motivo que dice
+ * qué pasó, en vez de enviarse y fallar medio día después.
+ */
+export async function prepareRejectDependentNegocios(
+  database: Database,
+  customer: CreateCustomerPayload,
+  status: 'failed' | 'conflict',
+  customerError: string | null,
+  changes: PreparedChanges
+): Promise<number> {
+  const dependents = await listNegociosDependingOnCustomer(database, customer.customerId, ['pending', 'error']);
+  const reason = customerNotCreatedMessage(customer.name, status, customerError);
+  for (const item of dependents) {
+    changes.update(item, (row) => {
+      row.status = 'failed';
+      row.lastError = reason;
+    });
+    await prepareRejectedNegocio(database, parseOutboxPayload<CreateNegocioPayload>(item), reason, changes);
+  }
+  return dependents.length;
+}
+
 /**
  * Carril del negocio: el del cliente si ese cliente también está en la cola
  * (así el cliente sube primero), y si no, el suyo propio.
@@ -278,24 +395,43 @@ export async function negocioLaneFor(
   return customerLane || `negocio:${negocioId}`;
 }
 
+/**
+ * Reenvía el RPC tal cual se encoló. El servidor recibe el mismo
+ * `p_negocio_id` y la misma `p_idempotency_key`, así que repetirlo no duplica.
+ */
 export async function pushCreateNegocio(payload: CreateNegocioPayload, idempotencyKey: string) {
   const database = getDatabase();
   const negocio = (payload.negocio || {}) as Record<string, unknown>;
+  const customerIds = [
+    typeof negocio.customer_id === 'string' ? negocio.customer_id : null,
+    typeof negocio.codeudor_customer_id === 'string' ? negocio.codeudor_customer_id : null,
+  ];
+  // Cliente creado sin señal que el servidor rechazó o que se descartó: el
+  // negocio nunca va a pasar. Se rechaza ya, diciendo por qué.
+  const blocked = await blockedCustomerReason(database, customerIds);
+  if (blocked) return { outcome: 'fail' as const, message: blocked };
   // El cliente pudo crearse también sin señal. Comparten carril (el negocio se
   // encoló con el carril del cliente), pero si el codeudor viniera por otro
   // carril esta comprobación evita mandar un negocio sin cliente.
-  if (
-    await pendingCustomerLane(database, [
-      typeof negocio.customer_id === 'string' ? negocio.customer_id : null,
-      typeof negocio.codeudor_customer_id === 'string' ? negocio.codeudor_customer_id : null,
-    ])
-  ) {
+  if (await pendingCustomerLane(database, customerIds)) {
     return {
       outcome: 'retry' as const,
       message: 'El cliente del negocio todavía no se ha subido al servidor',
     };
   }
-  if (await pendingSignatureCount(database, payload.negocioId)) {
+  const signatures = await signatureState(database, payload.negocioId);
+  if (signatures.failed.length) {
+    // Una firma que no pudo subirse bloquea el negocio: se dice cuál y por qué
+    // en vez de esperar medio día a que «se suba».
+    const upload = signatures.failed[0];
+    return {
+      outcome: 'fail' as const,
+      message: `La firma del ${signatureRole(upload)} no se pudo subir: ${
+        syncErrorText(upload.lastError) || 'se descartó'
+      }`,
+    };
+  }
+  if (signatures.pending) {
     // Comparte carril con sus firmas, así que en la práctica no se llega aquí;
     // la comprobación evita crear un negocio cuya firma no está en Storage.
     return { outcome: 'retry' as const, message: 'Las firmas del negocio aún no se han subido' };
@@ -325,25 +461,85 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
   // quedaría sin número en el teléfono hasta la próxima «Descargar». Es un
   // extra: si falla, el negocio igual queda confirmado.
   const confirmed = await fetchConfirmedNegocio(negocioId);
-  return { outcome: 'done' as const, result: { negocioId, ...confirmed } };
+  const owner = await sellerOwnerChange(database, payload, confirmed.sellerId);
+  return {
+    outcome: 'done' as const,
+    result: { negocioId, ...confirmed, ...(owner ? { sellerName: owner.sellerName } : {}) },
+    ...(owner ? { note: owner.note } : {}),
+  };
 }
 
-/** Número y estado que el servidor le asignó al negocio recién creado. */
+/**
+ * Sin señal la pantalla prometió un vendedor (el dueño que conocía el
+ * teléfono, o quien registra si el cliente no tenía dueño). Si mientras tanto
+ * el cliente pasó a ser de otro, el servidor deja el negocio a nombre de ese
+ * dueño: se avisa en la cola para que nadie crea que la venta quedó suya.
+ */
+async function sellerOwnerChange(
+  database: Database,
+  payload: CreateNegocioPayload,
+  confirmedSellerId: string | undefined
+): Promise<{ note: string; sellerName: string | null } | null> {
+  if (!confirmedSellerId) return null;
+  const local = await findNegocio(database, payload.negocioId);
+  const promised = local?.sellerId ?? null;
+  if (!promised || promised === confirmedSellerId) return null;
+  const sellerName = await profileName(database, confirmedSellerId);
+  const customer = payload.customerName?.trim() || 'del negocio';
+  return {
+    sellerName,
+    note: `El cliente ${customer} ya era de ${sellerName || 'otro vendedor'}: el negocio quedó a su nombre.`,
+  };
+}
+
+/** Nombre de un usuario: primero los perfiles descargados, luego el servidor. */
+async function profileName(database: Database, profileId: string): Promise<string | null> {
+  try {
+    const row = await database.get<Profile>('profiles').find(profileId);
+    const name = row.fullName || row.email;
+    if (name) return name;
+  } catch {
+    // No está en el teléfono: se pregunta al servidor.
+  }
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', profileId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { full_name?: string | null; email?: string | null };
+    return row.full_name || row.email || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Lo que el teléfono sabe del negocio recién confirmado por el servidor. */
+export type ConfirmedNegocio = {
+  numero?: number;
+  status?: string;
+  sellerId?: string;
+  sellerName?: string | null;
+};
+
+/** Número, estado y vendedor que el servidor le asignó al negocio recién creado. */
 async function fetchConfirmedNegocio(
   negocioId: string
-): Promise<{ numero?: number; status?: string }> {
+): Promise<ConfirmedNegocio> {
   try {
     const { data, error } = await supabase
       .from('negocios')
-      .select('numero, status')
+      .select('numero, status, seller_id')
       .eq('id', negocioId)
       .maybeSingle();
     if (error || !data) return {};
-    const row = data as { numero?: unknown; status?: unknown };
+    const row = data as { numero?: unknown; status?: unknown; seller_id?: unknown };
     const numero = Number(row.numero);
     return {
       ...(Number.isFinite(numero) && numero > 0 ? { numero } : {}),
       ...(typeof row.status === 'string' && row.status ? { status: row.status } : {}),
+      ...(typeof row.seller_id === 'string' && row.seller_id ? { sellerId: row.seller_id } : {}),
     };
   } catch {
     return {};
@@ -358,13 +554,19 @@ export async function prepareConfirmNegocio(
   database: Database,
   payload: CreateNegocioPayload,
   changes: PreparedChanges,
-  confirmed: { numero?: number; status?: string } = {}
+  confirmed: ConfirmedNegocio = {}
 ) {
   const negocio = await findNegocio(database, payload.negocioId);
   if (!negocio || negocio.rowSyncStatus === 'synced') return;
   changes.update(negocio, (row) => {
     if (confirmed.numero) row.numero = confirmed.numero;
     if (confirmed.status) row.status = confirmed.status;
+    // Vendedor real (dueño del cliente según el servidor): puede no ser el
+    // que prometió la pantalla sin señal.
+    if (confirmed.sellerId && confirmed.sellerId !== row.sellerId) {
+      row.sellerId = confirmed.sellerId;
+      row.sellerName = confirmed.sellerName ?? null;
+    }
     row.rowSyncStatus = 'synced';
     row.rejectedReason = null;
     row.rejectedAt = null;
@@ -372,15 +574,21 @@ export async function prepareConfirmNegocio(
 }
 
 /**
- * Rechazado por el servidor (por ejemplo, sin existencias). El negocio NO se
- * borra: queda marcado con el motivo para que el vendedor sepa qué pasó con la
- * venta que ya firmó el cliente. Las firmas pendientes se descartan con él.
+ * Rechazado por el servidor (por ejemplo, sin existencias) o descartado. El
+ * negocio NO se borra: queda marcado con el motivo para que el vendedor sepa
+ * qué pasó con la venta que ya firmó el cliente.
+ *
+ * Las firmas que no llegaron a subir se marcan fallidas, pero sus ARCHIVOS se
+ * conservan mientras el negocio pueda reintentarse desde la cola: borrarlos
+ * dejaba «Reintentar» sin nada que subir. Solo al descartar (`discard`) se
+ * borran los archivos y sus comandos de firma se cierran.
  */
 export async function prepareRejectedNegocio(
   database: Database,
   payload: CreateNegocioPayload,
   reason: string | null,
-  changes: PreparedChanges
+  changes: PreparedChanges,
+  options: { discard?: boolean } = {}
 ) {
   const negocio = await findNegocio(database, payload.negocioId);
   if (negocio && negocio.rowSyncStatus !== 'synced') {
@@ -391,34 +599,150 @@ export async function prepareRejectedNegocio(
     });
   }
 
-  const uploads = await database
-    .get<FileUpload>('file_uploads')
-    .query(Q.where('negocio_id', payload.negocioId), Q.where('bucket', NEGOCIO_SIGNATURE_BUCKET))
-    .fetch();
+  const uploads = await negocioSignatureUploads(database, payload.negocioId);
   const uploadIds = new Set<string>();
   for (const upload of uploads) {
     if (upload.status === 'done') continue;
     uploadIds.add(upload.id);
-    changes.update(upload, (row) => {
-      row.status = 'failed';
-      row.lastError = reason || DEFAULT_REJECTED_NEGOCIO_REASON;
-    });
-    void deleteLocalPagoSupportFile(upload.localUri);
+    if (upload.status !== 'failed') {
+      changes.update(upload, (row) => {
+        row.status = 'failed';
+        row.lastError = reason || DEFAULT_REJECTED_NEGOCIO_REASON;
+      });
+    }
+    if (options.discard) void deleteLocalPagoSupportFile(upload.localUri);
   }
   if (!uploadIds.size) return;
 
+  const signatureStatuses = options.discard ? ['pending', 'error', 'failed', 'conflict'] : ['pending', 'error'];
   const queued = await database
     .get<SyncOutboxItem>('sync_outbox')
-    .query(Q.where('type', 'upload_negocio_signature'), Q.where('status', Q.oneOf(['pending', 'error'])))
+    .query(Q.where('type', 'upload_negocio_signature'), Q.where('status', Q.oneOf(signatureStatuses)))
     .fetch();
   for (const item of queued) {
     const signature = parseOutboxPayload<UploadNegocioSignaturePayload>(item);
     if (!uploadIds.has(String(signature.fileUploadId || ''))) continue;
     changes.update(item, (row) => {
-      row.status = 'failed';
+      row.status = options.discard ? 'discarded' : 'failed';
       row.lastError = reason || DEFAULT_REJECTED_NEGOCIO_REASON;
     });
   }
+}
+
+/**
+ * «Reintentar» un negocio rechazado: vuelve a la cola con sus firmas. Las
+ * firmas que se marcaron fallidas junto con el negocio se reactivan (sus
+ * archivos siguen en el teléfono). Si alguna ya no está, no se reintenta:
+ * devuelve el motivo («Hay que volver a firmar…») para dejarlo a la vista en
+ * vez de esperar medio día.
+ */
+export async function prepareRetryNegocio(
+  database: Database,
+  item: SyncOutboxItem,
+  changes: PreparedChanges,
+  now = Date.now()
+): Promise<string | null> {
+  const payload = parseOutboxPayload<CreateNegocioPayload>(item);
+  const uploads = (await negocioSignatureUploads(database, payload.negocioId)).filter(
+    (upload) => upload.status !== 'done'
+  );
+  for (const upload of uploads) {
+    if (!(await localFileExists(upload.localUri))) return missingSignatureMessage(signatureRole(upload));
+  }
+  const uploadIds = new Set(uploads.map((upload) => upload.id));
+  for (const upload of uploads) {
+    changes.update(upload, (row) => {
+      row.status = 'pending';
+      row.lastError = null;
+    });
+  }
+  if (uploadIds.size) {
+    const signatureItems = await database
+      .get<SyncOutboxItem>('sync_outbox')
+      .query(
+        Q.where('type', 'upload_negocio_signature'),
+        Q.where('status', Q.oneOf(['pending', 'error', 'failed', 'conflict']))
+      )
+      .fetch();
+    for (const signature of signatureItems) {
+      const signaturePayload = parseOutboxPayload<UploadNegocioSignaturePayload>(signature);
+      if (!uploadIds.has(String(signaturePayload.fileUploadId || ''))) continue;
+      changes.update(signature, resetForRetry(now));
+    }
+  }
+  // La venta vuelve a verse «pendiente de confirmar» mientras se reintenta.
+  const negocio = await findNegocio(database, payload.negocioId);
+  if (negocio && negocio.rowSyncStatus === REJECTED_ROW_SYNC_STATUS) {
+    changes.update(negocio, (row) => {
+      row.rowSyncStatus = 'pending';
+      row.rejectedReason = null;
+      row.rejectedAt = null;
+    });
+  }
+  changes.update(item, resetForRetry(now));
+  return null;
+}
+
+/** «Reintentar» una firma suelta: solo si su archivo sigue en el teléfono. */
+export async function prepareRetryNegocioSignature(
+  database: Database,
+  item: SyncOutboxItem,
+  changes: PreparedChanges,
+  now = Date.now()
+): Promise<string | null> {
+  const payload = parseOutboxPayload<UploadNegocioSignaturePayload>(item);
+  let upload: FileUpload | null = null;
+  try {
+    upload = await database.get<FileUpload>('file_uploads').find(payload.fileUploadId);
+  } catch {
+    upload = null;
+  }
+  if (!upload || (upload.status !== 'done' && !(await localFileExists(upload.localUri)))) {
+    return missingSignatureMessage(payload.role || 'cliente');
+  }
+  if (upload.status !== 'done') {
+    changes.update(upload, (row) => {
+      row.status = 'pending';
+      row.lastError = null;
+    });
+  }
+  changes.update(item, resetForRetry(now));
+  return null;
+}
+
+/**
+ * Se descarta una firma suelta de la cola: el negocio ya no podrá enviarse
+ * con ella. Se marca fallida (el negocio lo dirá en el acto) y se borra el
+ * archivo.
+ */
+export async function prepareDiscardNegocioSignature(
+  database: Database,
+  item: SyncOutboxItem,
+  reason: string,
+  changes: PreparedChanges
+) {
+  const payload = parseOutboxPayload<UploadNegocioSignaturePayload>(item);
+  try {
+    const upload = await database.get<FileUpload>('file_uploads').find(payload.fileUploadId);
+    if (upload.status !== 'done') {
+      changes.update(upload, (row) => {
+        row.status = 'failed';
+        row.lastError = reason;
+      });
+      void deleteLocalPagoSupportFile(upload.localUri);
+    }
+  } catch {
+    // La fila ya no existe: nada que marcar.
+  }
+}
+
+function resetForRetry(now: number) {
+  return (row: SyncOutboxItem) => {
+    row.status = 'pending';
+    row.attempts = 0;
+    row.lastError = null;
+    row.nextRetryAt = now;
+  };
 }
 
 /**

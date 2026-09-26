@@ -42,7 +42,9 @@ describe('retryPolicy', () => {
     expect(classifyPushError('Network request failed')).toBe('network');
     expect(classifyPushError('TypeError: Failed to fetch')).toBe('network');
     expect(classifyPushError('getSession timeout')).toBe('network');
-    expect(classifyPushError('canceling statement due to statement timeout')).toBe('network');
+    // Lo contestó el servidor (Postgres canceló la consulta): no es falta de
+    // señal, es un error transitorio que consume intentos.
+    expect(classifyPushError('canceling statement due to statement timeout')).toBe('retry');
     expect(classifyPushError('unexpected server error')).toBe('retry');
   });
 

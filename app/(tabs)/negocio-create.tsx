@@ -29,6 +29,7 @@ import {
 } from '@/lib/creditCalculator';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import {
+  queuedNegocioNotice,
   useNegociosStore,
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
@@ -1055,7 +1056,7 @@ function NegocioCreateScreenInner() {
         resetForm();
         Alert.alert(
           'Guardado en el teléfono',
-          'El negocio quedó guardado sin conexión y se enviará solo cuando vuelva la señal. Todavía NO tiene número: lo asigna el servidor al confirmarlo, y podría rechazarlo (por ejemplo, si ya no hay existencias). Podrá activarlo desde su ficha cuando esté confirmado.',
+          result.queuedNotice ?? queuedNegocioNotice(Boolean(result.activatesOnSync)),
           [{ text: 'Aceptar', onPress: () => router.replace('/(tabs)/negocios') }]
         );
         return;

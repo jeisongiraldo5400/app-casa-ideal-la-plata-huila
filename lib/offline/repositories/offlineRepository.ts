@@ -50,10 +50,15 @@ import {
   markOutboxDiscarded,
   parseOutboxPayload,
   prepareOutboxRecord,
-  resetOutboxItem,
 } from '../sync/outbox';
-import { PreparedChanges, prepareRevertCommand } from '../sync/reconcile';
-import { prepareRejectedNegocio } from '../sync/negocioCreateCommand';
+import {
+  discardOutboxEntry,
+  dismissOutboxNoticeEntry,
+  listCustomerDependents,
+  retryOutboxEntry,
+  type CustomerDependent,
+  type RetryOutcome,
+} from '../sync/queueActions';
 import {
   buildNegocioSyncStateMap,
   discardedNegocioIds,
@@ -67,7 +72,6 @@ import {
   REJECTED_ROW_SYNC_STATUS,
   type CuotaSnapshot,
   type OptimisticSnapshot,
-  type CreateNegocioPayload,
   type OutboxCommandType,
   type RegisterPagoPayload,
   type RouteSnapshot,
@@ -1403,37 +1407,36 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
   });
 }
 
-export async function retrySyncQueueItem(id: string) {
-  const item = await findOrNull<SyncOutboxItem>('sync_outbox', id);
-  if (!item) return;
-  await getDatabase().write(async () => resetOutboxItem(item));
+/**
+ * Reintenta un comando de la cola. Un negocio vuelve con sus firmas; si alguna
+ * ya no está en el teléfono devuelve el motivo y el comando sigue rechazado.
+ */
+export async function retrySyncQueueItem(id: string): Promise<RetryOutcome> {
+  const outcome = await retryOutboxEntry(getDatabase(), id);
   void refreshPendingCount();
   // Reintentar sólo sube la cola: bajar datos es cosa de «Descargar».
-  void runSync('retry');
+  if (outcome.retried) void runSync('retry');
+  return outcome;
 }
 
-/** Descarta un comando y revierte su efecto local. */
+/** Negocios de la cola que dependen del cliente que se quiere descartar. */
+export async function listSyncQueueDependents(id: string): Promise<CustomerDependent[]> {
+  if (!canUseLocalDb()) return [];
+  return listCustomerDependents(getDatabase(), id);
+}
+
+/**
+ * Descarta un comando y revierte su efecto local. Si es un cliente creado sin
+ * señal, se descartan con él los negocios que lo usan (la cola lo avisa antes).
+ */
 export async function discardSyncQueueItem(id: string) {
-  const database = getDatabase();
-  const item = await findOrNull<SyncOutboxItem>('sync_outbox', id);
-  if (!item) return;
-  await database.write(async () => {
-    const changes = new PreparedChanges();
-    // Un negocio descartado no desaparece del teléfono: queda marcado con el
-    // motivo, igual que si lo hubiera rechazado el servidor. El cliente ya
-    // firmó el contrato y alguien tiene que decidir qué hacer con él.
-    if (item.type === 'create_negocio') {
-      await prepareRejectedNegocio(
-        database,
-        parseOutboxPayload<CreateNegocioPayload>(item),
-        'Descartado por el usuario',
-        changes
-      );
-    }
-    const operations = await prepareRevertCommand(database, item, 'Descartado por el usuario', changes);
-    await markOutboxDiscarded(item, 'Descartado por el usuario');
-    if (operations.length) await database.batch(...operations);
-  });
+  await discardOutboxEntry(getDatabase(), id);
+  await refreshPendingCount();
+}
+
+/** Da por visto el aviso de un cambio ya enviado. */
+export async function dismissSyncQueueNotice(id: string) {
+  await dismissOutboxNoticeEntry(getDatabase(), id);
   await refreshPendingCount();
 }
 

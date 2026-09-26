@@ -38,6 +38,7 @@ jest.mock('../../security/localFiles', () => ({
     `file:///firmas/${localId}-${role}.png`
   ),
   deleteLocalPagoSupportFile: jest.fn(async () => undefined),
+  localFileExists: jest.fn(async () => true),
 }));
 
 function createFakeDatabase() {

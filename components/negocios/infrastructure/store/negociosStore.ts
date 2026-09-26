@@ -108,7 +108,27 @@ export type CreateNegocioResult = {
   id: string;
   numero: number | null;
   queued: boolean;
+  /**
+   * Solo en `queued`: el negocio se activará solo al sincronizar (la red se
+   * cayó a mitad de un guardado CON activación y el reenvío debe ser idéntico).
+   */
+  activatesOnSync?: boolean;
+  /** Solo en `queued`: aviso para la persona, acorde a `activatesOnSync`. */
+  queuedNotice?: string;
 };
+
+/**
+ * Aviso tras guardar un negocio en la cola. Si se encoló con activación, NO
+ * se puede decir «podrá activarlo desde su ficha»: se activará solo al volver
+ * la señal (y el servidor aún puede rechazarlo).
+ */
+export function queuedNegocioNotice(activatesOnSync: boolean): string {
+  const base =
+    'El negocio quedó guardado sin conexión y se enviará solo cuando vuelva la señal. Todavía NO tiene número: lo asigna el servidor al confirmarlo, y podría rechazarlo (por ejemplo, si ya no hay existencias).';
+  return activatesOnSync
+    ? `${base} Al confirmarlo quedará activado automáticamente (se creará la orden de entrega); no hace falta activarlo desde su ficha.`
+    : `${base} Podrá activarlo desde su ficha cuando esté confirmado.`;
+}
 
 export type CreateNegocioInput = Parameters<NegociosState['createAndActivate']>[0];
 
@@ -416,7 +436,13 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         },
       });
       pendingCreateRequests.delete(requestFingerprint);
-      return { id: activeRequest.draftId, numero: null, queued: true };
+      return {
+        id: activeRequest.draftId,
+        numero: null,
+        queued: true,
+        activatesOnSync: activate,
+        queuedNotice: queuedNegocioNotice(activate),
+      };
     };
 
     // Empezando sin señal nunca se activa: activar descuenta stock y crea la
