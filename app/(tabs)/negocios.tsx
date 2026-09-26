@@ -15,6 +15,7 @@ import {
 import { NegocioListCard } from '@/components/negocios/components/NegocioListCard';
 import { useNegocioSyncOverlay } from '@/components/negocios/infrastructure/hooks/useNegocioSyncOverlay';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
+import { useNegociosProducts } from '@/components/negocios/infrastructure/hooks/useNegociosProducts';
 import {
   NEGOCIO_LIST_FILTERS,
   matchesNegocioListFilter,
@@ -79,6 +80,7 @@ function NegociosScreenInner() {
   const onRefresh = async () => {
     if (searchOnly && debouncedQuery.length === 0) return;
     setRefreshing(true);
+    products.refresh();
     await fetchList(debouncedQuery);
     setRefreshing(false);
   };
@@ -90,6 +92,11 @@ function NegociosScreenInner() {
     () => (searchOnly ? list : withUnsyncedNegociosFirst(list, syncOverlay.items, syncOverlay.states)),
     [list, searchOnly, syncOverlay]
   );
+  // Productos de las tarjetas: una consulta por página cargada (no por
+  // tarjeta); si la lista cambia, solo se piden los negocios nuevos. Se usa
+  // la página completa y no la filtrada para que el filtro no consulte.
+  const fullListIds = useMemo(() => fullList.map((item) => item.id as string), [fullList]);
+  const products = useNegociosProducts(fullListIds);
   const normalizedQuery = query.trim();
   const filtered = useMemo(
     () =>
@@ -217,6 +224,7 @@ function NegociosScreenInner() {
             <NegocioListCard
               item={item}
               syncState={syncState}
+              products={products.byNegocio.get(item.id)}
               onPress={() =>
                 // Rechazado: se decide en «Cambios sin sincronizar» (motivo,
                 // reintentar o descartar). Pendiente con señal: la ficha

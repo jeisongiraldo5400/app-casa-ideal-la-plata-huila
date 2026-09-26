@@ -6,16 +6,23 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelNegocioStatus, negocioStatusTone } from '@/lib/negocioLabels';
 import { describeNegocioOrigen } from '@/lib/negocios/negocioOrigen';
 import { NEGOCIO_SYNC_BADGE, type NegocioSyncState } from '@/lib/negocios/negocioSyncBadge';
+import { summarizeNegocioProducts, type NegocioProductLine } from '@/lib/negocios/negocioProducts';
 
 export function NegocioListCard({
   item,
   onPress,
   syncState,
+  products,
 }: {
   item: any;
   onPress: () => void;
   /** Negocio creado en el teléfono y aún sin confirmar (ver `useNegocioSyncOverlay`). */
   syncState?: NegocioSyncState | null;
+  /**
+   * Productos del negocio (ver `useNegociosProducts`). Sin dato —cargando,
+   * error o negocio sin productos— la tarjeta no pinta la sección.
+   */
+  products?: readonly NegocioProductLine[];
 }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -39,11 +46,16 @@ export function NegocioListCard({
   const syncBadge = syncState ? NEGOCIO_SYNC_BADGE[syncState] : null;
   // El número lo asigna el servidor: sin confirmar, la fila local lleva 0.
   const codigo = syncBadge && !Number(item.numero) ? 'Sin número' : formatNegocioCodigo(item.numero);
+  // Tarjeta compacta: hasta 3 productos y «+N más».
+  const productSummary = products && products.length > 0 ? summarizeNegocioProducts(products) : null;
+  const productsLabel = productSummary
+    ? `, productos: ${productSummary.lines.join(', ')}${productSummary.more > 0 ? ` y ${productSummary.more} más` : ''}`
+    : '';
 
   return (
     <ListCard
       onPress={onPress}
-      accessibilityLabel={`Negocio ${codigo}, ${customer}, ${labelNegocioStatus(item.status)}${syncBadge ? `, ${syncBadge.label}` : ''}, saldo ${formatCOP(saldo)}${origen ? `, ${origen.texto}` : ''}`}
+      accessibilityLabel={`Negocio ${codigo}, ${customer}, ${labelNegocioStatus(item.status)}${syncBadge ? `, ${syncBadge.label}` : ''}, saldo ${formatCOP(saldo)}${origen ? `, ${origen.texto}` : ''}${productsLabel}`}
       accessibilityHint={syncBadge?.hint}>
       <View style={styles.cardTop}>
         <Text style={[styles.numero, { color: colors.text.primary }]}>{codigo}</Text>
@@ -56,6 +68,18 @@ export function NegocioListCard({
         <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
           {origen.texto}
         </Text>
+      ) : null}
+      {productSummary ? (
+        <View style={styles.products} testID={`productos-negocio-${item.id}`}>
+          {productSummary.lines.map((line, index) => (
+            <Text key={`${line}-${index}`} style={[styles.product, { color: colors.text.primary }]} numberOfLines={1}>
+              {line}
+            </Text>
+          ))}
+          {productSummary.more > 0 ? (
+            <Text style={[styles.meta, { color: colors.text.secondary }]}>{`+${productSummary.more} más`}</Text>
+          ) : null}
+        </View>
       ) : null}
       <View style={[styles.amounts, { borderTopColor: colors.divider }]}>
         <Metric label="Crédito" value={formatCOP(Number(item.total_credit))} />
@@ -75,6 +99,8 @@ const styles = StyleSheet.create({
   numero: { ...Typography.bodyStrong, fontWeight: '800' },
   customer: { ...Typography.bodySmall },
   meta: { ...Typography.caption },
+  products: { marginTop: Spacing.xs, gap: 2 },
+  product: { ...Typography.caption },
   amounts: {
     flexDirection: 'row',
     justifyContent: 'space-between',

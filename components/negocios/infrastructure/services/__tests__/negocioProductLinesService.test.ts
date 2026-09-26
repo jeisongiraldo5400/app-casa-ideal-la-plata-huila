@@ -1,4 +1,4 @@
-import { fetchNegociosProducts } from '../customerNegocioProductsService';
+import { fetchNegociosProducts } from '../negocioProductLinesService';
 
 type Response = { data: unknown; error: unknown };
 let mockResponse: Response = { data: [], error: null };
@@ -68,5 +68,20 @@ describe('fetchNegociosProducts', () => {
   it('un error que no es de red se propaga', async () => {
     mockResponse = { data: null, error: new Error('permiso') };
     await expect(fetchNegociosProducts(['n1'])).rejects.toThrow('permiso');
+  });
+
+  it('los negocios que el servidor aún no conoce (creados sin señal) salen del teléfono', async () => {
+    mockResponse = {
+      data: [{ negocio_id: 'n1', quantity: 1, description: null, product: { name: 'Base', sku: null } }],
+      error: null,
+    };
+    mockLocal.mockResolvedValue([
+      { negocioId: 'local-1', productName: 'Colchón', productSku: null, description: null, quantity: 2 },
+    ]);
+    const result = await fetchNegociosProducts(['n1', 'local-1']);
+    expect(mockIn).toHaveBeenCalledTimes(1);
+    expect(mockLocal).toHaveBeenCalledWith(['local-1']);
+    expect(result.get('n1')).toEqual([{ name: 'Base', sku: null, quantity: 1 }]);
+    expect(result.get('local-1')).toEqual([{ name: 'Colchón', sku: null, quantity: 2 }]);
   });
 });

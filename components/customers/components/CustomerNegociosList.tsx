@@ -3,7 +3,7 @@ import { ListCard, ScreenState, SectionHeader, StatusChip } from '@/components/u
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import { labelCustomerNegocioRole, type CustomerNegocioItem } from '@/lib/customers/customerNegocios';
-import { formatNegocioProductLine, type NegocioProductLine } from '@/lib/customers/negocioProducts';
+import { formatNegocioProductLine, type NegocioProductLine } from '@/lib/negocios/negocioProducts';
 import { formatNegocioCodigo, labelNegocioStatus, negocioStatusTone } from '@/lib/negocioLabels';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';

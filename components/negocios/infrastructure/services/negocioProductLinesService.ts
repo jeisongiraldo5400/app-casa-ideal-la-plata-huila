@@ -5,7 +5,7 @@ import {
   groupNegocioProducts,
   type NegocioProductLine,
   type NegocioProductSourceRow,
-} from '@/lib/customers/negocioProducts';
+} from '@/lib/negocios/negocioProducts';
 
 type ItemRow = {
   negocio_id: string;
@@ -15,8 +15,10 @@ type ItemRow = {
 };
 
 /**
- * Productos de los negocios de un cliente, en una sola consulta. Con señal
- * sale del servidor; sin señal, de lo descargado en el teléfono.
+ * Productos de varios negocios en una sola consulta (tarjetas de Negocios,
+ * Mis negocios y la ficha del cliente). Con señal sale del servidor; sin
+ * señal, de lo descargado en el teléfono. Los negocios que el servidor aún no
+ * conoce (creados sin señal y sin enviar) se completan desde el teléfono.
  */
 export async function fetchNegociosProducts(negocioIds: readonly string[]): Promise<Map<string, NegocioProductLine[]>> {
   if (negocioIds.length === 0) return new Map();
@@ -35,6 +37,13 @@ export async function fetchNegociosProducts(negocioIds: readonly string[]): Prom
       description: row.description,
       quantity: Number(row.quantity) || 0,
     }));
+    const found = new Set(rows.map((row) => row.negocioId));
+    const missing = negocioIds.filter((id) => !found.has(id));
+    if (missing.length > 0 && canUseLocalDb()) {
+      // Si la base local falla, se muestra lo que trajo el servidor.
+      const local = await fetchNegociosProductsFromLocal(missing).catch(() => []);
+      rows.push(...local);
+    }
     return groupNegocioProducts(rows);
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;

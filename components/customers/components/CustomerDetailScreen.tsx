@@ -11,7 +11,7 @@ import { useCustomerDetail } from '../infrastructure/hooks/useCustomerDetail';
 import { CustomerCarteraSummary } from './CustomerCarteraSummary';
 import { CustomerContactBlock } from './CustomerContactBlock';
 import { CustomerNegociosList } from './CustomerNegociosList';
-import { useNegociosProducts } from '../infrastructure/hooks/useNegociosProducts';
+import { useNegociosProducts } from '@/components/negocios/infrastructure/hooks/useNegociosProducts';
 
 interface CustomerDetailScreenProps {
   customerId: string | null;

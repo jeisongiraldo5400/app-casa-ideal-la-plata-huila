@@ -1,4 +1,4 @@
-/** Producto de un negocio tal como se muestra en la ficha del cliente. */
+/** Producto de un negocio tal como se muestra en su tarjeta (listas y ficha del cliente). */
 export type NegocioProductLine = {
   name: string;
   sku: string | null;
@@ -36,4 +36,18 @@ export function groupNegocioProducts(rows: readonly NegocioProductSourceRow[]): 
 export function formatNegocioProductLine(line: NegocioProductLine): string {
   const quantity = Number.isInteger(line.quantity) ? String(line.quantity) : line.quantity.toFixed(2);
   return `${quantity} × ${line.name}`;
+}
+
+/**
+ * Resumen compacto para la tarjeta de la lista: hasta `max` líneas
+ * «2 × Producto» y cuántos productos más quedan fuera («+N más»).
+ */
+export function summarizeNegocioProducts(
+  lines: readonly NegocioProductLine[],
+  max = 3
+): { lines: string[]; more: number } {
+  return {
+    lines: lines.slice(0, max).map(formatNegocioProductLine),
+    more: Math.max(0, lines.length - max),
+  };
 }

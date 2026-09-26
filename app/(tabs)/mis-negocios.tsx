@@ -7,6 +7,7 @@ import { DownloadDataButton } from '@/components/offline';
 import { ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { NegocioListCard } from '@/components/negocios/components/NegocioListCard';
 import { useNegociosStore } from '@/components/negocios/infrastructure/store/negociosStore';
+import { useNegociosProducts } from '@/components/negocios/infrastructure/hooks/useNegociosProducts';
 import {
   NEGOCIO_LIST_FILTERS,
   matchesNegocioListFilter,
@@ -65,10 +66,16 @@ function MisNegociosScreenInner() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    products.refresh();
     loadMyList();
     setRefreshing(false);
   };
 
+  // Productos de las tarjetas: una consulta por página cargada (no por
+  // tarjeta); si la lista cambia, solo se piden los negocios nuevos. Se usa
+  // la página completa y no la filtrada para que el filtro no consulte.
+  const listIds = useMemo(() => list.map((item) => item.id as string), [list]);
+  const products = useNegociosProducts(listIds);
   const normalizedQuery = query.trim();
   const filtered = useMemo(
     () =>
@@ -170,7 +177,11 @@ function MisNegociosScreenInner() {
         ListHeaderComponent={header}
         ListEmptyComponent={renderEmpty()}
         renderItem={({ item }) => (
-          <NegocioListCard item={item} onPress={() => router.push(`/negocio/${item.id}`)} />
+          <NegocioListCard
+            item={item}
+            products={products.byNegocio.get(item.id)}
+            onPress={() => router.push(`/negocio/${item.id}`)}
+          />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />

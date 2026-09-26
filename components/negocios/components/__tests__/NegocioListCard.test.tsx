@@ -44,4 +44,33 @@ describe('NegocioListCard', () => {
     fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it('con productos: hasta 3 líneas «cantidad × producto» y «+N más»', () => {
+    const products = [
+      { name: 'Colchón doble', sku: 'C1', quantity: 2 },
+      { name: 'Base', sku: null, quantity: 1 },
+      { name: 'Almohada', sku: null, quantity: 4 },
+      { name: 'Protector', sku: null, quantity: 1 },
+      { name: 'Sábanas', sku: null, quantity: 1 },
+    ];
+    const screen = render(<NegocioListCard item={item} products={products} onPress={jest.fn()} />);
+    expect(screen.getByText('2 × Colchón doble')).toBeTruthy();
+    expect(screen.getByText('1 × Base')).toBeTruthy();
+    expect(screen.getByText('4 × Almohada')).toBeTruthy();
+    expect(screen.queryByText('1 × Protector')).toBeNull();
+    expect(screen.getByText('+2 más')).toBeTruthy();
+    expect(screen.getByRole('button').props.accessibilityLabel).toContain('productos: 2 × Colchón doble');
+  });
+
+  it('con 3 o menos no pinta «más»; sin productos no pinta la sección', () => {
+    const screen = render(
+      <NegocioListCard item={item} products={[{ name: 'Base', sku: null, quantity: 1 }]} onPress={jest.fn()} />
+    );
+    expect(screen.getByText('1 × Base')).toBeTruthy();
+    expect(screen.queryByText(/más$/)).toBeNull();
+    screen.rerender(<NegocioListCard item={item} products={[]} onPress={jest.fn()} />);
+    expect(screen.queryByTestId('productos-negocio-n1')).toBeNull();
+    screen.rerender(<NegocioListCard item={item} onPress={jest.fn()} />);
+    expect(screen.queryByTestId('productos-negocio-n1')).toBeNull();
+  });
 });
