@@ -21,7 +21,6 @@ export function countActiveCarteraFilters(values: CarteraQuery): number {
   return [
     values.filter !== 'todas',
     Boolean(values.municipioId),
-    Boolean(values.sellerId),
     Boolean(values.customerSellerId),
     Boolean(values.paymentMethodId),
     Boolean(values.gestorId),
@@ -139,8 +138,7 @@ export function describeCarteraFilters(values: CarteraQuery): string {
         : CARTERA_STATUS_LABELS[values.filter],
   ];
   if (values.municipioId) parts.push('Municipio filtrado');
-  if (values.sellerId) parts.push('Vendedor registrado en el negocio filtrado');
-  if (values.customerSellerId) parts.push('Vendedor (dueño del cliente) filtrado');
+  if (values.customerSellerId) parts.push('Vendedor filtrado');
   if (values.paymentMethodId) parts.push('Método de pago filtrado');
   if (values.gestorId) parts.push('Gestor filtrado');
   const range = describeDueRange(values.dueFrom || '', values.dueTo || '');

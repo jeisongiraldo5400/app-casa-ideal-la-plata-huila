@@ -8,18 +8,18 @@ import { Stack } from 'expo-router';
 import React from 'react';
 
 /**
- * «Mis cobros»: se abre desde Cartera. Como «Preparar el teléfono», el Stack
+ * «Cobros» (ruta /mis-cobros): se abre desde Cartera. Como «Preparar el teléfono», el Stack
  * raíz no la declara: el header se define aquí con el mismo `StackHeader`.
  */
 export default function MisCobrosRoute() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   return (
-    <ScreenErrorBoundary screen="Mis cobros">
+    <ScreenErrorBoundary screen="Cobros">
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'Mis cobros',
+          title: 'Cobros',
           header: (props: NativeStackHeaderProps) => <StackHeader {...props} />,
           headerLeft: () => <BackButton />,
           headerStyle: { backgroundColor: colors.background.default },

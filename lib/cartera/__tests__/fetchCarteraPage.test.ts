@@ -37,7 +37,6 @@ describe('fetchCarteraPage', () => {
       ...query,
       search: 'ana',
       municipioId: 'mun-1',
-      sellerId: 'sel-1',
       customerSellerId: 'cli-sel-1',
       paymentMethodId: 'pm-1',
       gestorId: 'ges-1',
@@ -52,7 +51,8 @@ describe('fetchCarteraPage', () => {
       p_page: 2,
       p_page_size: 10,
       p_municipio_id: 'mun-1',
-      p_seller_id: 'sel-1',
+      // El filtro por vendedor del negocio ya no se ofrece: siempre sin filtro.
+      p_seller_id: null,
       p_customer_seller_id: 'cli-sel-1',
       p_payment_method_id: 'pm-1',
       p_gestor_id: 'ges-1',
@@ -62,7 +62,7 @@ describe('fetchCarteraPage', () => {
   });
 
   it('los filtros vacíos viajan como null (sin filtro)', async () => {
-    await fetchCarteraPage({ ...query, sellerId: '', gestorId: '' });
+    await fetchCarteraPage({ ...query, customerSellerId: '', gestorId: '' });
     expect(rpc).toHaveBeenCalledWith(
       'get_cartera_cuotas',
       expect.objectContaining({

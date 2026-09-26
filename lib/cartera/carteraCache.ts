@@ -35,7 +35,6 @@ export function carteraFiltersKey(filters: CarteraQuery): string {
     filters.search,
     filters.days,
     filters.municipioId,
-    filters.sellerId || '',
     filters.customerSellerId || '',
     filters.paymentMethodId || '',
     filters.gestorId || '',

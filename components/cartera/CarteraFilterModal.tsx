@@ -21,7 +21,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 export type CarteraFilterValues = Required<CarteraQuery> & {
   searchMunicipio: string;
   searchSeller: string;
-  searchCustomerSeller: string;
   /** Nombre del gestor elegido, para mostrarlo sin volver a consultarlo. */
   gestorName: string;
 };
@@ -53,10 +52,8 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
   municipioId: '',
   days: 15,
   searchMunicipio: '',
-  sellerId: '',
-  searchSeller: '',
   customerSellerId: '',
-  searchCustomerSeller: '',
+  searchSeller: '',
   paymentMethodId: '',
   gestorId: '',
   gestorName: '',
@@ -66,7 +63,7 @@ export const DEFAULT_CARTERA_FILTERS: CarteraFilterValues = {
 
 /**
  * Filtros de cartera a pantalla completa (estado, días, vencimiento, municipio,
- * vendedores, método de pago y gestor). La búsqueda NO está aquí: vive en la
+ * vendedor, método de pago y gestor). La búsqueda NO está aquí: vive en la
  * pantalla, encima de la lista, y «Limpiar» la conserva.
  */
 export function CarteraFilterModal({ visible, municipios, sellers = [], paymentMethods = [], values, onChange, onApply, onClose, showGestor = false }: Props) {
@@ -74,16 +71,12 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
   const colors = getColors(isDark);
   const selectedMunicipio = municipios.find((item) => item.id === values.municipioId);
   const searchMunicipio = values.searchMunicipio || '';
-  const selectedSeller = sellers.find((item) => item.id === values.sellerId);
+  // «Vendedor» = dueño del cliente (`customerSellerId`).
+  const selectedSeller = sellers.find((item) => item.id === values.customerSellerId);
   const searchSeller = values.searchSeller || '';
   // Sin tildes y sin espacios sobrantes: «ramirez» encuentra a «RAMÍREZ».
   const availableSellers = sellers
     .filter((item) => matchesNormalized(searchSeller, item.full_name))
-    .slice(0, 30);
-  const selectedCustomerSeller = sellers.find((item) => item.id === values.customerSellerId);
-  const searchCustomerSeller = values.searchCustomerSeller || '';
-  const availableCustomerSellers = sellers
-    .filter((item) => matchesNormalized(searchCustomerSeller, item.full_name))
     .slice(0, 30);
   const available = municipios
     .filter((item) => matchesNormalized(searchMunicipio, item.nombre))
@@ -184,7 +177,7 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
         </View>
 
         <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor registrado en el negocio</Text>
+          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor</Text>
           <SearchField
             value={searchSeller}
             onChangeText={(value) => patch({ searchSeller: value })}
@@ -195,20 +188,20 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
           <View style={[styles.options, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ selected: !values.sellerId }}
-              onPress={() => patch({ sellerId: '', searchSeller: '' })}
+              accessibilityState={{ selected: !values.customerSellerId }}
+              onPress={() => patch({ customerSellerId: '', searchSeller: '' })}
               style={[styles.option, { borderBottomColor: colors.divider }]}>
               <Text style={[styles.optionText, { color: colors.primary.main, fontWeight: '700' }]}>Todos los vendedores</Text>
-              {!values.sellerId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
+              {!values.customerSellerId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
             </Pressable>
             {availableSellers.map((seller, index) => {
-              const selected = values.sellerId === seller.id;
+              const selected = values.customerSellerId === seller.id;
               return (
                 <Pressable
                   key={seller.id}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  onPress={() => patch({ sellerId: seller.id, searchSeller: seller.full_name })}
+                  onPress={() => patch({ customerSellerId: seller.id, searchSeller: seller.full_name })}
                   style={[styles.option, index === availableSellers.length - 1 && styles.lastOption, { borderBottomColor: colors.divider }]}>
                   <Text style={[styles.optionText, { color: colors.text.primary }]}>{seller.full_name}</Text>
                   {selected ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
@@ -218,46 +211,6 @@ export function CarteraFilterModal({ visible, municipios, sellers = [], paymentM
             {!availableSellers.length ? (
               <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
                 {sellers.length ? `Sin vendedores para “${searchSeller}”` : 'Sin conexión: la lista de vendedores no está disponible'}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Vendedor (dueño del cliente)</Text>
-          <SearchField
-            value={searchCustomerSeller}
-            onChangeText={(value) => patch({ searchCustomerSeller: value })}
-            placeholder={selectedCustomerSeller?.full_name || 'Todos los clientes'}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <View style={[styles.options, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: !values.customerSellerId }}
-              onPress={() => patch({ customerSellerId: '', searchCustomerSeller: '' })}
-              style={[styles.option, { borderBottomColor: colors.divider }]}>
-              <Text style={[styles.optionText, { color: colors.primary.main, fontWeight: '700' }]}>Todos los clientes</Text>
-              {!values.customerSellerId ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
-            </Pressable>
-            {availableCustomerSellers.map((seller, index) => {
-              const selected = values.customerSellerId === seller.id;
-              return (
-                <Pressable
-                  key={seller.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => patch({ customerSellerId: seller.id, searchCustomerSeller: seller.full_name })}
-                  style={[styles.option, index === availableCustomerSellers.length - 1 && styles.lastOption, { borderBottomColor: colors.divider }]}>
-                  <Text style={[styles.optionText, { color: colors.text.primary }]}>{seller.full_name}</Text>
-                  {selected ? <MaterialIcons name="check" size={20} color={colors.primary.main} /> : null}
-                </Pressable>
-              );
-            })}
-            {!availableCustomerSellers.length ? (
-              <Text style={[styles.emptyOption, { color: colors.text.secondary }]}>
-                {sellers.length ? `Sin vendedores para “${searchCustomerSeller}”` : 'Sin conexión: la lista de vendedores no está disponible'}
               </Text>
             ) : null}
           </View>

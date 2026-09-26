@@ -7,8 +7,10 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 /**
- * Acceso a «Mis cobros» desde Cartera, para quien registra cobros: admin,
- * gestor de cobro y recaudador (los mismos de `localPagoPermission`).
+ * El único acceso a «Cobros» desde Cartera, para quien registra cobros: admin,
+ * gestor de cobro y recaudador (los mismos de `localPagoPermission`). Reúne lo
+ * que antes estaba repartido entre «Mis cobros» y «Cobros de mi cartera» /
+ * «Ver cobros por gestor».
  */
 export function MisCobrosEntryButton() {
   const router = useRouter();
@@ -19,16 +21,16 @@ export function MisCobrosEntryButton() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Mis cobros"
-      accessibilityHint="Pagos que registraste, con filtros por fecha, método y cierre"
+      accessibilityLabel="Cobros"
+      accessibilityHint="Pagos que registraste o de tu cartera, con filtros, Excel y recibos"
       onPress={() => router.push('/mis-cobros' as never)}
       style={({ pressed }) => [styles.button, { backgroundColor: colors.background.paper, borderColor: colors.divider }, pressed && styles.pressed]}>
       <View style={[styles.icon, { backgroundColor: `${colors.primary.main}16` }]}>
         <MaterialIcons name="receipt-long" size={IconSize.sm} color={colors.primary.main} />
       </View>
       <View style={styles.text}>
-        <Text style={[styles.title, { color: colors.text.primary }]}>Mis cobros</Text>
-        <Text style={[styles.hint, { color: colors.text.secondary }]} numberOfLines={1}>Lo que cobré, por fecha, método y cierre</Text>
+        <Text style={[styles.title, { color: colors.text.primary }]}>Cobros</Text>
+        <Text style={[styles.hint, { color: colors.text.secondary }]} numberOfLines={1}>{isAdmin() ? 'Por cobrador, fecha, método y cierre' : 'Lo que cobré, por fecha, método y cierre'}</Text>
       </View>
       <MaterialIcons name="chevron-right" size={IconSize.md} color={colors.text.secondary} />
     </Pressable>

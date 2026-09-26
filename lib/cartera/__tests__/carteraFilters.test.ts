@@ -14,7 +14,6 @@ const base: CarteraQuery = {
   search: '',
   days: 15,
   municipioId: '',
-  sellerId: '',
   customerSellerId: '',
   paymentMethodId: '',
   gestorId: '',
@@ -66,14 +65,13 @@ describe('contador y limpiar', () => {
         ...base,
         filter: 'mora',
         municipioId: 'm',
-        sellerId: 's',
         customerSellerId: 'c',
         paymentMethodId: 'p',
         gestorId: 'g',
         dueFrom: '2026-01-01',
         dueTo: '2026-01-31',
       })
-    ).toBe(7);
+    ).toBe(6);
     expect(countActiveCarteraFilters({ ...base, dueTo: '2026-01-31' })).toBe(1);
   });
 
@@ -88,6 +86,8 @@ describe('contador y limpiar', () => {
       'Por vencer en 7 días · Gestor filtrado · Vence del 01/09/2026 al 30/09/2026'
     );
     expect(describeCarteraFilters({ ...base, filter: 'pagadas', dueTo: '2026-01-31' })).toBe('Pagadas · Vence hasta el 31/01/2026');
+    // Un solo «Vendedor»: el dueño del cliente.
+    expect(describeCarteraFilters({ ...base, customerSellerId: 's1' })).toBe('Todas las cuotas abiertas · Vendedor filtrado');
   });
 });
 

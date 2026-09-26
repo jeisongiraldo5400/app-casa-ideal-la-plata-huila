@@ -6,7 +6,7 @@ import {
   loadMisCobrosFromLocal,
 } from '@/lib/offline/repositories/misCobrosRepository';
 import { DEFAULT_MIS_COBROS_FILTERS, type LocalMisCobro } from '../misCobros';
-import { CASH_METHODS_SNAPSHOT, fetchMisCobros, type MisCobrosQuery } from '../misCobrosService';
+import { CASH_METHODS_SNAPSHOT, PORTFOLIO_NEEDS_CONNECTION, fetchMisCobros, type MisCobrosQuery } from '../misCobrosService';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
 jest.mock('@/lib/offline/repositories/offlineRepository', () => ({
@@ -141,5 +141,52 @@ describe('fetchMisCobros', () => {
     const page = await fetchMisCobros({ ...QUERY, online: false, page: 2, pageSize: 1 });
     expect(page.rows.map((row) => row.payment_id)).toEqual(['l2']);
     expect(page.summary.total_count).toBe(2);
+  });
+
+  describe('«De mi cartera» (cartera asignada)', () => {
+    it('con señal pide get_collection_manager_payments con alcance portfolio y los mismos filtros', async () => {
+      rpc.mockResolvedValue({
+        data: {
+          summary: { ...SERVER.summary, average_payment: '40000' },
+          rows: [{ ...SERVER.rows[0], created_by_name: 'Otra', remaining_balance: '120000', support_path: 'p.jpg', discount_amount: '0' }],
+        },
+        error: null,
+      });
+      const page = await fetchMisCobros({
+        ...QUERY,
+        scope: 'portfolio',
+        filters: { ...DEFAULT_MIS_COBROS_FILTERS, to: '2026-09-30', paymentMethodIds: ['m1'], site: 'almacen', status: 'anulados', inCierre: 'si', search: ' 1023 ' },
+      });
+
+      expect(rpc).toHaveBeenCalledWith('get_collection_manager_payments', {
+        p_gestor_id: 'u1',
+        p_scope: 'portfolio',
+        p_date_from: undefined,
+        p_date_to: '2026-09-30',
+        p_receipt_status: 'anulado',
+        p_search: '1023',
+        p_page: 1,
+        p_page_size: 20,
+        p_payment_method_ids: ['m1'],
+        p_payment_site: 'almacen',
+        p_in_cierre: true,
+      });
+      expect(page.summary.average_payment).toBe(40000);
+      expect(page.rows[0]).toMatchObject({ created_by_name: 'Otra', remaining_balance: 120000, support_path: 'p.jpg' });
+      expect(page.unsentCount).toBe(0);
+      expect(mockedUnsent).not.toHaveBeenCalled();
+    });
+
+    it('sin señal no inventa la cartera con los pagos del teléfono: pide conexión', async () => {
+      await expect(fetchMisCobros({ ...QUERY, scope: 'portfolio', online: false })).rejects.toThrow(PORTFOLIO_NEEDS_CONNECTION);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(mockedLoadLocal).not.toHaveBeenCalled();
+    });
+
+    it('si la petición no llega, también pide conexión', async () => {
+      rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
+      await expect(fetchMisCobros({ ...QUERY, scope: 'portfolio' })).rejects.toThrow(PORTFOLIO_NEEDS_CONNECTION);
+      expect(mockedLoadLocal).not.toHaveBeenCalled();
+    });
   });
 });

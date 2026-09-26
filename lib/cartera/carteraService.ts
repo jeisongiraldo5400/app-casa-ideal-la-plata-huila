@@ -21,10 +21,6 @@ export type {
 
 export type Municipio = { id: string; nombre: string };
 export type CollectionManager = { id: string; full_name: string };
-export type ManagerBusiness = {
-  negocio_id: string; negocio_numero: number; customer_name: string;
-  customer_id_number: string | null; current_assignment: boolean; historical_assignment: boolean;
-};
 export type ManagerPayment = {
   payment_id: string; negocio_id: string; negocio_numero: number; customer_name: string;
   installment_number: number | null; paid_at: string; amount: number;
@@ -97,7 +93,9 @@ export async function fetchCarteraPage(params: CarteraPageQuery) {
     const { data, error } = await supabase.rpc('get_cartera_cuotas', {
       p_filter: params.filter, p_days: params.days, p_search: normalizeCarteraSearch(params.search),
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
-      p_seller_id: params.sellerId || null,
+      // «Vendedor» es el dueño del cliente; el filtro por vendedor del negocio
+      // ya no se ofrece (el RPC lo conserva para la web y apps viejas).
+      p_seller_id: null,
       p_customer_seller_id: params.customerSellerId || null,
       p_payment_method_id: params.paymentMethodId || null,
       p_gestor_id: params.gestorId || null,
@@ -161,23 +159,32 @@ export async function searchCollectionManagers(search: string) {
   return (data || []) as CollectionManager[];
 }
 
-export async function fetchManagerBusinesses(managerId: string, search = '') {
-  const { data, error } = await supabase.rpc('get_collection_manager_businesses', {
-    p_gestor_id: managerId, p_search: search, p_limit: 100,
-  });
-  if (error) throw new Error(error.message || 'No fue posible cargar negocios');
-  return (data || []) as ManagerBusiness[];
-}
+/** Filtros de `get_collection_manager_payments` que usa el Excel de «Cobros». */
+export type ManagerPaymentsParams = {
+  scope: 'performed' | 'portfolio';
+  dateFrom: string;
+  dateTo: string;
+  receiptStatus: 'todos' | 'emitido' | 'anulado';
+  search: string;
+  /** Vacío = todos. */
+  paymentMethodIds?: string[];
+  /** '' = todos; 'sin_registro' = pagos anteriores al dato. */
+  site?: string;
+  /** null = todos. */
+  inCierre?: boolean | null;
+  page: number;
+  pageSize: number;
+};
 
-export async function fetchManagerPayments(managerId: string, params: {
-  scope: 'performed' | 'portfolio'; negocioId: string; dateFrom: string; dateTo: string;
-  receiptStatus: 'todos' | 'emitido' | 'anulado'; search: string; page: number; pageSize: number;
-}) {
+export async function fetchManagerPayments(managerId: string, params: ManagerPaymentsParams) {
   const { data, error } = await supabase.rpc('get_collection_manager_payments', {
-    p_gestor_id: managerId, p_scope: params.scope, p_negocio_id: params.negocioId || null,
-    p_date_from: params.dateFrom || null, p_date_to: params.dateTo || null,
-    p_receipt_status: params.receiptStatus, p_search: params.search,
+    p_gestor_id: managerId, p_scope: params.scope,
+    p_date_from: params.dateFrom || undefined, p_date_to: params.dateTo || undefined,
+    p_receipt_status: params.receiptStatus, p_search: params.search.trim(),
     p_page: params.page, p_page_size: params.pageSize,
+    p_payment_method_ids: params.paymentMethodIds?.length ? params.paymentMethodIds : undefined,
+    p_payment_site: params.site || undefined,
+    p_in_cierre: params.inCierre ?? undefined,
   });
   if (error) throw new Error(error.message || 'No fue posible cargar cobros');
   return data as unknown as {

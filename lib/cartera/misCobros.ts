@@ -1,8 +1,12 @@
 /**
- * «Mis cobros»: los pagos que registró quien cobra, con filtros y totales.
+ * «Cobros»: los pagos de quien cobra, con filtros y totales. Dos alcances:
+ * - «performed»: los que registró el cobrador (`list_my_collected_payments`);
+ * - «portfolio»: los de los negocios que tiene asignados hoy como gestor de
+ *   cobro, aunque los haya registrado otro (`get_collection_manager_payments`
+ *   con `p_scope = 'portfolio'`). Solo con señal: el teléfono no sabe qué
+ *   negocios estaban asignados a quién.
  *
- * Con señal la fuente es el RPC `list_my_collected_payments`
- * (20261204120000_mis_cobros). Sin señal se filtran los pagos guardados en el
+ * Ambos RPC son de 20261204120000_mis_cobros. Sin señal se filtran los pagos guardados en el
  * teléfono con las mismas reglas; este módulo es puro (sin base de datos ni
  * red) para poder probarlo entero.
  */
@@ -13,6 +17,8 @@ export type MisCobrosStatus = 'todos' | 'vigentes' | 'anulados';
 /** '' = todos; 'sin_registro' = pagos anteriores al dato del sitio. */
 export type MisCobrosSite = '' | 'almacen' | 'app_movil' | 'sin_registro';
 export type MisCobrosCierre = 'todos' | 'si' | 'no';
+/** Registrados por el cobrador, o de su cartera asignada (ver arriba). */
+export type MisCobrosScope = 'performed' | 'portfolio';
 
 export type MisCobrosFilters = {
   /** YYYY-MM-DD, día de Bogotá; vacío = sin límite. Pasado o futuro. */
@@ -60,6 +66,17 @@ export type MisCobroRow = {
   payment_kind: string | null;
   cierre_numero: string | null;
   local_state: MisCobroLocalState;
+  /*
+   * Solo en filas del servidor (los pagos del teléfono no los traen): quién
+   * registró el pago, saldo del negocio, soporte y datos del pronto pago. Con
+   * ellos se reimprime o se comparte el recibo.
+   */
+  created_by_name?: string | null;
+  remaining_balance?: number | null;
+  support_path?: string | null;
+  discount_amount?: number | null;
+  discount_reason?: string | null;
+  expected_total?: number | null;
 };
 
 export type MisCobrosSummary = {
@@ -71,6 +88,8 @@ export type MisCobrosSummary = {
   /** Solo métodos marcados como efectivo; null si no se puede saber. */
   total_cash: number | null;
   cash_count: number | null;
+  /** Promedio por pago vigente; solo lo calcula el servidor. */
+  average_payment?: number;
 };
 
 export type MisCobrosPage = {

@@ -36,7 +36,6 @@ jest.mock('expo-sharing', () => ({
 
 const filters = {
   scope: 'performed' as const,
-  negocioId: '',
   dateFrom: '2026-09-01',
   dateTo: '',
   receiptStatus: 'todos' as const,
@@ -335,6 +334,35 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     expect(detailTable(writtenWorkbook()).rows[0]['Método de pago']).toBe('');
     expect(Sharing.shareAsync).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('lleva al RPC y al «Resumen» el alcance y los filtros de la pantalla «Cobros»', async () => {
+    mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
+
+    await exportAndShareManagerPaymentsExcel({
+      manager,
+      filters: {
+        ...filters,
+        scope: 'portfolio',
+        paymentMethodIds: ['m1'],
+        site: 'almacen',
+        inCierre: false,
+        paymentMethodsLabel: 'Efectivo',
+      },
+    });
+
+    const [, params] = mockFetchManagerPayments.mock.calls[0];
+    expect(params).toEqual(
+      expect.objectContaining({ scope: 'portfolio', paymentMethodIds: ['m1'], site: 'almacen', inCierre: false })
+    );
+    expect(params).not.toHaveProperty('paymentMethodsLabel');
+    const sheet = writtenWorkbook().Sheets.Resumen;
+    const lines = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: '' });
+    const value = (label: string) => lines.find((line) => line[0] === label)?.[1];
+    expect(value('Alcance')).toBe('Cartera actualmente asignada');
+    expect(value('Métodos de pago')).toBe('Efectivo');
+    expect(value('Sitio de pago')).toBe('Almacén');
+    expect(value('Cierre de recaudo')).toBe('Sin cierre');
   });
 
   it('la hoja «Resumen» trae filtros con fechas reales y el recaudo como moneda', async () => {

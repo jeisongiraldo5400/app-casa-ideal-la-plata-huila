@@ -20,6 +20,7 @@ function Harness(props: { initial?: Partial<CarteraFilterValues>; showGestor?: b
     <CarteraFilterModal
       visible
       municipios={[]}
+      sellers={[{ id: 's1', full_name: 'Vendedora Uno' }, { id: 's2', full_name: 'Vendedor Dos' }]}
       values={values}
       onChange={setValues}
       onApply={() => props.onApply?.(values)}
@@ -108,6 +109,22 @@ describe('CarteraFilterModal', () => {
     fireEvent.press(screen.getByText('Gestora Uno'));
     fireEvent.press(screen.getByText('Aplicar filtros'));
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ gestorId: 'g1', gestorName: 'Gestora Uno' }));
+  });
+
+  it('hay un solo filtro «Vendedor» y filtra por el dueño del cliente', () => {
+    const onApply = jest.fn();
+    const screen = render(<Harness onApply={onApply} />);
+    expect(screen.getByText('Vendedor')).toBeTruthy();
+    expect(screen.queryByText(/Vendedor registrado en el negocio/)).toBeNull();
+    expect(screen.queryByText(/dueño del cliente/)).toBeNull();
+    // Una sola lista: cada vendedor aparece una vez.
+    expect(screen.getAllByText('Vendedora Uno')).toHaveLength(1);
+
+    fireEvent.press(screen.getByText('Vendedora Uno'));
+    expect(screen.getByText('1 filtro activo')).toBeTruthy();
+    fireEvent.press(screen.getByText('Aplicar filtros'));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ customerSellerId: 's1', searchSeller: 'Vendedora Uno' }));
+    expect(onApply.mock.calls[0][0]).not.toHaveProperty('sellerId');
   });
 
   it('sin señal avisa que la lista de gestores no está disponible', async () => {
