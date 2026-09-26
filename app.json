@@ -20,7 +20,7 @@
       "icon": "./assets/images/icono.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras y capturar soportes de pago.",
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barras y fotografiar soportes de pago.",
         "NSPhotoLibraryUsageDescription": "Permitir acceso a la galería para adjuntar soportes de pago.",
         "NSFaceIDUsageDescription": "Usamos Face ID para proteger la cartera y los datos de clientes en este dispositivo.",
         "NSBluetoothAlwaysUsageDescription": "Usamos Bluetooth para conectar la impresora térmica e imprimir recibos de pago y tickets de negocio.",
@@ -51,6 +51,10 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.POST_NOTIFICATIONS"
       ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "googleServicesFile": "./google-services.json",
       "package": "com.casaideal.laplatahuila"
     },
@@ -78,17 +82,25 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barras."
+          "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barras y fotografiar soportes de pago.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Permitir acceso a la cámara para capturar soportes de pago.",
-          "photosPermission": "Permitir acceso a la galería para adjuntar soportes de pago."
+          "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barras y fotografiar soportes de pago.",
+          "photosPermission": "Permitir acceso a la galería para adjuntar soportes de pago.",
+          "microphonePermission": false
         }
       ],
-      "expo-local-authentication",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Usamos Face ID para proteger la cartera y los datos de clientes en este dispositivo."
+        }
+      ],
       [
         "@morrowdigital/watermelondb-expo-plugin",
         {
