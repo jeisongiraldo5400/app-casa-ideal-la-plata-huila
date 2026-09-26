@@ -899,14 +899,22 @@ export async function registerPagoOffline(input: {
     throw new Error('El valor supera el saldo pendiente de las cuotas descargadas.');
   }
 
-  const stop = input.routeStopId
+  const requestedStop = input.routeStopId
     ? await findOrNull<CollectionRouteStopRecord>('collection_route_stops', input.routeStopId)
     : null;
+  // Solo la parada «actual» cuenta el cobro. Si en el teléfono ya no lo es
+  // (se cobró antes, tiene novedad o la ruta avanzó), el pago es un abono
+  // normal: no se marca la parada otra vez ni se adelanta otra, y no viaja
+  // como cobro de ruta (el servidor lo rechazaría). Sin la parada en el
+  // teléfono no se sabe: viaja como antes y el servidor decide.
+  const stopIsStale = Boolean(requestedStop && requestedStop.status !== 'actual');
+  const routeStopId = stopIsStale ? null : input.routeStopId || null;
+  const stop = stopIsStale ? null : requestedStop;
   const nextStop = stop ? await findNextPendingStop(stop.routeId, stop.id) : null;
 
   const pagoLocalId = createIdempotencyKey();
   const idempotencyKey = input.idempotencyKey || createIdempotencyKey();
-  const paymentCommandType: OutboxCommandType = input.routeStopId ? 'register_route_pago' : 'register_pago';
+  const paymentCommandType: OutboxCommandType = routeStopId ? 'register_route_pago' : 'register_pago';
   const snapshot: OptimisticSnapshot = {
     cuotas: cuotas.map(snapshotCuota),
     negocio: { id: negocio.id, remainingBalance: negocio.remainingBalance },
@@ -921,7 +929,7 @@ export async function registerPagoOffline(input: {
     paidAt: input.paidAt,
     receiptNumber: input.receiptNumber,
     notes: null,
-    routeStopId: input.routeStopId || null,
+    routeStopId,
     routeId: stop?.routeId || null,
     snapshot,
   };
@@ -1018,7 +1026,7 @@ export async function registerPagoOffline(input: {
 
   void refreshPendingCount();
   void runSync('mutation');
-  return { pagoLocalId, pendingReceipt: true, supportWarning };
+  return { pagoLocalId, pendingReceipt: true, supportWarning, routeStopApplied: Boolean(routeStopId) };
 }
 
 async function findNextPendingStop(routeId: string, excludeStopId: string) {

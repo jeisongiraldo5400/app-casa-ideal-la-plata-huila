@@ -1,4 +1,5 @@
 import { RouteOfflineCard } from '@/components/collection-routes/RouteOfflineCard';
+import { formatCOP } from '@/lib/creditCalculator';
 import { RouteRoadmap, stopOutcomeText } from '@/components/collection-routes/RouteRoadmap';
 import { useTheme } from '@/components/theme';
 import { BackButton } from '@/components/ui/BackButton';
@@ -13,7 +14,7 @@ import {
   updateCollectionRouteStop,
   type RouteActionResult,
 } from '@/lib/collection-routes/collectionRouteService';
-import { countPendingStops, getRouteOutcomeSummary, getRouteProgress, isFinalStopStatus } from '@/lib/collection-routes/routeState';
+import { countPendingStops, getRouteOutcomeSummary, getRouteProgress, isFinalStopStatus, negocioHrefForStop } from '@/lib/collection-routes/routeState';
 import type { RouteOfflineStatus } from '@/lib/collection-routes/routeOffline';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { CollectionRoute, CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
@@ -26,9 +27,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { bogotaDateValue } from '@/lib/localDate';
+import { routeDateLabel } from '@/lib/collection-routes/routeDates';
 import { errorMessage } from '@/lib/errorMessage';
 
-const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 const ROUTE_EYEBROW: Record<CollectionRoute['status'], string> = {
   borrador: 'RUTA SIN INICIAR',
   activa: 'RUTA EN CURSO',
@@ -195,6 +197,20 @@ function CollectionRouteDetailScreenInner() {
     );
   };
 
+  // Una ruta armada para otro día se puede iniciar antes, pero se confirma.
+  const today = bogotaDateValue();
+  const scheduledLater = route.route_date > today;
+  const startRoute = () => {
+    if (!scheduledLater) {
+      void run(() => startCollectionRoute(route.id), 'Ruta iniciada');
+      return;
+    }
+    Alert.alert('Ruta programada', `Esta ruta es para ${routeDateLabel(route.route_date, today)}. ¿Iniciarla hoy?`, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Iniciar', onPress: () => void run(() => startCollectionRoute(route.id), 'Ruta iniciada') },
+    ]);
+  };
+
   const confirmCancel = () => Alert.alert('Cancelar ruta', 'La ruta se conservará en el historial. ¿Deseas cancelarla?', [
     { text: 'No', style: 'cancel' },
     { text: 'Cancelar ruta', style: 'destructive', onPress: () => run(() => finishCollectionRoute(route.id, true), 'Ruta cancelada') },
@@ -210,7 +226,7 @@ function CollectionRouteDetailScreenInner() {
         <View style={[styles.summary, { backgroundColor: colors.primary.main }]}>
           <View style={styles.summaryTop}><View><Text style={styles.summaryEyebrow}>{ROUTE_EYEBROW[route.status]}</Text><Text style={styles.summaryTitle}>{progress.completed} de {progress.total} visitas</Text></View><View style={styles.percent}><Text style={styles.percentText}>{progress.percentage}%</Text></View></View>
           <View style={styles.progressTrack}><View style={[styles.progressValue, { width: `${progress.percentage}%` }]} /></View>
-          <View style={styles.moneyRow}><View><Text style={styles.moneyLabel}>Saldo en ruta</Text><Text style={styles.moneyValue}>{money(route.total_expected)}</Text></View><View><Text style={styles.moneyLabel}>Recaudado</Text><Text style={styles.moneyValue}>{money(route.total_collected)}</Text></View></View>
+          <View style={styles.moneyRow}><View><Text style={styles.moneyLabel}>Saldo en ruta</Text><Text style={styles.moneyValue}>{formatCOP(route.total_expected)}</Text></View><View><Text style={styles.moneyLabel}>Recaudado</Text><Text style={styles.moneyValue}>{formatCOP(route.total_collected)}</Text></View></View>
           <View style={styles.outcomeStats} accessibilityLabel={`Visitadas ${outcomes.visited}, cobradas ${outcomes.collected}, no visitadas ${outcomes.notVisited}`}>
             <View style={styles.outcomeStat}><Text style={styles.outcomeStatValue}>{outcomes.visited}</Text><Text style={styles.moneyLabel}>Visitadas</Text></View>
             <View style={styles.outcomeStat}><Text style={styles.outcomeStatValue}>{outcomes.collected}</Text><Text style={styles.moneyLabel}>Cobradas</Text></View>
@@ -218,7 +234,7 @@ function CollectionRouteDetailScreenInner() {
           </View>
         </View>
 
-        {route.status === 'borrador' && <View style={styles.actionBox}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Tu recorrido está preparado</Text><Text style={{ color: colors.text.secondary, textAlign: 'center' }}>Al iniciar, la primera parada quedará destacada.</Text><TouchableOpacity disabled={saving} style={[styles.primaryButton, { backgroundColor: colors.primary.main }]} onPress={() => run(() => startCollectionRoute(route.id), 'Ruta iniciada')}><MaterialIcons name="play-arrow" color="#fff" size={22} /><Text style={styles.buttonText}>Iniciar ruta</Text></TouchableOpacity></View>}
+        {route.status === 'borrador' && <View style={styles.actionBox}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Tu recorrido está preparado</Text><Text style={{ color: colors.text.secondary, textAlign: 'center' }}>{scheduledLater ? `Programada para ${routeDateLabel(route.route_date, today)}. ` : ''}Al iniciar, la primera parada quedará destacada.</Text><TouchableOpacity disabled={saving} style={[styles.primaryButton, { backgroundColor: colors.primary.main }]} onPress={startRoute}><MaterialIcons name="play-arrow" color="#fff" size={22} /><Text style={styles.buttonText}>Iniciar ruta</Text></TouchableOpacity></View>}
 
         {route.status === 'activa' && activeStop && <TouchableOpacity style={[styles.nextCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => setSelectedStop(activeStop)}><View style={[styles.nextIcon, { backgroundColor: '#dbeafe' }]}><MaterialIcons name="near-me" size={25} color="#2563eb" /></View><View style={{ flex: 1 }}><Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '900' }}>PARADA ACTUAL</Text><Text style={[styles.actionTitle, { color: colors.text.primary }]}>{activeStop.customer_name}</Text><Text style={{ color: colors.text.secondary }} numberOfLines={1}>{activeStop.customer_address}</Text></View><MaterialIcons name="chevron-right" size={25} color={colors.text.secondary} /></TouchableOpacity>}
 
@@ -258,7 +274,7 @@ function CollectionRouteDetailScreenInner() {
           <View style={styles.sheetHandle} />
           {selectedStop && <>
             <View style={styles.sheetHeader}><View><Text style={{ color: colors.primary.main, fontWeight: '900' }}>PARADA {selectedStop.position}</Text><Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{selectedStop.customer_name}</Text><Text style={{ color: colors.text.secondary }}>Negocio {formatNegocioCodigo(selectedStop.negocio_numero)}</Text></View><TouchableOpacity onPress={() => setSelectedStop(null)}><MaterialIcons name="close" size={26} color={colors.text.secondary} /></TouchableOpacity></View>
-            <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}><Text style={{ color: colors.text.secondary }}>{[selectedStop.customer_address, selectedStop.municipality_name].filter(Boolean).join(', ')}</Text><Text style={[styles.balance, { color: colors.text.primary }]}>{money(selectedStop.expected_balance)}</Text></View>
+            <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}><Text style={{ color: colors.text.secondary }}>{[selectedStop.customer_address, selectedStop.municipality_name].filter(Boolean).join(', ')}</Text><Text style={[styles.balance, { color: colors.text.primary }]}>{formatCOP(selectedStop.expected_balance)}</Text></View>
             {isFinalStopStatus(selectedStop.status) ? (
               <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}>
                 {selectedStop.status === 'no_visitada' ? <Text style={{ color: colors.text.secondary, fontSize: 12, fontWeight: '800' }}>NO VISITADA AL CERRAR LA JORNADA</Text> : null}
@@ -267,7 +283,7 @@ function CollectionRouteDetailScreenInner() {
               </View>
             ) : null}
             {selectedStop.customer_phone && <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => Linking.openURL(`tel:${selectedStop.customer_phone}`)}><MaterialIcons name="call" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Llamar al cliente</Text></TouchableOpacity>}
-            <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => { setSelectedStop(null); router.push(`/negocio/${selectedStop.negocio_id}` as any); }}><MaterialIcons name="visibility" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Ver negocio</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => { setSelectedStop(null); router.push(negocioHrefForStop(route, selectedStop) as any); }}><MaterialIcons name="visibility" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Ver negocio</Text></TouchableOpacity>
             {route.status === 'activa' && selectedStop.status === 'pendiente' && (
               <View style={[styles.freeSelectionBox, { backgroundColor: `${colors.info.main}12` }]}>
                 <Text style={{ color: colors.text.secondary, fontSize: 12, textAlign: 'center' }}>Puedes atender las visitas en cualquier orden.</Text>

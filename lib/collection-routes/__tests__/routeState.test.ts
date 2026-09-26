@@ -4,6 +4,7 @@ import {
   getRouteOutcomeSummary,
   getRouteProgress,
   groupRoutesForHome,
+  negocioHrefForStop,
   isFinalStopStatus,
   isVisitedStopStatus,
   moveItem,
@@ -97,5 +98,28 @@ describe('groupRoutesForHome', () => {
     expect(result.today).toBeNull();
     expect(result.unfinished.map((route) => route.id)).toEqual(['vieja', 'otra']);
     expect(result.history).toEqual([]);
+  });
+});
+
+describe('rutas programadas y «Ver negocio»', () => {
+  const r = (id: string, route_date: string, status: 'borrador' | 'activa' | 'completada' | 'cancelada') => ({ id, route_date, status });
+
+  it('una ruta de mañana es «próxima», no «sin cerrar» ni la de hoy', () => {
+    const result = groupRoutesForHome(
+      [r('manana', '2026-09-26', 'borrador'), r('hoy', '2026-09-25', 'activa'), r('ayer', '2026-09-24', 'activa')],
+      '2026-09-25'
+    );
+    expect(result.today?.id).toBe('hoy');
+    expect(result.upcoming.map((route) => route.id)).toEqual(['manana']);
+    expect(result.unfinished.map((route) => route.id)).toEqual(['ayer']);
+    expect(result.history).toEqual([]);
+  });
+
+  it('«Ver negocio» lleva la parada solo si es la actual de una ruta en curso', () => {
+    const stopActual = { id: 's1', negocio_id: 'n1', status: 'actual' as const };
+    expect(negocioHrefForStop({ status: 'activa' }, stopActual)).toBe('/negocio/n1?routeStopId=s1');
+    expect(negocioHrefForStop({ status: 'activa' }, { ...stopActual, status: 'pendiente' })).toBe('/negocio/n1');
+    expect(negocioHrefForStop({ status: 'activa' }, { ...stopActual, status: 'cobrado' })).toBe('/negocio/n1');
+    expect(negocioHrefForStop({ status: 'completada' }, stopActual)).toBe('/negocio/n1');
   });
 });

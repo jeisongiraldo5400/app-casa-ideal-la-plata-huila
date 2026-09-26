@@ -7,6 +7,9 @@ import {
   type MisCobrosFilters,
   matchingMisCobrosPreset,
   misCobrosPresetRange,
+  initialMisCobrosFilters,
+  isPorEntregarACaja,
+  porEntregarACajaFilters,
 } from '../misCobros';
 
 const EFECTIVO = 'm-efectivo';
@@ -153,5 +156,32 @@ describe('misCobrosPresetRange', () => {
   it('reconoce qué atajo está puesto', () => {
     expect(matchingMisCobrosPreset({ from: '2026-03-01', to: '2026-03-15' }, today)).toBe('mes');
     expect(matchingMisCobrosPreset({ from: '2026-01-05', to: '2026-02-10' }, today)).toBeNull();
+  });
+});
+
+describe('«Cobros» abre en Hoy y atajo «Por entregar a caja»', () => {
+  const now = new Date('2026-09-25T20:00:00Z');
+
+  it('abre en hoy (día de Bogotá) y sin otros filtros', () => {
+    expect(initialMisCobrosFilters(now)).toEqual({ ...DEFAULT_MIS_COBROS_FILTERS, from: '2026-09-25', to: '2026-09-25' });
+  });
+
+  it('por entregar a caja: vigentes, sin cierre, solo efectivo, de cualquier fecha y con la búsqueda', () => {
+    const filters = porEntregarACajaFilters([EFECTIVO], 'ana');
+    expect(filters).toEqual({
+      ...DEFAULT_MIS_COBROS_FILTERS,
+      paymentMethodIds: [EFECTIVO],
+      status: 'vigentes',
+      inCierre: 'no',
+      search: 'ana',
+    });
+    expect(isPorEntregarACaja(filters, [EFECTIVO])).toBe(true);
+  });
+
+  it('deja de ser el atajo si se cambia un filtro o no se conoce el efectivo', () => {
+    const filters = porEntregarACajaFilters([EFECTIVO]);
+    expect(isPorEntregarACaja({ ...filters, from: '2026-09-01' }, [EFECTIVO])).toBe(false);
+    expect(isPorEntregarACaja({ ...filters, paymentMethodIds: [EFECTIVO, CONSIGNACION] }, [EFECTIVO])).toBe(false);
+    expect(isPorEntregarACaja(filters, null)).toBe(false);
   });
 });

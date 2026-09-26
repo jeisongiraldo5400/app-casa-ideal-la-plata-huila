@@ -24,6 +24,8 @@ type Props = {
    * Por defecto 2: las cuotas pueden tener centavos.
    */
   amountDecimalPlaces?: number;
+  /** Debajo del valor: atajos («Valor de la cuota vencida», «Cuota actual»). */
+  amountAccessory?: React.ReactNode;
   receipt: string;
   onChangeReceipt: (value: string) => void;
   /** Métodos de pago disponibles; la selección es obligatoria. */
@@ -60,6 +62,7 @@ export function RegisterPaymentSheet({
   amount,
   onChangeAmount,
   amountDecimalPlaces = MAX_MONEY_DECIMALS,
+  amountAccessory,
   receipt,
   onChangeReceipt,
   paymentMethods,
@@ -127,6 +130,7 @@ export function RegisterPaymentSheet({
         containerStyle={styles.field}
         accessibilityLabel="Valor del pago"
       />
+      {amountAccessory}
       <Input
         label="Recibo físico (opcional)"
         placeholder="Número del recibo"

@@ -13,6 +13,7 @@ import {
 } from '@/lib/collection-routes/candidates';
 import type { LocalRouteSnapshot } from '@/lib/collection-routes/routeOffline';
 import type { CandidateQuery, CollectionRoute } from '@/lib/collection-routes/types';
+import { isUltimaGestionStatus, type UltimaGestion } from '@/lib/collection-routes/ultimaGestion';
 import { getDatabase, isDatabaseOpen } from '../database';
 import type {
   CollectionRouteRecord,
@@ -225,4 +226,76 @@ export async function saveRouteCopyLocally(route: CollectionRoute, options: { on
     });
   }
   return true;
+}
+
+/** Estado de una parada y de su ruta en el teléfono (null si no está descargada). */
+export type LocalStopState = {
+  stopId: string;
+  routeId: string;
+  negocioId: string;
+  position: number;
+  stopStatus: string;
+  routeStatus: string | null;
+  routeDate: string | null;
+};
+
+async function toLocalStopState(stop: CollectionRouteStopRecord): Promise<LocalStopState> {
+  const route = await findOrNull<CollectionRouteRecord>('collection_routes', stop.routeId);
+  return {
+    stopId: stop.id,
+    routeId: stop.routeId,
+    negocioId: stop.negocioId,
+    position: stop.position,
+    stopStatus: stop.status,
+    routeStatus: route?.status ?? null,
+    routeDate: route?.routeDate ?? null,
+  };
+}
+
+/** La parada guardada en el teléfono, con el estado de su ruta. */
+export async function readLocalRouteStop(stopId: string): Promise<LocalStopState | null> {
+  if (!isDatabaseOpen()) return null;
+  const stop = await findOrNull<CollectionRouteStopRecord>('collection_route_stops', stopId);
+  return stop ? toLocalStopState(stop) : null;
+}
+
+/** Paradas «actual» del negocio guardadas en el teléfono (de cualquier ruta descargada). */
+export async function findLocalCurrentStopsForNegocio(negocioId: string): Promise<LocalStopState[]> {
+  if (!isDatabaseOpen()) return [];
+  const stops = await getDatabase()
+    .get<CollectionRouteStopRecord>('collection_route_stops')
+    .query(Q.where('negocio_id', negocioId), Q.where('status', 'actual'))
+    .fetch();
+  return Promise.all(stops.map(toLocalStopState));
+}
+
+/**
+ * Novedades de ruta («Sin pago» / «Reprogramado») de esos negocios guardadas
+ * en el teléfono, sin las de rutas canceladas. Sin base local, lista vacía.
+ */
+export async function findLocalRouteOutcomes(negocioIds: string[]): Promise<UltimaGestion[]> {
+  if (!isDatabaseOpen() || !negocioIds.length) return [];
+  const database = getDatabase();
+  const stops = await database
+    .get<CollectionRouteStopRecord>('collection_route_stops')
+    .query(Q.where('negocio_id', Q.oneOf(negocioIds)), Q.where('status', Q.oneOf(['sin_pago', 'reprogramado'])))
+    .fetch();
+  if (!stops.length) return [];
+  const routeIds = Array.from(new Set(stops.map((stop) => stop.routeId)));
+  const routes = await database
+    .get<CollectionRouteRecord>('collection_routes')
+    .query(Q.where('id', Q.oneOf(routeIds)))
+    .fetch();
+  const routeById = new Map(routes.map((route) => [route.id, route]));
+  return stops
+    .filter((stop) => routeById.get(stop.routeId)?.status !== 'cancelada' && isUltimaGestionStatus(stop.status))
+    .map((stop) => ({
+      negocio_id: stop.negocioId,
+      stop_status: stop.status as UltimaGestion['stop_status'],
+      outcome_reason: stop.outcomeReason,
+      notes: stop.notes,
+      occurred_at: stop.completedAt,
+      route_date: routeById.get(stop.routeId)?.routeDate ?? null,
+      gestor_name: null,
+    }));
 }

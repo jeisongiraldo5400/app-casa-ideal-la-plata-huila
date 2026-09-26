@@ -72,7 +72,13 @@ export type MisCobroRow = {
    * ellos se reimprime o se comparte el recibo.
    */
   created_by_name?: string | null;
+  /** Saldo del negocio HOY. */
   remaining_balance?: number | null;
+  /**
+   * Saldo que quedó justo después de este pago (20261220120000): el que lleva
+   * el recibo. Null con un servidor sin la migración.
+   */
+  remaining_after_payment?: number | null;
   support_path?: string | null;
   discount_amount?: number | null;
   discount_reason?: string | null;
@@ -101,6 +107,16 @@ export type MisCobrosPage = {
   cierreFilterIgnored: boolean;
   /** Pagos del teléfono aún sin enviar (con señal no están en la lista). */
   unsentCount: number;
+  /**
+   * Métodos marcados como efectivo (del servidor o de la última consulta con
+   * señal); null si nunca se supo. Los usa el atajo «Por entregar a caja».
+   */
+  cashMethodIds?: string[] | null;
+  /**
+   * Sin señal: los pagos de negocios ya cerrados no están en el teléfono (la
+   * descarga v3 no baja cerrados), así que el total puede quedarse corto.
+   */
+  closedNegociosMissing?: boolean;
 };
 
 export const EMPTY_MIS_COBROS_SUMMARY: MisCobrosSummary = {
@@ -117,6 +133,45 @@ export function cierreParam(value: MisCobrosCierre): boolean | null {
   if (value === 'si') return true;
   if (value === 'no') return false;
   return null;
+}
+
+/**
+ * Filtros con los que abre «Cobros»: lo de hoy, que es lo que el cobrador
+ * revisa al final de la jornada. «Limpiar» vuelve a todas las fechas.
+ */
+export function initialMisCobrosFilters(today = new Date()): MisCobrosFilters {
+  return { ...DEFAULT_MIS_COBROS_FILTERS, ...misCobrosPresetRange('hoy', today) };
+}
+
+/**
+ * «Por entregar a caja»: lo que el cobrador tiene en la mano y aún no entregó
+ * (pagos vigentes, sin cierre de recaudo, solo métodos de efectivo), de
+ * cualquier fecha. Conserva la búsqueda.
+ */
+export function porEntregarACajaFilters(cashMethodIds: string[], search = ''): MisCobrosFilters {
+  return {
+    ...DEFAULT_MIS_COBROS_FILTERS,
+    paymentMethodIds: [...cashMethodIds],
+    status: 'vigentes',
+    inCierre: 'no',
+    search,
+  };
+}
+
+/** ¿Los filtros puestos son exactamente el atajo «Por entregar a caja»? */
+export function isPorEntregarACaja(filters: MisCobrosFilters, cashMethodIds: string[] | null | undefined): boolean {
+  if (!cashMethodIds?.length) return false;
+  const methods = [...filters.paymentMethodIds].sort();
+  const cash = [...cashMethodIds].sort();
+  return (
+    !filters.from &&
+    !filters.to &&
+    !filters.site &&
+    filters.status === 'vigentes' &&
+    filters.inCierre === 'no' &&
+    methods.length === cash.length &&
+    methods.every((id, index) => id === cash[index])
+  );
 }
 
 /** Cuántos filtros (además de la búsqueda) están activos, para el botón. */

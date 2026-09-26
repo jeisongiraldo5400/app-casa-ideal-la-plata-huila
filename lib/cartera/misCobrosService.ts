@@ -82,6 +82,7 @@ function mapServerRow(row: Record<string, unknown>): MisCobroRow {
     local_state: null,
     created_by_name: (row.created_by_name as string | null) ?? null,
     remaining_balance: toNullableNumber(row.remaining_balance),
+    remaining_after_payment: toNullableNumber(row.remaining_after_payment),
     support_path: (row.support_path as string | null) ?? null,
     discount_amount: toNullableNumber(row.discount_amount),
     discount_reason: (row.discount_reason as string | null) ?? null,
@@ -161,19 +162,21 @@ async function fetchFromServer(query: MisCobrosQuery): Promise<MisCobrosPage> {
     fromCache: false,
     cierreFilterIgnored: false,
     unsentCount,
+    cashMethodIds: Array.isArray(result.cash_method_ids) ? result.cash_method_ids.map(String) : null,
   };
 }
 
 async function fetchFromLocal(query: MisCobrosQuery): Promise<MisCobrosPage | null> {
   const rows = await loadMisCobrosFromLocal();
   if (!rows) return null;
-  const snapshot = await loadReportSnapshot<string[]>(CASH_METHODS_SNAPSHOT);
+  const snapshot = await loadReportSnapshot<string[]>(CASH_METHODS_SNAPSHOT).catch(() => null);
   const collectorName =
     query.collectorName || (await fetchProfileNameFromLocal(query.collectorId));
+  const cashMethodIds = Array.isArray(snapshot?.payload) ? snapshot.payload : null;
   const result = filterLocalMisCobros(rows, query.filters, {
     collectorName,
     isSelf: query.isSelf,
-    cashMethodIds: Array.isArray(snapshot?.payload) ? snapshot.payload : null,
+    cashMethodIds,
   });
   const start = Math.max(query.page - 1, 0) * query.pageSize;
   return {
@@ -182,6 +185,10 @@ async function fetchFromLocal(query: MisCobrosQuery): Promise<MisCobrosPage | nu
     fromCache: true,
     cierreFilterIgnored: query.filters.inCierre !== 'todos',
     unsentCount: result.rows.filter((row) => row.local_state === 'pendiente').length,
+    cashMethodIds,
+    // La descarga v3 (20261205120000) no baja negocios cerrados ni anulados:
+    // sus pagos no están en el teléfono. Se avisa en pantalla (ver informe).
+    closedNegociosMissing: true,
   };
 }
 

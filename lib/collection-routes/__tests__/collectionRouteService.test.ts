@@ -17,8 +17,12 @@ import {
   finishCollectionRoute,
   finishRouteRpcArgs,
   setCollectionRouteStops,
+  selectCollectionRouteStop,
+  startCollectionRoute,
+  updateCollectionRouteStop,
   withCachedActiveRoute,
 } from '../collectionRouteService';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { EMPTY_ROUTE_LOCATION_FILTER, type CandidateQuery, type CollectionRoute } from '../types';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
@@ -272,5 +276,53 @@ describe('cerrar la jornada', () => {
     enqueue.mockResolvedValue(true);
     await finishCollectionRoute('r1');
     expect(enqueue).toHaveBeenCalledWith({ type: 'finish_route', routeId: 'r1', cancel: false });
+  });
+});
+
+describe('señal débil: si NetInfo dice que no hay red no se espera al servidor', () => {
+  const enqueue = enqueueRouteCommand as jest.Mock;
+  beforeEach(() => {
+    useSyncStore.setState({ online: false });
+    enqueue.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => useSyncStore.setState({ online: true }));
+
+  it('abrir la ruta va directo a la copia del teléfono', async () => {
+    localRoute.mockResolvedValue(ROUTE);
+    await expect(fetchCollectionRoute('r1')).resolves.toBe(ROUTE);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('sin copia en el teléfono dice que no hay conexión (error de red)', async () => {
+    localRoute.mockResolvedValue(null);
+    await expect(fetchCollectionRoute('r1')).rejects.toThrow('Sin conexión a internet.');
+  });
+
+  it('la lista de rutas sale del teléfono sin tocar el servidor', async () => {
+    localRoutes.mockResolvedValue([]);
+    cached.mockResolvedValue(null);
+    await expect(fetchMyCollectionRoutes()).resolves.toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('iniciar, seleccionar y registrar novedad se encolan sin llamar al servidor', async () => {
+    await expect(startCollectionRoute('r1')).resolves.toEqual({ queued: true });
+    await expect(selectCollectionRouteStop('s1', 'r1')).resolves.toEqual({ queued: true });
+    await expect(updateCollectionRouteStop('s1', 'sin_pago', 'No estaba', '', 'r1')).resolves.toEqual({ queued: true });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(enqueue.mock.calls.map(([command]) => command.type)).toEqual(['start_route', 'select_route_stop', 'update_route_stop']);
+  });
+
+  it('sin cola local, el error de red sube a la pantalla', async () => {
+    enqueue.mockResolvedValue(false);
+    await expect(startCollectionRoute('r1')).rejects.toThrow('Sin conexión a internet.');
+  });
+
+  it('con red, un error de red también cae a la cola; un rechazo del servidor no', async () => {
+    useSyncStore.setState({ online: true });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'La red no respondió a tiempo.' } });
+    await expect(startCollectionRoute('r1')).resolves.toEqual({ queued: true });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'La ruta no está disponible para iniciar' } });
+    await expect(startCollectionRoute('r1')).rejects.toThrow('La ruta no está disponible para iniciar');
   });
 });

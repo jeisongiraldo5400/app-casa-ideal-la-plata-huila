@@ -1,9 +1,12 @@
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Radius, Shadows, Spacing, type ThemeColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
 import type { CarteraRow } from '@/lib/cartera/carteraService';
+import { mapsHref, telHref } from '@/lib/cartera/carteraContact';
+import { labelUltimaGestion, type UltimaGestion } from '@/lib/collection-routes/ultimaGestion';
 import { CarteraCuotaPeople } from './CarteraCuotaPeople';
 
 const STATUS_LABEL: Record<string, string> = { mora: 'En mora', parcial: 'Parcial', pagada: 'Pagada', pendiente: 'Pendiente' };
@@ -20,6 +23,8 @@ type Props = {
   row: CarteraRow;
   colors: ThemeColors;
   onPress: (negocioId: string) => void;
+  /** Última novedad de ruta del negocio («Sin pago» / «Reprogramado»). */
+  gestion?: UltimaGestion | null;
 };
 
 /**
@@ -27,7 +32,9 @@ type Props = {
  * vencimiento y atraso, personas del negocio, saldo («de $valor» si hubo
  * abonos) y estado. Una cuota pagada muestra su valor completo y «Pagada».
  */
-export const CarteraCuotaRow = memo(function CarteraCuotaRow({ row, colors, onPress }: Props) {
+export const CarteraCuotaRow = memo(function CarteraCuotaRow({ row, colors, onPress, gestion }: Props) {
+  const tel = telHref(row.customer_phone);
+  const map = mapsHref({ address: row.customer_address, municipio: row.municipio_name, departamento: row.departamento_name });
   const paid = row.status === 'pagada';
   const overdue = paid ? 0 : daysOverdue(row.due_date);
   const border =
@@ -53,6 +60,37 @@ export const CarteraCuotaRow = memo(function CarteraCuotaRow({ row, colors, onPr
           {overdue > 0 ? ` · ${overdue} días de atraso` : ''}
         </Text>
         <CarteraCuotaPeople row={row} colors={colors} />
+        {gestion ? (
+          <Text style={[styles.gestion, { color: colors.warning.dark }]} numberOfLines={2} testID="cartera-ultima-gestion">
+            Última gestión: {labelUltimaGestion(gestion)}
+          </Text>
+        ) : null}
+        {tel || map ? (
+          <View style={styles.actions}>
+            {tel ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Llamar a ${row.customer_name || 'el cliente'}`}
+                hitSlop={6}
+                onPress={() => void Linking.openURL(tel).catch(() => undefined)}
+                style={[styles.action, { borderColor: colors.divider }]}>
+                <MaterialIcons name="call" size={16} color={colors.primary.main} />
+                <Text style={[styles.actionText, { color: colors.primary.main }]}>Llamar</Text>
+              </Pressable>
+            ) : null}
+            {map ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ver la dirección en el mapa"
+                hitSlop={6}
+                onPress={() => void Linking.openURL(map).catch(() => undefined)}
+                style={[styles.action, { borderColor: colors.divider }]}>
+                <MaterialIcons name="map" size={16} color={colors.primary.main} />
+                <Text style={[styles.actionText, { color: colors.primary.main }]}>Mapa</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       </View>
       <View style={styles.side}>
         <Text style={[styles.amount, { color: colors.text.primary }]}>
@@ -85,4 +123,16 @@ const styles = StyleSheet.create({
   amount: { fontWeight: '800' },
   of: { fontSize: 11 },
   status: { fontSize: 12, fontWeight: '700' },
+  gestion: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  action: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: Radius.chip,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+  },
+  actionText: { fontSize: 12, fontWeight: '700' },
 });

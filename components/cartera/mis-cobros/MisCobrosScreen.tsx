@@ -10,9 +10,11 @@ import type { CollectionManager } from '@/lib/cartera/carteraService';
 import {
   cierreParam,
   countActiveMisCobrosFilters,
-  DEFAULT_MIS_COBROS_FILTERS,
   EMPTY_MIS_COBROS_SUMMARY,
+  initialMisCobrosFilters,
+  isPorEntregarACaja,
   misCobrosRangeError,
+  porEntregarACajaFilters,
   type MisCobroRow,
   type MisCobrosFilters,
   type MisCobrosScope,
@@ -81,8 +83,12 @@ export function MisCobrosScreen() {
   const [scope, setScope] = useState<MisCobrosScope>('performed');
   const [exporting, setExporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [filters, setFilters] = useState<MisCobrosFilters>(DEFAULT_MIS_COBROS_FILTERS);
-  const [draft, setDraft] = useState<MisCobrosFilters>(DEFAULT_MIS_COBROS_FILTERS);
+  // Abre en «Hoy»: lo que se revisa al cerrar la jornada.
+  const [filters, setFilters] = useState<MisCobrosFilters>(() => initialMisCobrosFilters());
+  const [draft, setDraft] = useState<MisCobrosFilters>(() => initialMisCobrosFilters());
+  /** Métodos de efectivo conocidos (servidor o última consulta con señal). */
+  const [cashMethodIds, setCashMethodIds] = useState<string[] | null>(null);
+  const [closedMissing, setClosedMissing] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([]);
@@ -151,6 +157,8 @@ export function MisCobrosScreen() {
         setFromCache(result.fromCache);
         setCierreIgnored(result.cierreFilterIgnored);
         setUnsentCount(result.unsentCount);
+        if (result.cashMethodIds) setCashMethodIds(result.cashMethodIds);
+        setClosedMissing(Boolean(result.closedNegociosMissing));
         setError(null);
       } catch (e) {
         if (id !== requestId.current) return;
@@ -216,6 +224,20 @@ export function MisCobrosScreen() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const cajaActive = scope === 'performed' && isPorEntregarACaja(filters, cashMethodIds);
+  const togglePorEntregarACaja = () => {
+    if (cajaActive) {
+      setFilters((current) => ({ ...initialMisCobrosFilters(), search: current.search }));
+      return;
+    }
+    if (!cashMethodIds?.length) {
+      Alert.alert('Por entregar a caja', 'Conéctate una vez para saber qué métodos de pago son efectivo.');
+      return;
+    }
+    setScope('performed');
+    setFilters((current) => porEntregarACajaFilters(cashMethodIds, current.search));
   };
 
   const showScope = isAdmin() || isGestorCobro();
@@ -304,6 +326,7 @@ export function MisCobrosScreen() {
           <Text style={[styles.noticeText, { color: colors.text.primary }]}>
             Sin señal: pagos guardados en el teléfono ({formatLocalDataLabel(lastSyncedAt).toLowerCase()}). Los que aún no se envían van marcados.
             {cierreIgnored ? ' El filtro de cierre se aplica al volver la conexión.' : ''}
+            {closedMissing ? ' No incluye pagos de negocios ya cerrados.' : ''}
           </Text>
         </View>
       ) : unsentCount > 0 && isSelf && scope === 'performed' ? (
@@ -319,6 +342,28 @@ export function MisCobrosScreen() {
         value={{ from: filters.from, to: filters.to }}
         onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
       />
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: cajaActive }}
+        accessibilityLabel="Por entregar a caja: efectivo vigente sin cierre"
+        testID="mis-cobros-por-entregar"
+        onPress={togglePorEntregarACaja}
+        style={[
+          styles.cajaChip,
+          { borderColor: colors.success.main, backgroundColor: cajaActive ? `${colors.success.main}1f` : colors.background.paper },
+        ]}>
+        <MaterialIcons name="account-balance-wallet" size={20} color={colors.success.main} />
+        <View style={styles.cajaText}>
+          <Text style={[styles.cajaTitle, { color: colors.text.primary }]}>Por entregar a caja</Text>
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>
+            {cajaActive
+              ? `${formatCOP(summary.total_collected)} en efectivo sin cierre · ${summary.valid_count} ${summary.valid_count === 1 ? 'cobro' : 'cobros'}`
+              : 'Efectivo vigente que aún no entra en un cierre de recaudo.'}
+          </Text>
+        </View>
+        <MaterialIcons name={cajaActive ? 'close' : 'chevron-right'} size={20} color={colors.text.secondary} />
+      </Pressable>
 
       <Card variant="outlined" style={styles.totals}>
         <Metric
@@ -456,6 +501,9 @@ const styles = StyleSheet.create({
   totalsRow: { flexDirection: 'row', gap: Spacing.md },
   totalsCell: { flex: 1 },
   hint: { ...Typography.caption },
+  cajaChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md },
+  cajaText: { flex: 1, gap: 2 },
+  cajaTitle: { ...Typography.bodySmallStrong },
   separator: { height: Spacing.md },
   loadMore: { minHeight: 50, borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.md },
   loadMoreText: { ...Typography.bodySmallStrong },
