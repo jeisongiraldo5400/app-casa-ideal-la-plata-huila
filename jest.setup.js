@@ -89,6 +89,7 @@ jest.mock('@nozbe/watermelondb', () => ({
   Q: {
     where: jest.fn((...args) => args),
     oneOf: jest.fn((values) => values),
+    like: jest.fn((value) => ({ like: value })),
   },
   Database: class Database {},
   Model: class Model {},

@@ -178,3 +178,23 @@ export function negocioSellerDiffersFromOwner(
 ): boolean {
   return Boolean(negocioSellerId) && negocioSellerId !== (customerSellerId ?? null);
 }
+
+/**
+ * Aviso para quien registró el negocio cuando quedó a nombre de otro vendedor:
+ * el cliente tenía dueño (o lo cambió antes de sincronizar) y el servidor pone
+ * el negocio a nombre de ese dueño (20261206120000). Solo lo ve quien lo
+ * registró; `null` si no aplica.
+ */
+export function negocioSoldForOwnerNotice(params: {
+  negocioSellerId: string | null | undefined;
+  createdBy: string | null | undefined;
+  currentUserId: string | null | undefined;
+  /** Nombre del vendedor del negocio (dueño del cliente). */
+  sellerName: string | null | undefined;
+}): string | null {
+  const { negocioSellerId, createdBy, currentUserId } = params;
+  if (!negocioSellerId || !createdBy || !currentUserId) return null;
+  if (negocioSellerId === createdBy || currentUserId !== createdBy) return null;
+  const name = params.sellerName?.trim() || 'otro vendedor';
+  return `El cliente pertenece a ${name}: el negocio quedó a su nombre.`;
+}

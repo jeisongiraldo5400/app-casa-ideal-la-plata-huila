@@ -21,7 +21,12 @@ import {
   roleNamesOf,
 } from '../domain/customerCreationAssignment';
 import { customerEmailSchema, normalizeCustomerEmail } from '../domain/customerEmail';
-import { createCustomer } from '../infrastructure/services/customersService';
+import { duplicateCustomerPrompt } from '../domain/duplicateCustomer';
+import {
+  createCustomer,
+  findCustomerByIdNumber,
+  isDuplicateCustomerIdNumber,
+} from '../infrastructure/services/customersService';
 
 const schema = Yup.object({
   name: Yup.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres').required('El nombre es requerido'),
@@ -38,6 +43,8 @@ interface CustomerCreateSheetProps {
   visible: boolean;
   onClose: () => void;
   onCreated: () => void;
+  /** Abre la ficha del cliente que ya tiene el documento escrito. */
+  onOpenExisting?: (customerId: string) => void;
 }
 
 /**
@@ -46,7 +53,7 @@ interface CustomerCreateSheetProps {
  * también cuando el alta se sincroniza desde la cola sin conexión. El mensaje
  * final se basa en el `seller_id` que devuelve el servidor, no en suposiciones.
  */
-export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCreateSheetProps) {
+export function CustomerCreateSheet({ visible, onClose, onCreated, onOpenExisting }: CustomerCreateSheetProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
@@ -88,6 +95,28 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
           })
         );
       } catch (error) {
+        if (isDuplicateCustomerIdNumber(error)) {
+          // «1.234.567» y «1234567» son el mismo cliente (20261219120000): se
+          // dice de quién es el documento y se ofrece abrir su ficha.
+          const idNumber = values.idNumber.trim();
+          const existing = await findCustomerByIdNumber(idNumber, error);
+          const prompt = duplicateCustomerPrompt(existing, idNumber, 'open');
+          if (existing && prompt.canUse && onOpenExisting) {
+            Alert.alert(prompt.title, prompt.message, [
+              { text: 'Cancelar', style: 'cancel' },
+              {
+                text: 'Ver cliente',
+                onPress: () => {
+                  resetForm();
+                  onOpenExisting(existing.id);
+                },
+              },
+            ]);
+          } else {
+            Alert.alert(prompt.title, prompt.message);
+          }
+          return;
+        }
         Alert.alert('Error', errorMessage(error, 'No se pudo crear el cliente'));
       }
     },

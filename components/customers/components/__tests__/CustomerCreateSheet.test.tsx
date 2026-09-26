@@ -11,8 +11,11 @@ import { CustomerCreateSheet } from '../CustomerCreateSheet';
  */
 
 const mockCreateCustomer = jest.fn();
+const mockFindCustomer = jest.fn();
 jest.mock('../../infrastructure/services/customersService', () => ({
   createCustomer: (input: unknown) => mockCreateCustomer(input),
+  isDuplicateCustomerIdNumber: (error: unknown) => error instanceof Error && error.message.startsWith('Ya existe un cliente'),
+  findCustomerByIdNumber: (...args: unknown[]) => mockFindCustomer(...args),
 }));
 
 jest.mock('@/lib/locations/locationsService', () => ({
@@ -29,9 +32,11 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-function renderSheet() {
+function renderSheet(onOpenExisting?: (id: string) => void) {
   const onCreated = jest.fn();
-  const screen = render(<CustomerCreateSheet visible onClose={jest.fn()} onCreated={onCreated} />);
+  const screen = render(
+    <CustomerCreateSheet visible onClose={jest.fn()} onCreated={onCreated} onOpenExisting={onOpenExisting} />
+  );
   fireEvent.changeText(screen.getByPlaceholderText('Ej: Juan Pérez'), 'Ana Pérez');
   fireEvent.changeText(screen.getByPlaceholderText('Ej: 1080123456'), '1080123456');
   return { screen, onCreated };
@@ -89,5 +94,25 @@ describe('CustomerCreateSheet · correo electrónico', () => {
 
     expect(await screen.findByText('El correo electrónico no tiene un formato válido')).toBeTruthy();
     expect(mockCreateCustomer).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerCreateSheet · documento repetido escrito distinto', () => {
+  it('dice de quién es el documento y ofrece ver ese cliente', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockCreateCustomer.mockReset();
+    mockCreateCustomer.mockRejectedValue(new Error('Ya existe un cliente con el documento 1080123456 (Ana Ruiz).'));
+    mockFindCustomer.mockResolvedValue({ id: 'c9', name: 'Ana Ruiz', id_number: '1.080.123.456', deleted: false });
+    const onOpenExisting = jest.fn();
+    const { screen } = renderSheet(onOpenExisting);
+    fireEvent.press(screen.getByText('Crear cliente'));
+
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    const [title, message, buttons] = alert.mock.calls[0] as [string, string, { text: string; onPress?: () => void }[]];
+    expect(title).toBe('Cliente ya registrado');
+    expect(message).toBe('El documento 1080123456 (registrado como 1.080.123.456) ya es de Ana Ruiz. ¿Quieres ver ese cliente?');
+    buttons.find((button) => button.text === 'Ver cliente')?.onPress?.();
+    expect(onOpenExisting).toHaveBeenCalledWith('c9');
+    alert.mockRestore();
   });
 });

@@ -25,6 +25,13 @@ export type UseNegociosListParams = {
   searchOnly: boolean;
   /** Falso mientras falta algo para consultar (p. ej. admin sin gestor elegido). */
   enabled: boolean;
+  /**
+   * `false` cuando NetInfo afirma que no hay red: se va directo a la base del
+   * teléfono. Antes, con señal débil o nula, cada búsqueda esperaba el tiempo
+   * límite del servidor (~10 s) antes de caer a lo local. Mismo criterio que
+   * el cobro (`registerPagoWithFallback`). Por defecto se intenta el servidor.
+   */
+  online?: boolean;
 };
 
 export type NegociosListState = {
@@ -59,6 +66,7 @@ export function useNegociosList(params: UseNegociosListParams) {
   stateRef.current = state;
 
   const { scope, gestorId, search, filters, userId, searchOnly, enabled } = params;
+  const online = params.online !== false;
 
   const reload = useCallback(async () => {
     const current = ++request.current;
@@ -67,6 +75,17 @@ export function useNegociosList(params: UseNegociosListParams) {
       return;
     }
     setState((prev) => ({ ...prev, loading: true, error: null }));
+    if (!online) {
+      const local = await fetchNegociosFromLocal({ scope, userId, gestorId, search, filters, searchOnly }).catch(
+        () => null
+      );
+      if (current !== request.current) return;
+      if (local) {
+        setState({ ...INITIAL, rows: local.rows, summary: local.summary, fromCache: true });
+        return;
+      }
+      // Sin base local se intenta el servidor igual: NetInfo pudo equivocarse.
+    }
     try {
       const page = await fetchNegociosPage({ scope, gestorId, search, filters, limit: NEGOCIOS_PAGE_SIZE, offset: 0 });
       if (current !== request.current) return;
@@ -99,7 +118,7 @@ export function useNegociosList(params: UseNegociosListParams) {
         error: errorMessage(error, 'No se pudieron cargar los negocios'),
       }));
     }
-  }, [enabled, filters, gestorId, scope, search, searchOnly, userId]);
+  }, [enabled, filters, gestorId, online, scope, search, searchOnly, userId]);
 
   const loadMore = useCallback(async () => {
     const snapshot = stateRef.current;

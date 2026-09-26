@@ -4632,6 +4632,15 @@ export type Database = {
         Returns: undefined
       }
       f_unaccent: { Args: { "": string }; Returns: string }
+      find_customer_by_document: {
+        Args: { p_id_number: string }
+        Returns: {
+          deleted: boolean
+          id: string
+          id_number: string
+          name: string
+        }[]
+      }
       finish_collection_route: {
         Args: {
           p_cancel?: boolean

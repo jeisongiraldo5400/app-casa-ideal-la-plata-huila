@@ -2,6 +2,7 @@ import {
   buildNegocioSellerInput,
   negocioSellerBlockedReason,
   negocioSellerDiffersFromOwner,
+  negocioSoldForOwnerNotice,
   negocioSellerMode,
   negocioSellerOwnerHint,
   negocioSellerOwnerText,
@@ -142,5 +143,25 @@ describe('vendedor guardado vs dueño', () => {
     expect(negocioSellerDiffersFromOwner('a', 'b')).toBe(true);
     expect(negocioSellerDiffersFromOwner('a', null)).toBe(true);
     expect(negocioSellerDiffersFromOwner(null, 'b')).toBe(false);
+  });
+});
+
+describe('negocioSoldForOwnerNotice', () => {
+  it('avisa a quien lo registró que quedó a nombre del dueño del cliente', () => {
+    expect(
+      negocioSoldForOwnerNotice({ negocioSellerId: 'v2', createdBy: 'v1', currentUserId: 'v1', sellerName: 'Yolanda' })
+    ).toBe('El cliente pertenece a Yolanda: el negocio quedó a su nombre.');
+  });
+
+  it('no avisa si el vendedor es quien lo registró o si mira otra persona', () => {
+    expect(negocioSoldForOwnerNotice({ negocioSellerId: 'v1', createdBy: 'v1', currentUserId: 'v1', sellerName: 'A' })).toBeNull();
+    expect(negocioSoldForOwnerNotice({ negocioSellerId: 'v2', createdBy: 'v1', currentUserId: 'v2', sellerName: 'A' })).toBeNull();
+    expect(negocioSoldForOwnerNotice({ negocioSellerId: null, createdBy: 'v1', currentUserId: 'v1', sellerName: 'A' })).toBeNull();
+  });
+
+  it('sin nombre dice «otro vendedor»', () => {
+    expect(negocioSoldForOwnerNotice({ negocioSellerId: 'v2', createdBy: 'v1', currentUserId: 'v1', sellerName: '' })).toBe(
+      'El cliente pertenece a otro vendedor: el negocio quedó a su nombre.'
+    );
   });
 });

@@ -55,8 +55,9 @@ jest.mock('@/lib/offline/store/syncStore', () => ({
 jest.mock('@/lib/offline/sync/downloadData', () => ({ formatLocalDataLabel: () => 'Datos del teléfono' }));
 jest.mock('@/components/offline', () => ({ DownloadDataButton: () => null }));
 jest.mock('@/components/offline/NotOnPhoneNotice', () => ({ NotOnPhoneNotice: () => null }));
+let mockOverlay: { states: Record<string, string>; items: unknown[] } = { states: {}, items: [] };
 jest.mock('@/components/negocios/infrastructure/hooks/useNegocioSyncOverlay', () => ({
-  useNegocioSyncOverlay: () => ({ states: {}, items: [] }),
+  useNegocioSyncOverlay: () => mockOverlay,
 }));
 jest.mock('@/lib/offline/security/sessionPolicy', () => ({
   isNetworkError: (error: unknown) => error instanceof Error && /network/i.test(error.message),
@@ -149,6 +150,7 @@ beforeEach(() => {
   mockParams = {};
   mockRedirectHref = null;
   mockRoles = { admin: false, vendedor: false, gestor: true, soloBusqueda: false };
+  mockOverlay = { states: {}, items: [] };
   mockPage.mockResolvedValue(page);
   (loadLocationMastersForList as jest.Mock).mockResolvedValue({ departamentos: [], municipios: [], veredas: [] });
 });
@@ -260,5 +262,19 @@ describe('Negocios (lista unificada)', () => {
       fireEvent.press(card);
     });
     expect(mockPush).toHaveBeenCalledWith('/negocio/n1');
+  });
+
+  it('el gestor sin otro rol ve en «Por cobrar» el negocio que creó sin señal y abre su ficha', async () => {
+    mockOverlay = {
+      states: { local1: 'pending' },
+      items: [{ ...serverRow, id: 'local1', numero: 0, status: 'por_firmar', customer: { name: 'Cliente Pendiente', id_number: '9' } }],
+    };
+    render(<NegociosScreen />);
+    const card = await screen.findByLabelText(/Cliente Pendiente/);
+    expect(screen.getByText('José Peña · CC 1.061.111')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(card);
+    });
+    expect(mockPush).toHaveBeenCalledWith('/negocio/local1');
   });
 });

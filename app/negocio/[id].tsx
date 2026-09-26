@@ -37,7 +37,20 @@ import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
-import { negocioSellerDiffersFromOwner } from '@/components/negocios/domain/negocioSellerOwner';
+import {
+  negocioSellerDiffersFromOwner,
+  negocioSoldForOwnerNotice,
+} from '@/components/negocios/domain/negocioSellerOwner';
+import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
+import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
+import {
+  pendingNegocioTitle,
+  type PendingNegocioSync,
+} from '@/components/negocios/domain/pendingNegocioPreview';
+import {
+  loadLocalNegocioDetail,
+  type LocalNegocioDetail,
+} from '@/components/negocios/infrastructure/services/pendingNegocioService';
 import { NegocioContactDetailsSheet } from '@/components/negocios/components/NegocioContactDetailsSheet';
 import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
 import { labelNegocioOrigen, resolveNegocioOrigen } from '@/lib/negocios/negocioOrigen';
@@ -89,7 +102,6 @@ import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalDb,
   deleteRejectedPagoLocal,
-  fetchNegocioDetailFromLocal,
   listRejectedPagosFromLocal,
   queuePagoSupportUpload,
   registerPagoOffline,
@@ -162,6 +174,8 @@ function NegocioDetailScreenInner() {
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fromLocal, setFromLocal] = useState(false);
+  /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
+  const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
   const { user } = useAuth();
   const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
   const online = useSyncStore((state) => state.online);
@@ -235,8 +249,9 @@ function NegocioDetailScreenInner() {
   };
 
   const applyLocalDetail = useCallback(
-    (local: NonNullable<Awaited<ReturnType<typeof fetchNegocioDetailFromLocal>>>) => {
+    (local: LocalNegocioDetail) => {
       setNegocio(local.negocio);
+      setPendingSync(local.pendingSync);
       hasNegocioRef.current = true;
       setFromLocal(true);
       setLoadError(null);
@@ -281,7 +296,7 @@ function NegocioDetailScreenInner() {
     setLoadWarning(null);
     setLoadError(null);
     if (options?.preferLocal && canUseLocalDb()) {
-      const local = await fetchNegocioDetailFromLocal(id);
+      const local = await loadLocalNegocioDetail(id);
       if (local) {
         applyLocalDetail(local);
         setLoading(false);
@@ -297,9 +312,21 @@ function NegocioDetailScreenInner() {
         .from('negocios')
         .select('*, municipio:municipios(nombre, departamento:departamentos(nombre)), vereda:veredas(nombre)')
         .eq('id', id)
-        .single();
+        .maybeSingle();
       if (error) throw error;
+      if (!n) {
+        // Con señal, un negocio creado sin señal que aún no llega al servidor
+        // (p. ej. abierto desde la ficha del cliente) no existe allí: se
+        // muestra lo que tiene el teléfono, con su estado de envío.
+        const local = canUseLocalDb() ? await loadLocalNegocioDetail(id) : null;
+        if (local) {
+          applyLocalDetail(local);
+          return;
+        }
+        throw new Error('No se encontró el negocio o no tiene acceso a él.');
+      }
       setNegocio(n);
+      setPendingSync(null);
       hasNegocioRef.current = true;
       setFromLocal(false);
       setSignaturesDirty(false);
@@ -502,9 +529,9 @@ function NegocioDetailScreenInner() {
       ].filter((warning): warning is string => Boolean(warning));
       if (warnings.length) setLoadWarning(warnings.join(' '));
     } catch (e: any) {
-      let message = e?.message || 'No se pudo cargar';
+      let message = errorMessage(e, 'No se pudo cargar el negocio');
       if (isNetworkError(e) && canUseLocalDb()) {
-        const local = await fetchNegocioDetailFromLocal(id);
+        const local = await loadLocalNegocioDetail(id);
         if (local) {
           applyLocalDetail(local);
           return;
@@ -1373,7 +1400,11 @@ function NegocioDetailScreenInner() {
     ]);
   };
 
-  const headerTitle = negocio ? labelNegocioCodigo(negocio.numero) : 'Negocio';
+  const headerTitle = pendingSync
+    ? pendingNegocioTitle(pendingSync)
+    : negocio
+      ? labelNegocioCodigo(negocio.numero)
+      : 'Negocio';
   const screenOptions = {
     title: headerTitle,
     headerLeft: () => <BackButton onPress={handleGoBack} />,
@@ -1407,7 +1438,9 @@ function NegocioDetailScreenInner() {
     );
   }
 
-  const canActivate = ['borrador', 'por_firmar'].includes(negocio.status);
+  // Un negocio que el servidor aún no confirma no se activa desde aquí: el RPC
+  // no lo encontraría. Se activa cuando llegue, ya con su número.
+  const canActivate = !pendingSync && ['borrador', 'por_firmar'].includes(negocio.status);
   const canRegisterLateSignature = !fromLocal && canRegisterCustomerSignatureLater(negocio);
   const activationSignatureError = canActivate
     ? sellerSignatureRequiredError(customerSignature, sellerSignature)
@@ -1464,6 +1497,12 @@ function NegocioDetailScreenInner() {
   // de afirmar «Desde bodega» por omisión.
   const origen = resolveNegocioOrigen(negocio, { known: !fromLocal });
   const sellerDiffers = negocioSellerDiffersFromOwner(negocio.seller_id, customerSellerId);
+  const soldForOwnerNotice = negocioSoldForOwnerNotice({
+    negocioSellerId: negocio.seller_id,
+    createdBy: negocio.created_by,
+    currentUserId: user?.id,
+    sellerName: sellerName || customerSellerName,
+  });
   // Activo, entregado o cerrado: solo dirección, notas y gestor de cobro (el
   // servidor valida admin, vendedor dueño o gestor asignado). Solo con conexión.
   const contactDetailsEditable = canEditNegocioContactDetails(negocio.status);
@@ -1492,6 +1531,13 @@ function NegocioDetailScreenInner() {
           </Card>
         ) : null}
 
+        {pendingSync ? (
+          <NegocioPendingSyncBanner
+            sync={pendingSync}
+            onOpenQueue={() => useSyncStore.getState().setQueueVisible(true)}
+          />
+        ) : null}
+
         <NegocioHero
           customerName={customerName || 'Cliente'}
           address={address}
@@ -1502,6 +1548,8 @@ function NegocioDetailScreenInner() {
           pendingBalance={pendingBalance}
           planLabel={planLabel}
         />
+
+        <NegocioCustomerContact customerName={customerName || 'Cliente'} customer={customerMeta} negocio={negocio} />
 
         {showProntoPago ? (
           <Card variant="outlined" style={styles.prontoPagoCard}>
@@ -1573,6 +1621,11 @@ function NegocioDetailScreenInner() {
               <Text testID="negocio-registered-by" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
                 Creado por: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{createdByName || '—'}</Text>
               </Text>
+              {soldForOwnerNotice ? (
+                <Text testID="negocio-sold-for-owner" style={[styles.helper, { color: colors.info.main }]}>
+                  {soldForOwnerNotice}
+                </Text>
+              ) : null}
               {sellerDiffers ? (
                 <Text testID="negocio-stored-seller" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
                   Vendedor registrado en el negocio: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{sellerName || '—'}</Text>
@@ -1749,39 +1802,47 @@ function NegocioDetailScreenInner() {
         ) : null}
       </ScrollView>
 
-      <ActionBar>
-        {canPay ? (
-          <Button title="Registrar pago" icon="payments" onPress={() => setPayModalOpen(true)} style={styles.primaryAction} />
-        ) : null}
-        {canActivate ? (
-          <Button
-            title="Activar negocio"
-            icon="check-circle"
-            onPress={() => void activateDraft()}
-            loading={actionSaving}
-            style={styles.primaryAction}
-          />
-        ) : null}
-        <Button
-          title="PDF"
-          variant="outline"
-          icon="picture-as-pdf"
-          iconOnly
-          onPress={() => void sharePdf()}
-          accessibilityLabel="Compartir contrato en PDF"
-          style={styles.secondaryAction}
-        />
-        <Button
-          title="Imprimir"
-          variant="outline"
-          icon="print"
-          iconOnly
-          onPress={() => void printNegocioTicket()}
-          loading={printingTicket}
-          accessibilityLabel="Imprimir negocio"
-          style={styles.secondaryAction}
-        />
-      </ActionBar>
+      {canPay || canActivate || !pendingSync ? (
+        <ActionBar>
+          {canPay ? (
+            <Button title="Registrar pago" icon="payments" onPress={() => setPayModalOpen(true)} style={styles.primaryAction} />
+          ) : null}
+          {canActivate ? (
+            <Button
+              title="Activar negocio"
+              icon="check-circle"
+              onPress={() => void activateDraft()}
+              loading={actionSaving}
+              style={styles.primaryAction}
+            />
+          ) : null}
+          {/* Sin confirmar no hay número ni productos en el servidor: el contrato
+              y el tiquete saldrían como «Negocio 0». */}
+          {!pendingSync ? (
+            <Button
+              title="PDF"
+              variant="outline"
+              icon="picture-as-pdf"
+              iconOnly
+              onPress={() => void sharePdf()}
+              accessibilityLabel="Compartir contrato en PDF"
+              style={styles.secondaryAction}
+            />
+          ) : null}
+          {!pendingSync ? (
+            <Button
+              title="Imprimir"
+              variant="outline"
+              icon="print"
+              iconOnly
+              onPress={() => void printNegocioTicket()}
+              loading={printingTicket}
+              accessibilityLabel="Imprimir negocio"
+              style={styles.secondaryAction}
+            />
+          ) : null}
+        </ActionBar>
+      ) : null}
 
 
       {contactSheetOpen ? (

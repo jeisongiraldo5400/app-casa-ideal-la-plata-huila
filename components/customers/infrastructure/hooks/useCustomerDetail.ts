@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { errorMessage } from '@/lib/errorMessage';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -32,7 +33,7 @@ export function useCustomerDetail(customerId: string | null) {
     } catch (err) {
       if (id !== requestId.current) return;
       setSummary(null);
-      setError(err instanceof Error ? err.message : 'No fue posible cargar el cliente');
+      setError(errorMessage(err, 'No fue posible cargar el cliente'));
     } finally {
       if (id === requestId.current) setLoading(false);
     }

@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { bogotaDateValue } from '@/lib/localDate';
-import { getDatabase } from '@/lib/offline/database';
+import { Q } from '@nozbe/watermelondb';
+import { databaseGeneration, getDatabase } from '@/lib/offline/database';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
   CatalogDepartamento,
   CatalogMunicipio,
@@ -71,22 +73,79 @@ export async function fetchNegociosPage(params: NegociosPageParams): Promise<Neg
   };
 }
 
+type LocationNames = {
+  municipios: Map<string, { nombre: string; departamentoId: string | null }>;
+  veredas: Map<string, string>;
+  departamentos: Map<string, string>;
+};
+
 /**
- * Negocios del teléfono con lo necesario para filtrarlos como el servidor.
- * La base es `fetchNegociosListFromLocal` (ya descarta los negocios que el
- * usuario desechó en la cola); aquí se completan gestor, ubicación y cuotas.
+ * Caché breve de lo leído del teléfono. Sin señal cada tecla del buscador y
+ * cada filtro volvían a leer negocios, cuotas y todos los clientes (dos veces:
+ * aquí y en `fetchNegociosListFromLocal`); ahora se lee una vez y se filtra en
+ * memoria. La clave cambia con todo lo que altera esos datos: una descarga
+ * (generación de la base y `lastSyncedAt`) y la cola (un negocio o un pago
+ * guardado sin señal suben `pendingCount`; un rechazo, `failedCount`).
  */
-async function readLocalEntries(today: string): Promise<LocalNegocioEntry[]> {
+const LOCAL_ENTRIES_TTL_MS = 30_000;
+const LOCATION_NAMES_TTL_MS = 5 * 60_000;
+let entriesCache: { key: string; at: number; entries: LocalNegocioEntry[] } | null = null;
+let locationNamesCache: { key: string; at: number; names: LocationNames } | null = null;
+
+/** Para pruebas y para quien sepa que los datos locales cambiaron. */
+export function invalidateNegociosLocalCache() {
+  entriesCache = null;
+  locationNamesCache = null;
+}
+
+function localDataKey(today: string): string {
+  const { pendingCount, failedCount, lastSyncedAt } = useSyncStore.getState();
+  return [databaseGeneration(), lastSyncedAt ?? '', pendingCount, failedCount, today].join('|');
+}
+
+/** Nombres de departamentos, municipios y veredas: cambian solo con una descarga. */
+async function readLocationNames(): Promise<LocationNames> {
+  const key = `${databaseGeneration()}|${useSyncStore.getState().lastSyncedAt ?? ''}`;
+  if (locationNamesCache && locationNamesCache.key === key && Date.now() - locationNamesCache.at < LOCATION_NAMES_TTL_MS) {
+    return locationNamesCache.names;
+  }
   const database = getDatabase();
-  const [base, negocios, customers, cuotas, municipios, veredas, departamentos] = await Promise.all([
-    fetchNegociosListFromLocal(),
-    database.get<Negocio>('negocios').query().fetch(),
-    database.get<Customer>('customers').query().fetch(),
-    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+  const [municipios, veredas, departamentos] = await Promise.all([
     database.get<CatalogMunicipio>('catalog_municipios').query().fetch(),
     database.get<CatalogVereda>('catalog_veredas').query().fetch(),
     database.get<CatalogDepartamento>('catalog_departamentos').query().fetch(),
   ]);
+  const names = {
+    municipios: new Map(municipios.map((row) => [row.id, { nombre: row.nombre, departamentoId: row.departamentoId ?? null }])),
+    veredas: new Map(veredas.map((row) => [row.id, row.nombre])),
+    departamentos: new Map(departamentos.map((row) => [row.id, row.nombre])),
+  };
+  locationNamesCache = { key, at: Date.now(), names };
+  return names;
+}
+
+/**
+ * Negocios del teléfono con lo necesario para filtrarlos como el servidor.
+ * La base es `fetchNegociosListFromLocal` (ya descarta los negocios que el
+ * usuario desechó en la cola); aquí se completan gestor, ubicación y cuotas.
+ * De los clientes solo se leen los de esos negocios.
+ */
+async function readLocalEntries(today: string): Promise<LocalNegocioEntry[]> {
+  const key = localDataKey(today);
+  if (entriesCache && entriesCache.key === key && Date.now() - entriesCache.at < LOCAL_ENTRIES_TTL_MS) {
+    return entriesCache.entries;
+  }
+  const database = getDatabase();
+  const [base, negocios, cuotas, names] = await Promise.all([
+    fetchNegociosListFromLocal(),
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    readLocationNames(),
+  ]);
+  const customerIds = [...new Set(base.map((item) => item.customer_id).filter(Boolean))];
+  const customers = customerIds.length
+    ? await database.get<Customer>('customers').query(Q.where('id', Q.oneOf(customerIds))).fetch()
+    : [];
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
   const cuotasByNegocio = new Map<string, LocalCuotaInput[]>();
@@ -102,13 +161,8 @@ async function readLocalEntries(today: string): Promise<LocalNegocioEntry[]> {
     });
     cuotasByNegocio.set(cuota.negocioId, list);
   }
-  const names = {
-    municipios: new Map(municipios.map((row) => [row.id, { nombre: row.nombre, departamentoId: row.departamentoId ?? null }])),
-    veredas: new Map(veredas.map((row) => [row.id, row.nombre])),
-    departamentos: new Map(departamentos.map((row) => [row.id, row.nombre])),
-  };
 
-  return base.map((item) => {
+  const entries = base.map((item) => {
     const negocio = negocioById.get(item.id);
     const customer = customerById.get(item.customer_id);
     return buildLocalNegocioEntry(
@@ -139,6 +193,8 @@ async function readLocalEntries(today: string): Promise<LocalNegocioEntry[]> {
       names
     );
   });
+  entriesCache = { key, at: Date.now(), entries };
+  return entries;
 }
 
 /** La lista sin señal, con los mismos filtros. Null si no hay base local. */

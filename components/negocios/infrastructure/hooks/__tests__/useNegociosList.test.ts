@@ -149,4 +149,27 @@ describe('useNegociosList', () => {
     });
     await waitFor(() => expect(result.current.rows.map((item) => item.id)).toEqual(['nuevo']));
   });
+
+  it('si NetInfo dice que no hay red va directo al teléfono, sin esperar al servidor', async () => {
+    mockLocal.mockResolvedValue({ rows: [row('local')], summary: { totalCount: 1, totalSaldo: 0, moraCount: 0 } });
+    const { result } = renderHook(() => useNegociosList({ ...base, search: 'an', online: false }));
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(mockPage).not.toHaveBeenCalled();
+    expect(mockLocal).toHaveBeenCalledWith(expect.objectContaining({ search: 'an', scope: 'por_cobrar' }));
+    expect(result.current.rows.map((item) => item.id)).toEqual(['local']);
+    expect(result.current.fromCache).toBe(true);
+  });
+
+  it('sin red y sin base local intenta el servidor igual', async () => {
+    mockLocal.mockResolvedValue(null);
+    mockPage.mockResolvedValue({ rows: [row('a')], summary: { totalCount: 1, totalSaldo: 0, moraCount: 0 } });
+    const { result } = renderHook(() => useNegociosList({ ...base, online: false }));
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(mockPage).toHaveBeenCalled();
+    expect(result.current.rows.map((item) => item.id)).toEqual(['a']);
+  });
 });
