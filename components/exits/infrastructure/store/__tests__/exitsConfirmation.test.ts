@@ -1,4 +1,5 @@
-import { useExitsStore, type DeliveryOrder, type ExitItem } from '../exitsStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EXIT_OUTCOME_UNKNOWN_MESSAGE, useExitsStore, type DeliveryOrder, type ExitItem } from '../exitsStore';
 
 const mockRpc = jest.fn();
 const mockFrom = jest.fn();
@@ -10,6 +11,20 @@ jest.mock('@/lib/supabase', () => ({
     auth: { getUser: jest.fn() },
   },
 }));
+
+// AsyncStorage en memoria: la clave de idempotencia de la salida vive ahí.
+jest.mock('@react-native-async-storage/async-storage', () => {
+  const store = new Map<string, string>();
+  return {
+    __esModule: true,
+    default: {
+      getItem: async (key: string) => store.get(key) ?? null,
+      setItem: async (key: string, value: string) => { store.set(key, value); },
+      removeItem: async (key: string) => { store.delete(key); },
+      clear: async () => { store.clear(); },
+    },
+  };
+});
 
 jest.mock('@/lib/operationLogger', () => ({ logOperationError: jest.fn(async () => undefined) }));
 
@@ -319,6 +334,91 @@ describe('finalizeExit: registro por grupos (remisión mixta)', () => {
     expect(useExitsStore.getState().registeredExitsCache).toEqual({
       'order-1': { 'product-1-warehouse-1': 2 },
       'child-1': { 'product-2-warehouse-1': 2 },
+    });
+  });
+
+  describe('clave de idempotencia persistente', () => {
+    const keysOf = (fn: string) =>
+      mockRpc.mock.calls
+        .filter(([name]) => name === fn)
+        .map(([, args]) => (args as { p_idempotency_key: string }).p_idempotency_key);
+
+    const scanningState = () => ({
+      step: 'scanning' as const,
+      exitMode: 'direct_user' as const,
+      selectedUserId: 'user-2',
+      selectedDeliveryOrderId: order.id,
+      selectedDeliveryOrder: order,
+      canRegisterExit: true,
+      authorizationCheckedOrderId: order.id,
+      deliveryObservations: '',
+      registeredExitsCache: { [order.id]: {} },
+      exitItems: [ownItem],
+    });
+
+    beforeEach(async () => {
+      await AsyncStorage.clear();
+      useExitsStore.setState(scanningState());
+    });
+
+    it('si se pierde la respuesta, avisa que verifique «Ya salieron» y el reintento tras reiniciar reusa la clave', async () => {
+      mockRpc.mockImplementation(async (fn: string) =>
+        fn === 'register_inventory_exits_batch'
+          ? { data: null, error: { message: 'TypeError: Network request failed', code: '' } }
+          : { data: [], error: null }
+      );
+
+      const first = await useExitsStore.getState().finalizeExit();
+      expect(first.ok).toBe(false);
+      expect(!first.ok && first.error.message).toBe(EXIT_OUTCOME_UNKNOWN_MESSAGE);
+      expect(EXIT_OUTCOME_UNKNOWN_MESSAGE).toContain('Ya salieron');
+
+      // El operador sale de la pantalla (o la app se reinicia) y vuelve a registrar lo mismo.
+      useExitsStore.getState().resetAll();
+      useExitsStore.setState(scanningState());
+      mockRpc.mockImplementation(async (fn: string) =>
+        fn === 'register_inventory_exits_batch'
+          ? { data: { exit_ids: ['e-1'] }, error: null }
+          : { data: [], error: null }
+      );
+      const second = await useExitsStore.getState().finalizeExit();
+      expect(second.ok).toBe(true);
+
+      const keys = keysOf('register_inventory_exits_batch');
+      expect(keys).toHaveLength(2);
+      expect(keys[0]).toBe(keys[1]);
+    });
+
+    it('la clave se libera solo al confirmar: una nueva salida idéntica usa otra clave', async () => {
+      useExitsStore.setState(scanningState());
+      mockRpc.mockImplementation(async (fn: string) =>
+        fn === 'register_inventory_exits_batch'
+          ? { data: { exit_ids: ['e-1'] }, error: null }
+          : { data: [], error: null }
+      );
+
+      expect((await useExitsStore.getState().finalizeExit()).ok).toBe(true);
+      useExitsStore.setState(scanningState());
+      expect((await useExitsStore.getState().finalizeExit()).ok).toBe(true);
+
+      const keys = keysOf('register_inventory_exits_batch');
+      expect(keys).toHaveLength(2);
+      expect(keys[0]).not.toBe(keys[1]);
+    });
+
+    it('un error del servidor se traduce y no es el texto crudo de Postgres', async () => {
+      useExitsStore.setState(scanningState());
+      mockRpc.mockImplementation(async (fn: string) =>
+        fn === 'register_inventory_exits_batch'
+          ? {
+              data: null,
+              error: { code: '23514', message: 'new row for relation "warehouse_stock" violates check constraint "warehouse_stock_quantity_check"' },
+            }
+          : { data: [], error: null }
+      );
+
+      const result = await useExitsStore.getState().finalizeExit();
+      expect(!result.ok && result.error.message).toBe('La operación dejaría el stock de la bodega en negativo.');
     });
   });
 });

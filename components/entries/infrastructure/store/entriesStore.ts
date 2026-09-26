@@ -22,7 +22,7 @@ import {
   fetchInventoryEntriesForOrders,
   fetchPurchaseOrderDetail,
 } from "../services/entriesQueries";
-import { errorMessage } from "@/lib/errorMessage";
+import { errorMessage, isOfflineError } from "@/lib/errorMessage";
 import { checkEntrySerialAvailability } from "../services/entrySerials";
 import {
   MAX_SERIAL_LENGTH,
@@ -123,6 +123,17 @@ const pendingProductRequests = new Map<string, string>();
 let resetGeneration = 0;
 
 /** true mientras register_inventory_entries_batch está en vuelo, aunque el store se resetee. */
+/** Mensaje cuando no se sabe si el servidor alcanzó a guardar la entrada. */
+export const ENTRY_OUTCOME_UNKNOWN_MESSAGE =
+  "No se pudo confirmar si la entrada se guardó porque se perdió la conexión. " +
+  "Revisa la orden antes de reintentar; si reintentas con los mismos productos no se duplicará.";
+
+function entryFailureMessage(error: unknown): string {
+  return isOfflineError(error)
+    ? ENTRY_OUTCOME_UNKNOWN_MESSAGE
+    : errorMessage(error, "No fue posible registrar la entrada");
+}
+
 let finalizeInFlight = false;
 
 const CATALOG_LOAD_ERROR =
@@ -1213,7 +1224,10 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       });
 
       if (error) {
-        return { product: null, error: { message: error.message, code: error.code, details: error.details } };
+        return {
+          product: null,
+          error: { message: errorMessage(error, "No fue posible crear el producto"), code: error.code, details: error.details },
+        };
       }
 
       const product = (data as Product | null);
@@ -1532,7 +1546,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           },
         });
         const result = failure({
-          message: entriesError.message || String(entriesError),
+          message: entryFailureMessage(entriesError),
           code: entriesError.code,
           details: entriesError.details,
         });
@@ -1622,7 +1636,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       return result;
     } catch (error: unknown) {
       const result = failure({
-        message: error instanceof Error ? error.message : String(error),
+        message: entryFailureMessage(error),
       });
       if (isStale()) {
         set({ lastFinalizeResult: result });

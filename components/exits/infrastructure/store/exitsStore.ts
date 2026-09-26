@@ -45,9 +45,12 @@ import {
   type ExitSerialCaptureMethod,
   type SerialAvailability,
 } from '@/components/exits/infrastructure/services/exitSerials';
-import { errorMessage } from '@/lib/errorMessage';
+import { errorMessage, isOfflineError, logHandledError } from '@/lib/errorMessage';
 import { logOperationError } from '@/lib/operationLogger';
-import { createIdempotencyKey } from '@/lib/idempotency';
+import {
+  clearPersistentIdempotencyKey,
+  getOrCreatePersistentIdempotencyKey,
+} from '@/lib/idempotency';
 import { supabase } from '@/lib/supabase';
 import { Database, type Json } from '@/types/database.types';
 import { create } from 'zustand';
@@ -62,12 +65,21 @@ let customerSearchGeneration = 0;
  */
 let sessionGeneration = 0;
 
-/** requestFingerprint -> idempotency key, reused while the same request is retried. */
-const pendingExitRequests = new Map<string, string>();
+/**
+ * Operación bajo la que se guarda la clave de idempotencia de la salida en el
+ * teléfono. La clave se ata a la huella (orden + contenido) y sobrevive a
+ * reinicios de pantalla o de la app: si la respuesta del servidor se pierde y el
+ * operador reintenta la misma salida, el RPC la reconoce y no la duplica.
+ */
+export const EXIT_IDEMPOTENCY_OPERATION = 'finalize_exit';
+
+/** Mensaje cuando no se sabe si el servidor alcanzó a guardar la salida. */
+export const EXIT_OUTCOME_UNKNOWN_MESSAGE =
+  'No se pudo confirmar si la salida se guardó porque se perdió la conexión. ' +
+  'Verifica en «Ya salieron» antes de reintentar; si reintentas con los mismos productos no se duplicará.';
 
 function invalidateSession(): void {
   sessionGeneration += 1;
-  pendingExitRequests.clear();
 }
 
 type Product = Database['public']['Tables']['products']['Row'];
@@ -710,7 +722,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       if (isStale()) return;
       if (itemsError) {
         console.error('Error loading delivery order items:', itemsError);
-        failSelect(itemsError.message || 'No fue posible cargar los productos de la orden');
+        failSelect(errorMessage(itemsError, 'No fue posible cargar los productos de la orden'));
         return;
       }
       if (!orderItems.length) {
@@ -1109,11 +1121,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
     } catch (error: unknown) {
       console.error('Error scanning barcode:', error);
       if (isStale()) return;
-      failScan(
-        error instanceof Error && error.message
-          ? error.message
-          : 'Error al escanear el código de barras. Por favor intente de nuevo.'
-      );
+      failScan(errorMessage(error, 'Error al escanear el código de barras. Por favor intente de nuevo.'));
     }
   },
 
@@ -1650,11 +1658,10 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           serials: (item.serials ?? []).map((serial) => serial.normalized)
         }))
       });
-      let idempotencyKey = pendingExitRequests.get(requestFingerprint);
-      if (!idempotencyKey) {
-        idempotencyKey = createIdempotencyKey();
-        pendingExitRequests.set(requestFingerprint, idempotencyKey);
-      }
+      const idempotencyKey = await getOrCreatePersistentIdempotencyKey(
+        EXIT_IDEMPOTENCY_OPERATION,
+        requestFingerprint
+      );
 
       set({ loadingMessage: 'Guardando productos en el inventario...' });
       const { data: exitResult, error: exitsError } = usesRemissionBatch
@@ -1684,7 +1691,7 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
             ? UNAUTHORIZED_EXIT_MESSAGE
             : null;
 
-        console.error('Error inserting exits:', exitsError);
+        logHandledError('Error inserting exits', exitsError);
         logOperationError({
           error_code: 'EXIT_INSERT_FAILED',
           error_message: exitsError.message || String(exitsError),
@@ -1714,7 +1721,11 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
           });
         }
         return failure({
-          message: backendDeniedMessage || exitsError.message,
+          message:
+            backendDeniedMessage ||
+            (isOfflineError(exitsError)
+              ? EXIT_OUTCOME_UNKNOWN_MESSAGE
+              : errorMessage(exitsError, 'No fue posible registrar la salida')),
           code: exitsError.code,
           details: exitsError.details,
           hint: exitsError.hint
@@ -1741,8 +1752,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
         });
       }
 
-      // La salida quedó registrada en BD: desde aquí el resultado es éxito aunque el refresco falle.
-      pendingExitRequests.delete(requestFingerprint);
+      // La salida quedó registrada en BD: desde aquí el resultado es éxito aunque el refresco
+      // falle. Solo ahora se libera la clave; si esto falla, la siguiente salida idéntica
+      // reusaría la clave y el RPC devolvería la ya guardada (no duplica).
+      await clearPersistentIdempotencyKey(EXIT_IDEMPOTENCY_OPERATION, requestFingerprint).catch(
+        (clearError: unknown) => console.warn('No se pudo liberar la clave de la salida:', clearError)
+      );
 
       // delivered_quantity y estado de la orden los actualiza un trigger en BD;
       // refrescar la caché local (un slot por orden objetivo) para que la siguiente salida
@@ -1790,8 +1805,12 @@ export const useExitsStore = create<ExitsState>((set, get) => ({
       }
       return result;
     } catch (error: unknown) {
-      console.error('Error finalizing exit:', error);
-      const result = failure({ message: error instanceof Error ? error.message : String(error) });
+      logHandledError('Error finalizing exit', error);
+      const result = failure({
+        message: isOfflineError(error)
+          ? EXIT_OUTCOME_UNKNOWN_MESSAGE
+          : errorMessage(error, 'No fue posible registrar la salida')
+      });
       if (isStale()) {
         set({ lastFinalizeResult: result });
       } else {
