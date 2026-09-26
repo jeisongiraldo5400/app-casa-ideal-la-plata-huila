@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { normalizeCustomerEmail } from '../../domain/customerEmail';
 import {
   canUseLocalDb,
   createCustomerOffline,
@@ -156,6 +157,8 @@ export type CreateCustomerInput = CustomerLocationInput & {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Correo electrónico opcional; se guarda recortado y en minúsculas. */
+  email?: string | null;
   /**
    * Vendedor que el trigger `enforce_customer_seller` asignará (ver
    * `expectedSellerIdOnCreate`). Nunca se envía al servidor: solo sirve para el
@@ -172,7 +175,8 @@ export type CreatedCustomer = CustomerOption & {
 };
 
 export async function createCustomer(input: CreateCustomerInput): Promise<CreatedCustomer> {
-  const { expectedSellerId, ...customer } = input;
+  const { expectedSellerId, ...rest } = input;
+  const customer = { ...rest, email: normalizeCustomerEmail(rest.email) };
   try {
     // No se envía `seller_id`: lo decide el trigger según los roles de quien crea.
     const { data, error } = await supabase
@@ -181,6 +185,7 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Create
         name: customer.name,
         id_number: customer.idNumber,
         phone: customer.phone,
+        email: customer.email,
         address: customer.address || null,
         municipio_id: customer.municipioId || null,
         vereda_id: customer.veredaId || null,

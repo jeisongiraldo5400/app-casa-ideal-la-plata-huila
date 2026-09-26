@@ -67,6 +67,7 @@ describe('createCustomer', () => {
       name: 'Ana',
       id_number: '123',
       phone: null,
+      email: null,
       address: 'Carrera 5 # 12-30',
       municipio_id: 'm1',
       vereda_id: 'v1',
@@ -80,6 +81,7 @@ describe('createCustomer', () => {
       name: 'Ana',
       id_number: '123',
       phone: '3101234567',
+      email: null,
       address: null,
       municipio_id: null,
       vereda_id: null,
@@ -132,7 +134,7 @@ describe('createCustomer', () => {
       saved_offline: true,
     });
 
-    expect(mockCreateCustomerOffline).toHaveBeenCalledWith({ ...location, sellerId: 'u1' });
+    expect(mockCreateCustomerOffline).toHaveBeenCalledWith({ ...location, email: null, sellerId: 'u1' });
   });
 
   it('sin red, admin: el reflejo local queda sin vendedor', async () => {
@@ -154,5 +156,29 @@ describe('createCustomer', () => {
 
     await expect(createCustomer({ name: 'Ana', idNumber: '123', phone: null })).rejects.toBeTruthy();
     expect(mockCreateCustomerOffline).not.toHaveBeenCalled();
+  });
+
+  it('con red guarda el correo recortado y en minúsculas', async () => {
+    await createCustomer({ name: 'Ana', idNumber: '123', phone: null, email: '  Ana.Perez@Correo.COM ' });
+
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ email: 'ana.perez@correo.com' }));
+  });
+
+  it('un correo en blanco se guarda como null', async () => {
+    await createCustomer({ name: 'Ana', idNumber: '123', phone: null, email: '   ' });
+
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ email: null }));
+  });
+
+  it('sin red el correo normalizado viaja al alta local', async () => {
+    mockInsertFails = true;
+    mockIsNetworkError.mockReturnValue(true);
+    mockCreateCustomerOffline.mockResolvedValue({ id: 'local-1', name: 'Ana', id_number: '123' });
+
+    await createCustomer({ name: 'Ana', idNumber: '123', phone: null, email: 'Ana@Correo.com' });
+
+    expect(mockCreateCustomerOffline).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'ana@correo.com' })
+    );
   });
 });

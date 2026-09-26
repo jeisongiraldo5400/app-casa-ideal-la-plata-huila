@@ -86,4 +86,32 @@ describe('createCustomerOffline: ubicación en la fila local', () => {
       veredaId: null,
     });
   });
+
+  it('guarda el correo en la fila local y en el comando de la cola', async () => {
+    const created = await createCustomerOffline({
+      name: 'Ana',
+      idNumber: '123',
+      phone: null,
+      email: ' Ana@Correo.COM ',
+    });
+
+    await expect(fetchCustomerFromLocal(created.id)).resolves.toMatchObject({ email: 'ana@correo.com' });
+    expect(mockPrepareOutboxRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      'create_customer',
+      expect.objectContaining({ email: 'ana@correo.com' }),
+      expect.any(String)
+    );
+  });
+
+  it('sin correo el comando lleva email null', async () => {
+    await createCustomerOffline({ name: 'Ana', idNumber: '123', phone: null });
+
+    expect(mockPrepareOutboxRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      'create_customer',
+      expect.objectContaining({ email: null }),
+      expect.any(String)
+    );
+  });
 });

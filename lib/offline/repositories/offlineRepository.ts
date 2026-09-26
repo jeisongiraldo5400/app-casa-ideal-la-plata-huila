@@ -321,6 +321,8 @@ export async function createCustomerOffline(input: {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Correo opcional, ya normalizado (recortado y en minúsculas). */
+  email?: string | null;
   address?: string | null;
   municipioId?: string | null;
   veredaId?: string | null;
@@ -338,6 +340,7 @@ export async function createCustomerOffline(input: {
   }
   const customerId = createIdempotencyKey();
   const idempotencyKey = createIdempotencyKey();
+  const email = input.email?.trim().toLowerCase() || null;
   await database.write(async () => {
     await database.batch(
       database.get<Customer>('customers').prepareCreate((record) => {
@@ -345,6 +348,7 @@ export async function createCustomerOffline(input: {
         record.name = input.name;
         record.idNumber = input.idNumber;
         record.phone = input.phone;
+        record.email = email;
         record.sellerId = input.sellerId ?? null;
         // La ubicación también queda en local: el asistente de negocio la usa
         // para rellenar el paso de ubicación cuando se elige este cliente.
@@ -363,6 +367,7 @@ export async function createCustomerOffline(input: {
           name: input.name,
           idNumber: input.idNumber,
           phone: input.phone,
+          email,
           address: input.address ?? null,
           municipioId: input.municipioId ?? null,
           veredaId: input.veredaId ?? null,

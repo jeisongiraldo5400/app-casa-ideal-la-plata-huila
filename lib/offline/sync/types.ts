@@ -71,6 +71,8 @@ export type CreateCustomerPayload = OutboxPayloadBase & {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Correo opcional. Los comandos encolados antes de este campo no lo traen. */
+  email?: string | null;
   /** Dirección de la vivienda; opcional, igual que el municipio y la vereda. */
   address?: string | null;
   municipioId?: string | null;

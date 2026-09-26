@@ -20,12 +20,14 @@ import {
   expectedSellerIdOnCreate,
   roleNamesOf,
 } from '../domain/customerCreationAssignment';
+import { customerEmailSchema, normalizeCustomerEmail } from '../domain/customerEmail';
 import { createCustomer } from '../infrastructure/services/customersService';
 
 const schema = Yup.object({
   name: Yup.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres').required('El nombre es requerido'),
   idNumber: Yup.string().trim().min(3, 'El documento debe tener al menos 3 caracteres').required('El documento es requerido'),
   phone: Yup.string().trim().max(50, 'El teléfono no puede exceder 50 caracteres'),
+  email: customerEmailSchema,
   address: Yup.string().trim().max(500, 'La dirección no puede exceder 500 caracteres'),
   departamentoId: Yup.string(),
   municipioId: Yup.string(),
@@ -60,7 +62,7 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
   }, [visible]);
 
   const formik = useFormik({
-    initialValues: { name: '', idNumber: '', phone: '', address: '', departamentoId: '', municipioId: '', veredaId: '' },
+    initialValues: { name: '', idNumber: '', phone: '', email: '', address: '', departamentoId: '', municipioId: '', veredaId: '' },
     validationSchema: schema,
     onSubmit: async (values, { resetForm }) => {
       try {
@@ -68,6 +70,7 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
           name: values.name.trim(),
           idNumber: values.idNumber.trim(),
           phone: values.phone.trim() || null,
+          email: normalizeCustomerEmail(values.email),
           address: values.address.trim() || null,
           municipioId: values.municipioId || null,
           veredaId: values.veredaId || null,
@@ -156,6 +159,19 @@ export function CustomerCreateSheet({ visible, onClose, onCreated }: CustomerCre
           onChangeText={formik.handleChange('phone')}
           onBlur={formik.handleBlur('phone')}
           error={formik.touched.phone ? formik.errors.phone : undefined}
+        />
+        <Input
+          label="Correo electrónico (opcional)"
+          placeholder="Ej: cliente@correo.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          value={formik.values.email}
+          onChangeText={formik.handleChange('email')}
+          onBlur={formik.handleBlur('email')}
+          error={formik.touched.email ? formik.errors.email : undefined}
         />
         <OptionPickerField
           value={formik.values.departamentoId}

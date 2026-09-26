@@ -4441,6 +4441,7 @@ export type Database = {
         Args: {
           p_address?: string
           p_customer_id: string
+          p_email?: string
           p_id_number: string
           p_idempotency_key: string
           p_municipio_id?: string

@@ -117,6 +117,7 @@ import {
   searchCustomersForNegocio,
 } from '@/components/customers';
 import { duplicateCustomerPrompt } from '@/components/customers/domain/duplicateCustomer';
+import { customerEmailError, normalizeCustomerEmail } from '@/components/customers/domain/customerEmail';
 // Traductor común: la pantalla tenía una copia propia que devolvía el texto
 // crudo de la base («duplicate key value violates…») en todos sus avisos.
 import { errorMessage } from '@/lib/errorMessage';
@@ -239,6 +240,7 @@ function NegocioCreateScreenInner() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerId, setNewCustomerId] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerEmail, setNewCustomerEmail] = useState('');
   const [newCustomerDepartamentoId, setNewCustomerDepartamentoId] = useState('');
   const [newCustomerMunicipioId, setNewCustomerMunicipioId] = useState('');
   const [newCustomerVeredaId, setNewCustomerVeredaId] = useState('');
@@ -329,6 +331,7 @@ function NegocioCreateScreenInner() {
     setNewCustomerName('');
     setNewCustomerId('');
     setNewCustomerPhone('');
+    setNewCustomerEmail('');
     setNewCustomerDepartamentoId('');
     setNewCustomerMunicipioId('');
     setNewCustomerVeredaId('');
@@ -869,6 +872,7 @@ function NegocioCreateScreenInner() {
     setNewCustomerName('');
     setNewCustomerId('');
     setNewCustomerPhone('');
+    setNewCustomerEmail('');
     setNewCustomerDepartamentoId('');
     setNewCustomerMunicipioId('');
     setNewCustomerVeredaId('');
@@ -926,12 +930,15 @@ function NegocioCreateScreenInner() {
     if (!newCustomerName.trim() || !newCustomerId.trim()) {
       return Alert.alert('Campos requeridos', 'Ingrese el nombre y documento del cliente.');
     }
+    const emailError = customerEmailError(newCustomerEmail);
+    if (emailError) return Alert.alert('Correo electrónico', emailError);
     try {
       setCreatingCustomer(true);
       const data = await createCustomer({
         name: newCustomerName.trim(),
         idNumber: newCustomerId.trim(),
         phone: newCustomerPhone.trim() || null,
+        email: normalizeCustomerEmail(newCustomerEmail),
         address: newCustomerAddress.trim() || null,
         municipioId: newCustomerMunicipioId || null,
         veredaId: newCustomerVeredaId || null,
@@ -2096,6 +2103,24 @@ function NegocioCreateScreenInner() {
                   placeholderTextColor={colors.text.secondary}
                   value={newCustomerPhone}
                   onChangeText={setNewCustomerPhone}
+                />
+              </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Correo electrónico (opcional)
+                </Text>
+                <TextInput
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                  placeholder="Ej. cliente@correo.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  placeholderTextColor={colors.text.secondary}
+                  value={newCustomerEmail}
+                  onChangeText={setNewCustomerEmail}
                 />
               </View>
 

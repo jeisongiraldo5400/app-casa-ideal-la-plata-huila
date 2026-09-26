@@ -78,6 +78,9 @@ export async function pushOutboxItem(item: SyncOutboxItem): Promise<PushResult> 
 }
 
 async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey: string): Promise<PushResult> {
+  // `p_email` solo viaja si el cliente lo tiene: los comandos encolados antes
+  // del campo (o sin correo) siguen llamando a la misma firma de siempre y
+  // funcionan también contra un servidor sin la migración 20261210120000.
   const { data, error } = await supabase.rpc('create_customer_offline', {
     p_customer_id: payload.customerId,
     p_name: payload.name,
@@ -87,6 +90,7 @@ async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey
     p_address: payload.address ?? null,
     p_municipio_id: payload.municipioId ?? null,
     p_vereda_id: payload.veredaId ?? null,
+    ...(payload.email ? { p_email: payload.email } : {}),
   });
   if (error) throw error;
   const result = data as { customer_id?: string; conflict?: boolean; existing?: { id: string; name: string } };
