@@ -44,7 +44,6 @@ jest.mock('@/lib/offline/store/syncStore', () => ({
 }));
 jest.mock('@/lib/offline/sync/downloadData', () => ({ formatLocalDataLabel: () => 'Datos locales' }));
 jest.mock('@/components/offline', () => ({ DownloadDataButton: () => null }));
-jest.mock('@/components/cartera/CarteraAnalyticsSection', () => ({ CarteraAnalyticsSection: () => null }));
 jest.mock('@/components/cartera/CollectionManagerPicker', () => ({ CollectionManagerPicker: () => null }));
 jest.mock('@/components/cartera/mis-cobros/MisCobrosEntryButton', () => ({ MisCobrosEntryButton: () => null }));
 jest.mock('@/components/cartera/CollectionManagerPaymentsModal', () => ({

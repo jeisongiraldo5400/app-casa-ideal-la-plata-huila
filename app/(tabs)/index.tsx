@@ -142,7 +142,6 @@ function HomeScreenInner() {
             <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => navigate('/(tabs)/my-orders')} style={styles.halfCard} />
             <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => navigate('/(tabs)/all-orders')} style={styles.halfCard} />
           </View>
-          <ActionCard title="Reportes y analítica" subtitle="Estadísticas e indicadores de la operación" icon="insights" onPress={() => navigate('/(tabs)/reports')} />
         </View>
       </ScrollView>
     </SafeAreaView>

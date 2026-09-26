@@ -6,7 +6,6 @@ import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
-import { CarteraAnalyticsSection } from '@/components/cartera/CarteraAnalyticsSection';
 import { CarteraFilterModal, DEFAULT_CARTERA_FILTERS, type CarteraFilterValues } from '@/components/cartera/CarteraFilterModal';
 import { CarteraSearchField } from '@/components/cartera/CarteraSearchField';
 import { CarteraCuotaPeople } from '@/components/cartera/CarteraCuotaPeople';
@@ -132,7 +131,6 @@ function CarteraScreenInner() {
           <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
         </View>
       </Pressable>}
-      {!searchOnly&&<CarteraAnalyticsSection data={dashboard} colors={colors} onOpenBusiness={openNegocio}/>}
       <Text style={[styles.section,{color:colors.text.primary}]}>Cuotas</Text>
       {/* Buscador de cuotas: por cédula, nombre del cliente o número de negocio. Con señal
           consulta al servidor; sin señal, la base local (los dos sin tildes). */}
