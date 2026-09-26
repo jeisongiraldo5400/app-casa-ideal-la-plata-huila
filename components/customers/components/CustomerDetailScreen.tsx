@@ -11,6 +11,7 @@ import { useCustomerDetail } from '../infrastructure/hooks/useCustomerDetail';
 import { CustomerCarteraSummary } from './CustomerCarteraSummary';
 import { CustomerContactBlock } from './CustomerContactBlock';
 import { CustomerNegociosList } from './CustomerNegociosList';
+import { useNegociosProducts } from '../infrastructure/hooks/useNegociosProducts';
 
 interface CustomerDetailScreenProps {
   customerId: string | null;
@@ -22,6 +23,8 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
   const colors = getColors(isDark);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const detail = useCustomerDetail(customerId);
+  // Productos de cada negocio del cliente: una sola consulta para todos.
+  const products = useNegociosProducts((detail.summary?.negocios ?? []).map((negocio) => negocio.negocio_id));
 
   // Sin esto el encabezado muestra el nombre de la ruta («cliente/[id]») y se
   // queda sin botón de volver, porque el Stack raíz no los define por pantalla.
@@ -124,6 +127,9 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
       <CustomerNegociosList
         negocios={negocios}
         onOpen={(negocioId) => router.push(`/negocio/${negocioId}` as never)}
+        productsByNegocio={products.byNegocio}
+        productsLoading={products.loading}
+        productsError={products.error}
       />
     </ScrollView>
   );

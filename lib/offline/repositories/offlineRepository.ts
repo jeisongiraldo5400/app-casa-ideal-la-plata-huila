@@ -1422,3 +1422,28 @@ export async function loadReportSnapshot<T>(kind: string): Promise<{ payload: T;
     return null;
   }
 }
+
+/** Línea de producto de un negocio guardada en el teléfono. */
+export type LocalNegocioProductRow = {
+  negocioId: string;
+  productName: string | null;
+  productSku: string | null;
+  description: string | null;
+  quantity: number;
+};
+
+/** Productos de varios negocios a la vez (ficha del cliente sin señal). */
+export async function fetchNegociosProductsFromLocal(negocioIds: readonly string[]): Promise<LocalNegocioProductRow[]> {
+  if (!canUseLocalDb() || negocioIds.length === 0) return [];
+  const rows = await getDatabase()
+    .get<NegocioItem>('negocio_items')
+    .query(Q.where('negocio_id', Q.oneOf([...negocioIds])))
+    .fetch();
+  return rows.map((row) => ({
+    negocioId: row.negocioId,
+    productName: row.productName,
+    productSku: row.productSku,
+    description: row.description,
+    quantity: Number(row.quantity) || 0,
+  }));
+}
