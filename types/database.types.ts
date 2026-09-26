@@ -4762,17 +4762,21 @@ export type Database = {
       get_collection_route: { Args: { p_route_id: string }; Returns: Json }
       get_collection_route_candidates: {
         Args: {
+          p_departamento_id?: string
           p_filter?: string
           p_municipio_id?: string
           p_page?: number
           p_page_size?: number
           p_search?: string
+          p_vereda_id?: string
         }
         Returns: {
           customer_address: string
           customer_id_number: string
           customer_name: string
           customer_phone: string
+          departamento_id: string
+          departamento_name: string
           expected_balance: number
           municipality_id: string
           municipality_name: string
@@ -4782,6 +4786,8 @@ export type Database = {
           open_installments: number
           overdue_balance: number
           total_count: number
+          vereda_id: string
+          vereda_name: string
         }[]
       }
       get_current_user_profile: { Args: never; Returns: Json }
@@ -6046,6 +6052,10 @@ export type Database = {
       }
       select_collection_route_stop: {
         Args: { p_stop_id: string }
+        Returns: undefined
+      }
+      set_collection_route_stops: {
+        Args: { p_negocio_ids: string[]; p_route_id: string }
         Returns: undefined
       }
       shared_catalog_ids: { Args: never; Returns: string[] }

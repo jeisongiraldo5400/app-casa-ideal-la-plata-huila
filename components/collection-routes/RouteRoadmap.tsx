@@ -1,3 +1,5 @@
+import { useTheme } from '@/components/theme';
+import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
@@ -14,6 +16,15 @@ const STATUS_META: Record<StopStatus, { color: string; label: string; icon: keyo
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
+/** Qué pasó en la visita: lo cobrado o el motivo de la novedad. */
+export function stopOutcomeText(stop: CollectionRouteStop): string | null {
+  if (stop.status === 'cobrado') {
+    return stop.payment_amount != null ? `Cobró ${money(stop.payment_amount)}` : 'Cobro registrado';
+  }
+  if (stop.outcome_reason) return stop.outcome_reason;
+  return null;
+}
+
 export function RouteRoadmap({
   stops,
   onPressStop,
@@ -21,22 +32,25 @@ export function RouteRoadmap({
   stops: CollectionRouteStop[];
   onPressStop: (stop: CollectionRouteStop) => void;
 }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   return (
     <View style={styles.container}>
       <View style={styles.startFinishRow}>
         <View style={[styles.terminal, { backgroundColor: '#0f172a' }]}>
           <MaterialIcons name="flag" color="#fff" size={16} />
         </View>
-        <Text style={styles.terminalText}>Inicio de la jornada</Text>
+        <Text style={[styles.terminalText, { color: colors.text.secondary }]}>Inicio de la jornada</Text>
       </View>
 
       {stops.map((stop, index) => {
         const meta = STATUS_META[stop.status];
         const left = index % 2 === 0;
+        const outcome = stopOutcomeText(stop);
         return (
           <View key={stop.id} style={styles.stopRow}>
-            <View style={[styles.path, left ? styles.pathLeft : styles.pathRight]} />
-            <View style={[styles.node, { backgroundColor: meta.color }, left ? styles.nodeLeft : styles.nodeRight]}>
+            <View style={[styles.path, { backgroundColor: colors.divider }, left ? styles.pathLeft : styles.pathRight]} />
+            <View style={[styles.node, { backgroundColor: meta.color, borderColor: colors.background.default }, left ? styles.nodeLeft : styles.nodeRight]}>
               {stop.status === 'cobrado' ? (
                 <MaterialIcons name="check" color="#fff" size={18} />
               ) : (
@@ -46,10 +60,12 @@ export function RouteRoadmap({
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => onPressStop(stop)}
-              style={[styles.card, left ? styles.cardRight : styles.cardLeft, { borderLeftColor: meta.color }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Parada ${stop.position}: ${stop.customer_name}, ${meta.label}`}
+              style={[styles.card, left ? styles.cardRight : styles.cardLeft, { borderLeftColor: meta.color, backgroundColor: colors.background.paper }]}
             >
               <View style={styles.cardHeader}>
-                <Text style={styles.business}>
+                <Text style={[styles.business, { color: colors.text.primary }]}>
                   Negocio {formatNegocioCodigo(stop.negocio_numero)}
                 </Text>
                 <View style={[styles.badge, { backgroundColor: `${meta.color}18` }]}>
@@ -57,13 +73,16 @@ export function RouteRoadmap({
                   <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
                 </View>
               </View>
-              <Text style={styles.customer} numberOfLines={1}>{stop.customer_name}</Text>
-              <Text style={styles.address} numberOfLines={2}>
+              <Text style={[styles.customer, { color: colors.text.primary }]} numberOfLines={1}>{stop.customer_name}</Text>
+              <Text style={[styles.address, { color: colors.text.secondary }]} numberOfLines={2}>
                 {[stop.customer_address, stop.municipality_name].filter(Boolean).join(', ')}
               </Text>
+              {outcome ? (
+                <Text style={[styles.outcome, { color: meta.color }]} numberOfLines={2}>{outcome}</Text>
+              ) : null}
               <View style={styles.cardFooter}>
-                <Text style={styles.balance}>{money(stop.expected_balance)}</Text>
-                <MaterialIcons name="chevron-right" size={20} color="#64748b" />
+                <Text style={[styles.balance, { color: colors.text.primary }]}>{money(stop.expected_balance)}</Text>
+                <MaterialIcons name="chevron-right" size={20} color={colors.text.secondary} />
               </View>
             </TouchableOpacity>
           </View>
@@ -74,7 +93,7 @@ export function RouteRoadmap({
         <View style={[styles.terminal, { backgroundColor: '#16a34a' }]}>
           <MaterialIcons name="sports-score" color="#fff" size={17} />
         </View>
-        <Text style={styles.terminalText}>Fin de la ruta</Text>
+        <Text style={[styles.terminalText, { color: colors.text.secondary }]}>Fin de la ruta</Text>
       </View>
     </View>
   );
@@ -104,5 +123,6 @@ const styles = StyleSheet.create({
   address: { color: '#64748b', fontSize: 12, marginTop: 3, lineHeight: 16 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   balance: { color: '#0f172a', fontWeight: '900' },
+  outcome: { fontSize: 12, fontWeight: '700', marginTop: 5 },
 });
 
