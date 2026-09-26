@@ -20,9 +20,11 @@ export type CarteraQuery = {
   /** Horizonte en días del filtro «por vencer». */
   days: number;
   municipioId: string;
-  /** Vendedor del NEGOCIO. */
-  sellerId?: string;
-  /** Vendedor del CLIENTE, distinto del vendedor del negocio. */
+  /**
+   * «Vendedor»: el dueño del cliente (`p_customer_seller_id`). Desde que el
+   * vendedor del negocio es siempre el dueño del cliente (20261206120000) ya no
+   * hay un segundo filtro por el vendedor del negocio.
+   */
   customerSellerId?: string;
   /** Cuotas de negocios con al menos un abono vigente de ese método. */
   paymentMethodId?: string;

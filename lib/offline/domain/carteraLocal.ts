@@ -58,8 +58,7 @@ export function filterCarteraCuotas<
     customerName: string;
     customerIdNumber: string | null;
     municipioId: string | null;
-    sellerId?: string | null;
-    /** Vendedor del CLIENTE, distinto del vendedor del negocio. */
+    /** «Vendedor»: el dueño del cliente. */
     customerSellerId?: string | null;
     /** Gestor de cobro del negocio. */
     gestorId?: string | null;
@@ -91,7 +90,6 @@ export function filterCarteraCuotas<
       return false;
     }
     if (params.municipioId && row.municipioId !== params.municipioId) return false;
-    if (params.sellerId && (row.sellerId ?? null) !== params.sellerId) return false;
     if (params.customerSellerId && (row.customerSellerId ?? null) !== params.customerSellerId) return false;
     if (params.gestorId && (row.gestorId ?? null) !== params.gestorId) return false;
     if (

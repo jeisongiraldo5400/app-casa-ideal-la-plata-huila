@@ -18,8 +18,8 @@ const filters: CarteraQuery = {
 
 describe('carteraFiltersKey', () => {
   it('iguala filtros equivalentes e distingue los que cambian la consulta', () => {
-    expect(carteraFiltersKey(filters)).toBe(carteraFiltersKey({ ...filters, sellerId: '' }));
-    expect(carteraFiltersKey({ ...filters, sellerId: 'v1' })).not.toBe(carteraFiltersKey(filters));
+    expect(carteraFiltersKey(filters)).toBe(carteraFiltersKey({ ...filters, customerSellerId: '' }));
+    expect(carteraFiltersKey({ ...filters, customerSellerId: 'v1' })).not.toBe(carteraFiltersKey(filters));
     expect(carteraFiltersKey({ ...filters, dueFrom: '2026-09-01' })).not.toBe(
       carteraFiltersKey(filters)
     );

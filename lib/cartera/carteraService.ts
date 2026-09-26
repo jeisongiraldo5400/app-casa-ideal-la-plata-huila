@@ -97,7 +97,9 @@ export async function fetchCarteraPage(params: CarteraPageQuery) {
     const { data, error } = await supabase.rpc('get_cartera_cuotas', {
       p_filter: params.filter, p_days: params.days, p_search: normalizeCarteraSearch(params.search),
       p_page: params.page, p_page_size: params.pageSize, p_municipio_id: params.municipioId || null,
-      p_seller_id: params.sellerId || null,
+      // «Vendedor» es el dueño del cliente; el filtro por vendedor del negocio
+      // ya no se ofrece (el RPC lo conserva para la web y apps viejas).
+      p_seller_id: null,
       p_customer_seller_id: params.customerSellerId || null,
       p_payment_method_id: params.paymentMethodId || null,
       p_gestor_id: params.gestorId || null,
