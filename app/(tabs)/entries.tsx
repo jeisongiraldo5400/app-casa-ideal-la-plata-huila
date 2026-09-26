@@ -6,6 +6,8 @@ import { useEntries } from '@/components/entries/infrastructure/hooks/useEntries
 import { useEntriesStore } from '@/components/entries/infrastructure/store/entriesStore';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
+import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
+import { ScreenState } from '@/components/ui/ScreenState';
 import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +18,7 @@ export default function EntriesScreen() {
   const { step, currentScannedBarcode, error, finalizing, loading, loadingMessage, clearError, resetCurrentScan, resetAll, lastFinalizeResult, dismissLastFinalizeResult } = useEntries((state) => ({ step: state.step, currentScannedBarcode: state.currentScannedBarcode, error: state.error, finalizing: state.finalizing, loading: state.loading, loadingMessage: state.loadingMessage, clearError: state.clearError, resetCurrentScan: state.resetCurrentScan, resetAll: state.resetAll, lastFinalizeResult: state.lastFinalizeResult, dismissLastFinalizeResult: state.dismissLastFinalizeResult }));
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { canRegisterEntries, rolesLoading } = useWarehouseAccess();
 
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
@@ -37,6 +40,21 @@ export default function EntriesScreen() {
       };
     }, [resetAll])
   );
+
+  // El servidor solo acepta entradas de admin y bodeguero: sin ese rol no se
+  // deja llenar una sesión que terminaría rechazada al registrar.
+  if (!rolesLoading && !canRegisterEntries) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background.default, padding: Spacing.xl }]}>
+        <ScreenState
+          tone="warning"
+          icon="lock-outline"
+          title="Sin acceso a Entradas"
+          description="Registrar entradas es tarea de administradores y bodegueros. Si la necesitas, pídele el rol al administrador."
+        />
+      </View>
+    );
+  }
 
   return (
     <ScreenErrorBoundary

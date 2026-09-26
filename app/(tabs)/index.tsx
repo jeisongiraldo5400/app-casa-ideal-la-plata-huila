@@ -5,8 +5,11 @@ import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
 import { isOfflineError } from '@/lib/errorMessage';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,8 +29,17 @@ function HomeScreenInner() {
   // algo pasa aunque la pantalla destino tarde en traer sus datos.
   const navigate = useNavigateWithLoading();
   const { user } = useAuth();
-  const { pendingOrders, pendingDeliveryOrders, loading, error: statsError, reload: reloadStats } = useDashboardStats();
   const { isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
+  const warehouse = useWarehouseAccess();
+  const focused = useIsFocused();
+  const online = useNetworkStatus();
+  // Solo con Inicio a la vista, con red y con la app activa; órdenes de compra
+  // solo para quien puede leerlas (admin y bodeguero; no el recaudador).
+  const { pendingOrders, pendingDeliveryOrders, loading, error: statsError, reload: reloadStats } = useDashboardStats({
+    includePurchaseOrders: warehouse.canReadPurchaseOrders,
+    focused,
+    online,
+  });
   const [now, setNow] = useState(new Date());
   const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
   // El recaudador sólo consulta y cobra: ve Negocios y Cartera, no crea negocios
@@ -50,10 +62,12 @@ function HomeScreenInner() {
   // haría creer al usuario que no tiene nada pendiente.
   const ordersValue = pendingOrders ?? '—';
   const deliveriesValue = pendingDeliveryOrders ?? '—';
-  const statsHint = loading ? 'Actualizando…' : statsError ? 'Sin consultar' : 'Pendientes';
+  const statsHint = loading ? 'Actualizando…' : !online ? 'Sin señal' : statsError ? 'Sin consultar' : 'Pendientes';
   // Sin red el mensaje traducido ya lo dice todo; para otros fallos se añade
   // qué se estaba consultando para que el aviso no quede en el aire.
-  const statsNotice = statsError
+  const statsNotice = !online
+    ? 'Sin conexión: el resumen se actualiza al volver la señal.'
+    : statsError
     ? isOfflineError(statsError)
       ? 'Sin conexión: no se pudo consultar el resumen. Toca para reintentar.'
       : `No se pudo consultar el resumen: ${statsError} Toca para reintentar.`
@@ -73,6 +87,7 @@ function HomeScreenInner() {
         <View style={styles.section}>
           <SectionHeader title="Resumen de hoy" hint={statsHint} />
           <View style={styles.statsRow} accessibilityState={{ busy: loading }}>
+            {warehouse.canReadPurchaseOrders ? (
             <StatCard
               label="Órdenes de compra"
               value={ordersValue}
@@ -80,6 +95,7 @@ function HomeScreenInner() {
               color={colors.warning.main}
               accessibilityLabel={`Órdenes de compra pendientes: ${cardHint(pendingOrders)}`}
             />
+            ) : null}
             <StatCard
               label="Órdenes de entrega"
               value={deliveriesValue}
@@ -131,15 +147,25 @@ function HomeScreenInner() {
           </View>
         ) : null}
 
-        <View style={styles.section}>
-          <SectionHeader title="Operaciones de almacén" />
-          <View style={styles.actionGrid}>
-            <ActionCard compact title="Salidas" subtitle="Registrar despacho" icon="local-shipping" tone="error" onPress={() => navigate('/(tabs)/exits')} style={styles.halfCard} />
-            <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => navigate('/(tabs)/entries')} style={styles.halfCard} />
-            <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => navigate('/(tabs)/my-orders')} style={styles.halfCard} />
-            <ActionCard compact title="Todas" subtitle="Gestión de órdenes" icon="list-alt" tone="info" onPress={() => navigate('/(tabs)/all-orders')} style={styles.halfCard} />
+        {warehouse.canUseExits || warehouse.canRegisterEntries || warehouse.canSeeAllOrders ? (
+          <View style={styles.section}>
+            <SectionHeader title="Operaciones de almacén" />
+            <View style={styles.actionGrid}>
+              {warehouse.canUseExits ? (
+                <ActionCard compact title="Salidas" subtitle={warehouse.canRegisterAnyExit ? 'Registrar despacho' : 'De tus órdenes asignadas'} icon="local-shipping" tone="error" onPress={() => navigate('/(tabs)/exits')} style={styles.halfCard} />
+              ) : null}
+              {warehouse.canRegisterEntries ? (
+                <ActionCard compact title="Entradas" subtitle="Ingresar mercancía" icon="move-to-inbox" tone="success" onPress={() => navigate('/(tabs)/entries')} style={styles.halfCard} />
+              ) : null}
+              {warehouse.canUseExits ? (
+                <ActionCard compact title="Mis órdenes" subtitle="Asignadas para salida" icon="assignment-ind" tone="warning" onPress={() => navigate('/(tabs)/my-orders')} style={styles.halfCard} />
+              ) : null}
+              {warehouse.canSeeAllOrders ? (
+                <ActionCard compact title="Todas" subtitle="Consultar órdenes" icon="list-alt" tone="info" onPress={() => navigate('/(tabs)/all-orders')} style={styles.halfCard} />
+              ) : null}
+            </View>
           </View>
-        </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
