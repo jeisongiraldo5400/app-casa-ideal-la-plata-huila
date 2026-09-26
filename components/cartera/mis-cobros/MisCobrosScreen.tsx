@@ -28,6 +28,7 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MisCobroCard } from './MisCobroCard';
+import { MisCobrosDateRange } from './MisCobrosDateRange';
 import { MisCobrosFilterSheet } from './MisCobrosFilterSheet';
 
 const PAGE_SIZE = 20;
@@ -235,8 +236,18 @@ export function MisCobrosScreen() {
         </View>
       ) : null}
 
+      <MisCobrosDateRange
+        value={{ from: filters.from, to: filters.to }}
+        onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
+      />
+
       <Card variant="outlined" style={styles.totals}>
-        <Metric label="Total cobrado" value={formatCOP(summary.total_collected)} tone="success" size="md" />
+        <Metric
+          label={`Total cobrado · ${rangeLabel(filters) ?? 'todas las fechas'}`}
+          value={formatCOP(summary.total_collected)}
+          tone="success"
+          size="md"
+        />
         <View style={styles.totalsRow}>
           <Metric
             label={summary.cash_count == null ? 'Efectivo' : `Efectivo (${summary.cash_count})`}

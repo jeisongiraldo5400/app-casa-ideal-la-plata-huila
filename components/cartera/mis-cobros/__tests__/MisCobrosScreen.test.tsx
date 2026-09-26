@@ -84,7 +84,7 @@ describe('MisCobrosScreen', () => {
     expect(mockedFetch).toHaveBeenCalledWith(
       expect.objectContaining({ collectorId: 'u1', isSelf: true, collectorName: null, page: 1, online: true })
     );
-    expect(screen.getByText('Total cobrado')).toBeTruthy();
+    expect(screen.getByText('Total cobrado · todas las fechas')).toBeTruthy();
     expect(screen.getAllByText(money(50000)).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Efectivo (1)')).toBeTruthy();
     expect(screen.getByText('En cierre CR-2026-0003')).toBeTruthy();
@@ -92,6 +92,21 @@ describe('MisCobrosScreen', () => {
     expect(screen.getByText('Pendiente de enviar')).toBeTruthy();
     // Solo el administrador elige cobrador.
     expect(screen.queryByText('Cambiar')).toBeNull();
+  });
+
+  it('el rango Desde/Hasta está a la vista y el total dice de qué fechas es', async () => {
+    renderScreen();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('mis-cobros-rango')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Este mes'));
+
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+    const call = mockedFetch.mock.calls[1][0] as { filters: { from: string; to: string } };
+    expect(call.filters.from).toMatch(/^\d{4}-\d{2}-01$/);
+    expect(call.filters.to >= call.filters.from).toBe(true);
+    expect(screen.getByText(/^Total cobrado · /)).toBeTruthy();
+    expect(screen.queryByText('Total cobrado · todas las fechas')).toBeNull();
   });
 
   it('el segmento de estado vuelve a pedir con ese estado', async () => {

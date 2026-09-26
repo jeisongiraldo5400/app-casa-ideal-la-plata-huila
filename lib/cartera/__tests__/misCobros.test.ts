@@ -5,6 +5,8 @@ import {
   misCobrosRangeError,
   type LocalMisCobro,
   type MisCobrosFilters,
+  matchingMisCobrosPreset,
+  misCobrosPresetRange,
 } from '../misCobros';
 
 const EFECTIVO = 'm-efectivo';
@@ -127,5 +129,29 @@ describe('ayudas de filtros', () => {
   it('rechaza un rango invertido', () => {
     expect(misCobrosRangeError({ from: '2026-09-10', to: '2026-09-01' })).toMatch(/posterior/);
     expect(misCobrosRangeError({ from: '2026-09-01', to: '2026-09-01' })).toBeNull();
+  });
+});
+
+describe('misCobrosPresetRange', () => {
+  // 15 de marzo de 2026, mediodía en Bogotá.
+  const today = new Date('2026-03-15T17:00:00Z');
+
+  it('hoy, últimos 7 días y este mes', () => {
+    expect(misCobrosPresetRange('hoy', today)).toEqual({ from: '2026-03-15', to: '2026-03-15' });
+    expect(misCobrosPresetRange('semana', today)).toEqual({ from: '2026-03-09', to: '2026-03-15' });
+    expect(misCobrosPresetRange('mes', today)).toEqual({ from: '2026-03-01', to: '2026-03-15' });
+  });
+
+  it('mes pasado completo, también al cambiar de año', () => {
+    expect(misCobrosPresetRange('mes_pasado', today)).toEqual({ from: '2026-02-01', to: '2026-02-28' });
+    expect(misCobrosPresetRange('mes_pasado', new Date('2026-01-10T17:00:00Z'))).toEqual({
+      from: '2025-12-01',
+      to: '2025-12-31',
+    });
+  });
+
+  it('reconoce qué atajo está puesto', () => {
+    expect(matchingMisCobrosPreset({ from: '2026-03-01', to: '2026-03-15' }, today)).toBe('mes');
+    expect(matchingMisCobrosPreset({ from: '2026-01-05', to: '2026-02-10' }, today)).toBeNull();
   });
 });

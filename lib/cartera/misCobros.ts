@@ -112,6 +112,32 @@ export function countActiveMisCobrosFilters(filters: MisCobrosFilters): number {
   return count;
 }
 
+export type MisCobrosPreset = 'hoy' | 'semana' | 'mes' | 'mes_pasado';
+
+/** Rangos rápidos en días de Bogotá: el total de «Mis cobros» de fecha a fecha. */
+export function misCobrosPresetRange(preset: MisCobrosPreset, today = new Date()): { from: string; to: string } {
+  const to = bogotaDateValue(today);
+  if (preset === 'hoy') return { from: to, to };
+  if (preset === 'semana') return { from: bogotaDateValue(new Date(today.getTime() - 6 * 86_400_000)), to };
+  const year = Number(to.slice(0, 4));
+  const month = Number(to.slice(5, 7));
+  if (preset === 'mes') return { from: `${to.slice(0, 8)}01`, to };
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const lastDay = new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate();
+  const mm = String(prevMonth).padStart(2, '0');
+  return { from: `${prevYear}-${mm}-01`, to: `${prevYear}-${mm}-${String(lastDay).padStart(2, '0')}` };
+}
+
+/** Qué atajo coincide con el rango puesto (para resaltarlo). */
+export function matchingMisCobrosPreset(range: { from: string; to: string }, today = new Date()): MisCobrosPreset | null {
+  for (const preset of ['hoy', 'semana', 'mes', 'mes_pasado'] as MisCobrosPreset[]) {
+    const candidate = misCobrosPresetRange(preset, today);
+    if (candidate.from === range.from && candidate.to === range.to) return preset;
+  }
+  return null;
+}
+
 export function misCobrosRangeError(filters: Pick<MisCobrosFilters, 'from' | 'to'>): string | null {
   if (filters.from && filters.to && filters.from > filters.to) {
     return 'La fecha inicial no puede ser posterior a la fecha final.';

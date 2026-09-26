@@ -1,4 +1,3 @@
-import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import { useTheme } from '@/components/theme';
 import { ActionBar, Button, FullScreenModal } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
@@ -10,7 +9,6 @@ import {
   type MisCobrosSite,
   type MisCobrosStatus,
 } from '@/lib/cartera/misCobros';
-import { bogotaDateValue } from '@/lib/localDate';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -35,17 +33,6 @@ const CIERRE_OPTIONS: Option<MisCobrosCierre>[] = [
   { value: 'no', label: 'Sin cierre' },
   { value: 'si', label: 'En un cierre' },
 ];
-
-/** Rangos rápidos (días de Bogotá). Cualquier otra fecha, pasada o futura, va con los calendarios. */
-function presetRange(preset: 'hoy' | 'semana' | 'mes', today = new Date()) {
-  const to = bogotaDateValue(today);
-  if (preset === 'hoy') return { from: to, to };
-  if (preset === 'semana') {
-    const start = new Date(today.getTime() - 6 * 86_400_000);
-    return { from: bogotaDateValue(start), to };
-  }
-  return { from: `${to.slice(0, 8)}01`, to };
-}
 
 type Props = {
   visible: boolean;
@@ -103,34 +90,6 @@ export function MisCobrosFilterSheet({ visible, values, paymentMethods, offline,
         </ActionBar>
       }>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.group}>
-          <Text style={[styles.label, { color: colors.text.secondary }]}>Fecha del pago</Text>
-          <View style={styles.chips}>
-            {chip('hoy', 'Hoy', false, () => patch(presetRange('hoy')))}
-            {chip('semana', 'Últimos 7 días', false, () => patch(presetRange('semana')))}
-            {chip('mes', 'Este mes', false, () => patch(presetRange('mes')))}
-          </View>
-          <View style={styles.dates}>
-            <View style={styles.date}>
-              <NegocioDatePicker value={values.from} onChange={(from) => patch({ from })} colors={colors} label="Desde" accessibilityLabel="Cobros desde" />
-              {values.from ? (
-                <Pressable accessibilityRole="button" accessibilityLabel="Quitar fecha desde" onPress={() => patch({ from: '' })} style={styles.clear}>
-                  <Text style={[styles.clearText, { color: colors.primary.main }]}>Quitar</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <View style={styles.date}>
-              <NegocioDatePicker value={values.to} onChange={(to) => patch({ to })} colors={colors} label="Hasta" accessibilityLabel="Cobros hasta" />
-              {values.to ? (
-                <Pressable accessibilityRole="button" accessibilityLabel="Quitar fecha hasta" onPress={() => patch({ to: '' })} style={styles.clear}>
-                  <Text style={[styles.clearText, { color: colors.primary.main }]}>Quitar</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-          {rangeError ? <Text style={[styles.hint, { color: colors.error.main }]}>{rangeError}</Text> : null}
-        </View>
-
         <View style={styles.group}>
           <Text style={[styles.label, { color: colors.text.secondary }]}>Método de pago</Text>
           <Text style={[styles.hint, { color: colors.text.secondary }]}>Puedes elegir varios. Sin ninguno se muestran todos.</Text>
