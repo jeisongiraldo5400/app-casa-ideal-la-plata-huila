@@ -103,9 +103,11 @@ export function filterCarteraCuotas<
     if (params.dueTo && row.dueDate > params.dueTo) return false;
     if (search) {
       // Sin tildes y con el número por sus dígitos, igual que con conexión.
+      // Los dígitos solo cuentan si el término no trae letras: «peña 61» es
+      // un nombre y no debe traer cédulas o negocios que contengan 61.
       const coincide =
         matchesNormalized(search, row.customerName, row.customerIdNumber, String(row.negocioNumero)) ||
-        matchesDigits(search, row.negocioNumero, row.customerIdNumber);
+        (!/\p{L}/u.test(search) && matchesDigits(search, row.negocioNumero, row.customerIdNumber));
       if (!coincide) return false;
     }
     if (params.filter === 'mora') return row.status === 'mora' || row.dueDate < today;

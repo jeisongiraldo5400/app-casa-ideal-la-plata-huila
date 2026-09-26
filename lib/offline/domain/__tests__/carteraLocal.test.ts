@@ -98,6 +98,19 @@ describe('filterCarteraCuotas', () => {
     expect(filterCarteraCuotas(people, { ...params, search: '20260013' }).map((r) => r.id)).toEqual(['c2']);
   });
 
+  it('con letras no compara dígitos: «peña 61» no trae cédulas ni negocios con 61', () => {
+    const people = [
+      { ...rows[0], customerName: 'JOSÉ PEÑA', customerIdNumber: '1.061.111', negocioNumero: 20260001 },
+      { ...rows[1], customerName: 'María López', customerIdNumber: '8861009', negocioNumero: 20260061 },
+    ];
+    const params = { filter: 'todas' as const, days: 15, municipioId: '', today: '2026-09-01' };
+    expect(filterCarteraCuotas(people, { ...params, search: 'peña 61' })).toEqual([]);
+    expect(filterCarteraCuotas(people, { ...params, search: 'pena' }).map((r) => r.id)).toEqual(['c1']);
+    // Sin letras sigue buscando por dígitos.
+    expect(filterCarteraCuotas(people, { ...params, search: '61' }).map((r) => r.id)).toEqual(['c1', 'c2']);
+    expect(filterCarteraCuotas(people, { ...params, search: '1061111' }).map((r) => r.id)).toEqual(['c1']);
+  });
+
   it('filtra mora y búsqueda', () => {
     expect(filterCarteraCuotas(rows, { filter: 'mora', search: '', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
     expect(filterCarteraCuotas(rows, { filter: 'todas', search: 'ana', days: 15, municipioId: '', today: '2026-08-12' })).toHaveLength(1);
