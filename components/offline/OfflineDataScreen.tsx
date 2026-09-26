@@ -1,3 +1,4 @@
+import { useCanCarryOrdersOnPhone } from '@/components/purchase-orders/components/OfflineOrderToggle';
 import { useTheme } from '@/components/theme';
 import {
   ActionBar,
@@ -62,7 +63,8 @@ function estimateLine(estimated: { clientes: number; negocios: number } | null) 
 export function OfflineDataScreen() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { isAdmin, isVendedor, isBodeguero, onlyFindsBySearch, loading: rolesLoading } = useUserRoles();
+  const { onlyFindsBySearch, loading: rolesLoading } = useUserRoles();
+  const carryOrders = useCanCarryOrdersOnPhone();
   const prefs = useSyncPrefs();
   const online = useSyncStore((state) => state.online);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
@@ -73,8 +75,9 @@ export function OfflineDataScreen() {
 
   const lastDownload = prefs.lastManualAt ?? lastSyncedAt;
   const recaudador = onlyFindsBySearch();
-  // El servidor dice qué aplica a este usuario; los roles quedan de respaldo.
-  const canOrders = prefs.meta.ordersAllowed && !recaudador && (isAdmin() || isVendedor() || isBodeguero());
+  // El servidor dice qué aplica a este usuario; los roles quedan de respaldo,
+  // con la misma regla que `orders_allowed` (admin, vendedor, gestor de cobro).
+  const canOrders = prefs.meta.ordersAllowed && !recaudador && carryOrders;
   const canCatalog = prefs.meta.catalogAllowed && !recaudador;
   const stale = lastDownload != null && Date.now() - lastDownload > PREPARE_PHONE_AFTER_MS;
 

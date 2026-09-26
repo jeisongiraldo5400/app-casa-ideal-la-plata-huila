@@ -37,6 +37,7 @@ jest.mock('@/hooks/useUserRoles', () => ({
     isVendedor: () => true,
     isBodeguero: () => false,
     onlyFindsBySearch: () => mockRecaudador,
+    roles: mockRecaudador ? [{ role: { nombre: 'recaudador' } }] : [{ role: { nombre: 'vendedor' } }],
   }),
 }));
 
