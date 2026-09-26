@@ -1,38 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '@/components/theme';
-import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
-import { formatCOP } from '@/lib/creditCalculator';
-import { formatNegocioCodigo, labelCuotaNombre } from '@/lib/negocioLabels';
-import { CarteraFilterModal, DEFAULT_CARTERA_FILTERS, type CarteraFilterValues } from '@/components/cartera/CarteraFilterModal';
-import { CarteraSearchField } from '@/components/cartera/CarteraSearchField';
-import { CarteraCuotaPeople } from '@/components/cartera/CarteraCuotaPeople';
+import { Radius, Spacing, getColors } from '@/constants/theme';
+import { CarteraFilterModal } from '@/components/cartera/CarteraFilterModal';
+import { CarteraCuotaRow } from '@/components/cartera/CarteraCuotaRow';
+import { CarteraEmptyState } from '@/components/cartera/CarteraEmptyState';
+import { CarteraListFooter } from '@/components/cartera/CarteraListFooter';
+import { CarteraListHeader } from '@/components/cartera/CarteraListHeader';
 import { CollectionManagerPicker } from '@/components/cartera/CollectionManagerPicker';
 import { CollectionManagerPaymentsModal } from '@/components/cartera/CollectionManagerPaymentsModal';
 import { MisCobrosEntryButton } from '@/components/cartera/mis-cobros/MisCobrosEntryButton';
-import { DownloadDataButton } from '@/components/offline';
-import { type CarteraDashboard, type CarteraRow, type CollectionManager } from '@/lib/cartera/carteraService';
-import { loadCarteraScreen } from '@/lib/cartera/loadCarteraScreen';
-import { carteraFiltersKey, getCarteraStamp, invalidateCartera, markCarteraLoaded, needsCarteraRefresh } from '@/lib/cartera/carteraCache';
-import { EMPTY_CARTERA_CATALOGS, loadCarteraCatalogs, type CarteraCatalogs } from '@/lib/cartera/carteraCatalogs';
-import { parseCarteraDueParam } from '@/lib/cartera/carteraDeepLink';
-import { clearCarteraFilters, countActiveCarteraFilters, describeCarteraFilters, dueRangeError } from '@/lib/cartera/carteraFilters';
+import { useCarteraList } from '@/components/cartera/infrastructure/hooks/useCarteraList';
+import type { CollectionManager } from '@/lib/cartera/carteraService';
+import { countActiveCarteraFilters, describeCarteraFilters } from '@/lib/cartera/carteraFilters';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
-import { errorMessage } from '@/lib/errorMessage';
-
-const PAGE_SIZE = 10;
-type Filters = CarteraFilterValues;
-const INITIAL_FILTERS: Filters = DEFAULT_CARTERA_FILTERS;
-
-const STATUS_LABEL: Record<string,string>={mora:'En mora',parcial:'Parcial',pagada:'Pagada',pendiente:'Pendiente'};
-
-function daysOverdue(date: string) { const due=new Date(`${date}T12:00:00`); const today=new Date(); today.setHours(12,0,0,0); return Math.max(0,Math.floor((today.getTime()-due.getTime())/86400000)); }
 
 export default function CarteraScreen() {
   return (
@@ -43,107 +29,154 @@ export default function CarteraScreen() {
 }
 
 function CarteraScreenInner() {
-  const router=useRouter(); const {isDark}=useTheme(); const colors=getColors(isDark); const {isAdmin,isGestorCobro,onlyFindsBySearch}=useUserRoles();
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const { isAdmin, isGestorCobro, onlyFindsBySearch } = useUserRoles();
   // El recaudador cobra en cualquier negocio pero no recorre la cartera: solo
-  // ve lo que busca (20261125120000). El servidor ya no le devuelve nada sin
-  // término; aquí se explica por qué, en vez de dejar una lista vacía.
-  const searchOnly=onlyFindsBySearch();
-  const [filters,setFilters]=useState<Filters>(INITIAL_FILTERS); const [draftFilters,setDraftFilters]=useState<Filters>(INITIAL_FILTERS); const [filtersOpen,setFiltersOpen]=useState(false);
-  const [rows,setRows]=useState<CarteraRow[]>([]); const [totalCount,setTotalCount]=useState(0); const [page,setPage]=useState(1); const [loading,setLoading]=useState(true); const [loadingMore,setLoadingMore]=useState(false); const [refreshing,setRefreshing]=useState(false);
-  const [dashboard,setDashboard]=useState<CarteraDashboard|null>(null);
-  // Municipios, vendedores y métodos de pago: los tres a la vez y una sola vez por sesión.
-  const [catalogs,setCatalogs]=useState<CarteraCatalogs>(EMPTY_CARTERA_CATALOGS);
-  const [fromCache,setFromCache]=useState(false);
-  const lastSyncedAt=useSyncStore((state)=>state.lastSyncedAt);
-  const [managerPickerOpen,setManagerPickerOpen]=useState(false); const [selectedManager,setSelectedManager]=useState<CollectionManager|null>(null); const [managerModalOpen,setManagerModalOpen]=useState(false);
+  // ve lo que busca (20261125120000). Aquí se explica por qué, en vez de dejar
+  // una lista vacía.
+  const searchOnly = onlyFindsBySearch();
+  const list = useCarteraList({ searchOnly });
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const [managerPickerOpen, setManagerPickerOpen] = useState(false);
+  const [selectedManager, setSelectedManager] = useState<CollectionManager | null>(null);
+  const [managerModalOpen, setManagerModalOpen] = useState(false);
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
-  useScreenLoading(loading);
-  // Esta instancia ya tiene datos en pantalla. La marca de frescura vive en el
-  // módulo y sobrevive a un remontaje; sin este pestillo, una pantalla recién
-  // montada con la marca fresca se quedaría vacía y sin pedir nada.
-  const hasRows=useRef(false);
-  // Cada carga lleva un número: la respuesta de una consulta vieja (filtros o
-  // búsqueda que ya cambiaron) no pisa la lista de la consulta vigente.
-  const requestSeq=useRef(0);
+  useScreenLoading(list.loading);
 
-
-  // `force` salta la caché de frescura: lo usan el botón de recargar y el tirón
-  // para refrescar, que siempre tienen que pedir de verdad.
-  const load=useCallback(async(target:number=1, reset:boolean=true, options?:{force?:boolean})=>{
-    const key=carteraFiltersKey(filters);
-    // Volver a la pantalla con los mismos filtros y datos recientes no vuelve a
-    // pedir nada; paginar («cargar más») siempre pide.
-    if(reset&&!options?.force&&hasRows.current&&!needsCarteraRefresh(getCarteraStamp(),key,Date.now())){setLoading(false);setRefreshing(false);return;}
-    // Sin término, al recaudador el servidor no le devuelve cuotas: no se pide.
-    const seq=++requestSeq.current;
-    if(searchOnly&&(filters.search||'').trim().length===0){
-      hasRows.current=false;setRows([]);setTotalCount(0);setDashboard(null);
-      setLoading(false);setLoadingMore(false);setRefreshing(false);return;
+  const { filters } = list;
+  const activeCount = countActiveCarteraFilters(filters);
+  const hasSearch = (filters.search || '').trim().length > 0;
+  const countLabel =
+    searchOnly && !hasSearch
+      ? 'Cobro por búsqueda'
+      : `${list.totalCount} ${filters.filter === 'pagadas' ? 'cuotas pagadas' : 'cuotas abiertas'}`;
+  const showManager = () => {
+    if (isGestorCobro() && !isAdmin()) {
+      Alert.alert('Mis cobros', 'Seleccione su usuario desde la lista de gestores disponible para su cuenta.');
     }
-    if(reset)setLoading(true);else setLoadingMore(true);
-    try {
-      const result=await loadCarteraScreen({...filters,page:target,pageSize:PAGE_SIZE,includeDashboard:reset});
-      if(seq!==requestSeq.current)return;
-      setRows(current=>reset?result.rows:[...current,...result.rows]);
-      setTotalCount(result.totalCount);
-      setPage(target);
-      setFromCache(result.fromCache);
-      if(result.dashboard)setDashboard(result.dashboard);
-      if(reset){hasRows.current=true;markCarteraLoaded(key);}
-    }catch(e:any){
-      if(seq!==requestSeq.current)return;
-      if(reset){hasRows.current=false;setRows([]);setTotalCount(0);setFromCache(false);}
-      Alert.alert('Cartera', errorMessage(e, 'No fue posible cargar la información'));
-    }finally{if(seq===requestSeq.current){setLoading(false);setLoadingMore(false);setRefreshing(false);}}
-  },[filters,searchOnly]);
-  useFocusEffect(useCallback(()=>{void load(1,true);},[load]));
-  // El detalle del negocio es donde se registran y se anulan los pagos: al
-  // volver de allí la cartera se vuelve a pedir aunque hayan pasado segundos.
-  const openNegocio=useCallback((id:string)=>{invalidateCartera();router.push(`/negocio/${id}`);},[router]);
-  // Un recordatorio de cobro abre Cartera con `?due=YYYY-MM-DD&n=<aviso>`. Es un efecto y no el estado
-  // inicial porque la pestaña conserva su estado: si ya estaba abierta, solo cambian los parámetros.
-  const params=useLocalSearchParams<{due?:string;n?:string}>();
-  useEffect(()=>{const due=parseCarteraDueParam(params.due);if(!due)return;const next:Filters={...INITIAL_FILTERS,dueFrom:due,dueTo:due};setFilters(next);setDraftFilters(next);},[params.due,params.n]);
-  useEffect(()=>{let alive=true;void loadCarteraCatalogs().then((next)=>{if(alive)setCatalogs(next);});return()=>{alive=false;};},[]);
-  const openFilters=()=>{setDraftFilters(filters);setFiltersOpen(true);};
-  // Aplicar reemplaza los filtros (y con ellos la clave de carga): la lista
-  // vuelve a la página 1. Cerrar sin aplicar descarta el borrador.
-  const applyFilters=()=>{if(dueRangeError(draftFilters.dueFrom,draftFilters.dueTo))return;setFilters(draftFilters);setFiltersOpen(false);};
-  const cancelFilters=()=>{setDraftFilters(filters);setFiltersOpen(false);};
-  const clearFilters=()=>{const next=clearCarteraFilters(filters,INITIAL_FILTERS);setFilters(next);setDraftFilters(next);};
-  const changeSearch=useCallback((term:string)=>{setFilters((current)=>current.search===term?current:{...current,search:term});setDraftFilters((current)=>({...current,search:term}));},[]);
-  const activeCount=countActiveCarteraFilters(filters);
-  const showManager=()=>{if(isGestorCobro()&&!isAdmin()){Alert.alert('Mis cobros','Seleccione su usuario desde la lista de gestores disponible para su cuenta.');}setManagerPickerOpen(true);};
-  const hasSearch=(filters.search||'').trim().length>0;
-  const summary=dashboard?.summary||{}; const primary=[['Cartera pendiente',formatCOP(Number(summary.total_balance||0)),colors.primary.main],['Cartera vencida',formatCOP(Number(summary.overdue_balance||0)),colors.error.main],['Recaudado mes',formatCOP(Number(summary.collected_month||0)),colors.success.main],['Cumplimiento',`${Number(summary.collection_compliance||0).toFixed(1)}%`,Number(summary.collection_compliance||0)>=90?colors.success.main:colors.warning.main]];
-  return <View style={[styles.container,{backgroundColor:colors.background.default}]}> 
-    <FlatList data={rows} keyExtractor={(item)=>item.cuota_id} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load(1,true,{force:true});}}/>}
-      ListHeaderComponent={<View>
-      <View style={styles.top}><View><Text style={{color:colors.text.secondary,fontSize:12}}>{searchOnly&&!hasSearch?'Cobro por búsqueda':`${totalCount} ${filters.filter==='pagadas'?'cuotas pagadas':'cuotas abiertas'}`}</Text>{fromCache?<Text style={{color:colors.text.secondary,fontSize:12,marginTop:2}}>{formatLocalDataLabel(lastSyncedAt)}</Text>:null}</View><View style={styles.actions}><Pressable onPress={openFilters} accessibilityRole="button" accessibilityLabel={activeCount?`Filtros, ${activeCount} activos`:'Filtros'} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="tune" size={23} color={colors.primary.main}/>{activeCount?<View style={[styles.badge,{backgroundColor:colors.primary.main}]}><Text style={[styles.badgeText,{color:colors.primary.contrastText}]}>{activeCount}</Text></View>:null}</Pressable><Pressable onPress={()=>void load(1,true,{force:true})} style={[styles.icon,{backgroundColor:colors.background.paper}]}><MaterialIcons name="refresh" size={23} color={colors.primary.main}/></Pressable></View></View>
-      {!searchOnly&&<View style={styles.cards}>{primary.map(([label,value,color])=><View key={label as string} style={[styles.card,{backgroundColor:colors.background.paper,borderColor:colors.divider}]}><Text style={{color:colors.text.secondary,fontSize:11}}>{label}</Text><Text style={{color:color as string,fontWeight:'800',fontSize:15}} numberOfLines={1}>{value}</Text></View>)}</View>}
-      <MisCobrosEntryButton/>
-      {(isAdmin()||isGestorCobro())&&<Pressable onPress={showManager} style={[styles.managerButton,{backgroundColor:colors.background.paper,borderColor:colors.divider}]} accessibilityRole="button">
-        <View style={styles.managerButtonLeading}>
-          <MaterialIcons name="people-alt" size={20} color={colors.primary.main} />
-        </View>
-        <Text style={[styles.managerButtonLabel,{color:colors.text.primary}]} numberOfLines={1}>{isAdmin()?'Ver cobros por gestor':'Cobros de mi cartera'}</Text>
-        <View style={styles.managerButtonChevron}>
-          <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
-        </View>
-      </Pressable>}
-      <Text style={[styles.section,{color:colors.text.primary}]}>Cuotas</Text>
-      {/* Buscador de cuotas: por cédula, nombre del cliente o número de negocio. Con señal
-          consulta al servidor; sin señal, la base local (los dos sin tildes). */}
-      <CarteraSearchField value={filters.search||''} colors={colors} onChange={changeSearch}/>
-      <View style={styles.summaryRow}><Text style={[styles.summary,{color:colors.text.secondary}]}>{describeCarteraFilters(filters)}</Text>{activeCount?<Pressable onPress={clearFilters} accessibilityRole="button" accessibilityLabel="Limpiar filtros" hitSlop={8}><Text style={{color:colors.primary.main,fontWeight:'700',fontSize:12}}>Limpiar filtros</Text></Pressable>:null}</View>
-      {fromCache?<Text style={[styles.offlineNote,{color:colors.warning.main}]}>Sin señal: búsqueda y filtros sobre los datos guardados en el teléfono.</Text>:null}
-      </View>}
-      renderItem={({item})=>{const paid=item.status==='pagada';const overdue=paid?0:daysOverdue(item.due_date);const border=item.status==='mora'||overdue>30?colors.error.main:overdue>0?colors.warning.main:colors.primary.main;return <Pressable onPress={()=>openNegocio(item.negocio_id)} style={[styles.row,{backgroundColor:colors.background.paper,borderLeftColor:border}]}><View style={{flex:1,gap:2}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>{formatNegocioCodigo(item.negocio_numero)} · {labelCuotaNombre(item.installment_number)}</Text><Text style={{color:colors.text.secondary,fontSize:13}}>{item.customer_name||'Cliente'}{item.customer_id_number?` · CC ${item.customer_id_number}`:''}{item.municipio_name?` · ${item.municipio_name}`:''}</Text><Text style={{color:overdue>0?colors.error.main:colors.text.secondary,fontSize:12}}>Vence {item.due_date}{overdue>0?` · ${overdue} días de atraso`:''}</Text><CarteraCuotaPeople row={item} colors={colors}/></View><View style={{alignItems:'flex-end',gap:4}}><Text style={{color:colors.text.primary,fontWeight:'800'}}>{formatCOP(Number(paid?item.amount:item.saldo))}</Text>{!paid&&Number(item.amount)!==Number(item.saldo)?<Text style={{color:colors.text.secondary,fontSize:11}}>de {formatCOP(Number(item.amount))}</Text>:null}<Text style={{color:item.status==='mora'?colors.error.main:paid?colors.success.main:colors.text.secondary,fontSize:12,fontWeight:'700'}}>{STATUS_LABEL[item.status]||'Pendiente'}</Text></View></Pressable>}}
-      ListEmptyComponent={loading?<ActivityIndicator color={colors.primary.main} style={{margin:30}}/>:<View style={{alignItems:'center'}}><Text style={[styles.empty,{color:colors.text.secondary}]}>{searchOnly&&!hasSearch?'Busca el negocio que vas a cobrar por su número o por la cédula del cliente. No se muestra la cartera completa.':hasSearch?`Sin cuotas para «${filters.search}»${activeCount?' con estos filtros':''}`:fromCache?'No hay datos locales. Conéctese y pulse Descargar información.':'Sin cuotas para estos filtros'}</Text>{searchOnly&&!hasSearch?null:<DownloadDataButton variant="cta"/>}</View>}
-      ListFooterComponent={rows.length<totalCount?<Pressable disabled={loadingMore} onPress={()=>void load(page+1,false)} style={[styles.loadMore,{borderColor:colors.divider}]}>{loadingMore?<ActivityIndicator color={colors.primary.main}/>:<Text style={{color:colors.primary.main,fontWeight:'700'}}>Cargar más · {rows.length} de {totalCount}</Text>}</Pressable>:rows.length?<Text style={[styles.end,{color:colors.text.secondary}]}>Mostrando {rows.length} de {totalCount} cuotas</Text>:null}/>
-    <CarteraFilterModal visible={filtersOpen} municipios={catalogs.municipios} sellers={catalogs.sellers} paymentMethods={catalogs.paymentMethods} values={draftFilters} onChange={setDraftFilters} onApply={applyFilters} onClose={cancelFilters} showGestor={isAdmin()}/>
-    <CollectionManagerPicker visible={managerPickerOpen} onClose={()=>setManagerPickerOpen(false)} onSelect={(manager)=>{setSelectedManager(manager);setManagerPickerOpen(false);setManagerModalOpen(true);}}/>
-    <CollectionManagerPaymentsModal visible={managerModalOpen} manager={selectedManager} colors={colors} onClose={()=>{setManagerModalOpen(false);setSelectedManager(null)}} onOpenBusiness={(id)=>{setManagerModalOpen(false);setSelectedManager(null);openNegocio(id)}}/>
-  </View>;
+    setManagerPickerOpen(true);
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background.default }]}>
+      <FlatList
+        data={list.rows}
+        keyExtractor={(item) => item.cuota_id}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={list.refreshing} onRefresh={list.refresh} />}
+        ListHeaderComponent={
+          <CarteraListHeader
+            colors={colors}
+            countLabel={countLabel}
+            localDataLabel={list.fromCache ? formatLocalDataLabel(lastSyncedAt) : null}
+            activeCount={activeCount}
+            onOpenFilters={list.openFilters}
+            onReload={list.reload}
+            showSummary={!searchOnly}
+            summary={list.dashboard?.summary}
+            actions={
+              <>
+                <MisCobrosEntryButton />
+                {isAdmin() || isGestorCobro() ? (
+                  <Pressable
+                    onPress={showManager}
+                    style={[styles.managerButton, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
+                    accessibilityRole="button">
+                    <View style={styles.managerButtonIcon}>
+                      <MaterialIcons name="people-alt" size={20} color={colors.primary.main} />
+                    </View>
+                    <Text style={[styles.managerButtonLabel, { color: colors.text.primary }]} numberOfLines={1}>
+                      {isAdmin() ? 'Ver cobros por gestor' : 'Cobros de mi cartera'}
+                    </Text>
+                    <View style={styles.managerButtonIcon}>
+                      <MaterialIcons name="chevron-right" size={22} color={colors.text.secondary} />
+                    </View>
+                  </Pressable>
+                ) : null}
+              </>
+            }
+            search={filters.search || ''}
+            onSearchChange={list.changeSearch}
+            filtersDescription={describeCarteraFilters(filters)}
+            onClearFilters={list.clearFilters}
+            fromCache={list.fromCache}
+          />
+        }
+        renderItem={({ item }) => <CarteraCuotaRow row={item} colors={colors} onPress={list.openNegocio} />}
+        ListEmptyComponent={
+          <CarteraEmptyState
+            loading={list.loading}
+            searchOnly={searchOnly}
+            search={filters.search || ''}
+            activeCount={activeCount}
+            fromCache={list.fromCache}
+            colors={colors}
+          />
+        }
+        ListFooterComponent={
+          <CarteraListFooter
+            shown={list.rows.length}
+            total={list.totalCount}
+            loadingMore={list.loadingMore}
+            onLoadMore={list.loadMore}
+            colors={colors}
+          />
+        }
+      />
+      <CarteraFilterModal
+        visible={list.filtersOpen}
+        municipios={list.catalogs.municipios}
+        sellers={list.catalogs.sellers}
+        paymentMethods={list.catalogs.paymentMethods}
+        values={list.draftFilters}
+        onChange={list.setDraftFilters}
+        onApply={list.applyFilters}
+        onClose={list.cancelFilters}
+        showGestor={isAdmin()}
+      />
+      <CollectionManagerPicker
+        visible={managerPickerOpen}
+        onClose={() => setManagerPickerOpen(false)}
+        onSelect={(manager) => {
+          setSelectedManager(manager);
+          setManagerPickerOpen(false);
+          setManagerModalOpen(true);
+        }}
+      />
+      <CollectionManagerPaymentsModal
+        visible={managerModalOpen}
+        manager={selectedManager}
+        colors={colors}
+        onClose={() => {
+          setManagerModalOpen(false);
+          setSelectedManager(null);
+        }}
+        onOpenBusiness={(id) => {
+          setManagerModalOpen(false);
+          setSelectedManager(null);
+          list.openNegocio(id);
+        }}
+      />
+    </View>
+  );
 }
-const styles=StyleSheet.create({container:{flex:1},list:{padding:Spacing.xl,paddingBottom:Spacing.xxxl},top:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:Spacing.lg},actions:{flexDirection:'row',gap:Spacing.sm},icon:{width:46,height:46,alignItems:'center',justifyContent:'center',borderRadius:Radius.control},badge:{position:'absolute',top:4,right:4,minWidth:18,height:18,borderRadius:9,paddingHorizontal:4,alignItems:'center',justifyContent:'center'},badgeText:{fontSize:11,fontWeight:'800'},summaryRow:{flexDirection:'row',alignItems:'flex-start',justifyContent:'space-between',gap:Spacing.sm,marginBottom:8},summary:{flex:1,fontSize:12},offlineNote:{fontSize:12,marginBottom:8},cards:{flexDirection:'row',flexWrap:'wrap',gap:Spacing.md,marginBottom:Spacing.md},card:{width:'48%',minHeight:82,borderWidth:1,borderRadius:Radius.card,padding:Spacing.md,gap:4,...Shadows.card},managerButton:{minHeight:52,borderWidth:1,borderRadius:Radius.control,paddingVertical:Spacing.md,paddingHorizontal:Spacing.lg,flexDirection:'row',alignItems:'center',alignSelf:'stretch',marginBottom:Spacing.md},managerButtonLeading:{width:28,height:28,alignItems:'center',justifyContent:'center',marginRight:10},managerButtonLabel:{flex:1,fontWeight:'700',fontSize:15,lineHeight:20},managerButtonChevron:{width:28,height:28,alignItems:'center',justifyContent:'center',marginLeft:8},section:{fontSize:19,lineHeight:24,fontWeight:'800',marginTop:Spacing.sm},row:{flexDirection:'row',padding:Spacing.lg,borderRadius:Radius.card,borderLeftWidth:4,marginBottom:Spacing.md,gap:Spacing.sm,...Shadows.card},empty:{textAlign:'center',marginVertical:35},loadMore:{minHeight:50,borderWidth:1,borderRadius:Radius.control,padding:Spacing.md,alignItems:'center',marginTop:Spacing.sm},end:{textAlign:'center',marginVertical:Spacing.lg,fontSize:12}});
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  list: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
+  managerButton: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: Radius.control,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginBottom: Spacing.md,
+    gap: 8,
+  },
+  managerButtonIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  managerButtonLabel: { flex: 1, fontWeight: '700', fontSize: 15, lineHeight: 20 },
+});
