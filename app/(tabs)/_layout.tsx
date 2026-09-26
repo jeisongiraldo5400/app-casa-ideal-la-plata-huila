@@ -208,11 +208,10 @@ export default function TabLayout() {
         }}
       />
       {/*
-        Catálogos: el módulo está oculto en esta versión (CATALOGOS_HABILITADOS
-        en constants/features.ts). Las dos pantallas se siguen declarando —los
-        archivos existen y expo-router las registraría igual, y sin `href: null`
-        aparecerían como pestañas— pero con la bandera apagada cada una redirige
-        al inicio antes de montar nada.
+        Catálogos: visible desde el 2026-09-22 (CATALOGOS_HABILITADOS en
+        constants/features.ts). Las dos pantallas llevan `href: null` para no
+        salir como pestañas: se entra desde el inicio. Si la bandera se apaga,
+        cada una redirige al inicio antes de montar nada.
       */}
       <Tabs.Screen
         name="catalogos"
