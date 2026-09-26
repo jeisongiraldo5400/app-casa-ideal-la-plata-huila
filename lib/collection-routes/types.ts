@@ -1,6 +1,30 @@
 export type RouteStatus = 'borrador' | 'activa' | 'completada' | 'cancelada';
 export type StopStatus = 'pendiente' | 'actual' | 'cobrado' | 'sin_pago' | 'reprogramado' | 'omitido';
-export type CandidateFilter = 'todas' | 'hoy' | 'vencidas';
+/**
+ * Estado de cobro para filtrar al armar la ruta. 'vencidas' = en mora;
+ * 'pronto' = al día con una cuota que vence en los próximos 7 días. 'hoy'
+ * solo lo usa la app anterior (el servidor lo sigue aceptando).
+ */
+export type CandidateFilter = 'todas' | 'hoy' | 'vencidas' | 'al_dia' | 'pronto';
+
+/** Filtro de ubicación al armar la ruta. '' en cualquier nivel = sin filtrar. */
+export type RouteLocationFilter = {
+  departamentoId: string;
+  municipioId: string;
+  veredaId: string;
+};
+
+export const EMPTY_ROUTE_LOCATION_FILTER: RouteLocationFilter = {
+  departamentoId: '',
+  municipioId: '',
+  veredaId: '',
+};
+
+export type CandidateQuery = {
+  search: string;
+  filter: CandidateFilter;
+  location: RouteLocationFilter;
+};
 
 export type CollectionRouteCandidate = {
   negocio_id: string;
@@ -16,6 +40,11 @@ export type CollectionRouteCandidate = {
   next_due_date: string;
   open_installments: number;
   total_count: number;
+  /** Desde 20261211120000 (null con el servidor anterior o sin vereda). */
+  vereda_id?: string | null;
+  vereda_name?: string | null;
+  departamento_id?: string | null;
+  departamento_name?: string | null;
 };
 
 export type CollectionRouteStop = {

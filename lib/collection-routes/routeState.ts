@@ -1,4 +1,4 @@
-import { CollectionRouteStop, StopStatus } from './types';
+import { CollectionRouteStop, RouteStatus, StopStatus } from './types';
 
 export const FINAL_STOP_STATUSES: StopStatus[] = ['cobrado', 'sin_pago', 'reprogramado', 'omitido'];
 
@@ -29,3 +29,23 @@ export function getNextActionableStop(stops: CollectionRouteStop[]) {
   return stops.find((stop) => stop.status === 'actual') || stops.find((stop) => stop.status === 'pendiente') || null;
 }
 
+
+export type RouteSummaryLike = { id: string; route_date: string; status: RouteStatus };
+
+/**
+ * Reparte las rutas del gestor para la pantalla principal:
+ * - `today`: la ruta de hoy que no esté cancelada (en borrador, en curso o
+ *   completada). Solo puede haber una por día, así que si ya se completó no se
+ *   ofrece crear otra (el servidor la rechazaría).
+ * - `unfinished`: rutas de otros días que quedaron abiertas; no impiden crear
+ *   la de hoy, pero hay que completarlas o cancelarlas.
+ * - `history`: el resto.
+ */
+export function groupRoutesForHome<T extends RouteSummaryLike>(routes: T[], today: string) {
+  const todayRoute = routes.find((route) => route.route_date === today && route.status !== 'cancelada') || null;
+  const unfinished = routes.filter(
+    (route) => route.id !== todayRoute?.id && (route.status === 'activa' || route.status === 'borrador')
+  );
+  const history = routes.filter((route) => route.id !== todayRoute?.id && !unfinished.includes(route));
+  return { today: todayRoute, unfinished, history };
+}

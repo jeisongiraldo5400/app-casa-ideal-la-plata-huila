@@ -4,7 +4,9 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { errorMessage } from '@/lib/errorMessage';
 import { fetchMyCollectionRoutes } from '@/lib/collection-routes/collectionRouteService';
+import { groupRoutesForHome } from '@/lib/collection-routes/routeState';
 import { CollectionRouteSummary } from '@/lib/collection-routes/types';
+import { bogotaDateValue } from '@/lib/localDate';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -12,7 +14,8 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
-const statusLabel = { borrador: 'Borrador', activa: 'En curso', completada: 'Completada', cancelada: 'Cancelada' };
+const statusLabel = { borrador: 'Sin iniciar', activa: 'En curso', completada: 'Completada', cancelada: 'Cancelada' };
+const routeDateLabel = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString('es-CO');
 
 export default function CollectionRoutesScreen() {
   return (
@@ -27,8 +30,8 @@ function CollectionRoutesScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { loading: rolesLoading, isGestorCobro } = useUserRoles();
-  // Sin señal las rutas no se pueden consultar ni crear: hay que decirlo antes
-  // de que el usuario toque «Crear ruta del día» y vea fallar la pantalla.
+  // Sin señal se ven las rutas guardadas en el teléfono; crear una necesita
+  // señal y hay que decirlo antes de que el usuario toque «Crear ruta del día».
   const online = useNetworkStatus();
   const canUseRoutes = isGestorCobro();
   const [routes, setRoutes] = useState<CollectionRouteSummary[]>([]);
@@ -59,7 +62,7 @@ function CollectionRoutesScreenInner() {
   if (rolesLoading || (canUseRoutes && loading)) return <View style={styles.center}><ActivityIndicator color={colors.primary.main} /></View>;
   if (!canUseRoutes) return <View style={styles.center}><MaterialIcons name="lock" size={44} color={colors.text.secondary} /><Text style={{ color: colors.text.primary }}>Este módulo es exclusivo para gestores de cobro.</Text></View>;
 
-  const active = routes.find((route) => route.status === 'activa' || route.status === 'borrador');
+  const { today: todayRoute, unfinished, history } = groupRoutesForHome(routes, bogotaDateValue());
   return (
     <ScrollView style={{ backgroundColor: colors.background.default }} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={[styles.hero, { backgroundColor: colors.primary.main }]}>
@@ -75,30 +78,15 @@ function CollectionRoutesScreenInner() {
         <View style={[styles.offlineNotice, { borderColor: colors.warning.main, backgroundColor: `${colors.warning.main}1a` }]}>
           <MaterialIcons name="cloud-off" size={22} color={colors.warning.dark} />
           <Text style={{ color: colors.text.primary, flex: 1 }}>
-            Sin conexión: las rutas de cobro no se pueden consultar ni crear hasta que vuelva la señal.
+            Sin conexión: ves las rutas descargadas en el teléfono. Para crear o editar una ruta necesitas señal.
           </Text>
         </View>
       ) : null}
 
-      {online && error ? <Text style={[styles.error, { color: colors.error.main }]}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: colors.error.main }]}>{error}</Text> : null}
 
-      {active ? (
-        <TouchableOpacity style={[styles.activeCard, { backgroundColor: colors.background.paper }]} onPress={() => router.push(`/ruta-cobros/${active.id}` as any)}>
-          <View style={styles.rowBetween}>
-            <View style={[styles.iconCircle, { backgroundColor: active.status === 'activa' ? '#dbeafe' : '#f1f5f9' }]}>
-              <MaterialIcons name={active.status === 'activa' ? 'near-me' : 'edit-road'} size={26} color={active.status === 'activa' ? '#2563eb' : '#64748b'} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Ruta de hoy</Text>
-              <Text style={{ color: colors.text.secondary }}>{statusLabel[active.status]} · {active.completed_count}/{active.stop_count} visitas</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={28} color={colors.text.secondary} />
-          </View>
-          <View style={styles.metrics}>
-            <View><Text style={styles.metricLabel}>Esperado</Text><Text style={[styles.metricValue, { color: colors.text.primary }]}>{money(active.expected_total)}</Text></View>
-            <View><Text style={styles.metricLabel}>Recaudado</Text><Text style={[styles.metricValue, { color: colors.success.main }]}>{money(active.collected_total)}</Text></View>
-          </View>
-        </TouchableOpacity>
+      {todayRoute ? (
+        <RouteCard route={todayRoute} title="Ruta de hoy" colors={colors} onPress={() => router.push(`/ruta-cobros/${todayRoute.id}` as any)} />
       ) : (
         <TouchableOpacity
           disabled={!online}
@@ -108,20 +96,70 @@ function CollectionRoutesScreenInner() {
           <MaterialIcons name="add-road" size={38} color={online ? colors.primary.main : colors.text.secondary} />
           <Text style={[styles.cardTitle, { color: colors.text.primary }]}>Crear ruta del día</Text>
           <Text style={{ color: colors.text.secondary, textAlign: 'center' }}>
-            {online ? 'Selecciona y ordena los negocios que visitarás.' : 'Necesitas conexión para crear la ruta del día.'}
+            {online ? 'Elige entre todos tus negocios asignados y ordena las visitas.' : 'Necesitas conexión para crear la ruta del día.'}
           </Text>
         </TouchableOpacity>
       )}
 
+      {unfinished.map((route) => (
+        <RouteCard
+          key={route.id}
+          route={route}
+          title={`Ruta del ${routeDateLabel(route.route_date)} sin cerrar`}
+          hint="Complétala o cancélala para que no quede abierta."
+          colors={colors}
+          onPress={() => router.push(`/ruta-cobros/${route.id}` as any)}
+        />
+      ))}
+
       <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Historial reciente</Text>
-      {routes.filter((route) => route.id !== active?.id).map((route) => (
+      {history.length === 0 ? <Text style={{ color: colors.text.secondary }}>Aún no hay rutas anteriores.</Text> : null}
+      {history.map((route) => (
         <TouchableOpacity key={route.id} style={[styles.historyCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]} onPress={() => router.push(`/ruta-cobros/${route.id}` as any)}>
           <MaterialIcons name={route.status === 'completada' ? 'check-circle' : 'cancel'} size={24} color={route.status === 'completada' ? colors.success.main : colors.text.secondary} />
-          <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{new Date(`${route.route_date}T12:00:00`).toLocaleDateString('es-CO')}</Text><Text style={{ color: colors.text.secondary }}>{route.completed_count}/{route.stop_count} visitas · {money(route.collected_total)}</Text></View>
+          <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{routeDateLabel(route.route_date)}</Text><Text style={{ color: colors.text.secondary }}>{route.completed_count}/{route.stop_count} visitas · {money(route.collected_total)}</Text></View>
           <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{statusLabel[route.status]}</Text>
         </TouchableOpacity>
       ))}
     </ScrollView>
+  );
+}
+
+function RouteCard({
+  route,
+  title,
+  hint,
+  colors,
+  onPress,
+}: {
+  route: CollectionRouteSummary;
+  title: string;
+  hint?: string;
+  colors: ReturnType<typeof getColors>;
+  onPress: () => void;
+}) {
+  const running = route.status === 'activa';
+  const done = route.status === 'completada';
+  const icon = done ? 'check-circle' : running ? 'near-me' : 'edit-road';
+  const tint = done ? colors.success.main : running ? colors.primary.main : colors.text.secondary;
+  return (
+    <TouchableOpacity accessibilityRole="button" style={[styles.activeCard, { backgroundColor: colors.background.paper }]} onPress={onPress}>
+      <View style={styles.rowBetween}>
+        <View style={[styles.iconCircle, { backgroundColor: `${tint}22` }]}>
+          <MaterialIcons name={icon} size={26} color={tint} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: colors.text.primary }]}>{title}</Text>
+          <Text style={{ color: colors.text.secondary }}>{statusLabel[route.status]} · {route.completed_count}/{route.stop_count} visitas</Text>
+          {hint ? <Text style={{ color: colors.warning.dark, fontSize: 12, marginTop: 2 }}>{hint}</Text> : null}
+        </View>
+        <MaterialIcons name="chevron-right" size={28} color={colors.text.secondary} />
+      </View>
+      <View style={[styles.metrics, { borderTopColor: colors.divider }]}>
+        <View><Text style={[styles.metricLabel, { color: colors.text.secondary }]}>Esperado</Text><Text style={[styles.metricValue, { color: colors.text.primary }]}>{money(route.expected_total)}</Text></View>
+        <View><Text style={[styles.metricLabel, { color: colors.text.secondary }]}>Recaudado</Text><Text style={[styles.metricValue, { color: colors.success.main }]}>{money(route.collected_total)}</Text></View>
+      </View>
+    </TouchableOpacity>
   );
 }
 

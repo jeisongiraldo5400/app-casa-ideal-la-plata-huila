@@ -1,21 +1,26 @@
-import { RouteRoadmap } from '@/components/collection-routes/RouteRoadmap';
+import { RouteOfflineCard } from '@/components/collection-routes/RouteOfflineCard';
+import { RouteRoadmap, stopOutcomeText } from '@/components/collection-routes/RouteRoadmap';
 import { useTheme } from '@/components/theme';
 import { BackButton } from '@/components/ui/BackButton';
 import { getColors } from '@/constants/theme';
 import {
+  downloadRouteForOffline,
   fetchCollectionRoute,
   finishCollectionRoute,
+  getRouteOfflineStatus,
   selectCollectionRouteStop,
   startCollectionRoute,
   updateCollectionRouteStop,
   type RouteActionResult,
 } from '@/lib/collection-routes/collectionRouteService';
-import { getRouteProgress } from '@/lib/collection-routes/routeState';
+import { getRouteProgress, isFinalStopStatus } from '@/lib/collection-routes/routeState';
+import type { RouteOfflineStatus } from '@/lib/collection-routes/routeOffline';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { CollectionRoute, CollectionRouteStop, StopStatus } from '@/lib/collection-routes/types';
 import { getCachedActiveRoute } from '@/lib/collection-routes/routeCache';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
@@ -24,6 +29,12 @@ import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { errorMessage } from '@/lib/errorMessage';
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
+const ROUTE_EYEBROW: Record<CollectionRoute['status'], string> = {
+  borrador: 'RUTA SIN INICIAR',
+  activa: 'RUTA EN CURSO',
+  completada: 'RUTA COMPLETADA',
+  cancelada: 'RUTA CANCELADA',
+};
 
 export default function CollectionRouteDetailScreen() {
   return (
@@ -35,7 +46,8 @@ export default function CollectionRouteDetailScreen() {
 
 function CollectionRouteDetailScreenInner() {
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, nueva } = useLocalSearchParams<{ id: string; nueva?: string }>();
+  const online = useNetworkStatus();
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -47,26 +59,86 @@ function CollectionRouteDetailScreenInner() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [offlineStatus, setOfflineStatus] = useState<RouteOfflineStatus | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const offeredDownload = useRef(false);
+
+  const refreshOfflineStatus = useCallback(async (current: CollectionRoute, fromServer: boolean) => {
+    try {
+      setOfflineStatus(await getRouteOfflineStatus(current.id, fromServer ? current : null));
+    } catch {
+      setOfflineStatus(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setLoadError('');
-    try { setRoute(await fetchCollectionRoute(id)); }
-    catch (e: any) {
+    try {
+      const current = await fetchCollectionRoute(id);
+      setRoute(current);
+      void refreshOfflineStatus(current, online);
+    }
+    catch (e: unknown) {
       if (isNetworkError(e)) {
         const cached = await getCachedActiveRoute();
         if (cached?.id === id) {
           setRoute(cached);
+          void refreshOfflineStatus(cached, false);
           return;
         }
       }
       setRoute(null);
-      setLoadError(e.message || 'No fue posible cargar la ruta');
+      setLoadError(errorMessage(e, 'No fue posible cargar la ruta'));
     }
     finally { setLoading(false); }
-  }, [id]);
+  }, [id, online, refreshOfflineStatus]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const download = useCallback(async () => {
+    if (!id) return;
+    setDownloading(true);
+    try {
+      const result = await downloadRouteForOffline(id);
+      if (!result.ok) {
+        Alert.alert(
+          result.reason === 'offline' ? 'Sin conexión' : 'No se pudo descargar',
+          result.reason === 'offline'
+            ? 'Conéctate a internet para descargar la ruta.'
+            : result.message
+        );
+        return;
+      }
+      setOfflineStatus(result.status);
+      if (result.status.state === 'guardada') {
+        Alert.alert('Ruta en el teléfono', 'Puedes abrirla, cobrar y registrar novedades sin señal. Lo que hagas se envía solo cuando vuelva la conexión.');
+      } else {
+        const count = result.status.missingNegocioNumeros.length;
+        Alert.alert(
+          'Descarga incompleta',
+          `${count} ${count === 1 ? 'parada no quedó' : 'paradas no quedaron'} con sus datos en el teléfono. Sin señal no podrás cobrarlas; vuelve a descargar con conexión o cóbralas con señal.`
+        );
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }, [id]);
+
+  // Recién creada: se ofrece descargarla de una vez (nada baja solo).
+  useEffect(() => {
+    if (!nueva || offeredDownload.current || !route || !offlineStatus || !online) return;
+    if (offlineStatus.state === 'guardada') return;
+    offeredDownload.current = true;
+    Alert.alert(
+      'Ruta creada',
+      '¿Descargarla ahora al teléfono para trabajarla sin señal?',
+      [
+        { text: 'Más tarde', style: 'cancel' },
+        { text: 'Descargar', onPress: () => void download() },
+      ]
+    );
+  }, [download, nueva, offlineStatus, online, route]);
 
   const run = async (action: () => Promise<RouteActionResult>, success?: string) => {
     try {
@@ -95,6 +167,7 @@ function CollectionRouteDetailScreenInner() {
   const progress = getRouteProgress(route.stops);
   const allDone = progress.total > 0 && progress.completed === progress.total;
   const activeStop = route.stops.find((stop) => stop.status === 'actual');
+  const open = route.status === 'borrador' || route.status === 'activa';
   const goBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)/ruta-cobros' as any);
@@ -113,7 +186,7 @@ function CollectionRouteDetailScreenInner() {
       </View>
       <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />} contentContainerStyle={{ paddingBottom: 34 }}>
         <View style={[styles.summary, { backgroundColor: colors.primary.main }]}>
-          <View style={styles.summaryTop}><View><Text style={styles.summaryEyebrow}>{route.status === 'activa' ? 'RUTA EN CURSO' : route.status.toUpperCase()}</Text><Text style={styles.summaryTitle}>{progress.completed} de {progress.total} visitas</Text></View><View style={styles.percent}><Text style={styles.percentText}>{progress.percentage}%</Text></View></View>
+          <View style={styles.summaryTop}><View><Text style={styles.summaryEyebrow}>{ROUTE_EYEBROW[route.status]}</Text><Text style={styles.summaryTitle}>{progress.completed} de {progress.total} visitas</Text></View><View style={styles.percent}><Text style={styles.percentText}>{progress.percentage}%</Text></View></View>
           <View style={styles.progressTrack}><View style={[styles.progressValue, { width: `${progress.percentage}%` }]} /></View>
           <View style={styles.moneyRow}><View><Text style={styles.moneyLabel}>Saldo en ruta</Text><Text style={styles.moneyValue}>{money(route.total_expected)}</Text></View><View><Text style={styles.moneyLabel}>Recaudado</Text><Text style={styles.moneyValue}>{money(route.total_collected)}</Text></View></View>
         </View>
@@ -121,6 +194,26 @@ function CollectionRouteDetailScreenInner() {
         {route.status === 'borrador' && <View style={styles.actionBox}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Tu recorrido está preparado</Text><Text style={{ color: colors.text.secondary, textAlign: 'center' }}>Al iniciar, la primera parada quedará destacada.</Text><TouchableOpacity disabled={saving} style={[styles.primaryButton, { backgroundColor: colors.primary.main }]} onPress={() => run(() => startCollectionRoute(route.id), 'Ruta iniciada')}><MaterialIcons name="play-arrow" color="#fff" size={22} /><Text style={styles.buttonText}>Iniciar ruta</Text></TouchableOpacity></View>}
 
         {route.status === 'activa' && activeStop && <TouchableOpacity style={[styles.nextCard, { backgroundColor: colors.background.paper, borderColor: colors.primary.main }]} onPress={() => setSelectedStop(activeStop)}><View style={[styles.nextIcon, { backgroundColor: '#dbeafe' }]}><MaterialIcons name="near-me" size={25} color="#2563eb" /></View><View style={{ flex: 1 }}><Text style={{ color: '#2563eb', fontSize: 11, fontWeight: '900' }}>PARADA ACTUAL</Text><Text style={[styles.actionTitle, { color: colors.text.primary }]}>{activeStop.customer_name}</Text><Text style={{ color: colors.text.secondary }} numberOfLines={1}>{activeStop.customer_address}</Text></View><MaterialIcons name="chevron-right" size={25} color={colors.text.secondary} /></TouchableOpacity>}
+
+        {open ? (
+          <RouteOfflineCard
+            status={offlineStatus}
+            online={online}
+            downloading={downloading}
+            highlight={Boolean(nueva)}
+            onDownload={() => void download()}
+          />
+        ) : null}
+
+        {open && online ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            style={[styles.editButton, { borderColor: colors.primary.main }]}
+            onPress={() => router.push(`/ruta-cobros/editar/${route.id}` as never)}>
+            <MaterialIcons name="edit-road" size={20} color={colors.primary.main} />
+            <Text style={{ color: colors.primary.main, fontWeight: '800' }}>Agregar, quitar u ordenar paradas</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.roadContainer}><RouteRoadmap stops={route.stops} onPressStop={setSelectedStop} /></View>
 
@@ -134,6 +227,12 @@ function CollectionRouteDetailScreenInner() {
           {selectedStop && <>
             <View style={styles.sheetHeader}><View><Text style={{ color: colors.primary.main, fontWeight: '900' }}>PARADA {selectedStop.position}</Text><Text style={[styles.sheetTitle, { color: colors.text.primary }]}>{selectedStop.customer_name}</Text><Text style={{ color: colors.text.secondary }}>Negocio {formatNegocioCodigo(selectedStop.negocio_numero)}</Text></View><TouchableOpacity onPress={() => setSelectedStop(null)}><MaterialIcons name="close" size={26} color={colors.text.secondary} /></TouchableOpacity></View>
             <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}><Text style={{ color: colors.text.secondary }}>{[selectedStop.customer_address, selectedStop.municipality_name].filter(Boolean).join(', ')}</Text><Text style={[styles.balance, { color: colors.text.primary }]}>{money(selectedStop.expected_balance)}</Text></View>
+            {isFinalStopStatus(selectedStop.status) ? (
+              <View style={[styles.infoBox, { backgroundColor: colors.background.default }]}>
+                <Text style={{ color: colors.text.primary, fontWeight: '800' }}>{stopOutcomeText(selectedStop) || 'Visita atendida'}</Text>
+                {selectedStop.notes ? <Text style={{ color: colors.text.secondary }}>{selectedStop.notes}</Text> : null}
+              </View>
+            ) : null}
             {selectedStop.customer_phone && <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => Linking.openURL(`tel:${selectedStop.customer_phone}`)}><MaterialIcons name="call" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Llamar al cliente</Text></TouchableOpacity>}
             <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.divider }]} onPress={() => { setSelectedStop(null); router.push(`/negocio/${selectedStop.negocio_id}` as any); }}><MaterialIcons name="visibility" size={20} color={colors.primary.main} /><Text style={{ color: colors.primary.main, fontWeight: '800' }}>Ver negocio</Text></TouchableOpacity>
             {route.status === 'activa' && selectedStop.status === 'pendiente' && (
@@ -151,7 +250,7 @@ function CollectionRouteDetailScreenInner() {
             )}
             {route.status === 'activa' && selectedStop.status === 'actual' && !outcome && <>
               <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.success.main }]} onPress={() => { setSelectedStop(null); router.push(`/negocio/${selectedStop.negocio_id}?routeStopId=${selectedStop.id}` as any); }}><MaterialIcons name="payments" size={21} color="#fff" /><Text style={styles.buttonText}>Registrar cobro</Text></TouchableOpacity>
-              <View style={styles.outcomeRow}><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('sin_pago')}><MaterialIcons name="money-off" size={20} color="#f59e0b" /><Text style={styles.outcomeText}>Sin pago</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('reprogramado')}><MaterialIcons name="event-repeat" size={20} color="#7c3aed" /><Text style={styles.outcomeText}>Reprogramar</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('omitido')}><MaterialIcons name="skip-next" size={20} color="#dc2626" /><Text style={styles.outcomeText}>Omitir</Text></TouchableOpacity></View>
+              <View style={styles.outcomeRow}><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('sin_pago')}><MaterialIcons name="money-off" size={20} color="#f59e0b" /><Text style={[styles.outcomeText, { color: colors.text.secondary }]}>Sin pago</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('reprogramado')}><MaterialIcons name="event-repeat" size={20} color="#7c3aed" /><Text style={[styles.outcomeText, { color: colors.text.secondary }]}>Reprogramar</Text></TouchableOpacity><TouchableOpacity style={styles.outcomeButton} onPress={() => setOutcome('omitido')}><MaterialIcons name="skip-next" size={20} color="#dc2626" /><Text style={[styles.outcomeText, { color: colors.text.secondary }]}>Omitir</Text></TouchableOpacity></View>
             </>}
             {outcome && <View style={{ gap: 10 }}><Text style={[styles.actionTitle, { color: colors.text.primary }]}>Motivo de la novedad</Text><TextInput value={reason} onChangeText={setReason} placeholder="Motivo obligatorio" placeholderTextColor={colors.text.secondary} style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider }]} /><TextInput value={notes} onChangeText={setNotes} placeholder="Notas adicionales (opcional)" placeholderTextColor={colors.text.secondary} multiline style={[styles.textInput, { color: colors.text.primary, borderColor: colors.divider, minHeight: 70 }]} /><View style={styles.modalActions}><TouchableOpacity onPress={() => setOutcome(null)}><Text style={{ color: colors.text.secondary, fontWeight: '800' }}>Atrás</Text></TouchableOpacity><TouchableOpacity disabled={!reason.trim() || saving} style={[styles.saveOutcome, { backgroundColor: colors.primary.main, opacity: reason.trim() ? 1 : 0.5 }]} onPress={() => run(() => updateCollectionRouteStop(selectedStop.id, outcome, reason, notes, route.id))}><Text style={styles.buttonText}>Guardar novedad</Text></TouchableOpacity></View></View>}
           </>}
@@ -162,5 +261,5 @@ function CollectionRouteDetailScreenInner() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, safeHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }, headerBackButton: { marginLeft: 0 }, safeHeaderTitle: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '900', marginLeft: 12 }, summary: { padding: 20, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 }, summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, summaryEyebrow: { color: '#bfdbfe', fontSize: 11, fontWeight: '900', letterSpacing: 1 }, summaryTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: 3 }, percent: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ffffff22', alignItems: 'center', justifyContent: 'center' }, percentText: { color: '#fff', fontWeight: '900' }, progressTrack: { height: 7, backgroundColor: '#ffffff30', borderRadius: 5, marginVertical: 15, overflow: 'hidden' }, progressValue: { height: '100%', backgroundColor: '#fff', borderRadius: 5 }, moneyRow: { flexDirection: 'row', justifyContent: 'space-between' }, moneyLabel: { color: '#bfdbfe', fontSize: 11 }, moneyValue: { color: '#fff', fontWeight: '900', fontSize: 16, marginTop: 2 }, actionBox: { alignItems: 'center', padding: 22, gap: 9 }, actionTitle: { fontSize: 17, fontWeight: '900' }, primaryButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20, marginTop: 8 }, buttonText: { color: '#fff', fontWeight: '900' }, nextCard: { margin: 16, marginBottom: 2, borderWidth: 1.5, borderRadius: 17, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, nextIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' }, roadContainer: { paddingHorizontal: 13 }, finishButton: { marginHorizontal: 18, height: 52, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, cancelButton: { alignItems: 'center', padding: 20 }, overlay: { flex: 1, backgroundColor: '#0007', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, gap: 11 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#cbd5e1', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between' }, sheetTitle: { fontSize: 22, fontWeight: '900', marginTop: 3 }, infoBox: { padding: 13, borderRadius: 12, gap: 7 }, balance: { fontSize: 19, fontWeight: '900' }, secondaryButton: { height: 45, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, freeSelectionBox: { borderRadius: 13, padding: 11 }, outcomeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }, outcomeButton: { alignItems: 'center', gap: 4, padding: 8 }, outcomeText: { color: '#475569', fontSize: 11, fontWeight: '800' }, textInput: { borderWidth: 1, borderRadius: 12, padding: 12 }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 20 }, saveOutcome: { paddingHorizontal: 18, paddingVertical: 13, borderRadius: 12 },
+  screen: { flex: 1 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, safeHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }, headerBackButton: { marginLeft: 0 }, safeHeaderTitle: { flex: 1, color: '#fff', fontSize: 18, fontWeight: '900', marginLeft: 12 }, summary: { padding: 20, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 }, summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, summaryEyebrow: { color: '#bfdbfe', fontSize: 11, fontWeight: '900', letterSpacing: 1 }, summaryTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: 3 }, percent: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#ffffff22', alignItems: 'center', justifyContent: 'center' }, percentText: { color: '#fff', fontWeight: '900' }, progressTrack: { height: 7, backgroundColor: '#ffffff30', borderRadius: 5, marginVertical: 15, overflow: 'hidden' }, progressValue: { height: '100%', backgroundColor: '#fff', borderRadius: 5 }, moneyRow: { flexDirection: 'row', justifyContent: 'space-between' }, moneyLabel: { color: '#bfdbfe', fontSize: 11 }, moneyValue: { color: '#fff', fontWeight: '900', fontSize: 16, marginTop: 2 }, actionBox: { alignItems: 'center', padding: 22, gap: 9 }, actionTitle: { fontSize: 17, fontWeight: '900' }, primaryButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20, marginTop: 8 }, buttonText: { color: '#fff', fontWeight: '900' }, nextCard: { margin: 16, marginBottom: 2, borderWidth: 1.5, borderRadius: 17, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, nextIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' }, roadContainer: { paddingHorizontal: 13 }, finishButton: { marginHorizontal: 18, height: 52, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, cancelButton: { alignItems: 'center', padding: 20 }, overlay: { flex: 1, backgroundColor: '#0007', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, gap: 11 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#cbd5e1', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between' }, sheetTitle: { fontSize: 22, fontWeight: '900', marginTop: 3 }, infoBox: { padding: 13, borderRadius: 12, gap: 7 }, balance: { fontSize: 19, fontWeight: '900' }, secondaryButton: { height: 45, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, freeSelectionBox: { borderRadius: 13, padding: 11 }, outcomeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }, outcomeButton: { alignItems: 'center', gap: 4, padding: 8 }, outcomeText: { color: '#475569', fontSize: 11, fontWeight: '800' }, editButton: { marginHorizontal: 16, marginTop: 10, minHeight: 44, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, textInput: { borderWidth: 1, borderRadius: 12, padding: 12 }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 20 }, saveOutcome: { paddingHorizontal: 18, paddingVertical: 13, borderRadius: 12 },
 });

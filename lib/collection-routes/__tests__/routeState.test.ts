@@ -1,4 +1,4 @@
-import { getNextActionableStop, getRouteProgress, isFinalStopStatus, moveItem } from '../routeState';
+import { getNextActionableStop, getRouteProgress, groupRoutesForHome, isFinalStopStatus, moveItem } from '../routeState';
 import { CollectionRouteStop } from '../types';
 
 const stop = (id: string, status: CollectionRouteStop['status']): CollectionRouteStop => ({
@@ -50,3 +50,26 @@ describe('routeState', () => {
   });
 });
 
+
+describe('groupRoutesForHome', () => {
+  const r = (id: string, route_date: string, status: 'borrador' | 'activa' | 'completada' | 'cancelada') => ({ id, route_date, status });
+
+  it('la ruta de hoy completada se muestra y no se ofrece crear otra', () => {
+    const result = groupRoutesForHome([r('hoy', '2026-09-25', 'completada'), r('ayer', '2026-09-24', 'completada')], '2026-09-25');
+    expect(result.today?.id).toBe('hoy');
+    expect(result.history.map((route) => route.id)).toEqual(['ayer']);
+  });
+
+  it('una ruta cancelada hoy permite crear otra', () => {
+    const result = groupRoutesForHome([r('hoy', '2026-09-25', 'cancelada')], '2026-09-25');
+    expect(result.today).toBeNull();
+    expect(result.history.map((route) => route.id)).toEqual(['hoy']);
+  });
+
+  it('una ruta de otro día sin cerrar no se hace pasar por la de hoy', () => {
+    const result = groupRoutesForHome([r('vieja', '2026-09-23', 'activa'), r('otra', '2026-09-20', 'borrador')], '2026-09-25');
+    expect(result.today).toBeNull();
+    expect(result.unfinished.map((route) => route.id)).toEqual(['vieja', 'otra']);
+    expect(result.history).toEqual([]);
+  });
+});
