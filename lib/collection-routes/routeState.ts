@@ -1,4 +1,4 @@
-import { CollectionRouteStop, RouteStatus, StopStatus } from './types';
+import { CollectionRoute, CollectionRouteStop, RouteStatus, StopStatus } from './types';
 
 /** Visitas atendidas: el gestor llegó y dejó un resultado. */
 export const VISITED_STOP_STATUSES: StopStatus[] = ['cobrado', 'sin_pago', 'reprogramado', 'omitido'];
@@ -66,9 +66,32 @@ export type RouteSummaryLike = { id: string; route_date: string; status: RouteSt
  */
 export function groupRoutesForHome<T extends RouteSummaryLike>(routes: T[], today: string) {
   const todayRoute = routes.find((route) => route.route_date === today && route.status !== 'cancelada') || null;
+  // Rutas armadas para un día que aún no llega (se pueden abrir y editar).
+  const upcoming = routes
+    .filter((route) => route.route_date > today && (route.status === 'activa' || route.status === 'borrador'))
+    .sort((a, b) => a.route_date.localeCompare(b.route_date));
   const unfinished = routes.filter(
-    (route) => route.id !== todayRoute?.id && (route.status === 'activa' || route.status === 'borrador')
+    (route) =>
+      route.id !== todayRoute?.id &&
+      !upcoming.includes(route) &&
+      (route.status === 'activa' || route.status === 'borrador')
   );
-  const history = routes.filter((route) => route.id !== todayRoute?.id && !unfinished.includes(route));
-  return { today: todayRoute, unfinished, history };
+  const history = routes.filter(
+    (route) => route.id !== todayRoute?.id && !unfinished.includes(route) && !upcoming.includes(route)
+  );
+  return { today: todayRoute, upcoming, unfinished, history };
+}
+
+/**
+ * Enlace al negocio desde la hoja de una parada («Ver negocio»). Si es la
+ * parada actual de una ruta en curso lleva la parada: un cobro hecho desde
+ * ahí cuenta en la ruta igual que con «Registrar cobro». Si no, abre el
+ * negocio sin contexto de ruta (el cobro es un abono normal).
+ */
+export function negocioHrefForStop(
+  route: Pick<CollectionRoute, 'status'>,
+  stop: Pick<CollectionRouteStop, 'id' | 'negocio_id' | 'status'>
+): string {
+  const base = `/negocio/${stop.negocio_id}`;
+  return route.status === 'activa' && stop.status === 'actual' ? `${base}?routeStopId=${stop.id}` : base;
 }

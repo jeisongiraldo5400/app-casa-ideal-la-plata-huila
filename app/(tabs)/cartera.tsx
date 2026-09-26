@@ -14,6 +14,7 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
+import { useUltimaGestion } from '@/components/collection-routes/useUltimaGestion';
 
 export default function CarteraScreen() {
   return (
@@ -33,6 +34,9 @@ function CarteraScreenInner() {
   const searchOnly = onlyFindsBySearch();
   const list = useCarteraList({ searchOnly });
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const online = useSyncStore((state) => state.online);
+  // Última novedad de ruta de los negocios listados: una consulta por página.
+  const gestiones = useUltimaGestion(list.rows.map((row) => row.negocio_id), online, list.rows);
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(list.loading);
 
@@ -71,7 +75,9 @@ function CarteraScreenInner() {
             fromCache={list.fromCache}
           />
         }
-        renderItem={({ item }) => <CarteraCuotaRow row={item} colors={colors} onPress={list.openNegocio} />}
+        renderItem={({ item }) => (
+          <CarteraCuotaRow row={item} colors={colors} onPress={list.openNegocio} gestion={gestiones.get(item.negocio_id)} />
+        )}
         ListEmptyComponent={
           <CarteraEmptyState
             loading={list.loading}
@@ -79,6 +85,8 @@ function CarteraScreenInner() {
             search={filters.search || ''}
             activeCount={activeCount}
             fromCache={list.fromCache}
+            error={list.loadError}
+            onRetry={list.reload}
             colors={colors}
           />
         }

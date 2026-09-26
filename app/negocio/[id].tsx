@@ -127,6 +127,13 @@ import {
   type PaymentMethodOption,
 } from '@/components/negocios/infrastructure/services/paymentMethodsService';
 import { errorMessage } from '@/lib/errorMessage';
+import { useRouteStopPago } from '@/components/collection-routes/useRouteStopPago';
+import { RouteStopPagoBanner } from '@/components/collection-routes/RouteStopPagoBanner';
+import { UltimaGestionCard } from '@/components/collection-routes/UltimaGestionCard';
+import { useUltimaGestion } from '@/components/collection-routes/useUltimaGestion';
+import { isStopNoLongerCurrentError } from '@/lib/collection-routes/routeStopPago';
+import { PagoAmountShortcuts } from '@/components/cartera/cobro/PagoAmountShortcuts';
+import { usePagoFormShortcuts } from '@/components/cartera/cobro/usePagoFormShortcuts';
 
 const TABLE_PAGE_SIZE = 5;
 
@@ -180,6 +187,11 @@ function NegocioDetailScreenInner() {
   const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
+  // Cobro en ruta: la parada solo cuenta el primer cobro y solo si sigue
+  // siendo la actual; sin parada, se ofrece vincularla (ver routeStopPago).
+  const routeStop = useRouteStopPago({ negocioId: id, routeStopIdParam: routeStopId, online, reloadKey: negocio });
+  // Última novedad de ruta («Sin pago» / «Reprogramado») del negocio.
+  const ultimaGestion = useUltimaGestion(id ? [id] : [], online, negocio);
   const [contactSheetOpen, setContactSheetOpen] = useState(false);
 
   useEffect(() => {
@@ -605,6 +617,17 @@ function NegocioDetailScreenInner() {
     enabled: online && !fromLocal,
     reloadKey: negocio,
   });
+  // Método recordado (o efectivo) y atajos de valor en la hoja de cobro.
+  const pagoForm = usePagoFormShortcuts({
+    userId: user?.id,
+    open: payModalOpen,
+    paymentMethods,
+    paymentMethodId: payMethodId,
+    setPaymentMethodId: setPayMethodId,
+    cuotas,
+    pendingBalance,
+    amountOptions: payAmountOptions,
+  });
 
   const pickSupportFromCamera = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -721,6 +744,9 @@ function NegocioDetailScreenInner() {
   };
 
   const onProntoPagoRegistered = async ({ pagoId, values, paidAt, paymentMethodName }: ProntoPagoRegistered) => {
+    const countedInRoute = Boolean(routeStop.stopId);
+    routeStop.consume();
+    void pagoForm.remember(values.paymentMethodId);
     await refreshAfterPago();
     syncAfterOnlineChange();
 
@@ -755,7 +781,7 @@ function NegocioDetailScreenInner() {
     });
     notifyPagoResult(
       'Pronto pago registrado',
-      routeStopId
+      countedInRoute
         ? 'El negocio quedó saldado y la parada se completó.'
         : 'El negocio quedó saldado.',
       printed
@@ -816,23 +842,37 @@ function NegocioDetailScreenInner() {
       const idempotencyKey = (paymentIdempotencyKey.current ||= createIdempotencyKey());
       paymentPaidAt.current ||= new Date().toISOString();
       const paidAt = paymentPaidAt.current;
+      // La parada solo viaja si sigue siendo la actual (y solo en el primer cobro).
+      const stopForPago = await routeStop.resolveForPago();
       const registerOnline = async () => {
-        const call = buildRegisterPagoRpcCall({
-          negocioId: negocio.id,
-          routeStopId: routeStopId || null,
-          amount,
-          paidAt,
-          receiptNumber: payReceipt || null,
-          notes: null,
-          idempotencyKey,
-          // Obligatorio en el servidor desde 20261018130000: sin él, el RPC rechaza el cobro.
-          paymentMethodId: payMethodId,
-        });
-        const { data, error } = await supabase.rpc(call.name, call.args);
+        let countedInRoute = Boolean(stopForPago);
+        const rpcCall = (stopId: string | null) =>
+          buildRegisterPagoRpcCall({
+            negocioId: negocio.id,
+            routeStopId: stopId,
+            amount,
+            paidAt,
+            receiptNumber: payReceipt || null,
+            notes: null,
+            idempotencyKey,
+            // Obligatorio en el servidor desde 20261018130000: sin él, el RPC rechaza el cobro.
+            paymentMethodId: payMethodId,
+          });
+        const call = rpcCall(stopForPago);
+        let { data, error } = await supabase.rpc(call.name, call.args);
+        if (error && countedInRoute && isStopNoLongerCurrentError(error)) {
+          // La parada ya no es la actual: el pago igual se registra, como abono
+          // normal. La misma clave es segura: el rechazo fue antes de registrar.
+          countedInRoute = false;
+          const retry = rpcCall(null);
+          ({ data, error } = await supabase.rpc(retry.name, retry.args));
+        }
         if (error) throw error;
         const pagoId = String(data || '');
         paymentIdempotencyKey.current = null;
         paymentPaidAt.current = null;
+        routeStop.consume();
+        void pagoForm.remember(payMethodId);
 
         let supportWarning = '';
         if (paySupportFile && pagoId) {
@@ -910,7 +950,7 @@ function NegocioDetailScreenInner() {
           paymentMethodName: paymentMethodLabel,
         });
 
-        const successBody = routeStopId
+        const successBody = countedInRoute
           ? hadSupport
             ? 'Pago con soporte registrado y parada completada.'
             : 'Pago registrado y parada completada.'
@@ -933,12 +973,14 @@ function NegocioDetailScreenInner() {
           paymentMethodId: payMethodId,
           paymentMethodName: paymentMethodLabel,
           idempotencyKey,
-          routeStopId: routeStopId || null,
+          routeStopId: stopForPago,
           supportFile: paySupportFile,
           registeredBy: registeredByName,
         });
         paymentIdempotencyKey.current = null;
         paymentPaidAt.current = null;
+        routeStop.consume();
+        void pagoForm.remember(payMethodId);
         setPayAmount('');
         setPayReceipt('');
         setPayMethodId('');
@@ -958,11 +1000,12 @@ function NegocioDetailScreenInner() {
           // El recibo sale con la leyenda «PENDIENTE DE CONFIRMACIÓN».
           pendingConfirmation: true,
         });
+        const offlineBody = `Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.${
+          offlineResult.routeStopApplied ? ' La parada quedó atendida.' : ''
+        }`;
         notifyPagoResult(
           'Pago guardado sin conexión',
-          offlineResult.supportWarning
-            ? `Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.\n\nSoporte: ${offlineResult.supportWarning}`
-            : 'Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.',
+          offlineResult.supportWarning ? `${offlineBody}\n\nSoporte: ${offlineResult.supportWarning}` : offlineBody,
           printed
         );
       };
@@ -1373,7 +1416,7 @@ function NegocioDetailScreenInner() {
 
   const prontoPago = useProntoPago({
     negocioId: negocio?.id,
-    routeStopId: routeStopId || null,
+    routeStopId: routeStop.stopId,
     online,
     fromLocal,
     onRegistered: onProntoPagoRegistered,
@@ -1550,6 +1593,8 @@ function NegocioDetailScreenInner() {
         />
 
         <NegocioCustomerContact customerName={customerName || 'Cliente'} customer={customerMeta} negocio={negocio} />
+        <RouteStopPagoBanner routeStop={routeStop} canPay={canPay} colors={colors} />
+        <UltimaGestionCard gestion={ultimaGestion.get(negocio.id)} colors={colors} />
 
         {showProntoPago ? (
           <Card variant="outlined" style={styles.prontoPagoCard}>
@@ -1904,6 +1949,18 @@ function NegocioDetailScreenInner() {
           setPayAmount(value);
         }}
         amountDecimalPlaces={payAmountOptions.decimalPlaces}
+        amountAccessory={
+          <PagoAmountShortcuts
+            shortcuts={pagoForm.shortcuts}
+            disabled={saving}
+            colors={colors}
+            onPick={(value) => {
+              paymentIdempotencyKey.current = null;
+              paymentPaidAt.current = null;
+              setPayAmount(pagoForm.amountToDisplay(value));
+            }}
+          />
+        }
         receipt={payReceipt}
         onChangeReceipt={(value) => {
           paymentIdempotencyKey.current = null;

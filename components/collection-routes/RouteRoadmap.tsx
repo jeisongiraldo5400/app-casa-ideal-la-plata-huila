@@ -1,4 +1,5 @@
 import { useTheme } from '@/components/theme';
+import { formatCOP } from '@/lib/creditCalculator';
 import { getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -20,12 +21,11 @@ export function stopStatusMeta(status: StopStatus) {
   return STATUS_META[status] || { color: '#94a3b8', label: String(status), icon: 'help-outline' as const };
 }
 
-const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
 /** Qué pasó en la visita: lo cobrado o el motivo de la novedad. */
 export function stopOutcomeText(stop: CollectionRouteStop): string | null {
   if (stop.status === 'cobrado') {
-    return stop.payment_amount != null ? `Cobró ${money(stop.payment_amount)}` : 'Cobro registrado';
+    return stop.payment_amount != null ? `Cobró ${formatCOP(stop.payment_amount)}` : 'Cobro registrado';
   }
   if (stop.outcome_reason) return stop.outcome_reason;
   return null;
@@ -87,7 +87,7 @@ export function RouteRoadmap({
                 <Text style={[styles.outcome, { color: meta.color }]} numberOfLines={2}>{outcome}</Text>
               ) : null}
               <View style={styles.cardFooter}>
-                <Text style={[styles.balance, { color: colors.text.primary }]}>{money(stop.expected_balance)}</Text>
+                <Text style={[styles.balance, { color: colors.text.primary }]}>{formatCOP(stop.expected_balance)}</Text>
                 <MaterialIcons name="chevron-right" size={20} color={colors.text.secondary} />
               </View>
             </TouchableOpacity>

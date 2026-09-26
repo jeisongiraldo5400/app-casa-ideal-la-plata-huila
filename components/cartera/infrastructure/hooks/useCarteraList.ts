@@ -36,6 +36,8 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
   // Municipios, vendedores y métodos de pago: los tres a la vez y una sola vez por sesión.
   const [catalogs, setCatalogs] = useState<CarteraCatalogs>(EMPTY_CARTERA_CATALOGS);
   const [fromCache, setFromCache] = useState(false);
+  // La última carga completa falló: la lista vacía NO significa «sin cuotas».
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Esta instancia ya tiene datos en pantalla. La marca de frescura vive en el
   // módulo y sobrevive a un remontaje; sin este pestillo, una pantalla recién
   // montada con la marca fresca se quedaría vacía y sin pedir nada.
@@ -63,6 +65,7 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
         setRows([]);
         setTotalCount(0);
         setDashboard(null);
+        setLoadError(null);
         setLoading(false);
         setLoadingMore(false);
         setRefreshing(false);
@@ -80,17 +83,24 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
         if (result.dashboard) setDashboard(result.dashboard);
         if (reset) {
           hasRows.current = true;
+          setLoadError(null);
           markCarteraLoaded(key);
         }
       } catch (e) {
         if (seq !== requestSeq.current) return;
+        const message = errorMessage(e, 'No fue posible cargar la información');
         if (reset) {
+          // Error en la lista con «Reintentar», no una alerta que al cerrarse
+          // dejaba «Sin cuotas para estos filtros» como si no hubiera cartera.
           hasRows.current = false;
           setRows([]);
           setTotalCount(0);
           setFromCache(false);
+          setDashboard(null);
+          setLoadError(message);
+        } else {
+          Alert.alert('Cartera', message);
         }
-        Alert.alert('Cartera', errorMessage(e, 'No fue posible cargar la información'));
       } finally {
         if (seq === requestSeq.current) {
           setLoading(false);
@@ -189,6 +199,7 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
     dashboard,
     catalogs,
     fromCache,
+    loadError,
     refresh,
     reload,
     loadMore,

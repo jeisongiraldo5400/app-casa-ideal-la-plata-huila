@@ -45,6 +45,8 @@ jest.mock('@/lib/offline/database', () => ({
           (mockTables[table] || []).filter((row) =>
             clauses.every(([column, value]) => {
               if (column === 'negocio_id') return row.negocioId === value;
+              if (column === 'route_id') return row.routeId === value;
+              if (column === 'status' && table === 'collection_route_stops') return row.status === value;
               return true;
             })
           ),
@@ -134,7 +136,7 @@ describe('registerPagoOffline', () => {
   it('guarda el pago con método y sitio app_movil, aplica FIFO y encola el comando', async () => {
     const result = await registerPagoOffline({ ...baseInput, idempotencyKey: 'idem-pantalla' });
 
-    expect(result).toEqual({ pagoLocalId: 'key-1', pendingReceipt: true, supportWarning: null });
+    expect(result).toEqual({ pagoLocalId: 'key-1', pendingReceipt: true, supportWarning: null, routeStopApplied: false });
     expect(mockBatch).toHaveBeenCalledTimes(1);
     const ops = mockBatch.mock.calls[0] as Op[];
 
@@ -349,5 +351,59 @@ describe('pagos rechazados guardados en el teléfono', () => {
 
     expect(await deleteRejectedPagoLocal('pago-rechazado')).toBe(true);
     expect(destroyPermanently).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('registerPagoOffline desde una parada de ruta', () => {
+  const stop = (id: string, status: string, position: number) =>
+    mockRecord('collection_route_stops', { id, routeId: 'ruta-1', negocioId: id === 's1' ? 'neg-1' : `neg-${id}`, status, position });
+
+  beforeEach(() => {
+    mockKeySeq = 0;
+    mockBatch.mockReset();
+    mockPrepareOutboxRecord.mockReset();
+    mockPrepareOutboxRecord.mockImplementation((_db, type, payload, key) => ({
+      op: 'create',
+      table: 'sync_outbox',
+      changes: { type, payload, key },
+    }));
+    seed();
+  });
+
+  it('con la parada «actual»: la completa, adelanta la siguiente y viaja como cobro de ruta', async () => {
+    mockTables.collection_route_stops = [stop('s1', 'actual', 1), stop('s2', 'pendiente', 2)];
+    const result = await registerPagoOffline({ ...baseInput, amount: 50_000, routeStopId: 's1' });
+    const ops = mockBatch.mock.calls[0] as Op[];
+    const stopOps = ops.filter((op) => op.table === 'collection_route_stops');
+    expect(stopOps).toEqual([
+      expect.objectContaining({ id: 's1', changes: expect.objectContaining({ status: 'cobrado' }) }),
+      expect.objectContaining({ id: 's2', changes: expect.objectContaining({ status: 'actual' }) }),
+    ]);
+    const outbox = ops.find((op) => op.table === 'sync_outbox');
+    expect(outbox?.changes.type).toBe('register_route_pago');
+    expect((outbox?.changes.payload as { routeStopId: string }).routeStopId).toBe('s1');
+    expect(result.routeStopApplied).toBe(true);
+  });
+
+  it('con la parada ya cobrada: abono normal, sin tocar la ruta (no se adelanta otra parada)', async () => {
+    mockTables.collection_route_stops = [stop('s1', 'cobrado', 1), stop('s2', 'actual', 2), stop('s3', 'pendiente', 3)];
+    const result = await registerPagoOffline({ ...baseInput, amount: 50_000, routeStopId: 's1' });
+    const ops = mockBatch.mock.calls[0] as Op[];
+    expect(ops.filter((op) => op.table === 'collection_route_stops')).toEqual([]);
+    const outbox = ops.find((op) => op.table === 'sync_outbox');
+    expect(outbox?.changes.type).toBe('register_pago');
+    const payload = outbox?.changes.payload as { routeStopId: string | null; routeId: string | null; snapshot: { stops: unknown[] } };
+    expect(payload.routeStopId).toBeNull();
+    expect(payload.routeId).toBeNull();
+    expect(payload.snapshot.stops).toEqual([]);
+    expect(result.routeStopApplied).toBe(false);
+  });
+
+  it('sin la parada en el teléfono: viaja como cobro de ruta y decide el servidor', async () => {
+    mockTables.collection_route_stops = [];
+    const result = await registerPagoOffline({ ...baseInput, amount: 50_000, routeStopId: 'desconocida' });
+    const outbox = (mockBatch.mock.calls[0] as Op[]).find((op) => op.table === 'sync_outbox');
+    expect(outbox?.changes.type).toBe('register_route_pago');
+    expect(result.routeStopApplied).toBe(true);
   });
 });

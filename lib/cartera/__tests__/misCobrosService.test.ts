@@ -122,6 +122,20 @@ describe('fetchMisCobros', () => {
     expect(page.summary.total_collected).toBe(10000);
     expect(page.summary.total_cash).toBe(7000);
     expect(page.unsentCount).toBe(1);
+    // Sin señal se sabe el efectivo guardado y se avisa de los negocios cerrados.
+    expect(page.cashMethodIds).toEqual(['m1']);
+    expect(page.closedNegociosMissing).toBe(true);
+  });
+
+  it('con señal trae el saldo tras cada pago y los métodos de efectivo', async () => {
+    rpc.mockResolvedValue({
+      data: { ...SERVER, rows: [{ ...SERVER.rows[0], remaining_balance: '20000', remaining_after_payment: '150000' }] },
+      error: null,
+    });
+    const page = await fetchMisCobros(QUERY);
+    expect(page.rows[0]).toMatchObject({ remaining_balance: 20000, remaining_after_payment: 150000 });
+    expect(page.cashMethodIds).toEqual(['m1']);
+    expect(page.closedNegociosMissing).toBeFalsy();
   });
 
   it('si la petición no llega por falta de red, cae a lo guardado', async () => {

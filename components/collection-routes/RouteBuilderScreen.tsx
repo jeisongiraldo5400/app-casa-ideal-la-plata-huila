@@ -1,4 +1,5 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { formatCOP } from '@/lib/creditCalculator';
 import { useTheme } from '@/components/theme';
 import { SearchField } from '@/components/ui';
 import { getColors } from '@/constants/theme';
@@ -19,9 +20,11 @@ import {
   createCollectionRoute,
   fetchAllRouteCandidates,
   fetchCollectionRoute,
+  fetchMyCollectionRoutes,
   fetchRouteCandidates,
   setCollectionRouteStops,
 } from '@/lib/collection-routes/collectionRouteService';
+import { defaultRouteDate, routeDateError, routeDateLabel, takenRouteDates } from '@/lib/collection-routes/routeDates';
 import { isFinalStopStatus, moveItem } from '@/lib/collection-routes/routeState';
 import {
   EMPTY_ROUTE_LOCATION_FILTER,
@@ -31,18 +34,18 @@ import {
   type RouteLocationFilter,
 } from '@/lib/collection-routes/types';
 import { errorMessage } from '@/lib/errorMessage';
-import { localDateValue } from '@/lib/localDate';
+import { bogotaDateValue } from '@/lib/localDate';
 import { fetchLocationMasters } from '@/lib/locations/locationsService';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { fetchLocationCatalogsFromLocal } from '@/lib/offline/repositories/catalogRepository';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { RouteLocationFilterModal } from './RouteLocationFilterModal';
+import { RouteDateSelector } from './RouteDateSelector';
 
 const PAGE_SIZE = 30;
-const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 const shortDate = (value: string) =>
   new Date(`${value}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
 
@@ -100,6 +103,42 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
   const [selectingAll, setSelectingAll] = useState(false);
   const [editLoading, setEditLoading] = useState(editing);
   const requestSeq = useRef(0);
+
+  // Fecha de la ruta nueva: hoy, mañana u otra (`?fecha=` desde Rutas). Una
+  // ruta por día: los días que ya tienen una se marcan y no se pueden guardar.
+  const { fecha } = useLocalSearchParams<{ fecha?: string }>();
+  const today = bogotaDateValue();
+  const [takenDates, setTakenDates] = useState<Set<string>>(new Set());
+  const [routeDate, setRouteDate] = useState(() => defaultRouteDate(today, new Set(), fecha));
+  const routeDateTouched = useRef(false);
+  useEffect(() => {
+    if (fecha) {
+      routeDateTouched.current = false;
+      setRouteDate(defaultRouteDate(bogotaDateValue(), new Set(), fecha));
+    }
+  }, [fecha]);
+  useFocusEffect(
+    useCallback(() => {
+      if (editing) return;
+      let alive = true;
+      void fetchMyCollectionRoutes()
+        .then((routes) => {
+          if (!alive) return;
+          const taken = takenRouteDates(routes);
+          setTakenDates(taken);
+          if (!routeDateTouched.current) setRouteDate(defaultRouteDate(bogotaDateValue(), taken, fecha));
+        })
+        .catch(() => undefined);
+      return () => {
+        alive = false;
+      };
+    }, [editing, fecha])
+  );
+  const chooseRouteDate = (value: string) => {
+    routeDateTouched.current = true;
+    setRouteDate(value);
+  };
+  const dateError = editing ? null : routeDateError(routeDate, today, takenDates);
 
   const query: CandidateQuery = useMemo(
     () => ({ search: debouncedSearch, filter, location }),
@@ -232,11 +271,16 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
         else router.replace(`/ruta-cobros/${editRouteId}` as never);
         return;
       }
-      const routeId = await createCollectionRoute(ids, localDateValue());
+      if (dateError) {
+        Alert.alert('Fecha de la ruta', dateError);
+        return;
+      }
+      const routeId = await createCollectionRoute(ids, routeDate);
       // La pestaña conserva su estado: se limpia para la próxima ruta.
       setSelected([]);
       setStep('elegir');
       setSearch('');
+      routeDateTouched.current = false;
       router.replace(`/ruta-cobros/${routeId}?nueva=1` as never);
     } catch (e: unknown) {
       Alert.alert(
@@ -253,7 +297,7 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
     ? 'Sin señal: guarda cuando vuelva la conexión'
     : editing
       ? `Guardar ${selected.length} paradas`
-      : `Crear ruta con ${selected.length} paradas`;
+      : `Crear ruta de ${routeDateLabel(routeDate, today)} con ${selected.length} paradas`;
 
   if (editLoading) {
     return (
@@ -281,6 +325,11 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
             <Text style={{ color: colors.primary.main, fontWeight: '800' }}>Agregar negocios</Text>
           </TouchableOpacity>
         </View>
+        {!editing ? (
+          <View style={{ paddingHorizontal: 18, paddingBottom: 6 }}>
+            <RouteDateSelector value={routeDate} onChange={chooseRouteDate} today={today} taken={takenDates} colors={colors} />
+          </View>
+        ) : null}
         {!online ? (
           <View style={{ paddingHorizontal: 16 }}>
             <OfflineNotice colors={colors} text="Sin señal: puedes ordenar, pero la ruta se guarda cuando vuelva la conexión." />
@@ -337,9 +386,9 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
         />
         <TouchableOpacity
           testID="route-builder-save"
-          disabled={saving || !online || !selected.length}
-          accessibilityState={{ disabled: saving || !online || !selected.length }}
-          style={[styles.bottomButton, { backgroundColor: colors.primary.main, opacity: online && selected.length ? 1 : 0.6 }]}
+          disabled={saving || !online || !selected.length || Boolean(dateError)}
+          accessibilityState={{ disabled: saving || !online || !selected.length || Boolean(dateError) }}
+          style={[styles.bottomButton, { backgroundColor: colors.primary.main, opacity: online && selected.length && !dateError ? 1 : 0.6 }]}
           onPress={save}>
           {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.bottomButtonText}>{saveLabel}</Text>}
         </TouchableOpacity>
@@ -454,14 +503,14 @@ export function RouteBuilderScreen({ editRouteId }: { editRouteId?: string }) {
                 <View style={[styles.row, { marginTop: 8, alignItems: 'center' }]}>
                   {item.overdue_balance > 0 ? (
                     <Text style={{ color: colors.error.main, fontSize: 11, fontWeight: '800', flex: 1 }}>
-                      En mora {money(item.overdue_balance)}
+                      En mora {formatCOP(item.overdue_balance)}
                     </Text>
                   ) : (
                     <Text style={{ color: colors.text.secondary, fontSize: 11, flex: 1 }}>
                       {item.open_installments} {item.open_installments === 1 ? 'cuota' : 'cuotas'} · vence {shortDate(item.next_due_date)}
                     </Text>
                   )}
-                  <Text style={{ color: colors.text.primary, fontWeight: '900' }}>{money(item.expected_balance)}</Text>
+                  <Text style={{ color: colors.text.primary, fontWeight: '900' }}>{formatCOP(item.expected_balance)}</Text>
                 </View>
               </View>
             </TouchableOpacity>

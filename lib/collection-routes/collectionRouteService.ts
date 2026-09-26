@@ -14,6 +14,7 @@ import {
 import { requestManualDownload } from '@/lib/offline/sync/downloadData';
 import { lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
 import { bogotaDateValue } from '@/lib/localDate';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MAX_ROUTE_STOPS } from './candidates';
 import { evaluateRouteOfflineStatus, type RouteOfflineStatus } from './routeOffline';
 import { isVisitedStopStatus } from './routeState';
@@ -26,6 +27,30 @@ import {
 } from './types';
 
 const asNumber = (value: unknown) => Number(value || 0);
+
+/** Error con el que se cae al teléfono cuando NetInfo ya dice que no hay red. */
+export const ROUTE_OFFLINE_MESSAGE = 'Sin conexión a internet.';
+
+/**
+ * Camino de las acciones de ruta. Si NetInfo ya dice que no hay red se va
+ * directo al teléfono, como el cobro (`registerPagoWithFallback`): con señal
+ * débil la petición esperaría todo el tiempo límite antes de fallar. Con red
+ * se pregunta al servidor —el cliente de Supabase corta a los
+ * `SUPABASE_REQUEST_TIMEOUT_MS` (10 s)— y un fallo de red también cae al
+ * teléfono. `offline` recibe el error y lo relanza si no tiene con qué seguir.
+ */
+export async function withRouteOfflineFallback<T>(
+  online: () => Promise<T>,
+  offline: (error: unknown) => Promise<T>
+): Promise<T> {
+  if (!useSyncStore.getState().online) return offline(new Error(ROUTE_OFFLINE_MESSAGE));
+  try {
+    return await online();
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    return offline(error);
+  }
+}
 
 /** El servidor anterior a 20261211120000 no conoce departamento ni vereda. */
 function isFunctionSignatureMissing(error: unknown) {
@@ -161,22 +186,24 @@ export async function setCollectionRouteStops(routeId: string, negocioIds: strin
 }
 
 export async function fetchMyCollectionRoutes() {
-  try {
-    const { data, error } = await supabase.rpc('get_my_collection_routes', { p_limit: 20 });
-    if (error) throw new Error(error.message || 'No fue posible cargar las rutas');
-    return ((data || []) as CollectionRouteSummary[]).map((row) => ({
-      ...row,
-      stop_count: asNumber(row.stop_count),
-      completed_count: asNumber(row.completed_count),
-      expected_total: asNumber(row.expected_total),
-      collected_total: asNumber(row.collected_total),
-    }));
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const local = await fetchRoutesFromLocal();
-    if (!local) throw error;
-    return withCachedActiveRoute(local, await getCachedActiveRoute());
-  }
+  return withRouteOfflineFallback(
+    async () => {
+      const { data, error } = await supabase.rpc('get_my_collection_routes', { p_limit: 20 });
+      if (error) throw new Error(error.message || 'No fue posible cargar las rutas');
+      return ((data || []) as CollectionRouteSummary[]).map((row) => ({
+        ...row,
+        stop_count: asNumber(row.stop_count),
+        completed_count: asNumber(row.completed_count),
+        expected_total: asNumber(row.expected_total),
+        collected_total: asNumber(row.collected_total),
+      }));
+    },
+    async (error) => {
+      const local = await fetchRoutesFromLocal();
+      if (!local) throw error;
+      return withCachedActiveRoute(local, await getCachedActiveRoute());
+    }
+  );
 }
 
 /**
@@ -204,72 +231,77 @@ export function withCachedActiveRoute(
 }
 
 export async function fetchCollectionRoute(routeId: string) {
-  try {
-    const { data, error } = await supabase.rpc('get_collection_route', { p_route_id: routeId });
-    if (error) throw new Error(error.message || 'No fue posible cargar la ruta');
-    if (!data) throw new Error('No fue posible cargar la ruta');
-    const raw = data as CollectionRoute & {
-      stops?: CollectionRoute['stops'];
-      total_expected?: number;
-      total_collected?: number;
-    };
-    const route: CollectionRoute = {
-      ...raw,
-      total_expected: asNumber(raw.total_expected),
-      total_collected: asNumber(raw.total_collected),
-      stops: (raw.stops || []).map((stop) => ({
-        ...stop,
-        negocio_numero: asNumber(stop.negocio_numero),
-        position: asNumber(stop.position),
-        expected_balance: asNumber(stop.expected_balance),
-        payment_amount: stop.payment_amount == null ? null : asNumber(stop.payment_amount),
-      })),
-    };
-    await cacheActiveRoute(route);
-    // Si el gestor ya descargó esta ruta, su copia se mantiene al día con lo
-    // que ve con señal (sus propias acciones, paradas editadas). Una ruta no
-    // descargada no baja sola.
-    try {
-      await saveRouteCopyLocally(route, { onlyIfSaved: true });
-    } catch {
-      // La copia local es un respaldo: si falla, la pantalla sigue con el servidor.
+  return withRouteOfflineFallback(
+    async () => {
+      const { data, error } = await supabase.rpc('get_collection_route', { p_route_id: routeId });
+      if (error) throw new Error(error.message || 'No fue posible cargar la ruta');
+      if (!data) throw new Error('No fue posible cargar la ruta');
+      const raw = data as CollectionRoute & {
+        stops?: CollectionRoute['stops'];
+        total_expected?: number;
+        total_collected?: number;
+      };
+      const route: CollectionRoute = {
+        ...raw,
+        total_expected: asNumber(raw.total_expected),
+        total_collected: asNumber(raw.total_collected),
+        stops: (raw.stops || []).map((stop) => ({
+          ...stop,
+          negocio_numero: asNumber(stop.negocio_numero),
+          position: asNumber(stop.position),
+          expected_balance: asNumber(stop.expected_balance),
+          payment_amount: stop.payment_amount == null ? null : asNumber(stop.payment_amount),
+        })),
+      };
+      await cacheActiveRoute(route);
+      // Si el gestor ya descargó esta ruta, su copia se mantiene al día con lo
+      // que ve con señal (sus propias acciones, paradas editadas). Una ruta no
+      // descargada no baja sola.
+      try {
+        await saveRouteCopyLocally(route, { onlyIfSaved: true });
+      } catch {
+        // La copia local es un respaldo: si falla, la pantalla sigue con el servidor.
+      }
+      return route;
+    },
+    async (error) => {
+      const local = await fetchRouteFromLocal(routeId);
+      if (local) return local;
+      throw error;
     }
-    return route;
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const local = await fetchRouteFromLocal(routeId);
-    if (local) return local;
-    throw error;
-  }
+  );
 }
 
 /** Resultado de una acción de ruta: `queued` indica que se guardó sin red. */
 export type RouteActionResult = { queued: boolean };
 
+/** Encola la acción para enviarla con red; sin cola (web, sin base local) relanza el error. */
+async function queueOrThrow(error: unknown, enqueue: () => Promise<boolean>): Promise<RouteActionResult> {
+  const queued = await enqueue();
+  if (!queued) throw error;
+  return { queued: true };
+}
+
 export async function startCollectionRoute(routeId: string): Promise<RouteActionResult> {
-  try {
-    const { error } = await supabase.rpc('start_collection_route', { p_route_id: routeId });
-    if (error) throw new Error(error.message || 'No fue posible iniciar la ruta');
-    return { queued: false };
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand({ type: 'start_route', routeId });
-    if (!queued) throw error;
-    return { queued: true };
-  }
+  return withRouteOfflineFallback(
+    async () => {
+      const { error } = await supabase.rpc('start_collection_route', { p_route_id: routeId });
+      if (error) throw new Error(error.message || 'No fue posible iniciar la ruta');
+      return { queued: false };
+    },
+    (error) => queueOrThrow(error, () => enqueueRouteCommand({ type: 'start_route', routeId }))
+  );
 }
 
 export async function selectCollectionRouteStop(stopId: string, routeId?: string | null): Promise<RouteActionResult> {
-  try {
-    const { error } = await supabase.rpc('select_collection_route_stop', { p_stop_id: stopId });
-    if (error) throw new Error(error.message || 'No fue posible seleccionar la parada');
-    return { queued: false };
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand({ type: 'select_route_stop', stopId, routeId: routeId || null });
-    if (!queued) throw error;
-    return { queued: true };
-  }
+  return withRouteOfflineFallback(
+    async () => {
+      const { error } = await supabase.rpc('select_collection_route_stop', { p_stop_id: stopId });
+      if (error) throw new Error(error.message || 'No fue posible seleccionar la parada');
+      return { queued: false };
+    },
+    (error) => queueOrThrow(error, () => enqueueRouteCommand({ type: 'select_route_stop', stopId, routeId: routeId || null }))
+  );
 }
 
 export async function updateCollectionRouteStop(
@@ -279,28 +311,29 @@ export async function updateCollectionRouteStop(
   notes?: string,
   routeId?: string | null,
 ): Promise<RouteActionResult> {
-  try {
-    const { error } = await supabase.rpc('update_collection_route_stop', {
-      p_stop_id: stopId,
-      p_status: status,
-      p_reason: reason,
-      p_notes: notes || null,
-    });
-    if (error) throw new Error(error.message || 'No fue posible actualizar la parada');
-    return { queued: false };
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand({
-      type: 'update_route_stop',
-      stopId,
-      routeId: routeId || null,
-      status,
-      reason,
-      notes: notes || null,
-    });
-    if (!queued) throw error;
-    return { queued: true };
-  }
+  return withRouteOfflineFallback(
+    async () => {
+      const { error } = await supabase.rpc('update_collection_route_stop', {
+        p_stop_id: stopId,
+        p_status: status,
+        p_reason: reason,
+        p_notes: notes || null,
+      });
+      if (error) throw new Error(error.message || 'No fue posible actualizar la parada');
+      return { queued: false };
+    },
+    (error) =>
+      queueOrThrow(error, () =>
+        enqueueRouteCommand({
+          type: 'update_route_stop',
+          stopId,
+          routeId: routeId || null,
+          status,
+          reason,
+          notes: notes || null,
+        })
+      )
+  );
 }
 
 export type FinishRouteOptions = {
@@ -338,23 +371,24 @@ export async function finishCollectionRoute(
 ): Promise<RouteActionResult> {
   const closePending = !cancel && Boolean(options.closePending);
   const reason = options.reason?.trim() || null;
-  try {
-    const { error } = await supabase.rpc('finish_collection_route', finishRouteRpcArgs(routeId, cancel, options));
-    if (error) {
-      if (closePending && isFunctionSignatureMissing(error)) {
-        throw new Error('El servidor todavía no permite cerrar la jornada con paradas pendientes. Atiéndelas o cancela la ruta.');
+  return withRouteOfflineFallback(
+    async () => {
+      const { error } = await supabase.rpc('finish_collection_route', finishRouteRpcArgs(routeId, cancel, options));
+      if (error) {
+        if (closePending && isFunctionSignatureMissing(error)) {
+          throw new Error('El servidor todavía no permite cerrar la jornada con paradas pendientes. Atiéndelas o cancela la ruta.');
+        }
+        throw new Error(error.message || 'No fue posible finalizar la ruta');
       }
-      throw new Error(error.message || 'No fue posible finalizar la ruta');
-    }
-    return { queued: false };
-  } catch (error) {
-    if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand(
-      closePending ? { type: 'finish_route', routeId, cancel, closePending, reason } : { type: 'finish_route', routeId, cancel }
-    );
-    if (!queued) throw error;
-    return { queued: true };
-  }
+      return { queued: false };
+    },
+    (error) =>
+      queueOrThrow(error, () =>
+        enqueueRouteCommand(
+          closePending ? { type: 'finish_route', routeId, cancel, closePending, reason } : { type: 'finish_route', routeId, cancel }
+        )
+      )
+  );
 }
 
 /** Estado de la ruta en el teléfono. `serverRoute` null = sin señal. */

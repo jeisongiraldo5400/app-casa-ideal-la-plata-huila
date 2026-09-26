@@ -6,6 +6,7 @@ import type { MisCobrosPage } from '@/lib/cartera/misCobros';
 import { formatCOP } from '@/lib/creditCalculator';
 import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { MisCobrosScreen } from '../MisCobrosScreen';
+import { bogotaDateValue } from '@/lib/localDate';
 
 jest.mock('@expo/vector-icons', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
@@ -123,7 +124,11 @@ describe('MisCobrosScreen', () => {
     expect(mockedFetch).toHaveBeenCalledWith(
       expect.objectContaining({ collectorId: 'u1', isSelf: true, collectorName: null, page: 1, online: true })
     );
-    expect(screen.getByText('Total cobrado · todas las fechas')).toBeTruthy();
+    // Abre en «Hoy».
+    const first = mockedFetch.mock.calls[0][0] as { filters: { from: string; to: string } };
+    expect(first.filters.from).toBe(bogotaDateValue());
+    expect(first.filters.to).toBe(bogotaDateValue());
+    expect(screen.queryByText('Total cobrado · todas las fechas')).toBeNull();
     expect(screen.getAllByText(money(50000)).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Efectivo (1)')).toBeTruthy();
     expect(screen.getByText('En cierre CR-2026-0003')).toBeTruthy();
@@ -146,6 +151,35 @@ describe('MisCobrosScreen', () => {
     expect(call.filters.to >= call.filters.from).toBe(true);
     expect(screen.getByText(/^Total cobrado · /)).toBeTruthy();
     expect(screen.queryByText('Total cobrado · todas las fechas')).toBeNull();
+  });
+
+  it('«Por entregar a caja»: efectivo vigente sin cierre de cualquier fecha, con su total', async () => {
+    mockedFetch.mockResolvedValue({ ...PAGE, cashMethodIds: ['m1'] });
+    renderScreen();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('mis-cobros-por-entregar'));
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+    const call = mockedFetch.mock.calls[1][0] as { filters: Record<string, unknown>; scope: string };
+    expect(call.filters).toEqual(
+      expect.objectContaining({ from: '', to: '', status: 'vigentes', inCierre: 'no', paymentMethodIds: ['m1'] })
+    );
+    expect(call.scope).toBe('performed');
+    await waitFor(() => expect(screen.getByText(`${money(50000)} en efectivo sin cierre · 1 cobro`)).toBeTruthy());
+
+    // Tocar de nuevo vuelve a «Hoy».
+    fireEvent.press(screen.getByTestId('mis-cobros-por-entregar'));
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(3));
+    expect((mockedFetch.mock.calls[2][0] as { filters: { from: string } }).filters.from).toBe(bogotaDateValue());
+  });
+
+  it('«Por entregar a caja» sin saber qué es efectivo lo explica', async () => {
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => undefined);
+    renderScreen();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('mis-cobros-por-entregar'));
+    expect(alert).toHaveBeenCalledWith('Por entregar a caja', expect.stringMatching(/métodos de pago son efectivo/));
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
   });
 
   it('el segmento de estado vuelve a pedir con ese estado', async () => {
@@ -178,8 +212,16 @@ describe('MisCobrosScreen', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText(/Sin señal: pagos guardados en el teléfono/)).toBeTruthy());
     expect(screen.getByText(/El filtro de cierre se aplica al volver la conexión/)).toBeTruthy();
+    expect(screen.queryByText(/No incluye pagos de negocios ya cerrados/)).toBeNull();
     expect(screen.getByText('Sin dato')).toBeTruthy();
     expect(mockedFetch).toHaveBeenCalledWith(expect.objectContaining({ online: false }));
+  });
+
+  it('sin señal avisa que faltan los pagos de negocios ya cerrados', async () => {
+    mockOnline = false;
+    mockedFetch.mockResolvedValue({ ...PAGE, fromCache: true, closedNegociosMissing: true });
+    renderScreen();
+    await waitFor(() => expect(screen.getByText(/No incluye pagos de negocios ya cerrados/)).toBeTruthy());
   });
 
   it('con señal avisa de los cobros del teléfono aún sin enviar', async () => {

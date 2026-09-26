@@ -49,6 +49,12 @@ export type CarteraRow = {
   customer_name: string | null;
   customer_id_number: string | null;
   customer_phone: string | null;
+  /**
+   * Dirección del negocio (`negocios.direccion`) y departamento: ya los
+   * devuelve get_cartera_cuotas; las filas armadas sin señal no los traen.
+   */
+  customer_address?: string | null;
+  departamento_name?: string | null;
   municipio_id: string | null;
   municipio_name: string | null;
   seller_id: string | null;
