@@ -1,5 +1,4 @@
 import { mapNegocioDetailFromLocal, mapNegociosListFromLocal } from '../negociosLocal';
-import { matchesNegocioListFilter, matchesNegocioListQuery } from '@/lib/negocios/negocioListFilters';
 
 const customers = [
   { id: 'c1', name: 'Ana Pérez', idNumber: '111', phone: '300' },
@@ -95,17 +94,14 @@ describe('mapNegociosListFromLocal', () => {
     const byId = new Map(list.map((item) => [item.id, item]));
     expect(byId.get('n2')?.has_mora).toBe(true);
     expect(byId.get('n1')?.has_mora).toBe(false);
-    expect(list.filter((item) => matchesNegocioListFilter(item, 'overdue')).map((item) => item.id)).toEqual(['n2']);
+    expect(list.filter((item) => item.has_mora).map((item) => item.id)).toEqual(['n2']);
   });
 
   it('lleva el documento del cliente para poder buscarlo sin señal', () => {
     const list = mapNegociosListFromLocal(negocios, customers, cuotas);
     const n1 = list.find((item) => item.id === 'n1')!;
+    // La búsqueda por documento (sin tildes y por dígitos) la cubre negociosListQuery.
     expect(n1.customer.id_number).toBe('111');
-    // Con puntos o sin ellos: el documento se compara por sus dígitos.
-    expect(matchesNegocioListQuery(n1, '111')).toBe(true);
-    expect(matchesNegocioListQuery(n1, '1.11')).toBe(true);
-    expect(matchesNegocioListQuery(n1, '999')).toBe(false);
   });
 });
 

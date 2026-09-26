@@ -36,6 +36,7 @@ function source(
     status?: string;
     gestor?: string | null;
     municipioId?: string | null;
+    veredaId?: string | null;
     customer?: Partial<NonNullable<LocalCandidateSource['customer']>> | null;
     cuotas?: LocalCandidateSource['cuotas'];
   } = {}
@@ -48,6 +49,7 @@ function source(
       gestorCobroId: overrides.gestor === undefined ? ME : overrides.gestor,
       direccion: `Calle ${id}`,
       municipioId: overrides.municipioId ?? null,
+      veredaId: overrides.veredaId ?? null,
       customerId: `c-${id}`,
     },
     customer:
@@ -140,6 +142,21 @@ describe('buildLocalCandidates (armar la ruta sin señal)', () => {
     expect(ids(run({ location: { departamentoId: '', municipioId: '', veredaId: 'v2' } }))).toEqual(['n3']);
     const n1 = run().rows.find((row) => row.negocio_id === 'n1')!;
     expect(n1).toMatchObject({ municipality_name: 'Rionegro', vereda_name: 'La Playa', departamento_name: 'Antioquia' });
+  });
+
+  it('usa la vereda propia del negocio antes que la del cliente', () => {
+    const own = buildLocalCandidates(
+      [source('n9', { municipioId: 'm1', veredaId: 'v2', customer: { municipioId: 'm1', veredaId: 'v1' } })],
+      {
+        userId: ME,
+        today: TODAY,
+        names,
+        page: 1,
+        pageSize: 50,
+        query: { search: '', filter: 'todas', location: { departamentoId: '', municipioId: '', veredaId: 'v2' } },
+      }
+    );
+    expect(own.rows.map((row) => [row.negocio_id, row.vereda_id, row.vereda_name])).toEqual([['n9', 'v2', 'Cimarronas']]);
   });
 
   it('busca sin tildes por cliente, por cédula y por número', () => {

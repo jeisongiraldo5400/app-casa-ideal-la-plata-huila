@@ -1,6 +1,7 @@
 import {
   CUSTOMER_DIRECTORY_COLUMNS,
   migrations,
+  NEGOCIO_LOCATION_COLUMNS,
   NEGOCIO_NAME_COLUMNS,
   PRONTO_PAGO_PAGO_COLUMNS,
   REJECTED_PAGO_COLUMNS,
@@ -90,13 +91,28 @@ describe('esquema local (pronto pago v6, pago rechazado v7)', () => {
   });
 });
 
+describe('esquema local v12: vereda propia del negocio', () => {
+  it('la migración a 12 agrega negocios.vereda_id opcional y la instalación nueva la trae', () => {
+    const toTwelve = migrations.sortedMigrations.find((migration) => migration.toVersion === 12);
+    expect(toTwelve).toBeDefined();
+    const steps = toTwelve!.steps as unknown as AddColumnsStep[];
+    expect(steps).toEqual([{ type: 'add_columns', table: 'negocios', columns: NEGOCIO_LOCATION_COLUMNS }]);
+    expect(NEGOCIO_LOCATION_COLUMNS).toEqual([{ name: 'vereda_id', type: 'string', isOptional: true }]);
+    const tables = schema.tables as unknown as { name: string; columns: { name: string }[] }[];
+    const negocios = tables.find((table) => table.name === 'negocios')!;
+    expect(negocios.columns.find((column) => column.name === 'vereda_id')).toEqual(NEGOCIO_LOCATION_COLUMNS[0]);
+    expect(schema.version).toBe(12);
+  });
+});
+
 describe('pullCursorForPayloadVersion', () => {
   it('conserva el cursor delta si la versión guardada es la actual', () => {
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', PULL_PAYLOAD_VERSION)).toBe('2026-09-10T00:00:00Z');
   });
 
   it('fuerza una descarga completa tras actualizar la app (versión ausente o anterior)', () => {
-    expect(PULL_PAYLOAD_VERSION).toBe('9');
+    expect(PULL_PAYLOAD_VERSION).toBe('10');
+    expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '9')).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', null)).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '8')).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '6')).toBeNull();

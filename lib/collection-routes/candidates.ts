@@ -1,3 +1,4 @@
+import { negocioVeredaLocal } from '@/lib/negocios/negociosListQuery';
 import { matchesNormalized, normalizeDigits } from '@/lib/search/normalizeText';
 import type {
   CandidateFilter,
@@ -81,6 +82,8 @@ export type LocalCandidateSource = {
     gestorCobroId: string | null;
     direccion: string | null;
     municipioId: string | null;
+    /** Vereda propia del negocio (null si no tiene o si bajó antes de v12). */
+    veredaId?: string | null;
     customerId: string;
   };
   customer: {
@@ -138,8 +141,8 @@ function matchesFilter(filter: CandidateFilter, dueDates: string[], today: strin
  * ubicación (la del negocio y, si no tiene, la del cliente), mismos filtros y
  * mismo orden (próximo vencimiento, número).
  *
- * Diferencia conocida: el teléfono no guarda la vereda propia del negocio, así
- * que usa la del cliente cuando el negocio es de su mismo municipio.
+ * Vereda: la propia del negocio y, si no tiene, la del cliente cuando el
+ * negocio no tiene municipio o es el mismo del cliente (como el servidor).
  */
 export function buildLocalCandidates(
   sources: LocalCandidateSource[],
@@ -180,8 +183,12 @@ export function buildLocalCandidates(
     }
 
     const municipioId = negocio.municipioId || customer.municipioId || null;
-    const veredaId =
-      !negocio.municipioId || negocio.municipioId === customer.municipioId ? customer.veredaId || null : null;
+    const veredaId = negocioVeredaLocal({
+      negocioMunicipioId: negocio.municipioId,
+      negocioVeredaId: negocio.veredaId ?? null,
+      customerMunicipioId: customer.municipioId,
+      customerVeredaId: customer.veredaId,
+    });
     const municipio = municipioId ? municipios.get(municipioId) : undefined;
     const departamentoId = municipio?.departamento_id || null;
     const { location } = query;

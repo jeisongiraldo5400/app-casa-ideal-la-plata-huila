@@ -7,8 +7,8 @@
  * conexión, con las mismas reglas:
  *
  * - Ubicación: la del negocio; si no tiene municipio, la del cliente. La
- *   vereda sale del cliente cuando ambos están en el mismo municipio (el
- *   teléfono no guarda la vereda del negocio).
+ *   vereda es la propia del negocio y, si no tiene, la del cliente cuando
+ *   ambos están en el mismo municipio (`negocioVeredaLocal`).
  * - En mora: alguna cuota abierta con saldo ya vencida (o marcada 'mora').
  * - Saldo: Σ max(cuota + mora − pagado, 0) de las cuotas no anuladas.
  * - Búsqueda sin tildes por cliente y cédula; los dígitos cuentan como
@@ -235,6 +235,8 @@ export type LocalNegocioInput = {
   deliveryOrderId: string | null;
   negocioMunicipioId: string | null;
   negocioAddress: string | null;
+  /** Vereda propia del negocio (null en filas descargadas antes de 20261217120000). */
+  negocioVeredaId?: string | null;
   customerMunicipioId: string | null;
   customerVeredaId: string | null;
   customerAddress: string | null;
@@ -263,6 +265,22 @@ function daysBetween(a: string, b: string): number {
 
 const blank = (value: string | null | undefined) => (value && value.trim() ? value.trim() : null);
 
+/**
+ * Vereda de un negocio sin señal, con la misma regla que `list_negocios_movil`
+ * y `get_collection_route_candidates`: la propia del negocio; si no tiene, la
+ * del cliente cuando el negocio no tiene municipio o es el mismo del cliente.
+ */
+export function negocioVeredaLocal(input: {
+  negocioMunicipioId: string | null;
+  negocioVeredaId: string | null;
+  customerMunicipioId: string | null;
+  customerVeredaId: string | null;
+}): string | null {
+  if (!input.negocioMunicipioId) return input.customerVeredaId || null;
+  if (input.negocioVeredaId) return input.negocioVeredaId;
+  return input.customerMunicipioId === input.negocioMunicipioId ? input.customerVeredaId || null : null;
+}
+
 /** Entrada de la lista local: la fila y las cuotas abiertas, para «por vencer». */
 export type LocalNegocioEntry = {
   row: NegocioListRow;
@@ -283,11 +301,12 @@ export function buildLocalNegocioEntry(
 
   const fromNegocio = Boolean(input.negocioMunicipioId);
   const municipioId = fromNegocio ? input.negocioMunicipioId : input.customerMunicipioId;
-  const veredaId = fromNegocio
-    ? input.customerMunicipioId === input.negocioMunicipioId
-      ? input.customerVeredaId
-      : null
-    : input.customerVeredaId;
+  const veredaId = negocioVeredaLocal({
+    negocioMunicipioId: input.negocioMunicipioId,
+    negocioVeredaId: input.negocioVeredaId ?? null,
+    customerMunicipioId: input.customerMunicipioId,
+    customerVeredaId: input.customerVeredaId,
+  });
   const municipio = municipioId ? names.municipios.get(municipioId) : undefined;
   const departamentoId = municipio?.departamentoId ?? null;
 

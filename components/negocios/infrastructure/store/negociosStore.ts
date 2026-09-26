@@ -3,10 +3,7 @@ import { logHandledError } from '@/lib/errorMessage';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
-import {
-  canUseLocalDb,
-  fetchNegociosListFromLocal,
-} from '@/lib/offline/repositories/offlineRepository';
+import { canUseLocalDb } from '@/lib/offline/repositories/offlineRepository';
 import { fetchCreditSettingsFromLocal } from '@/lib/offline/repositories/catalogRepository';
 import { requireLocalUserId } from '@/lib/offline/security/localSession';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -34,7 +31,6 @@ import {
   sortDownPaymentSchedule,
   type DownPaymentEntry,
 } from '@/lib/negocios/negocioCreditRules';
-import { computeRemainingBalance } from '@/lib/negocios/negocioBalance';
 import {
   validateNegocioItemsInput,
   validateNegocioItemsStock,
@@ -54,20 +50,7 @@ export interface NegocioItem {
 }
 
 interface NegociosState {
-  list: any[];
-  loading: boolean;
-  fromCache: boolean;
-  /** Mensaje del último fallo de `fetchList`; null cuando la carga fue exitosa. */
-  error: string | null;
-  /** Negocios donde el usuario autenticado es el vendedor (módulo "Mis negocios"). */
-  myList: any[];
-  myLoading: boolean;
-  myFromCache: boolean;
-  myError: string | null;
   creditSettings: (CreditSettingsInput & { legal_text?: string | null }) | null;
-  fetchList: (search?: string) => Promise<void>;
-  /** Carga los negocios de `sellerId`; se pasa explícito para no depender de red en modo offline. */
-  fetchMyList: (sellerId: string, search?: string) => Promise<void>;
   fetchCreditSettings: () => Promise<void>;
   createAndActivate: (input: {
     deal_date: string;
@@ -207,137 +190,8 @@ const isValidDateValue = (value: string) => {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 };
 
-/** Ningún negocio: un uuid que no existe, para no devolver la lista entera. */
-const SIN_COINCIDENCIAS = 'id.eq.00000000-0000-0000-0000-000000000000';
-
-/**
- * Columnas del listado de negocios (lo comparten «Negocios» y «Mis negocios»).
- *
- * Los tres embebidos de `delivery_orders` traen la orden del negocio y la de
- * origen en la MISMA consulta, sin una consulta extra por fila. Hay que nombrar
- * la llave foránea porque `negocios` apunta cuatro veces a `delivery_orders`
- * (orden, remisión, origen y remisión destino) y PostgREST no sabría cuál es.
- */
-const NEGOCIO_LIST_SELECT =
-  // `id_number`: la búsqueda por documento la resuelve el servidor, pero el
-  // filtro local de la lista descartaba el resultado por no tener el dato.
-  '*, customer:customers!negocios_customer_id_fkey(name, id_number), negocio_cuotas(amount, paid_amount, late_fee_amount, status, deleted_at), delivery_order:delivery_orders!negocios_delivery_order_id_fkey(order_number), remission:delivery_orders!negocios_remission_id_fkey(order_number), source_delivery_order:delivery_orders!negocios_source_delivery_order_id_fkey(order_number)';
-
-/**
- * Filtro de PostgREST para buscar negocios en el servidor.
- *
- * El número se resuelve con `search_negocio_ids_by_numero` (encuentra «003» en
- * el 20260003) y el cliente con `search_customers`, que compara sin tildes.
- * Antes la lista traía las 50 filas más recientes y se filtraba en el teléfono:
- * un negocio viejo salía como «Sin coincidencias» aunque existiera.
- *
- * Devuelve null si no hay término (la lista sale sin filtrar).
- */
-async function negocioSearchFilter(search: string | undefined): Promise<string | null> {
-  const term = (search || '').trim();
-  if (!term) return null;
-
-  const [porNumero, porCliente] = await Promise.all([
-    supabase.rpc('search_negocio_ids_by_numero', { p_term: term, p_limit: 200 }),
-    supabase.rpc('search_customers', { search_term: term, limit_count: 200 }),
-  ]);
-
-  const filtros: string[] = [];
-  const negocioIds = ((porNumero.data || []) as { id: string }[]).map((row) => row.id);
-  if (negocioIds.length) filtros.push(`id.in.(${negocioIds.join(',')})`);
-  const customerIds = ((porCliente.data || []) as { id: string }[]).map((row) => row.id);
-  if (customerIds.length) filtros.push(`customer_id.in.(${customerIds.join(',')})`);
-
-  return filtros.length ? filtros.join(',') : SIN_COINCIDENCIAS;
-}
-
 export const useNegociosStore = create<NegociosState>((set, get) => ({
-  list: [],
-  loading: false,
-  fromCache: false,
-  error: null,
-  myList: [],
-  myLoading: false,
-  myFromCache: false,
-  myError: null,
   creditSettings: null,
-
-  fetchList: async (search) => {
-    set({ loading: true, error: null });
-    try {
-      // `negocios` no tiene columna remaining_balance: se deriva de las cuotas.
-      let query = supabase
-        .from('negocios')
-        .select(NEGOCIO_LIST_SELECT)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      // Con término, la búsqueda la hace el servidor: antes se filtraban en el
-      // teléfono las 50 filas más recientes, así que un negocio viejo salía
-      // como «Sin coincidencias» aunque existiera.
-      const filtroBusqueda = await negocioSearchFilter(search);
-      if (filtroBusqueda) query = query.or(filtroBusqueda);
-      const { data, error } = await query;
-      if (error) throw error;
-      const list = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
-        ...negocio,
-        remaining_balance: computeRemainingBalance(negocio_cuotas),
-        has_mora: (negocio_cuotas || []).some(
-          (cuota: { status: string; deleted_at: string | null }) =>
-            cuota.status === 'mora' && !cuota.deleted_at
-        ),
-      }));
-      set({ list, fromCache: false, error: null });
-    } catch (e) {
-      if (isNetworkError(e) && canUseLocalDb()) {
-        const local = await fetchNegociosListFromLocal();
-        set({ list: local, fromCache: true, error: null });
-        return;
-      }
-      logHandledError('No se pudieron cargar los negocios', e);
-      // Conservar la lista anterior: un fallo transitorio no debe vaciar la pantalla.
-      set({ error: toUserError(e, 'No se pudieron cargar los negocios').message });
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  fetchMyList: async (sellerId, search) => {
-    set({ myLoading: true, myError: null });
-    try {
-      let query = supabase
-        .from('negocios')
-        .select(NEGOCIO_LIST_SELECT)
-        .is('deleted_at', null)
-        .eq('seller_id', sellerId)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      const filtroBusqueda = await negocioSearchFilter(search);
-      if (filtroBusqueda) query = query.or(filtroBusqueda);
-      const { data, error } = await query;
-      if (error) throw error;
-      const myList = (data || []).map(({ negocio_cuotas, ...negocio }) => ({
-        ...negocio,
-        remaining_balance: computeRemainingBalance(negocio_cuotas),
-        has_mora: (negocio_cuotas || []).some(
-          (cuota: { status: string; deleted_at: string | null }) =>
-            cuota.status === 'mora' && !cuota.deleted_at
-        ),
-      }));
-      set({ myList, myFromCache: false, myError: null });
-    } catch (e) {
-      if (isNetworkError(e) && canUseLocalDb()) {
-        const local = await fetchNegociosListFromLocal();
-        const myList = local.filter((item: any) => item.seller_id === sellerId);
-        set({ myList, myFromCache: true, myError: null });
-        return;
-      }
-      logHandledError('No se pudieron cargar tus negocios', e);
-      set({ myError: toUserError(e, 'No se pudieron cargar tus negocios').message });
-    } finally {
-      set({ myLoading: false });
-    }
-  },
 
   fetchCreditSettings: async () => {
     let data: Record<string, any> | null = null;
@@ -555,6 +409,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           direccion: input.direccion.trim(),
           municipioId: input.municipio_id,
           municipioName: input.municipio_name ?? null,
+          veredaId: input.vereda_id || null,
           sellerId: input.local_seller_id || input.seller_id || userId,
           sellerName: input.seller_name ?? null,
           createdBy: userId,
@@ -655,7 +510,6 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
     // de entrega, así que puede haber dos avisos que despachar.
     kickNotificationDispatch();
 
-    await get().fetchList();
     return { numero: negocio.numero, id: negocio.id, queued: false };
     }
   },

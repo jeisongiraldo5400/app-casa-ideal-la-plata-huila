@@ -40,6 +40,8 @@ export class Negocio extends Model {
   /** Quién registró el negocio y su nombre ya resuelto (null en filas anteriores a v10). */
   @field('created_by') createdBy!: string | null;
   @field('created_by_name') createdByName!: string | null;
+  /** Vereda propia del negocio (null en filas anteriores a v12 o sin vereda). */
+  @field('vereda_id') veredaId!: string | null;
   /** 'synced' | 'pending' (creado sin señal, sin confirmar) | 'rejected'. */
   @field('sync_status') rowSyncStatus!: string;
   @field('server_updated_at') serverUpdatedAt!: number | null;

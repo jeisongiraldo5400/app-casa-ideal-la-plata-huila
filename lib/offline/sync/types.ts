@@ -225,6 +225,8 @@ export type PullNegocio = {
   /** Quién registró el negocio, con su nombre resuelto (20261128120000); opcionales. */
   created_by?: string | null;
   created_by_name?: string | null;
+  /** Vereda propia del negocio (20261217120000); opcional. */
+  vereda_id?: string | null;
   updated_at: string | null;
   deleted_at: string | null;
 };
@@ -574,8 +576,12 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
  * 9: descarga selectiva (20261130140000): `p_options`, `sync_config`, foto de
  * órdenes llevadas y remisiones pendientes. La descarga completa única deja
  * el teléfono coherente con las preferencias de la persona.
+ *
+ * 10: vereda propia del negocio (`vereda_id`, 20261217120000). Los negocios ya
+ * bajan completos con `p_options`, pero la descarga completa única garantiza
+ * que también se rellenen las filas guardadas antes de la v12.
  */
-export const PULL_PAYLOAD_VERSION = '9';
+export const PULL_PAYLOAD_VERSION = '10';
 export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
 
 export type PullScope = 'cobro' | 'completo';

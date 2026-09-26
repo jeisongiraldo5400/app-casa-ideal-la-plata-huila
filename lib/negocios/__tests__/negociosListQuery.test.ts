@@ -8,6 +8,7 @@ import {
   mapServerNegocioRow,
   mapServerSummary,
   matchesNegocioSearch,
+  negocioVeredaLocal,
   queryLocalNegocios,
   statusOptionsForScope,
   type LocalNegocioInput,
@@ -249,6 +250,46 @@ describe('negociosListQuery · modo sin conexión (espejo de list_negocios_movil
     const entry = buildLocalNegocioEntry(input({ id: 'x', storedBalance: 42000 }), TODAY, names);
     expect(entry.row.remaining_balance).toBe(42000);
     expect(entry.row.has_mora).toBe(false);
+  });
+});
+
+describe('negociosListQuery · vereda propia del negocio (v12)', () => {
+  it('la vereda del negocio manda sobre la del cliente, como list_negocios_movil', () => {
+    const entry = buildLocalNegocioEntry(
+      input({
+        id: 'nv',
+        negocioMunicipioId: 'm1',
+        negocioVeredaId: 'v2',
+        customerMunicipioId: 'm1',
+        customerVeredaId: 'v1',
+      }),
+      TODAY,
+      names
+    );
+    expect(entry.row).toMatchObject({ vereda_id: 'v2', vereda_name: 'El Retiro', municipio_name: 'Álamo' });
+    const result = queryLocalNegocios([entry], {
+      scope: 'por_cobrar',
+      userId: ME,
+      gestorId: null,
+      search: '',
+      filters: { ...DEFAULT_NEGOCIOS_LIST_FILTERS, veredaId: 'v2' },
+      today: TODAY,
+    });
+    expect(result.rows.map((row) => row.id)).toEqual(['nv']);
+  });
+
+  it('respaldo: sin vereda propia usa la del cliente sólo si es del mismo municipio', () => {
+    const base = { negocioMunicipioId: 'm1', negocioVeredaId: null, customerVeredaId: 'v1' };
+    expect(negocioVeredaLocal({ ...base, customerMunicipioId: 'm1' })).toBe('v1');
+    expect(negocioVeredaLocal({ ...base, customerMunicipioId: 'm2' })).toBeNull();
+    // Negocio sin municipio: toda la ubicación es la del cliente.
+    expect(
+      negocioVeredaLocal({ negocioMunicipioId: null, negocioVeredaId: null, customerMunicipioId: 'm2', customerVeredaId: 'v1' })
+    ).toBe('v1');
+    // Negocio con vereda propia en un municipio distinto al del cliente.
+    expect(
+      negocioVeredaLocal({ negocioMunicipioId: 'm2', negocioVeredaId: 'v2', customerMunicipioId: 'm1', customerVeredaId: 'v1' })
+    ).toBe('v2');
   });
 });
 
