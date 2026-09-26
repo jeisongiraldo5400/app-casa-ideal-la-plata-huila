@@ -2,7 +2,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 import { OFFLINE_ORDER_TABLES } from './migrations';
 
 export const schema = appSchema({
-  version: 11,
+  version: 12,
   tables: [
     tableSchema({
       name: 'customers',
@@ -51,6 +51,8 @@ export const schema = appSchema({
         // contrato impreso sin señal ponía «—» en «CREADO POR».
         { name: 'created_by', type: 'string', isOptional: true },
         { name: 'created_by_name', type: 'string', isOptional: true },
+        // Vereda propia del negocio (v12); puede diferir de la del cliente.
+        { name: 'vereda_id', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string' },
         { name: 'server_updated_at', type: 'number', isOptional: true },
       ],

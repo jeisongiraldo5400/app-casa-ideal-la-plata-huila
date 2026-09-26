@@ -357,6 +357,25 @@ describe('applyPullPayload · colecciones nuevas del pull (v7)', () => {
               gestor_cobro_id: null,
               seller_name: 'Ana Vendedora',
               gestor_cobro_name: null,
+              vereda_id: 'v2',
+              updated_at: null,
+              deleted_at: null,
+            },
+            {
+              // Servidor anterior a 20261217120000: sin la clave, queda nula.
+              id: 'n2',
+              numero: 20260003,
+              status: 'activo',
+              deal_date: '2026-09-22',
+              total_credit: 100000,
+              remaining_balance: 100000,
+              customer_id: 'c1',
+              codeudor_customer_id: null,
+              direccion: null,
+              municipio_id: null,
+              municipio_name: null,
+              seller_id: 'u1',
+              gestor_cobro_id: null,
               updated_at: null,
               deleted_at: null,
             },
@@ -438,7 +457,8 @@ describe('applyPullPayload · colecciones nuevas del pull (v7)', () => {
     );
 
     expect(created.get('profiles:u1')).toMatchObject({ fullName: 'Ana Vendedora', email: 'ana@correo.com' });
-    expect(created.get('negocios:n1')).toMatchObject({ sellerName: 'Ana Vendedora', gestorCobroName: null });
+    expect(created.get('negocios:n1')).toMatchObject({ sellerName: 'Ana Vendedora', gestorCobroName: null, veredaId: 'v2' });
+    expect(created.get('negocios:n2')).toMatchObject({ veredaId: null });
     expect(created.get('customers:c1')).toMatchObject({
       email: 'celene@correo.com',
       address: 'Vereda Gallego',

@@ -110,6 +110,7 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
         record.gestorCobroName = row.gestor_cobro_name ?? null;
         record.createdBy = row.created_by ?? null;
         record.createdByName = row.created_by_name ?? null;
+        record.veredaId = row.vereda_id ?? null;
         record.rowSyncStatus = 'synced';
         record.serverUpdatedAt = toEpoch(row.updated_at);
       })

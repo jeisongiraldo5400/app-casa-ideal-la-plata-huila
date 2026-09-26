@@ -58,6 +58,8 @@ export type EnqueueNegocioCreateInput = {
     direccion: string | null;
     municipioId: string | null;
     municipioName: string | null;
+    /** Vereda propia del negocio (la que se eligió en el asistente). */
+    veredaId?: string | null;
     sellerId: string | null;
     sellerName: string | null;
     /** Quién lo registra: el usuario del teléfono (el contrato lo pone en «CREADO POR»). */
@@ -174,6 +176,7 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
         record.direccion = input.local.direccion;
         record.municipioId = input.local.municipioId;
         record.municipioName = input.local.municipioName;
+        record.veredaId = input.local.veredaId ?? null;
         record.sellerId = input.local.sellerId;
         record.gestorCobroId = null;
         record.sellerName = input.local.sellerName;

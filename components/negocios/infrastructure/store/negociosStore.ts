@@ -555,6 +555,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           direccion: input.direccion.trim(),
           municipioId: input.municipio_id,
           municipioName: input.municipio_name ?? null,
+          veredaId: input.vereda_id || null,
           sellerId: input.local_seller_id || input.seller_id || userId,
           sellerName: input.seller_name ?? null,
           createdBy: userId,

@@ -170,8 +170,9 @@ beforeEach(() => {
 
 describe('esquema local v11', () => {
   it('la migración de la v10 a la v11 crea las tres tablas nuevas y nada más', () => {
-    expect(schema.version).toBe(11);
-    expect(migrations.maxVersion).toBe(11);
+    // Después vino la v12 (vereda del negocio); esta prueba sólo mira el paso a 11.
+    expect(schema.version).toBeGreaterThanOrEqual(11);
+    expect(migrations.maxVersion).toBe(schema.version);
     const toEleven = migrations.sortedMigrations.find((migration) => migration.toVersion === 11)!;
     const steps = toEleven.steps as unknown as { type: string; schema: { name: string } }[];
     expect(steps.map((step) => [step.type, step.schema.name])).toEqual([
@@ -201,8 +202,8 @@ describe('esquema local v11', () => {
     expect(columns('pending_remissions')).not.toContain('driver_name');
   });
 
-  it('la versión 9 del paquete fuerza una descarga completa a quien tenía la 8', () => {
-    expect(PULL_PAYLOAD_VERSION).toBe('9');
+  it('la versión 9 del paquete (o posterior) fuerza una descarga completa a quien tenía la 8', () => {
+    expect(Number(PULL_PAYLOAD_VERSION)).toBeGreaterThanOrEqual(9);
     expect(pullCursorForPayloadVersion('2026-09-24T00:00:00Z', '8')).toBeNull();
   });
 });

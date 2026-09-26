@@ -128,6 +128,7 @@ async function readLocalEntries(today: string): Promise<LocalNegocioEntry[]> {
         deliveryOrderId: item.delivery_order_id,
         negocioMunicipioId: negocio?.municipioId ?? null,
         negocioAddress: negocio?.direccion ?? null,
+        negocioVeredaId: negocio?.veredaId ?? null,
         customerMunicipioId: customer?.municipioId ?? null,
         customerVeredaId: customer?.veredaId ?? null,
         customerAddress: customer?.address ?? null,

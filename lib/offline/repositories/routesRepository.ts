@@ -76,6 +76,7 @@ export async function fetchRouteCandidatesFromLocal(input: {
         gestorCobroId: negocio.gestorCobroId,
         direccion: negocio.direccion,
         municipioId: negocio.municipioId,
+        veredaId: negocio.veredaId ?? null,
         customerId: negocio.customerId,
       },
       customer: customer

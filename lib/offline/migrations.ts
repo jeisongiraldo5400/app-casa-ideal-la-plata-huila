@@ -45,6 +45,9 @@ export const NEGOCIO_CREATOR_COLUMNS = [
   { name: 'created_by_name', type: 'string' as const, isOptional: true },
 ];
 
+/** Columnas de `negocios` añadidas en la versión 12 (también en `schema.ts`). */
+export const NEGOCIO_LOCATION_COLUMNS = [{ name: 'vereda_id', type: 'string' as const, isOptional: true }];
+
 /** Tablas del catálogo de producto añadidas en la versión 9 (también en `schema.ts`). */
 export const CATALOG_PRODUCT_TABLES = [
   {
@@ -151,6 +154,12 @@ export const OFFLINE_ORDER_TABLES = [
 
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Vereda propia del negocio (20261217120000): sin ella el teléfono
+      // mostraba y filtraba por la vereda del cliente.
+      toVersion: 12,
+      steps: [addColumns({ table: 'negocios', columns: NEGOCIO_LOCATION_COLUMNS })],
+    },
     {
       // Descarga selectiva «Qué llevar en el teléfono» (20261130*): foto de
       // las órdenes llevadas y de las remisiones pendientes para armar un
