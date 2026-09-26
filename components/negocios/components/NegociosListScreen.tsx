@@ -66,6 +66,7 @@ export function NegociosListScreen() {
   const gestorCobro = isGestorCobro();
   const recaudador = isRecaudador();
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const online = useSyncStore((state) => state.online);
   const setQueueVisible = useSyncStore((state) => state.setQueueVisible);
   const syncOverlay = useNegocioSyncOverlay();
   const canCreate = admin || vendedor || gestorCobro;
@@ -122,6 +123,7 @@ export function NegociosListScreen() {
     userId,
     searchOnly,
     enabled: !needsGestor,
+    online,
   });
   useScreenLoading(list.loading);
 
@@ -152,11 +154,14 @@ export function NegociosListScreen() {
   }, []);
 
   // Negocios creados en el teléfono sin confirmar: el servidor no los conoce,
-  // se añaden arriba sólo en la lista sin filtrar de Todos / Míos.
+  // se añaden arriba en la lista sin filtrar. También en «Por cobrar» propio:
+  // un gestor sin otro rol solo tiene esa pestaña y, si no, no vería el
+  // negocio que acaba de crear sin señal (aún no tiene gestor asignado). No
+  // cuando el admin mira la cartera de otro gestor.
   const rows = useMemo(() => {
-    if (searchOnly || scope === 'por_cobrar' || hasFilters) return list.rows as any[];
+    if (searchOnly || hasFilters || (scope === 'por_cobrar' && gestor)) return list.rows as any[];
     return withUnsyncedNegociosFirst<any>(list.rows, syncOverlay.items, syncOverlay.states);
-  }, [hasFilters, list.rows, scope, searchOnly, syncOverlay]);
+  }, [gestor, hasFilters, list.rows, scope, searchOnly, syncOverlay]);
 
   // Productos de las tarjetas visibles: una consulta por página, no por tarjeta.
   const products = useNegociosProducts(rows.map((row: { id: string }) => row.id));
@@ -322,8 +327,8 @@ export function NegociosListScreen() {
               syncState={syncState}
               products={products.byNegocio.get(item.id)}
               onPress={() =>
-                // Rechazado: se decide en «Cambios sin sincronizar». Pendiente
-                // con señal: la ficha consultaría al servidor, que no lo conoce.
+                // Rechazado: se decide en «Cambios sin sincronizar». Pendiente:
+                // la ficha lo muestra desde el teléfono, con o sin señal.
                 negocioCardOpensSyncQueue(syncState, !list.fromCache)
                   ? setQueueVisible(true)
                   : router.push(`/negocio/${item.id}`)

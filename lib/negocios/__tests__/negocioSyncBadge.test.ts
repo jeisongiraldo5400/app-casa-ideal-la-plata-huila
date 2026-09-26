@@ -33,9 +33,9 @@ describe('negocioCardOpensSyncQueue', () => {
     expect(negocioCardOpensSyncQueue('rejected', true)).toBe(true);
   });
 
-  it('pendiente abre la ficha local sin señal y la cola con señal', () => {
+  it('pendiente abre la ficha con o sin señal (la ficha cae a lo del teléfono)', () => {
     expect(negocioCardOpensSyncQueue('pending', false)).toBe(false);
-    expect(negocioCardOpensSyncQueue('pending', true)).toBe(true);
+    expect(negocioCardOpensSyncQueue('pending', true)).toBe(false);
   });
 
   it('un negocio confirmado abre su ficha', () => {

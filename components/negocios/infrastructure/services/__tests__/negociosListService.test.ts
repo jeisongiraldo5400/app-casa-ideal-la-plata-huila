@@ -3,10 +3,15 @@ import { fetchLocationMasters } from '@/lib/locations/locationsService';
 import { canUseLocalDb, fetchNegociosListFromLocal } from '@/lib/offline/repositories/offlineRepository';
 import { getDatabase } from '@/lib/offline/database';
 import { DEFAULT_NEGOCIOS_LIST_FILTERS } from '@/lib/negocios/negociosListQuery';
-import { fetchNegociosFromLocal, fetchNegociosPage, loadLocationMastersForList } from '../negociosListService';
+import {
+  fetchNegociosFromLocal,
+  fetchNegociosPage,
+  invalidateNegociosLocalCache,
+  loadLocationMastersForList,
+} from '../negociosListService';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
-jest.mock('@/lib/offline/database', () => ({ getDatabase: jest.fn() }));
+jest.mock('@/lib/offline/database', () => ({ getDatabase: jest.fn(), databaseGeneration: () => 1 }));
 jest.mock('@/lib/offline/models', () => ({}));
 jest.mock('@/lib/offline/repositories/offlineRepository', () => ({
   canUseLocalDb: jest.fn(() => false),
@@ -21,7 +26,10 @@ jest.mock('@/lib/locations/locationsService', () => ({
 const mockRpc = supabase.rpc as jest.Mock;
 
 describe('negociosListService', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    invalidateNegociosLocalCache();
+  });
 
   it('llama a list_negocios_movil con los filtros y traduce la respuesta', async () => {
     mockRpc.mockResolvedValue({
@@ -134,5 +142,39 @@ describe('negociosListService', () => {
       remaining_balance: 100,
     });
     expect(result?.summary).toEqual({ totalCount: 1, totalSaldo: 100, moraCount: 1 });
+  });
+
+  it('sin señal lee el teléfono una vez y el buscador filtra en memoria', async () => {
+    (canUseLocalDb as jest.Mock).mockReturnValue(true);
+    (fetchNegociosListFromLocal as jest.Mock).mockResolvedValue([
+      { id: 'n1', numero: 20260001, status: 'activo', deal_date: '2026-09-01', total_credit: 100, remaining_balance: 0,
+        customer_id: 'c1', customer: { name: 'José Peña', id_number: '1.061.111' }, installments_count: 1,
+        has_mora: false, delivery_order_id: null, seller_id: 'u' },
+      { id: 'n2', numero: 20260002, status: 'activo', deal_date: '2026-09-02', total_credit: 100, remaining_balance: 0,
+        customer_id: 'c2', customer: { name: 'Ana', id_number: '2' }, installments_count: 1,
+        has_mora: false, delivery_order_id: null, seller_id: 'u' },
+    ]);
+    const queried: Array<{ table: string; conditions: unknown[] }> = [];
+    (getDatabase as jest.Mock).mockReturnValue({
+      get: (table: string) => ({
+        query: (...conditions: unknown[]) => {
+          queried.push({ table, conditions });
+          return { fetch: async () => [] };
+        },
+      }),
+    });
+    const query = { scope: 'mios' as const, userId: 'u', gestorId: null, filters: DEFAULT_NEGOCIOS_LIST_FILTERS };
+
+    const first = await fetchNegociosFromLocal({ ...query, search: '' });
+    const reads = queried.length;
+    const second = await fetchNegociosFromLocal({ ...query, search: 'pena' });
+
+    expect(first?.rows).toHaveLength(2);
+    expect(second?.rows.map((row) => row.id)).toEqual(['n1']);
+    expect(queried).toHaveLength(reads);
+    expect(fetchNegociosListFromLocal).toHaveBeenCalledTimes(1);
+    // De los clientes solo se piden los de esos negocios.
+    const customersQuery = queried.find((entry) => entry.table === 'customers');
+    expect(customersQuery?.conditions).toEqual([['id', ['c1', 'c2']]]);
   });
 });

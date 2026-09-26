@@ -41,6 +41,15 @@ export type CustomersPage = {
 
 export const CUSTOMERS_PAGE_SIZE = 20;
 
+/**
+ * Error con el código de Postgres/PostgREST intacto: la pantalla lo traduce con
+ * `errorMessage()` en vez de mostrar el texto crudo (a veces en inglés).
+ */
+function asError(error: { message?: string; code?: string; details?: string | null }, fallback: string): Error {
+  if (error instanceof Error) return error;
+  return Object.assign(new Error(error.message || fallback), { code: error.code, details: error.details });
+}
+
 type DashboardRow = Database['public']['Functions']['get_customers_dashboard']['Returns'][number];
 
 type FetchCustomersParams = {
@@ -74,7 +83,7 @@ export async function fetchCustomersPage(params: FetchCustomersParams): Promise<
       seller_ids: scopedSellerId ? [scopedSellerId] : undefined,
       include_unassigned: false,
     });
-    if (error) throw new Error(error.message || 'No fue posible cargar los clientes');
+    if (error) throw asError(error, 'No fue posible cargar los clientes');
 
     const rows: DashboardRow[] = data || [];
     const totalCount = Number(rows[0]?.total_count || 0);
@@ -151,7 +160,7 @@ export async function fetchCustomerSummary(customerId: string): Promise<Customer
     const { data, error } = await supabase.rpc('get_customer_summary', {
       p_customer_id: customerId,
     });
-    if (error) throw new Error(error.message || 'No fue posible cargar el cliente');
+    if (error) throw asError(error, 'No fue posible cargar el cliente');
     return { ...parseCustomerSummary(data), fromCache: false };
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;

@@ -55,11 +55,11 @@ export function withUnsyncedNegociosFirst<T extends { id: string }>(
 
 /**
  * ¿La tarjeta debe abrir «Cambios sin sincronizar» en vez de la ficha?
- * Siempre si está rechazado (allí se reintenta o descarta). Si solo está
- * pendiente, la ficha funciona sin señal (sale de la base local), pero con
- * señal la ficha consulta al servidor, que todavía no lo conoce.
+ * Solo si está rechazado (allí se reintenta o descarta). Pendiente abre la
+ * ficha, con o sin señal: la ficha cae a la base del teléfono cuando el
+ * servidor aún no lo conoce y muestra «Pendiente de enviar · sin número aún».
+ * `listFromServer` se conserva por compatibilidad con quien lo llama.
  */
-export function negocioCardOpensSyncQueue(state: NegocioSyncState | undefined, listFromServer: boolean) {
-  if (!state) return false;
-  return state === 'rejected' || listFromServer;
+export function negocioCardOpensSyncQueue(state: NegocioSyncState | undefined, _listFromServer?: boolean) {
+  return state === 'rejected';
 }

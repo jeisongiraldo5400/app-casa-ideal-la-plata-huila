@@ -2,6 +2,11 @@ import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { normalizeCustomerEmail } from '../../domain/customerEmail';
 import {
+  DuplicateCustomerDocumentError,
+  isDuplicateCustomerDocumentMessage,
+  type CustomerWithDocument,
+} from '@/lib/customers/customerDocument';
+import {
   canUseLocalDb,
   createCustomerOffline,
   fetchCustomerFromLocal,
@@ -43,42 +48,52 @@ export async function searchCustomersForNegocio(query: string): Promise<Customer
 }
 
 /** Cliente que ya tiene un número de documento. */
-export type ExistingCustomer = {
-  id: string;
-  name: string;
-  id_number: string;
-  /** Eliminado: el documento sigue ocupado, pero no aparece en las búsquedas. */
-  deleted: boolean;
-};
+export type ExistingCustomer = CustomerWithDocument;
 
 /**
- * El documento ya lo tiene otro cliente. La base lo rechaza con la restricción
- * `customers_id_number_key`, que incluye también a los clientes eliminados.
+ * El documento ya lo tiene otro cliente, escrito igual o distinto
+ * («1.234.567» y «1234567», 20261219120000):
+ * - el trigger `enforce_customer_document_unique` (con señal) o
+ *   `create_customer_offline` lo rechazan con un mensaje en español;
+ * - servidores sin esa migración, con la restricción `customers_id_number_key`
+ *   (incluye a los clientes eliminados);
+ * - sin señal, la base del teléfono (`DuplicateCustomerDocumentError`).
  */
 export function isDuplicateCustomerIdNumber(error: unknown): boolean {
+  if (error instanceof DuplicateCustomerDocumentError) return true;
   if (!error || typeof error !== 'object') return false;
   const { code, message, details } = error as { code?: unknown; message?: unknown; details?: unknown };
-  const text = `${typeof message === 'string' ? message : ''} ${typeof details === 'string' ? details : ''}`;
+  const messageText = typeof message === 'string' ? message : '';
+  if (isDuplicateCustomerDocumentMessage(messageText)) return true;
+  const text = `${messageText} ${typeof details === 'string' ? details : ''}`;
   return String(code ?? '') === '23505' && text.includes('customers_id_number_key');
 }
 
 /**
- * Quién tiene ya ese documento, para ofrecer usarlo en vez de mostrar un error.
- * Si no se puede consultar (sin permiso o sin red) devuelve `null` y la
- * pantalla se queda con el mensaje general.
+ * Quién tiene ya ese documento (comparado por letras y dígitos), para ofrecer
+ * usarlo en vez de mostrar un error. Si el rechazo vino del teléfono, el
+ * cliente viaja en el propio error. Si no se puede consultar (sin permiso o
+ * sin red) devuelve `null` y la pantalla se queda con el mensaje general.
  */
-export async function findCustomerByIdNumber(idNumber: string): Promise<ExistingCustomer | null> {
+export async function findCustomerByIdNumber(idNumber: string, error?: unknown): Promise<ExistingCustomer | null> {
+  if (error instanceof DuplicateCustomerDocumentError) return error.existing;
   const value = idNumber.trim();
   if (!value) return null;
   try {
-    const { data, error } = await supabase
+    const { data, error: rpcError } = await supabase.rpc('find_customer_by_document', { p_id_number: value });
+    if (!rpcError) {
+      const row = (data ?? [])[0];
+      return row ? { id: row.id, name: row.name, id_number: row.id_number, deleted: Boolean(row.deleted) } : null;
+    }
+    // Servidor sin 20261219120000: coincidencia exacta, como antes.
+    const { data: exact, error: exactError } = await supabase
       .from('customers')
       .select('id, name, id_number, deleted_at')
       .eq('id_number', value)
       .limit(1)
       .maybeSingle();
-    if (error || !data) return null;
-    return { id: data.id, name: data.name, id_number: data.id_number, deleted: Boolean(data.deleted_at) };
+    if (exactError || !exact) return null;
+    return { id: exact.id, name: exact.name, id_number: exact.id_number, deleted: Boolean(exact.deleted_at) };
   } catch {
     return null;
   }

@@ -215,6 +215,10 @@ export function CustomersScreen() {
           setCreateOpen(false);
           void list.refresh();
         }}
+        onOpenExisting={(customerId) => {
+          setCreateOpen(false);
+          router.push(`/cliente/${customerId}` as never);
+        }}
       />
     </View>
   );

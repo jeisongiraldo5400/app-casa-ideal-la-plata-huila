@@ -8,6 +8,10 @@ import type { CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
 import type { CustomerWithNegocios } from '@/lib/customers/customerNegocios';
 import {
+  DuplicateCustomerDocumentError,
+  normalizeCustomerDocument,
+} from '@/lib/customers/customerDocument';
+import {
   countLocalCustomersBySeller,
   filterLocalCustomers,
   type LocalCustomerQuery,
@@ -329,12 +333,25 @@ export async function createCustomerOffline(input: {
   sellerId?: string | null;
 }) {
   const database = getDatabase();
-  const existing = await database
-    .get<Customer>('customers')
-    .query(Q.where('id_number', input.idNumber))
-    .fetch();
-  if (existing[0]) {
-    throw new Error(`Ya existe un cliente local con documento ${input.idNumber}`);
+  // Mismo criterio que el servidor (20261219120000): «1.234.567» y «1234567»
+  // son el mismo documento. Se leen solo los candidatos que contienen su
+  // último dígito o letra (sin comodines que escapar; LIKE no distingue
+  // mayúsculas) y se comparan normalizados.
+  const normalized = normalizeCustomerDocument(input.idNumber);
+  if (normalized) {
+    const candidates = await database
+      .get<Customer>('customers')
+      .query(Q.where('id_number', Q.like(`%${normalized.slice(-1)}%`)))
+      .fetch();
+    const existing = candidates.find((row) => normalizeCustomerDocument(row.idNumber) === normalized);
+    if (existing) {
+      throw new DuplicateCustomerDocumentError({
+        id: existing.id,
+        name: existing.name,
+        id_number: existing.idNumber ?? input.idNumber,
+        deleted: false,
+      });
+    }
   }
   const customerId = createIdempotencyKey();
   const idempotencyKey = createIdempotencyKey();
@@ -415,9 +432,11 @@ function withoutDiscarded<T extends { id: string }>(rows: T[], discarded: Set<st
 export async function fetchNegociosListFromLocal() {
   if (!canUseLocalDb()) return [];
   const database = getDatabase();
+  // Los clientes salen de la caché del directorio (ya mapeados): leer y mapear
+  // ~2.000 filas en cada búsqueda sin señal se notaba.
   const [allNegocios, customers, cuotas, createCommands] = await Promise.all([
     database.get<Negocio>('negocios').query().fetch(),
-    database.get<Customer>('customers').query().fetch(),
+    readLocalCustomerRows(),
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     listCreateNegocioOutbox(database),
   ]);
@@ -600,8 +619,12 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
   const database = getDatabase();
   const negocio = await findOrNull<Negocio>('negocios', negocioId);
   if (!negocio) return null;
+  // Solo el cliente y el fiador del negocio, no el directorio entero.
+  const customerIds = [negocio.customerId, negocio.codeudorCustomerId].filter((value): value is string => Boolean(value));
   const [customers, cuotas, allPagos, items, profileNames] = await Promise.all([
-    database.get<Customer>('customers').query().fetch(),
+    customerIds.length
+      ? database.get<Customer>('customers').query(Q.where('id', Q.oneOf(customerIds))).fetch()
+      : Promise.resolve([] as Customer[]),
     database.get<NegocioCuota>('negocio_cuotas').query(Q.where('negocio_id', negocioId)).fetch(),
     database.get<NegocioPago>('negocio_pagos').query(Q.where('negocio_id', negocioId)).fetch(),
     database.get<NegocioItem>('negocio_items').query(Q.where('negocio_id', negocioId)).fetch(),

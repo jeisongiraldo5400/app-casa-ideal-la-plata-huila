@@ -6,8 +6,19 @@ import React from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import type { CustomerSummaryCustomer } from '@/lib/customers/customerSummary';
 
+/** Lo mínimo para llamar, escribir y ubicar al cliente. */
+export type CustomerContactInfo = Pick<
+  CustomerSummaryCustomer,
+  'name' | 'id_number' | 'phone' | 'email' | 'address' | 'vereda_name' | 'municipio_name' | 'departamento_name'
+> & { notes?: string | null };
+
 interface CustomerContactBlockProps {
-  customer: CustomerSummaryCustomer;
+  customer: CustomerContactInfo;
+  /**
+   * Solo los botones (Llamar, WhatsApp si hay número, Mapa), sin tarjeta ni
+   * datos: para pantallas que ya muestran al cliente, como la ficha del negocio.
+   */
+  actionsOnly?: boolean;
 }
 
 /** Solo dígitos; los teléfonos se guardan con espacios y signos. */
@@ -37,15 +48,70 @@ async function open(url: string, fallbackMessage: string) {
   }
 }
 
-export function CustomerContactBlock({ customer }: CustomerContactBlockProps) {
+function contactLocation(customer: CustomerContactInfo): string {
+  return [customer.address, customer.vereda_name, customer.municipio_name, customer.departamento_name]
+    .filter(Boolean)
+    .join(', ');
+}
+
+function ContactActions({ customer, hideUnavailableWhatsApp }: { customer: CustomerContactInfo; hideUnavailableWhatsApp?: boolean }) {
+  const dialable = toDialable(customer.phone);
+  const whatsapp = toWhatsApp(customer.phone);
+  const location = contactLocation(customer);
+  return (
+    <View style={styles.actions}>
+      <Button
+        title="Llamar"
+        icon="phone"
+        variant="outline"
+        size="sm"
+        disabled={!dialable}
+        onPress={() => dialable && open(`tel:${dialable}`, 'No se pudo abrir el marcador.')}
+        style={styles.action}
+      />
+      {whatsapp || !hideUnavailableWhatsApp ? (
+        <Button
+          title="WhatsApp"
+          icon="chat"
+          variant="outline"
+          size="sm"
+          disabled={!whatsapp}
+          onPress={() => whatsapp && open(`https://wa.me/${whatsapp}`, 'WhatsApp no está instalado.')}
+          style={styles.action}
+        />
+      ) : null}
+      <Button
+        title="Mapa"
+        icon="map"
+        variant="outline"
+        size="sm"
+        disabled={!location}
+        onPress={() =>
+          location &&
+          open(
+            `https://maps.google.com/?q=${encodeURIComponent(location)}`,
+            'No se pudo abrir el mapa.'
+          )
+        }
+        style={styles.action}
+      />
+    </View>
+  );
+}
+
+export function CustomerContactBlock({ customer, actionsOnly }: CustomerContactBlockProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
-  const dialable = toDialable(customer.phone);
-  const whatsapp = toWhatsApp(customer.phone);
-  const location = [customer.address, customer.vereda_name, customer.municipio_name, customer.departamento_name]
-    .filter(Boolean)
-    .join(', ');
+  if (actionsOnly) {
+    return (
+      <View testID="customer-contact-actions">
+        <ContactActions customer={customer} hideUnavailableWhatsApp />
+      </View>
+    );
+  }
+
+  const location = contactLocation(customer);
 
   return (
     <Card>
@@ -83,41 +149,7 @@ export function CustomerContactBlock({ customer }: CustomerContactBlockProps) {
         </View>
       ) : null}
 
-      <View style={styles.actions}>
-        <Button
-          title="Llamar"
-          icon="phone"
-          variant="outline"
-          size="sm"
-          disabled={!dialable}
-          onPress={() => dialable && open(`tel:${dialable}`, 'No se pudo abrir el marcador.')}
-          style={styles.action}
-        />
-        <Button
-          title="WhatsApp"
-          icon="chat"
-          variant="outline"
-          size="sm"
-          disabled={!whatsapp}
-          onPress={() => whatsapp && open(`https://wa.me/${whatsapp}`, 'WhatsApp no está instalado.')}
-          style={styles.action}
-        />
-        <Button
-          title="Mapa"
-          icon="map"
-          variant="outline"
-          size="sm"
-          disabled={!location}
-          onPress={() =>
-            location &&
-            open(
-              `https://maps.google.com/?q=${encodeURIComponent(location)}`,
-              'No se pudo abrir el mapa.'
-            )
-          }
-          style={styles.action}
-        />
-      </View>
+      <ContactActions customer={customer} />
     </Card>
   );
 }

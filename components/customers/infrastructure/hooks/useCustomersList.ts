@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { errorMessage } from '@/lib/errorMessage';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import {
@@ -81,7 +82,7 @@ export function useCustomersList() {
         setError(null);
       } catch (err) {
         if (id !== requestId.current) return;
-        setError(err instanceof Error ? err.message : 'No fue posible cargar los clientes');
+        setError(errorMessage(err, 'No fue posible cargar los clientes'));
         if (!options.append) setCustomers([]);
       } finally {
         if (id === requestId.current) {

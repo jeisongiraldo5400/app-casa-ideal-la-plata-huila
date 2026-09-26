@@ -957,7 +957,7 @@ function NegocioCreateScreenInner() {
     } catch (e: unknown) {
       if (isDuplicateCustomerIdNumber(e)) {
         const idNumber = newCustomerId.trim();
-        const existing = await findCustomerByIdNumber(idNumber);
+        const existing = await findCustomerByIdNumber(idNumber, e);
         const prompt = duplicateCustomerPrompt(existing, idNumber);
         if (existing && prompt.canUse) {
           const useExisting = () => {
