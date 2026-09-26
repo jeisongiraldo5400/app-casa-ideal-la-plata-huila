@@ -1,7 +1,7 @@
 import type { LocalMisCobro } from '@/lib/cartera/misCobros';
 import { getDatabase } from '../database';
 import { Customer, Negocio, NegocioCuota, NegocioPago, Profile } from '../models';
-import { canUseLocalDb } from './offlineRepository';
+import { canUseLocalDb, loadDiscardedNegocioIds } from './offlineRepository';
 
 /**
  * Pagos guardados en el teléfono para «Mis cobros» sin señal, con cliente,
@@ -14,12 +14,15 @@ import { canUseLocalDb } from './offlineRepository';
 export async function loadMisCobrosFromLocal(): Promise<LocalMisCobro[] | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
-  const [pagos, negocios, customers, cuotas] = await Promise.all([
+  const [allPagos, negocios, customers, cuotas, discarded] = await Promise.all([
     database.get<NegocioPago>('negocio_pagos').query().fetch(),
     database.get<Negocio>('negocios').query().fetch(),
     database.get<Customer>('customers').query().fetch(),
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    loadDiscardedNegocioIds(database),
   ]);
+  // Igual que la lista de Negocios: nada de un negocio descartado por el usuario.
+  const pagos = discarded.size ? allPagos.filter((pago) => !discarded.has(pago.negocioId)) : allPagos;
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
   const installmentByCuota = new Map(cuotas.map((row) => [row.id, row.installmentNumber]));

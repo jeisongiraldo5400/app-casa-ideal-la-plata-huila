@@ -241,19 +241,17 @@ export async function fetchCustomerNegociosFromLocal(customerId: string): Promis
   return result ?? null;
 }
 
-export async function searchCustomerNegociosFromLocal(term: string, limit = 20): Promise<CustomerWithNegocios[]> {
-  if (!canUseLocalDb()) return [];
-  const matched = await searchCustomersFromLocal(term, limit);
-  if (!matched.length) return [];
-  return buildCustomerNegocios(matched);
-}
-
 async function buildCustomerNegocios(
   matched: { id: string; name: string; idNumber: string | null; phone: string | null }[]
 ): Promise<CustomerWithNegocios[]> {
   const database = getDatabase();
-  const negocios = await database.get<Negocio>('negocios').query().fetch();
-  const cuotas = await database.get<NegocioCuota>('negocio_cuotas').query().fetch();
+  const [allNegocios, cuotas, discarded] = await Promise.all([
+    database.get<Negocio>('negocios').query().fetch(),
+    database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
+    loadDiscardedNegocioIds(database),
+  ]);
+  // Igual que en la lista de Negocios: el descartado por el usuario no sale.
+  const negocios = withoutDiscarded(allNegocios, discarded);
   const cuotaRows = cuotas.map((row) => ({
     id: row.id,
     negocioId: row.negocioId,
@@ -401,6 +399,19 @@ async function listCreateNegocioOutbox(database: ReturnType<typeof getDatabase>)
   }));
 }
 
+/**
+ * Negocios que el usuario descartó en «Cambios sin sincronizar»
+ * (`discardedNegocioIds`). Siguen en el teléfono (el cliente ya firmó), pero
+ * no deben salir en la lista, el buscador de clientes, la ficha ni la cartera.
+ */
+export async function loadDiscardedNegocioIds(database: ReturnType<typeof getDatabase>): Promise<Set<string>> {
+  return discardedNegocioIds(await listCreateNegocioOutbox(database));
+}
+
+function withoutDiscarded<T extends { id: string }>(rows: T[], discarded: Set<string>): T[] {
+  return discarded.size ? rows.filter((row) => !discarded.has(row.id)) : rows;
+}
+
 export async function fetchNegociosListFromLocal() {
   if (!canUseLocalDb()) return [];
   const database = getDatabase();
@@ -411,8 +422,7 @@ export async function fetchNegociosListFromLocal() {
     listCreateNegocioOutbox(database),
   ]);
   // Un negocio descartado por el usuario sigue en el teléfono, pero no en la lista.
-  const discarded = discardedNegocioIds(createCommands);
-  const negocios = discarded.size ? allNegocios.filter((row) => !discarded.has(row.id)) : allNegocios;
+  const negocios = withoutDiscarded(allNegocios, discardedNegocioIds(createCommands));
   return mapNegociosListFromLocal(
     negocios.map((row) => ({
       id: row.id,
@@ -712,7 +722,7 @@ export async function fetchCarteraFromLocal(
 ): Promise<{ rows: CarteraRow[]; totalCount: number } | null> {
   if (!canUseLocalDb()) return null;
   const database = getDatabase();
-  const [cuotas, negocios, customers, pagos, profileNames] = await Promise.all([
+  const [allCuotas, negocios, customers, pagos, profileNames, discarded] = await Promise.all([
     database.get<NegocioCuota>('negocio_cuotas').query().fetch(),
     database.get<Negocio>('negocios').query().fetch(),
     database.get<Customer>('customers').query().fetch(),
@@ -720,7 +730,10 @@ export async function fetchCarteraFromLocal(
     // Los usuarios bajan completos en el pull: con ellos se nombran sin señal
     // el vendedor del cliente y quien registró el negocio.
     fetchProfileNamesFromLocal(),
+    loadDiscardedNegocioIds(database),
   ]);
+  // Las cuotas de un negocio descartado por el usuario no cuentan en la cartera.
+  const cuotas = discarded.size ? allCuotas.filter((cuota) => !discarded.has(cuota.negocioId)) : allCuotas;
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
   // Métodos de pago con abonos vigentes por negocio: el RPC resuelve así el
