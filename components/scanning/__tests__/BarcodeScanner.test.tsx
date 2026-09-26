@@ -1,15 +1,18 @@
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Linking } from 'react-native';
 import { BarcodeScanner } from '@/components/scanning';
 
 let mockCameraProps: Record<string, any> = {};
 const mockRequestPermission = jest.fn(async () => undefined);
+const mockGetPermission = jest.fn(async () => undefined);
+let mockPermission: { granted: boolean; canAskAgain?: boolean } = { granted: true };
 
 jest.mock('expo-camera', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    useCameraPermissions: () => [{ granted: true }, mockRequestPermission],
+    useCameraPermissions: () => [mockPermission, mockRequestPermission, mockGetPermission],
     CameraView: (props: Record<string, any>) => {
       mockCameraProps = props;
       return ReactModule.createElement(View, { testID: 'camera-view' });
@@ -24,6 +27,7 @@ jest.mock('react-native-safe-area-context', () => ({
 describe('BarcodeScanner', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPermission = { granted: true };
     mockCameraProps = {};
     jest.useFakeTimers();
   });
@@ -108,5 +112,30 @@ describe('BarcodeScanner', () => {
     });
     expect(onScan).toHaveBeenCalledTimes(1);
     expect(onScan).toHaveBeenCalledWith('770456');
+  });
+
+  describe('permiso de cámara', () => {
+    it('si aún se puede pedir, ofrece «Solicitar permiso»', () => {
+      mockPermission = { granted: false, canAskAgain: true };
+      const screen = render(<BarcodeScanner onScan={jest.fn()} onClose={jest.fn()} />);
+
+      // Una vez al abrir y otra al tocar el botón; no en cada render.
+      expect(mockRequestPermission).toHaveBeenCalledTimes(1);
+      fireEvent.press(screen.getByText('Solicitar permiso'));
+      expect(mockRequestPermission).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText('Abrir ajustes')).toBeNull();
+    });
+
+    it('negado para siempre: explica y abre Ajustes en vez de pedirlo en vano', () => {
+      mockPermission = { granted: false, canAskAgain: false };
+      const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+      const screen = render(<BarcodeScanner onScan={jest.fn()} onClose={jest.fn()} />);
+
+      expect(screen.getByText(/Actívalo en Ajustes/)).toBeTruthy();
+      fireEvent.press(screen.getByText('Abrir ajustes'));
+      expect(openSettings).toHaveBeenCalledTimes(1);
+      expect(mockRequestPermission).not.toHaveBeenCalled();
+      openSettings.mockRestore();
+    });
   });
 });

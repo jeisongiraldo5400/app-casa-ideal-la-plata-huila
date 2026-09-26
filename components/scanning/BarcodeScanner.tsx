@@ -1,6 +1,6 @@
 import { logOperationError } from '@/lib/operationLogger';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking, AppState } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,7 +34,16 @@ export function BarcodeScanner({
   logModule,
 }: BarcodeScannerProps) {
   const insets = useSafeAreaInsets();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
+
+  // Al volver de Ajustes (permiso activado a mano) se relee el permiso: sin
+  // esto la pantalla seguía diciendo que no hay acceso hasta reabrirla.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void getPermission().catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [getPermission]);
   const [scanned, setScanned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Never attach onBarcodeScanned until native session is ready (avoids crashes). */
@@ -72,10 +81,15 @@ export function BarcodeScanner({
     return () => clearTimeout(t);
   }, []);
 
+  // Se pide solo una vez al abrir: antes se volvía a pedir con cada cambio del
+  // permiso (el diálogo reaparecía tras negarlo) y no tiene sentido si el
+  // sistema ya no deja preguntar.
+  const autoRequestedRef = useRef(false);
   useEffect(() => {
-    if (permission && !permission.granted) {
-      requestPermission();
-    }
+    if (!permission || permission.granted || autoRequestedRef.current) return;
+    if (permission.canAskAgain === false) return;
+    autoRequestedRef.current = true;
+    void requestPermission();
   }, [permission, requestPermission]);
 
   useEffect(() => {
@@ -156,11 +170,23 @@ export function BarcodeScanner({
   }
 
   if (!permission.granted) {
+    // Negado «para siempre» (o dos veces en Android): el sistema ya no muestra
+    // el diálogo y «Solicitar permiso» no hacía nada. Solo queda Ajustes.
+    const blocked = permission.canAskAgain === false;
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>No se tiene acceso a la cámara</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Solicitar permiso</Text>
+        {blocked ? (
+          <Text style={styles.text}>
+            El permiso de cámara está negado. Actívalo en Ajustes → Permisos → Cámara y vuelve a la app.
+          </Text>
+        ) : null}
+        <TouchableOpacity
+          style={styles.button}
+          onPress={blocked ? () => void Linking.openSettings().catch(() => undefined) : requestPermission}
+          accessibilityRole="button"
+        >
+          <Text style={styles.buttonText}>{blocked ? 'Abrir ajustes' : 'Solicitar permiso'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.button, styles.closeButtonStyle]} onPress={onClose}>
           <Text style={styles.buttonText}>Cerrar</Text>

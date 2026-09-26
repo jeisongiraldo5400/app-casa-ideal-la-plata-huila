@@ -184,14 +184,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="received-orders"
-        options={{
-          href: null,
-          title: 'Historial de órdenes recibidas',
-          headerLeft: () => <BackButton />,
-        }}
-      />
-      <Tabs.Screen
         name="my-orders"
         options={{
           href: null,
