@@ -20,7 +20,7 @@ import {
 import { formatDeliveryLocation } from '../domain/deliveryLocation';
 import { DeliveryOrderProductsModal } from './DeliveryOrderProductsModal';
 import { DeliveryOrderRecipientModal } from './DeliveryOrderRecipientModal';
-import { OfflineOrderToggle, canTakeOrderOffline } from './OfflineOrderToggle';
+import { OfflineOrderToggle, canTakeOrderOffline, useCanCarryOrdersOnPhone } from './OfflineOrderToggle';
 
 interface DeliveryOrderCardProps {
   order: DeliveryOrder;
@@ -38,7 +38,8 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
   const progress = calculateDeliveryProgress(order);
   const recipient = getRecipientInfo(order);
   const locationLabel = formatDeliveryLocation(order);
-  const offlineEligible = canTakeOrderOffline(order);
+  const canCarryOrders = useCanCarryOrdersOnPhone();
+  const offlineEligible = canCarryOrders && canTakeOrderOffline(order);
 
   // Determinar el badge de progreso
   const getProgressBadge = () => {

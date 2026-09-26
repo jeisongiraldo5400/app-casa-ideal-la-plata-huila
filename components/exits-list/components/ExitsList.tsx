@@ -6,7 +6,7 @@ import { ScreenState } from '@/components/ui/ScreenState';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
 import { isOfflineError } from '@/lib/errorMessage';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export function ExitsList() {
@@ -19,14 +19,14 @@ export function ExitsList() {
     error,
     searchQuery,
     hasMore,
+    loadingMore,
+    loadMoreError,
     loadNextPage,
     loadExits,
   } = useExitsList();
 
-  // Recargar cuando cambia el searchQuery (con debounce manejado en el componente padre)
-  useEffect(() => {
-    loadExits();
-  }, [searchQuery]);
+  // La pantalla carga al abrir y la barra de búsqueda (con debounce) al escribir:
+  // aquí no se dispara otra carga.
 
   // Formatear fecha y hora
   const formatDateTime = (dateString: string) => {
@@ -149,13 +149,15 @@ export function ExitsList() {
       })}
 
       {/* Botón para cargar más */}
+      {loadMoreError ? <Text style={styles.loadMoreError}>{loadMoreError}</Text> : null}
       {hasMore && (
         <TouchableOpacity
           style={styles.loadMoreButton}
-          onPress={loadNextPage}
-          disabled={loading}
+          onPress={() => void loadNextPage()}
+          disabled={loading || loadingMore}
+          accessibilityRole="button"
         >
-          {loading ? (
+          {loadingMore ? (
             <ActivityIndicator size="small" color={colors.primary.main} />
           ) : (
             <Text style={styles.loadMoreText}>Cargar más salidas</Text>
@@ -177,6 +179,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
+  },
+  loadMoreError: {
+    color: colors.error.main,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
   loadingText: {
     marginTop: 16,

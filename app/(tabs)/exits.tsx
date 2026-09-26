@@ -3,6 +3,8 @@ import { SetupForm } from '@/components/exits/components/SetupForm';
 import { useExits } from '@/components/exits/infrastructure/hooks/useExits';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
+import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
+import { ASSIGNED_EXITS_ONLY_MESSAGE } from '@/lib/auth/warehouseAccess';
 import { Radius, Shadows, Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -40,6 +42,7 @@ function ExitsScreenInner() {
 
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { canRegisterAnyExit, rolesLoading } = useWarehouseAccess();
 
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
@@ -109,6 +112,18 @@ function ExitsScreenInner() {
         </View>
       ) : null}
 
+      {/* Quien no es admin ni bodeguero solo registra sus órdenes asignadas: se
+          avisa desde el principio y no después de escanear. */}
+      {!rolesLoading && !canRegisterAnyExit ? (
+        <View
+          style={[styles.roleNotice, { backgroundColor: `${colors.info.main}14`, borderColor: colors.info.main }]}
+          accessibilityLiveRegion="polite"
+        >
+          <MaterialIcons name="info-outline" size={20} color={colors.info.main} />
+          <Text style={[styles.roleNoticeText, { color: colors.text.primary }]}>{ASSIGNED_EXITS_ONLY_MESSAGE}</Text>
+        </View>
+      ) : null}
+
       <SetupForm />
 
       {error && (
@@ -135,6 +150,8 @@ const styles = StyleSheet.create({
   lastResultCopy: { flex: 1 },
   lastResultTitle: { ...Typography.bodySmallStrong },
   lastResultText: { ...Typography.caption, marginTop: 2 },
+  roleNotice: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md, marginHorizontal: Spacing.xl, padding: Spacing.md },
+  roleNoticeText: { ...Typography.bodySmall, flex: 1 },
   errorContainer: { alignItems: 'center', borderRadius: Radius.control, borderWidth: 1, flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg, marginHorizontal: Spacing.xl, marginTop: Spacing.lg, padding: Spacing.lg },
   errorText: { ...Typography.bodySmall, flex: 1, fontWeight: '500' },
   loadingOverlay: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)', flex: 1, justifyContent: 'center' },

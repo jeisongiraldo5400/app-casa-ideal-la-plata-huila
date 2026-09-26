@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { exitsListSubtitle } from '@/components/exits-list/utils/exitsListSubtitle';
 import { useExitsListStore } from '../exitsListStore';
 
 jest.mock('@/lib/supabase', () => ({
@@ -158,5 +159,84 @@ describe('exitsListStore · fallos de carga', () => {
     expect(useExitsListStore.getState().error).toBe(
       'Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.'
     );
+  });
+});
+
+describe('exitsListStore · paginación y búsqueda', () => {
+  const page = (ids: string[], total: number) => ({
+    data: ids.map((id) => dashboardRow(id, { total_count: total, quantity: 2 })),
+    error: null,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useExitsListStore.setState({
+      exits: [], loading: false, loadingMore: false, error: null, loadMoreError: null,
+      searchQuery: '', currentPage: 1, pageSize: 2, totalCount: 0, hasMore: false,
+    });
+  });
+
+  it('«Cargar más» suma la página siguiente a la lista en vez de reemplazarla', async () => {
+    mockedRpc.mockImplementation((fn: string, args: { page: number }) => {
+      if (fn === 'get_exit_serials') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve(args.page === 1 ? page(['a', 'b'], 3) : page(['b', 'c'], 3));
+    });
+
+    await useExitsListStore.getState().loadExits();
+    expect(useExitsListStore.getState().hasMore).toBe(true);
+
+    await useExitsListStore.getState().loadNextPage();
+
+    const state = useExitsListStore.getState();
+    // «b» llegó repetida (entró una salida nueva entre páginas): no se duplica.
+    expect(state.exits.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+    expect(state.currentPage).toBe(2);
+    expect(state.totalCount).toBe(3);
+    expect(state.hasMore).toBe(false);
+    expect(mockedRpc).toHaveBeenCalledWith('get_inventory_exits_dashboard', { page: 2, page_size: 2, search_term: null });
+  });
+
+  it('si falla la página siguiente conserva lo cargado y muestra el error aparte', async () => {
+    mockedRpc.mockImplementation((fn: string, args: { page: number }) => {
+      if (fn === 'get_exit_serials') return Promise.resolve({ data: [], error: null });
+      return args.page === 1
+        ? Promise.resolve(page(['a', 'b'], 3))
+        : Promise.resolve({ data: null, error: { code: '', message: 'TypeError: Network request failed' } });
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await useExitsListStore.getState().loadExits();
+    await useExitsListStore.getState().loadNextPage();
+
+    const state = useExitsListStore.getState();
+    expect(state.exits).toHaveLength(2);
+    expect(state.error).toBeNull();
+    expect(state.loadMoreError).toBe('Sin conexión con el servidor. Revisa tu red e inténtalo de nuevo.');
+    expect(state.hasMore).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it('buscar recarga desde la primera página y no repite la consulta con el mismo término', async () => {
+    mockedRpc.mockImplementation((fn: string) =>
+      Promise.resolve(fn === 'get_exit_serials' ? { data: [], error: null } : page(['a'], 1))
+    );
+    useExitsListStore.setState({ currentPage: 3 });
+
+    await useExitsListStore.getState().searchExits('nevera');
+    await useExitsListStore.getState().searchExits('nevera');
+
+    const dashboardCalls = mockedRpc.mock.calls.filter(([fn]) => fn === 'get_inventory_exits_dashboard');
+    expect(dashboardCalls).toEqual([['get_inventory_exits_dashboard', { page: 1, page_size: 2, search_term: 'nevera' }]]);
+  });
+});
+
+describe('exitsListSubtitle', () => {
+  it('muestra el total real y cuántas se ven cuando falta cargar', () => {
+    expect(exitsListSubtitle([{ quantity: 1 }, { quantity: 2 }], 120)).toBe('120 registros · mostrando 2');
+  });
+
+  it('con todo cargado muestra las unidades', () => {
+    expect(exitsListSubtitle([{ quantity: 1 }, { quantity: 2 }], 2)).toBe('2 registros · 3 unidades despachadas');
+    expect(exitsListSubtitle([{ quantity: 4 }], 1)).toBe('1 registro · 4 unidades despachadas');
   });
 });

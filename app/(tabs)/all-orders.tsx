@@ -2,13 +2,14 @@ import { AllDeliveryOrdersList, AllOrdersList, usePurchaseOrders } from '@/compo
 import { useTheme } from '@/components/theme';
 import { SearchField, SegmentedControl } from '@/components/ui';
 import { Spacing, getColors } from '@/constants/theme';
-import { useLocalSearchParams } from 'expo-router';
+import { useAllOrdersRouteState, type AllOrdersTab } from '@/components/purchase-orders/infrastructure/hooks/useAllOrdersRouteState';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
+import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 
-type TabType = 'purchase' | 'delivery';
+type TabType = AllOrdersTab;
 
 export default function AllOrdersScreen() {
   return (
@@ -24,24 +25,24 @@ function AllOrdersScreenInner() {
   const colors = getColors(isDark);
   // Una notificación abre esta pantalla ya situada: en su pestaña y con el
   // número de orden escrito en el buscador, así que la lista queda filtrada a
-  // la orden del aviso.
-  const params = useLocalSearchParams<{ tab?: string; q?: string }>();
-  const [activeTab, setActiveTab] = useState<TabType>(
-    params.tab === 'purchase' ? 'purchase' : 'delivery'
-  );
-  const [searchQuery, setSearchQuery] = useState(params.q ?? '');
+  // la orden del aviso (también si la pantalla ya estaba abierta).
+  const { activeTab: routeTab, setActiveTab, searchQuery, setSearchQuery } = useAllOrdersRouteState();
+  // Órdenes de compra: la RLS solo deja leerlas a admin y bodeguero; a los
+  // demás se les muestra solo Entrega en vez de una lista vacía.
+  const { canReadPurchaseOrders } = useWarehouseAccess();
+  const activeTab: TabType = canReadPurchaseOrders ? routeTab : 'delivery';
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
   // Publica la carga de esta pantalla al aviso global (components/ui/GlobalLoadingBar).
   useScreenLoading(loading);
 
 
   useEffect(() => {
-    void loadPurchaseOrders();
+    if (canReadPurchaseOrders) void loadPurchaseOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canReadPurchaseOrders]);
 
   const handleRefresh = () => {
-    void loadPurchaseOrders();
+    if (canReadPurchaseOrders) void loadPurchaseOrders();
     setDeliveryRefreshKey((key) => key + 1);
   };
 
@@ -56,6 +57,7 @@ function AllOrdersScreenInner() {
         autoCorrect={false}
         autoCapitalize="none"
       />
+      {canReadPurchaseOrders ? (
       <View style={styles.tabs}>
         <SegmentedControl
           items={[
@@ -69,6 +71,7 @@ function AllOrdersScreenInner() {
           }}
         />
       </View>
+      ) : null}
       {/* Las órdenes de entrega se pintan en una FlatList que pagina al llegar
           al final y trae su propio «deslizar para actualizar», así que no puede
           ir dentro de este ScrollView. Las de compra siguen igual. */}

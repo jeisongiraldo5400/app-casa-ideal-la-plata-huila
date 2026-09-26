@@ -1,21 +1,36 @@
+import { useTheme } from '@/components/theme';
+import { getColors } from '@/constants/theme';
 import { logOperationError } from '@/lib/operationLogger';
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Sentry from '@sentry/react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+type LogModule = 'exits' | 'entries' | 'purchase_orders' | 'returns';
+
+/**
+ * Módulo con el que se guarda el fallo cuando la pantalla no dice el suyo.
+ * `operation_error_logs.module` tiene un CHECK con solo cuatro valores; se usa
+ * el de órdenes (la tabla nació para ellas) y la pantalla real va en `step` y
+ * en el contexto, para que ningún fallo se quede sin registrar.
+ */
+export const DEFAULT_CRASH_LOG_MODULE: LogModule = 'purchase_orders';
+
+export const SCREEN_CRASH_MESSAGE =
+  'Esta pantalla tuvo un problema inesperado y ya quedó registrado. Toca «Reintentar»; si se repite, avisa al administrador.';
 
 interface Props {
   children: React.ReactNode;
   /** Etiqueta legible para el fallback y para diferenciar logs, ej. "Salidas", "Buscar producto". */
   screen: string;
   /**
-   * Módulo para persistir el crash en operation_error_logs vía logOperationError.
-   * Solo se debe pasar cuando el módulo existe en el CHECK constraint de esa tabla
-   * (exits | entries | purchase_orders | returns). Si se omite, el crash solo se
-   * loguea por consola (no hay soporte de módulo en la BD para el resto de pantallas).
+   * Módulo con el que se guarda el fallo en operation_error_logs (CHECK:
+   * exits | entries | purchase_orders | returns). Si se omite se usa
+   * `DEFAULT_CRASH_LOG_MODULE`: el fallo se registra siempre.
    */
-  logModule?: 'exits' | 'entries' | 'purchase_orders' | 'returns';
+  logModule?: LogModule;
   /** Snapshot legible del estado al momento del render, para el log de error. */
-  getDebugContext?: () => Record<string, any>;
+  getDebugContext?: () => Record<string, unknown>;
   onReset?: () => void;
 }
 
@@ -46,16 +61,27 @@ export class ScreenErrorBoundary extends React.Component<Props, State> {
 
     console.error(`[ScreenErrorBoundary:${this.props.screen}] Crash capturado:`, error, info.componentStack, context);
 
-    if (this.props.logModule) {
-      void logOperationError({
-        error_code: 'SCREEN_RENDER_CRASH',
-        error_message: `${error.message}\n${info.componentStack || ''}`.slice(0, 4000),
-        module: this.props.logModule,
-        operation: 'render',
-        severity: 'error',
-        context,
-      });
+    // Sentry solo existe si hay DSN (app/_layout.tsx); sin él no se llama.
+    if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
+      try {
+        Sentry.captureException(error, {
+          tags: { screen: this.props.screen },
+          contexts: { react: { componentStack: info.componentStack ?? '' }, screen: context },
+        });
+      } catch {
+        // Nunca dejar que el reporte tumbe el fallback.
+      }
     }
+
+    void logOperationError({
+      error_code: 'SCREEN_RENDER_CRASH',
+      error_message: `${error.message}\n${info.componentStack || ''}`.slice(0, 4000),
+      module: this.props.logModule ?? DEFAULT_CRASH_LOG_MODULE,
+      operation: 'render',
+      step: this.props.screen,
+      severity: 'error',
+      context: { screen: this.props.screen, ...context },
+    });
   }
 
   handleRetry = () => {
@@ -65,25 +91,52 @@ export class ScreenErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.error) {
-      return (
-        <View style={styles.container}>
-          <MaterialIcons name="error-outline" size={48} color="#DC2626" />
-          <Text style={styles.title}>Algo salió mal en {this.props.screen}</Text>
-          <Text style={styles.message}>{this.state.error.message}</Text>
-          <TouchableOpacity style={styles.button} onPress={this.handleRetry}>
-            <Text style={styles.buttonText}>Reintentar</Text>
-          </TouchableOpacity>
-        </View>
-      );
+      return <CrashFallback screen={this.props.screen} error={this.state.error} onRetry={this.handleRetry} />;
     }
     return this.props.children;
   }
 }
 
+function CrashFallback({ screen, error, onRetry }: { screen: string; error: Error; onRetry: () => void }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const [showDetail, setShowDetail] = useState(false);
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background.default }]}>
+      <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
+      <Text style={[styles.title, { color: colors.text.primary }]}>Algo salió mal en {screen}</Text>
+      <Text style={[styles.message, { color: colors.text.secondary }]}>{SCREEN_CRASH_MESSAGE}</Text>
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: colors.error.main }]}
+        onPress={onRetry}
+        accessibilityRole="button"
+      >
+        <Text style={styles.buttonText}>Reintentar</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setShowDetail((value) => !value)} accessibilityRole="button" hitSlop={8}>
+        <Text style={[styles.link, { color: colors.text.secondary }]}>
+          {showDetail ? 'Ocultar detalle' : 'Ver detalle'}
+        </Text>
+      </TouchableOpacity>
+      {showDetail ? (
+        <ScrollView style={[styles.detail, { borderColor: colors.divider }]}>
+          <Text selectable style={[styles.detailText, { color: colors.text.secondary }]}>
+            {error.name}: {error.message}
+          </Text>
+        </ScrollView>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { alignItems: 'center', flex: 1, gap: 12, justifyContent: 'center', padding: 24 },
-  title: { fontSize: 17, fontWeight: '800' },
-  message: { fontSize: 13, opacity: 0.7, textAlign: 'center' },
-  button: { backgroundColor: '#DC2626', borderRadius: 10, marginTop: 8, paddingHorizontal: 24, paddingVertical: 12 },
+  title: { fontSize: 17, fontWeight: '800', textAlign: 'center' },
+  message: { fontSize: 14, textAlign: 'center' },
+  button: { borderRadius: 10, marginTop: 8, paddingHorizontal: 24, paddingVertical: 12 },
   buttonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  link: { fontSize: 13, textDecorationLine: 'underline' },
+  detail: { alignSelf: 'stretch', borderRadius: 8, borderWidth: 1, maxHeight: 160, padding: 12 },
+  detailText: { fontFamily: 'monospace', fontSize: 12 },
 });

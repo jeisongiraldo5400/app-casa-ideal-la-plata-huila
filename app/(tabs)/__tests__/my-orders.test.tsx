@@ -39,6 +39,11 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
   useAuth: () => ({ user: mockUser }),
 }));
 
+let mockRoleNames: string[] = ['vendedor'];
+jest.mock('@/hooks/useUserRoles', () => ({
+  useUserRoles: () => ({ roles: mockRoleNames.map((nombre) => ({ role: { nombre } })), loading: false }),
+}));
+
 jest.mock('@/components/theme', () => ({
   useTheme: () => ({ isDark: false }),
 }));
@@ -155,6 +160,7 @@ const registeredItem = {
 describe('MyOrdersScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRoleNames = ['vendedor'];
 
     mockExitState = {
       selectedDeliveryOrderId: null,
@@ -212,6 +218,22 @@ describe('MyOrdersScreen', () => {
   it('muestra «Llevar en el teléfono» en la tarjeta de la orden asignada', async () => {
     const screen = render(<MyOrdersScreen />);
     expect(await screen.findByTestId('offline-toggle-order-1')).toBeTruthy();
+  });
+
+  it('al bodeguero puro no le ofrece «Llevar en el teléfono» (no crea negocios)', async () => {
+    mockRoleNames = ['bodeguero'];
+    const screen = render(<MyOrdersScreen />);
+    await screen.findByTestId('assigned-order-order-1');
+    expect(screen.queryByTestId('offline-toggle-order-1')).toBeNull();
+  });
+
+  it('admin y gestor sí lo ven, aunque además sean bodegueros', async () => {
+    for (const roles of [['admin'], ['gestor de cobro', 'bodeguero']]) {
+      mockRoleNames = roles;
+      const screen = render(<MyOrdersScreen />);
+      expect(await screen.findByTestId('offline-toggle-order-1')).toBeTruthy();
+      screen.unmount();
+    }
   });
 
   it('no lo muestra en una orden cancelada', async () => {

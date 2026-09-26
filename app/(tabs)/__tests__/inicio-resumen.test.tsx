@@ -33,20 +33,32 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'user-1', email: 'bodeguero@casaideal.test' } }),
 }));
 
+let mockRoleNames: string[] = ['admin'];
 jest.mock('@/hooks/useUserRoles', () => ({
-  useUserRoles: () => ({
-    roles: [],
-    loading: false,
-    isAdmin: () => true,
-    isVendedor: () => false,
-    isGestorCobro: () => false,
-    isRecaudador: () => false,
-    canAccessCatalogs: () => false,
-  }),
+  useUserRoles: () => {
+    const has = (name: string) => mockRoleNames.includes(name);
+    return {
+      roles: mockRoleNames.map((nombre) => ({ role: { nombre } })),
+      loading: false,
+      isAdmin: () => has('admin'),
+      isVendedor: () => has('vendedor'),
+      isGestorCobro: () => has('gestor de cobro'),
+      isRecaudador: () => has('recaudador'),
+      canAccessCatalogs: () => false,
+    };
+  },
 }));
 
+let mockOnline = true;
+jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => mockOnline }));
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+
 describe('Inicio · resumen de hoy', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRoleNames = ['admin'];
+    mockOnline = true;
+  });
 
   it('sin conexión muestra «—» y avisa, nunca un cero inventado', () => {
     mockStats = {
@@ -83,5 +95,40 @@ describe('Inicio · resumen de hoy', () => {
 
     expect(screen.getAllByText('—')).toHaveLength(2);
     expect(screen.getByText('Actualizando…')).toBeTruthy();
+  });
+});
+
+describe('Inicio · operaciones de almacén por rol', () => {
+  beforeEach(() => {
+    mockStats = { pendingOrders: 1, pendingDeliveryOrders: 2, loading: false, error: null };
+    mockOnline = true;
+  });
+
+  const cards = (screen: ReturnType<typeof render>) =>
+    ['Salidas', 'Entradas', 'Mis órdenes', 'Todas', 'Órdenes de compra'].filter((title) => screen.queryByText(title));
+
+  it('admin y bodeguero ven todo', () => {
+    mockRoleNames = ['bodeguero'];
+    expect(cards(render(<HomeScreen />))).toEqual(['Salidas', 'Entradas', 'Mis órdenes', 'Todas', 'Órdenes de compra']);
+  });
+
+  it('el vendedor ve sus salidas asignadas y las órdenes, pero no Entradas ni compras', () => {
+    mockRoleNames = ['vendedor'];
+    const screen = render(<HomeScreen />);
+    expect(cards(screen)).toEqual(['Salidas', 'Mis órdenes', 'Todas']);
+    expect(screen.getByText('De tus órdenes asignadas')).toBeTruthy();
+  });
+
+  it('el recaudador solo consulta órdenes de entrega: sin Salidas, Entradas ni compras', () => {
+    mockRoleNames = ['recaudador'];
+    expect(cards(render(<HomeScreen />))).toEqual(['Todas']);
+  });
+
+  it('sin señal lo dice en vez de quedarse en «Pendientes»', () => {
+    mockOnline = false;
+    mockRoleNames = ['admin'];
+    const screen = render(<HomeScreen />);
+    expect(screen.getByText('Sin señal')).toBeTruthy();
+    expect(screen.getByText('Sin conexión: el resumen se actualiza al volver la señal.')).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
-import { OfflineOrderToggle, canTakeOrderOffline } from '../OfflineOrderToggle';
+import { OfflineOrderToggle, canCarryOrdersOnPhone, canTakeOrderOffline } from '../OfflineOrderToggle';
 import { resetLocalOfflineOrdersCache } from '../../infrastructure/hooks/useLocalOfflineOrders';
 import { listLocalOfflineOrders } from '@/lib/offline/repositories/deliveryOrdersRepository';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -150,5 +150,16 @@ describe('OfflineOrderToggle · Llevar en el teléfono', () => {
     expect(canTakeOrderOffline({ order_type: 'customer', status: 'delivered' })).toBe(true);
     expect(canTakeOrderOffline({ order_type: 'remission', status: 'cancelled' })).toBe(false);
     expect(canTakeOrderOffline({ order_type: 'internal', status: 'pending' })).toBe(false);
+  });
+});
+
+describe('canCarryOrdersOnPhone', () => {
+  it('solo quien crea negocios lleva órdenes (misma regla que orders_allowed)', () => {
+    expect(canCarryOrdersOnPhone(['admin'])).toBe(true);
+    expect(canCarryOrdersOnPhone(['vendedor'])).toBe(true);
+    expect(canCarryOrdersOnPhone(['Gestor de cobro'])).toBe(true);
+    expect(canCarryOrdersOnPhone(['bodeguero'])).toBe(false);
+    expect(canCarryOrdersOnPhone(['recaudador'])).toBe(false);
+    expect(canCarryOrdersOnPhone([])).toBe(false);
   });
 });

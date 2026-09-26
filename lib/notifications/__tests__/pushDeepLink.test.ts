@@ -27,6 +27,12 @@ describe('buildPushDeepLink', () => {
     ).toBe('/(tabs)/all-orders?tab=purchase&q=OC-2026-0007');
   });
 
+  it('el identificador del aviso viaja también en las órdenes para reaplicar la búsqueda', () => {
+    expect(
+      buildPushDeepLink({ kind: 'delivery_order', order_number: 'OE-9' }, { nonce: 'x 1' })
+    ).toBe('/(tabs)/all-orders?tab=delivery&q=OE-9&n=x%201');
+  });
+
   it('sin número de orden abre la lista igual, en vez de no hacer nada', () => {
     expect(buildPushDeepLink({ kind: 'delivery_order', id: 'do-1' })).toBe(
       '/(tabs)/all-orders?tab=delivery'

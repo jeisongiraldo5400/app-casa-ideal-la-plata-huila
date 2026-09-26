@@ -57,7 +57,10 @@ export function buildPushDeepLink(
     const numero = text(data.order_number);
     // Sin número de orden la lista se abre igual: es mejor que no hacer nada.
     const query = numero ? `&q=${encodeURIComponent(numero)}` : "";
-    return `/(tabs)/all-orders?tab=${tab}${query}`;
+    // Como en Cartera: `n` hace que la lista reaplique pestaña y búsqueda
+    // aunque ya estuviera abierta (ver useAllOrdersRouteState).
+    const nonce = text(options.nonce);
+    return `/(tabs)/all-orders?tab=${tab}${query}${nonce ? `&n=${encodeURIComponent(nonce)}` : ""}`;
   }
 
   // Un cliente abrió el catálogo que el vendedor le compartió: se abre esa

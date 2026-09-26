@@ -5,7 +5,7 @@ import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store
 // Misma lista de productos que "Todas las órdenes"; sólo cambia de dónde lee los
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
 import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
-import { OfflineOrderToggle, canTakeOrderOffline } from '@/components/purchase-orders/components/OfflineOrderToggle';
+import { OfflineOrderToggle, canTakeOrderOffline, useCanCarryOrdersOnPhone } from '@/components/purchase-orders/components/OfflineOrderToggle';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
@@ -189,6 +189,9 @@ function InlineError({ message, colors }: { message: string; colors: Colors }) {
 
 export function MyOrdersScreen() {
   const { user } = useAuth();
+  // «Llevar en el teléfono» solo para quien crea negocios: el bodeguero puro
+  // también ve sus órdenes asignadas aquí, pero no las lleva sin señal.
+  const canCarryOrders = useCanCarryOrdersOnPhone();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const router = useRouter();
@@ -322,7 +325,7 @@ export function MyOrdersScreen() {
 
         {/* A la vista en la tarjeta, como en «Todas las órdenes»: antes solo
             estaba dentro del detalle de productos y no se encontraba. */}
-        {canTakeOrderOffline(item) ? (
+        {canCarryOrders && canTakeOrderOffline(item) ? (
           <OfflineOrderToggle orderId={item.id} orderNumber={item.order_number} />
         ) : null}
 
@@ -331,7 +334,7 @@ export function MyOrdersScreen() {
           onOpen={setProductsModalTarget}
           orderId={item.id}
           orderNumber={item.order_number}
-          offlineToggle={canTakeOrderOffline(item)}
+          offlineToggle={canCarryOrders && canTakeOrderOffline(item)}
         />
 
         <View style={[styles.exitButton, { backgroundColor: colors.primary.main }]}>
