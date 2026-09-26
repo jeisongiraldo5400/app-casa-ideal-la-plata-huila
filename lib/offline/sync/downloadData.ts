@@ -26,17 +26,6 @@ export async function requestManualDownload(): Promise<ManualDownloadResult> {
   return { ok: true };
 }
 
-/**
- * Ya no hace nada (descarga selectiva v2): el catálogo sólo baja al pulsar
- * «Descargar». Se conserva porque el asistente de negocio todavía lo llama;
- * cuando deje de hacerlo se puede borrar.
- *
- * @deprecated El catálogo ya no se descarga automáticamente.
- */
-export async function ensureCatalogForOffline(): Promise<boolean> {
-  return false;
-}
-
 function startOfDay(ms: number) {
   const date = new Date(ms);
   date.setHours(0, 0, 0, 0);
