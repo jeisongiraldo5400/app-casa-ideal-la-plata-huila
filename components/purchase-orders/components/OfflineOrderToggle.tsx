@@ -7,6 +7,7 @@ import { getColors } from '@/constants/theme';
 import { useOfflineSelection } from '@/components/offline/infrastructure/syncPrefsService';
 import { formatLastDownloadTime } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { useLocalOfflineOrders } from '../infrastructure/hooks/useLocalOfflineOrders';
 
 /**
@@ -17,6 +18,22 @@ import { useLocalOfflineOrders } from '../infrastructure/hooks/useLocalOfflineOr
 export function canTakeOrderOffline(order: { order_type?: string | null; status?: string | null }): boolean {
   if (order.status === 'cancelled') return false;
   return order.order_type === 'remission' || order.order_type === 'customer';
+}
+
+/**
+ * Quién lleva órdenes en el teléfono: quien crea negocios (admin, vendedor o
+ * gestor de cobro). Es la misma regla que `fn_mobile_sync_orders_allowed()`
+ * (orders_allowed, 20261201120000): el bodeguero puro y el recaudador puro no
+ * crean negocios y el servidor les rechazaría la marca.
+ */
+export function canCarryOrdersOnPhone(roleNames: readonly string[]): boolean {
+  const roles = new Set(roleNames.map((name) => name.trim().toLowerCase()));
+  return roles.has('admin') || roles.has('vendedor') || roles.has('gestor de cobro');
+}
+
+export function useCanCarryOrdersOnPhone(): boolean {
+  const { roles } = useUserRoles();
+  return canCarryOrdersOnPhone(roles.map((userRole) => userRole.role?.nombre ?? ''));
 }
 
 type Props = {
