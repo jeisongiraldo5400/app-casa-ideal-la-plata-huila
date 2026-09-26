@@ -90,6 +90,6 @@ aparte: el resumen vive en el último paso del `SetupForm`.
 ## Pendiente de migrar (fase 2)
 
 `negocio-create.tsx`, `SignaturePad`, `NegocioItemsList`, `NegocioProductAddSection`, `NegocioDatePicker`,
-`cartera/` (pantalla principal y `CollectionManagerPaymentsModal`), `collection-routes/`, `ruta-cobros/`,
+`cartera/` (pantalla principal), `collection-routes/`, `ruta-cobros/`,
 `inventory/WarehouseFilter` y los demás consumidores del `Colors` estático en `auth` y `scanning`
 (`components/entries` y `components/exits` ya están migrados).

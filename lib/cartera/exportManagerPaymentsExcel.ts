@@ -8,6 +8,7 @@ import {
   fetchManagerPayments,
   type CollectionManager,
   type ManagerPayment,
+  type ManagerPaymentsParams,
 } from '@/lib/cartera/carteraService';
 
 const PAGE_SIZE = 50;
@@ -29,9 +30,15 @@ const MS_PER_DAY = 86_400_000;
 const EXCEL_UNIX_EPOCH_DAYS = 25_569;
 
 const SCOPE_LABEL = {
-  performed: 'Realizados por el gestor',
+  performed: 'Registrados por el cobrador',
   portfolio: 'Cartera actualmente asignada',
 } as const;
+
+const SITE_LABEL: Record<string, string> = {
+  almacen: 'Almacén',
+  app_movil: 'Aplicación Móvil',
+  sin_registro: 'Sitio no registrado',
+};
 
 export const DETAIL_SHEET_NAME = 'Cobros';
 export const SUMMARY_SHEET_NAME = 'Resumen';
@@ -58,13 +65,10 @@ export const DETAIL_HEADER = [
 /** Ancho (en caracteres) de cada columna de DETAIL_HEADER, en el mismo orden. */
 const DETAIL_WIDTHS = [18, 14, 30, 12, 16, 14, 13, 12, 14, 14, 22, 18, 17, 24, 17, 13];
 
-type ManagerPaymentFilters = {
-  scope: 'performed' | 'portfolio';
-  negocioId: string;
-  dateFrom: string;
-  dateTo: string;
-  receiptStatus: 'todos' | 'emitido' | 'anulado';
-  search: string;
+/** Los filtros de la pantalla «Cobros», sin la página. */
+export type ManagerPaymentFilters = Omit<ManagerPaymentsParams, 'page' | 'pageSize'> & {
+  /** Nombres de los métodos elegidos, solo para la hoja «Resumen». */
+  paymentMethodsLabel?: string;
 };
 
 type ManagerPaymentsSummary = Awaited<ReturnType<typeof fetchManagerPayments>>['summary'];
@@ -160,8 +164,9 @@ export async function fetchAllManagerPayments(
   let summary: ManagerPaymentsSummary | null = null;
 
   while (allRows.length < MAX_ROWS) {
+    const { paymentMethodsLabel: _label, ...params } = filters;
     const result = await fetchManagerPayments(managerId, {
-      ...filters,
+      ...params,
       page,
       pageSize: PAGE_SIZE,
     });
@@ -242,6 +247,12 @@ export function buildManagerPaymentsWorkbook(options: {
         : filters.receiptStatus === 'anulado'
           ? 'Anulados'
           : 'Vigentes',
+    ],
+    ['Métodos de pago', filters.paymentMethodsLabel || 'Todos'],
+    ['Sitio de pago', (filters.site && SITE_LABEL[filters.site]) || 'Todos'],
+    [
+      'Cierre de recaudo',
+      filters.inCierre == null ? 'Todos' : filters.inCierre ? 'En un cierre' : 'Sin cierre',
     ],
     ['Búsqueda', filters.search || '—'],
     ['Generado', dateCell(toExcelDateSerial(generatedAt), DATE_TIME_FORMAT, '')],

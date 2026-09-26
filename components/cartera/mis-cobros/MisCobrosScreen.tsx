@@ -8,16 +8,19 @@ import { useUserRoles } from '@/hooks/useUserRoles';
 import { loadCarteraCatalogs } from '@/lib/cartera/carteraCatalogs';
 import type { CollectionManager } from '@/lib/cartera/carteraService';
 import {
+  cierreParam,
   countActiveMisCobrosFilters,
   DEFAULT_MIS_COBROS_FILTERS,
   EMPTY_MIS_COBROS_SUMMARY,
   misCobrosRangeError,
   type MisCobroRow,
   type MisCobrosFilters,
+  type MisCobrosScope,
   type MisCobrosStatus,
   type MisCobrosSummary,
 } from '@/lib/cartera/misCobros';
-import { fetchMisCobros } from '@/lib/cartera/misCobrosService';
+import { fetchMisCobros, receiptStatusParam } from '@/lib/cartera/misCobrosService';
+import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { formatCOP } from '@/lib/creditCalculator';
 import { errorMessage } from '@/lib/errorMessage';
 import { formatPaymentDateTime } from '@/lib/localDate';
@@ -26,10 +29,11 @@ import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MisCobroCard } from './MisCobroCard';
 import { MisCobrosDateRange } from './MisCobrosDateRange';
 import { MisCobrosFilterSheet } from './MisCobrosFilterSheet';
+import { useCobroReceiptActions } from './useCobroReceiptActions';
 
 const PAGE_SIZE = 20;
 
@@ -38,6 +42,14 @@ const STATUS_SEGMENTS: { value: MisCobrosStatus; label: string }[] = [
   { value: 'vigentes', label: 'Vigentes' },
   { value: 'anulados', label: 'Anulados' },
 ];
+
+/** Alcance: lo que registró el cobrador, o lo de su cartera asignada aunque lo registrara otro. */
+function scopeSegments(isSelf: boolean): { value: MisCobrosScope; label: string }[] {
+  return [
+    { value: 'performed', label: isSelf ? 'Cobrados por mí' : 'Cobrados por él' },
+    { value: 'portfolio', label: isSelf ? 'De mi cartera' : 'De su cartera' },
+  ];
+}
 
 function rangeLabel(filters: MisCobrosFilters): string | null {
   if (!filters.from && !filters.to) return null;
@@ -48,20 +60,26 @@ function rangeLabel(filters: MisCobrosFilters): string | null {
 }
 
 /**
- * «Mis cobros»: los pagos que registró quien cobra, para separar lo que cobró
- * por fechas, método, sitio, estado y cierre. El administrador puede elegir
- * otro cobrador (la misma regla del diálogo «Cobros de …» de la web).
+ * «Cobros»: los pagos que registró quien cobra, para separar lo que cobró por
+ * fechas, método, sitio, estado y cierre. El gestor de cobro (y el admin)
+ * cambia a «De mi cartera»: los pagos de los negocios que tiene asignados,
+ * aunque los registrara otro. El administrador puede elegir otro cobrador (la
+ * misma regla del diálogo «Cobros de …» de la web). Desde aquí se descarga el
+ * Excel y se comparte o reimprime cada recibo.
  */
 export function MisCobrosScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { isAdmin } = useUserRoles();
+  const { isAdmin, isGestorCobro } = useUserRoles();
+  const receiptActions = useCobroReceiptActions();
   const online = useSyncStore((state) => state.online);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
 
   const [collector, setCollector] = useState<CollectionManager | null>(null);
+  const [scope, setScope] = useState<MisCobrosScope>('performed');
+  const [exporting, setExporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filters, setFilters] = useState<MisCobrosFilters>(DEFAULT_MIS_COBROS_FILTERS);
   const [draft, setDraft] = useState<MisCobrosFilters>(DEFAULT_MIS_COBROS_FILTERS);
@@ -124,6 +142,7 @@ export function MisCobrosScreen() {
           collectorName: isSelf ? null : collector?.full_name || null,
           isSelf,
           online,
+          scope,
         });
         if (id !== requestId.current) return;
         setRows((current) => (target === 1 ? result.rows : [...current, ...result.rows]));
@@ -148,7 +167,7 @@ export function MisCobrosScreen() {
         }
       }
     },
-    [collector?.full_name, collectorId, filters, isSelf, online]
+    [collector?.full_name, collectorId, filters, isSelf, online, scope]
   );
 
   useEffect(() => {
@@ -164,6 +183,42 @@ export function MisCobrosScreen() {
     setFiltersOpen(false);
   };
 
+  const exportExcel = async () => {
+    const rangeError = misCobrosRangeError(filters);
+    if (rangeError) {
+      Alert.alert('Excel', rangeError);
+      return;
+    }
+    if (!online) {
+      Alert.alert('Excel', 'El Excel se genera con conexión.');
+      return;
+    }
+    const selfName = String(user?.user_metadata?.full_name || user?.email || 'Mis cobros');
+    setExporting(true);
+    try {
+      const { rowCount, fileName } = await exportAndShareManagerPaymentsExcel({
+        manager: { id: collectorId, full_name: isSelf ? selfName : collector?.full_name || 'Cobrador' },
+        filters: {
+          scope,
+          dateFrom: filters.from,
+          dateTo: filters.to,
+          receiptStatus: receiptStatusParam(filters.status),
+          search: filters.search,
+          paymentMethodIds: filters.paymentMethodIds,
+          site: filters.site,
+          inCierre: cierreParam(filters.inCierre),
+          paymentMethodsLabel: selectedMethodNames.join(', '),
+        },
+      });
+      Alert.alert('Reporte listo', rowCount ? `Se compartió ${fileName} (${rowCount} cobros).` : `Se compartió ${fileName} sin cobros.`);
+    } catch (e) {
+      Alert.alert('Error', errorMessage(e, 'No fue posible exportar el reporte'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const showScope = isAdmin() || isGestorCobro();
   const activeFilters = countActiveMisCobrosFilters(filters);
   const range = rangeLabel(filters);
   const selectedMethodNames = paymentMethods
@@ -192,6 +247,21 @@ export function MisCobrosScreen() {
         </View>
       ) : null}
 
+      {showScope ? (
+        <View style={styles.scope}>
+          <SegmentedControl
+            items={scopeSegments(isSelf)}
+            value={scope}
+            onChange={(value) => setScope(value as MisCobrosScope)}
+          />
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>
+            {scope === 'performed'
+              ? 'Pagos registrados personalmente.'
+              : 'Pagos de los negocios asignados hoy como gestor de cobro, aunque los haya registrado otra persona.'}
+          </Text>
+        </View>
+      ) : null}
+
       <SearchField
         value={searchInput}
         onChangeText={setSearchInput}
@@ -217,6 +287,15 @@ export function MisCobrosScreen() {
           variant={activeFilters ? 'secondary' : 'outline'}
           onPress={openFilters}
         />
+        <Button
+          title={exporting ? 'Generando…' : 'Excel'}
+          icon="file-download"
+          size="sm"
+          variant="outline"
+          disabled={exporting || loading}
+          onPress={() => void exportExcel()}
+          accessibilityLabel="Descargar Excel de los cobros"
+        />
       </View>
 
       {fromCache ? (
@@ -227,7 +306,7 @@ export function MisCobrosScreen() {
             {cierreIgnored ? ' El filtro de cierre se aplica al volver la conexión.' : ''}
           </Text>
         </View>
-      ) : unsentCount > 0 && isSelf ? (
+      ) : unsentCount > 0 && isSelf && scope === 'performed' ? (
         <View style={[styles.notice, { backgroundColor: `${colors.info.main}14`, borderColor: colors.info.main }]}>
           <MaterialIcons name="cloud-upload" size={18} color={colors.info.main} />
           <Text style={[styles.noticeText, { color: colors.text.primary }]}>
@@ -257,6 +336,11 @@ export function MisCobrosScreen() {
           <Metric label="Cobros" value={String(summary.total_count)} style={styles.totalsCell} />
           <Metric label="Anulados" value={String(summary.voided_count)} tone={summary.voided_count ? 'error' : 'default'} style={styles.totalsCell} />
         </View>
+        {summary.average_payment != null ? (
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>
+            Promedio por cobro: {formatCOP(summary.average_payment)}
+          </Text>
+        ) : null}
         {summary.total_cash == null ? (
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
             Conéctate una vez para saber qué métodos son efectivo.
@@ -284,7 +368,17 @@ export function MisCobrosScreen() {
         }
         ListHeaderComponent={header}
         renderItem={({ item }) => (
-          <MisCobroCard row={item} onPress={() => router.push(`/negocio/${item.negocio_id}`)} />
+          <MisCobroCard
+            row={item}
+            onPress={() => router.push(`/negocio/${item.negocio_id}`)}
+            showRegisteredBy={scope === 'portfolio'}
+            actions={{
+              onShareReceipt: (data) => void receiptActions.shareReceipt(data),
+              onPrintReceipt: (data) => void receiptActions.printReceipt(data),
+              onOpenSupport: (path) => void receiptActions.openSupport(path),
+              printing: receiptActions.printing,
+            }}
+          />
         )}
         ListEmptyComponent={
           loading ? (
@@ -353,7 +447,8 @@ const styles = StyleSheet.create({
   collectorText: { flex: 1 },
   collectorLabel: { ...Typography.label },
   collectorName: { ...Typography.bodyStrong },
-  filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  scope: { gap: Spacing.xs },
   filterSummary: { ...Typography.metadata, flex: 1 },
   notice: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start', borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md },
   noticeText: { ...Typography.caption, flex: 1 },

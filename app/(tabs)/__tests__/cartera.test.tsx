@@ -44,11 +44,11 @@ jest.mock('@/lib/offline/store/syncStore', () => ({
 }));
 jest.mock('@/lib/offline/sync/downloadData', () => ({ formatLocalDataLabel: () => 'Datos locales' }));
 jest.mock('@/components/offline', () => ({ DownloadDataButton: () => null }));
-jest.mock('@/components/cartera/CollectionManagerPicker', () => ({ CollectionManagerPicker: () => null }));
-jest.mock('@/components/cartera/mis-cobros/MisCobrosEntryButton', () => ({ MisCobrosEntryButton: () => null }));
-jest.mock('@/components/cartera/CollectionManagerPaymentsModal', () => ({
-  CollectionManagerPaymentsModal: () => null,
-}));
+jest.mock('@/components/cartera/mis-cobros/MisCobrosEntryButton', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  const mockReact = jest.requireActual<typeof import('react')>('react');
+  return { MisCobrosEntryButton: () => mockReact.createElement(Text, null, 'fake-cobros') };
+});
 /**
  * Modal de filtros de mentira: expone botones para simular el borrador, aplicar
  * y cerrar sin aplicar. El modal real se prueba en su propio archivo.
@@ -229,6 +229,14 @@ describe('Pantalla de Cartera', () => {
     );
     expect(mockedLoad).not.toHaveBeenCalled();
     expect(screen.getByText('Cobro por búsqueda')).toBeTruthy();
+  });
+
+  // Un solo acceso: «Cobros» reemplaza a «Cobros de mi cartera» / «Ver cobros por gestor».
+  it('ofrece un único acceso a «Cobros» y ya no el de cobros por gestor', async () => {
+    const screen = await renderScreen();
+    expect(screen.getAllByText('fake-cobros')).toHaveLength(1);
+    expect(screen.queryByText('Cobros de mi cartera')).toBeNull();
+    expect(screen.queryByText('Ver cobros por gestor')).toBeNull();
   });
 
   describe('buscador de cuotas', () => {

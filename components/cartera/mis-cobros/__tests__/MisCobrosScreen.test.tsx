@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { fetchMisCobros } from '@/lib/cartera/misCobrosService';
 import type { MisCobrosPage } from '@/lib/cartera/misCobros';
 import { formatCOP } from '@/lib/creditCalculator';
+import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { MisCobrosScreen } from '../MisCobrosScreen';
 
 jest.mock('@expo/vector-icons', () => {
@@ -19,7 +20,10 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'gestor@casaideal.test' } }),
 }));
 let mockAdmin = false;
-jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ isAdmin: () => mockAdmin }) }));
+let mockGestor = false;
+jest.mock('@/hooks/useUserRoles', () => ({
+  useUserRoles: () => ({ isAdmin: () => mockAdmin, isGestorCobro: () => mockGestor }),
+}));
 jest.mock('@/hooks/useScreenLoading', () => ({ useScreenLoading: () => undefined }));
 let mockOnline = true;
 jest.mock('@/lib/offline/store/syncStore', () => ({
@@ -34,10 +38,40 @@ jest.mock('@/lib/cartera/carteraCatalogs', () => ({
     paymentMethods: [{ id: 'm1', name: 'Efectivo' }],
   }),
 }));
-jest.mock('@/components/cartera/CollectionManagerPicker', () => ({ CollectionManagerPicker: () => null }));
-jest.mock('@/lib/cartera/misCobrosService', () => ({ fetchMisCobros: jest.fn() }));
+/** Selector de mentira: un botón que elige a «Gestor Dos». */
+jest.mock('@/components/cartera/CollectionManagerPicker', () => {
+  const ReactModule = jest.requireActual<typeof import('react')>('react');
+  const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    CollectionManagerPicker: (props: { visible: boolean; onSelect: (m: { id: string; full_name: string }) => void }) =>
+      props.visible
+        ? ReactModule.createElement(
+            Pressable,
+            { onPress: () => props.onSelect({ id: 'g2', full_name: 'Gestor Dos' }) },
+            ReactModule.createElement(Text, null, 'fake-elegir-gestor')
+          )
+        : null,
+  };
+});
+jest.mock('@/lib/cartera/misCobrosService', () => ({
+  fetchMisCobros: jest.fn(),
+  receiptStatusParam: (status: string) => (status === 'vigentes' ? 'emitido' : status === 'anulados' ? 'anulado' : 'todos'),
+}));
+const mockShareReceipt = jest.fn();
+const mockPrintReceipt = jest.fn();
+const mockOpenSupport = jest.fn();
+jest.mock('../useCobroReceiptActions', () => ({
+  useCobroReceiptActions: () => ({
+    shareReceipt: mockShareReceipt,
+    printReceipt: mockPrintReceipt,
+    openSupport: mockOpenSupport,
+    printing: false,
+  }),
+}));
+jest.mock('@/lib/cartera/exportManagerPaymentsExcel', () => ({ exportAndShareManagerPaymentsExcel: jest.fn() }));
 
 const mockedFetch = fetchMisCobros as jest.MockedFunction<typeof fetchMisCobros>;
+const mockedExport = exportAndShareManagerPaymentsExcel as jest.MockedFunction<typeof exportAndShareManagerPaymentsExcel>;
 const money = (value: number) => formatCOP(value);
 
 const PAGE: MisCobrosPage = {
@@ -72,8 +106,13 @@ function renderScreen() {
 describe('MisCobrosScreen', () => {
   beforeEach(() => {
     mockAdmin = false;
+    mockGestor = false;
     mockOnline = true;
     mockPush.mockReset();
+    mockShareReceipt.mockReset();
+    mockPrintReceipt.mockReset();
+    mockOpenSupport.mockReset();
+    mockedExport.mockReset().mockResolvedValue({ fileName: 'Cobros.xlsx', rowCount: 2 });
     mockedFetch.mockReset().mockResolvedValue(PAGE);
   });
 
@@ -161,5 +200,106 @@ describe('MisCobrosScreen', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('No se pudieron cargar los cobros')).toBeTruthy());
     expect(screen.queryByText('Sin cobros para estos filtros')).toBeNull();
+  });
+
+  describe('alcance: cobrados por mí / de mi cartera', () => {
+    it('quien no es gestor ni admin (recaudador) no ve el segmento y consulta lo registrado', async () => {
+      renderScreen();
+      await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('De mi cartera')).toBeNull();
+      expect(mockedFetch).toHaveBeenCalledWith(expect.objectContaining({ scope: 'performed' }));
+    });
+
+    it('el gestor cambia a «De mi cartera»: pide ese alcance y cada cobro dice quién lo registró', async () => {
+      mockGestor = true;
+      renderScreen();
+      await waitFor(() => expect(screen.getByText('Cobrados por mí')).toBeTruthy());
+      expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'performed', isSelf: true }));
+      expect(screen.queryByText(/Registró /)).toBeNull();
+
+      mockedFetch.mockResolvedValue({
+        ...PAGE,
+        rows: [{ ...PAGE.rows[0], created_by_name: 'Otra Persona' }],
+      });
+      fireEvent.press(screen.getByText('De mi cartera'));
+
+      await waitFor(() =>
+        expect(mockedFetch).toHaveBeenLastCalledWith(
+          expect.objectContaining({ scope: 'portfolio', collectorId: 'u1', isSelf: true })
+        )
+      );
+      await waitFor(() => expect(screen.getByText('RV-1 · Registró Otra Persona')).toBeTruthy());
+      expect(screen.getByText(/negocios asignados hoy como gestor de cobro/)).toBeTruthy();
+    });
+
+    it('sin señal, «De mi cartera» explica que necesita conexión', async () => {
+      mockGestor = true;
+      renderScreen();
+      await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+      mockedFetch.mockRejectedValue(new Error('Sin señal: los cobros de la cartera asignada se consultan con conexión.'));
+      fireEvent.press(screen.getByText('De mi cartera'));
+      await waitFor(() => expect(screen.getByText(/se consultan con conexión/)).toBeTruthy());
+    });
+
+    it('el admin elige otro cobrador y ve sus dos alcances', async () => {
+      mockAdmin = true;
+      renderScreen();
+      await waitFor(() => expect(screen.getByText('Cambiar')).toBeTruthy());
+
+      fireEvent.press(screen.getByText('Cambiar'));
+      fireEvent.press(screen.getByText('fake-elegir-gestor'));
+
+      await waitFor(() =>
+        expect(mockedFetch).toHaveBeenLastCalledWith(
+          expect.objectContaining({ collectorId: 'g2', collectorName: 'Gestor Dos', isSelf: false, scope: 'performed' })
+        )
+      );
+      expect(screen.getByText('Gestor Dos')).toBeTruthy();
+      fireEvent.press(screen.getByText('De su cartera'));
+      await waitFor(() =>
+        expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ collectorId: 'g2', scope: 'portfolio' }))
+      );
+    });
+  });
+
+  it('descarga el Excel con el cobrador, el alcance y los filtros vigentes', async () => {
+    mockGestor = true;
+    renderScreen();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByText('De mi cartera'));
+    fireEvent.press(screen.getAllByText('Anulados')[0]);
+    await waitFor(() => expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'portfolio' })));
+
+    // Mientras carga, el botón espera.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Descargar Excel de los cobros').props.accessibilityState.disabled).toBe(false)
+    );
+    fireEvent.press(screen.getByLabelText('Descargar Excel de los cobros'));
+
+    await waitFor(() => expect(mockedExport).toHaveBeenCalledTimes(1));
+    expect(mockedExport).toHaveBeenCalledWith({
+      manager: { id: 'u1', full_name: 'gestor@casaideal.test' },
+      filters: expect.objectContaining({ scope: 'portfolio', receiptStatus: 'anulado', paymentMethodIds: [], inCierre: null }),
+    });
+  });
+
+  it('comparte y reimprime el recibo de un cobro confirmado; los del teléfono no tienen recibo', async () => {
+    mockedFetch.mockResolvedValue({
+      ...PAGE,
+      rows: [{ ...PAGE.rows[0], remaining_balance: 100000, created_by_name: 'Gestor', support_path: 'pagos/p1.jpg' }, PAGE.rows[1]],
+    });
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Ana Pérez')).toBeTruthy());
+
+    // Solo la fila confirmada por el servidor trae acciones.
+    expect(screen.getAllByLabelText('Compartir recibo en PDF')).toHaveLength(1);
+    fireEvent.press(screen.getByLabelText('Compartir recibo en PDF'));
+    expect(mockShareReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ receiptNumber: 'RV-1', amount: 50000, remainingBalance: 100000, registeredBy: 'Gestor' })
+    );
+    fireEvent.press(screen.getByLabelText('Reimprimir recibo'));
+    expect(mockPrintReceipt).toHaveBeenCalledWith(expect.objectContaining({ receiptNumber: 'RV-1' }));
+    fireEvent.press(screen.getByLabelText('Ver soporte del pago'));
+    expect(mockOpenSupport).toHaveBeenCalledWith('pagos/p1.jpg');
   });
 });
