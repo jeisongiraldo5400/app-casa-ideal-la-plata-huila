@@ -12,7 +12,13 @@ const STATUS_META: Record<StopStatus, { color: string; label: string; icon: keyo
   sin_pago: { color: '#f59e0b', label: 'Sin pago', icon: 'money-off' },
   reprogramado: { color: '#7c3aed', label: 'Reprogramado', icon: 'event-repeat' },
   omitido: { color: '#dc2626', label: 'Omitido', icon: 'skip-next' },
+  no_visitada: { color: '#64748b', label: 'No visitada', icon: 'do-not-disturb-on' },
 };
+
+/** Etiqueta, color e ícono del estado (con respaldo si el servidor trae uno nuevo). */
+export function stopStatusMeta(status: StopStatus) {
+  return STATUS_META[status] || { color: '#94a3b8', label: String(status), icon: 'help-outline' as const };
+}
 
 const money = (value: number) => `$ ${Math.round(value).toLocaleString('es-CO')}`;
 
@@ -44,7 +50,7 @@ export function RouteRoadmap({
       </View>
 
       {stops.map((stop, index) => {
-        const meta = STATUS_META[stop.status];
+        const meta = stopStatusMeta(stop.status);
         const left = index % 2 === 0;
         const outcome = stopOutcomeText(stop);
         return (

@@ -117,12 +117,21 @@ function CollectionRoutesScreenInner() {
       {history.map((route) => (
         <TouchableOpacity key={route.id} style={[styles.historyCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]} onPress={() => router.push(`/ruta-cobros/${route.id}` as any)}>
           <MaterialIcons name={route.status === 'completada' ? 'check-circle' : 'cancel'} size={24} color={route.status === 'completada' ? colors.success.main : colors.text.secondary} />
-          <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{routeDateLabel(route.route_date)}</Text><Text style={{ color: colors.text.secondary }}>{route.completed_count}/{route.stop_count} visitas · {money(route.collected_total)}</Text></View>
+          <View style={{ flex: 1 }}><Text style={{ color: colors.text.primary, fontWeight: '800' }}>{routeDateLabel(route.route_date)}</Text><Text style={{ color: colors.text.secondary }}>{route.completed_count}/{route.stop_count} visitas{notVisitedSuffix(route)} · {money(route.collected_total)}</Text></View>
           <Text style={{ color: colors.text.secondary, fontSize: 12 }}>{statusLabel[route.status]}</Text>
         </TouchableOpacity>
       ))}
     </ScrollView>
   );
+}
+
+/**
+ * En una ruta completada, las paradas que no son visitas quedaron «No
+ * visitada» al cerrar la jornada.
+ */
+function notVisitedSuffix(route: CollectionRouteSummary) {
+  const notVisited = route.status === 'completada' ? route.stop_count - route.completed_count : 0;
+  return notVisited > 0 ? ` · ${notVisited} no ${notVisited === 1 ? 'visitada' : 'visitadas'}` : '';
 }
 
 function RouteCard({
@@ -150,7 +159,7 @@ function RouteCard({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.cardTitle, { color: colors.text.primary }]}>{title}</Text>
-          <Text style={{ color: colors.text.secondary }}>{statusLabel[route.status]} · {route.completed_count}/{route.stop_count} visitas</Text>
+          <Text style={{ color: colors.text.secondary }}>{statusLabel[route.status]} · {route.completed_count}/{route.stop_count} visitas{notVisitedSuffix(route)}</Text>
           {hint ? <Text style={{ color: colors.warning.dark, fontSize: 12, marginTop: 2 }}>{hint}</Text> : null}
         </View>
         <MaterialIcons name="chevron-right" size={28} color={colors.text.secondary} />

@@ -16,6 +16,7 @@ import { lastManualDownloadAt } from '@/lib/offline/sync/syncPrefs';
 import { bogotaDateValue } from '@/lib/localDate';
 import { MAX_ROUTE_STOPS } from './candidates';
 import { evaluateRouteOfflineStatus, type RouteOfflineStatus } from './routeOffline';
+import { isVisitedStopStatus } from './routeState';
 import {
   CandidateQuery,
   CollectionRoute,
@@ -188,14 +189,13 @@ export function withCachedActiveRoute(
   cached: CollectionRoute | null
 ): CollectionRouteSummary[] {
   if (!cached || routes.some((route) => route.id === cached.id)) return routes;
-  const finished = ['cobrado', 'sin_pago', 'reprogramado', 'omitido'];
   return [
     {
       id: cached.id,
       route_date: cached.route_date,
       status: cached.status,
       stop_count: cached.stops.length,
-      completed_count: cached.stops.filter((stop) => finished.includes(stop.status)).length,
+      completed_count: cached.stops.filter((stop) => isVisitedStopStatus(stop.status)).length,
       expected_total: cached.total_expected,
       collected_total: cached.total_collected,
     },
@@ -303,17 +303,55 @@ export async function updateCollectionRouteStop(
   }
 }
 
-export async function finishCollectionRoute(routeId: string, cancel = false): Promise<RouteActionResult> {
+export type FinishRouteOptions = {
+  /**
+   * Cerrar la jornada aunque queden paradas: las pendientes (y la actual)
+   * quedan «No visitada». Necesita la migración 20261216120000.
+   */
+  closePending?: boolean;
+  /** Motivo opcional para las no visitadas. */
+  reason?: string | null;
+};
+
+/**
+ * Argumentos del RPC. Los nuevos solo viajan al cerrar con pendientes: así el
+ * cierre normal y la cancelación siguen funcionando con un servidor sin la
+ * migración.
+ */
+export function finishRouteRpcArgs(routeId: string, cancel: boolean, options: FinishRouteOptions = {}) {
+  const args: { p_route_id: string; p_cancel: boolean; p_close_pending?: boolean; p_reason?: string } = {
+    p_route_id: routeId,
+    p_cancel: cancel,
+  };
+  if (!cancel && options.closePending) {
+    args.p_close_pending = true;
+    const reason = options.reason?.trim();
+    if (reason) args.p_reason = reason;
+  }
+  return args;
+}
+
+export async function finishCollectionRoute(
+  routeId: string,
+  cancel = false,
+  options: FinishRouteOptions = {}
+): Promise<RouteActionResult> {
+  const closePending = !cancel && Boolean(options.closePending);
+  const reason = options.reason?.trim() || null;
   try {
-    const { error } = await supabase.rpc('finish_collection_route', {
-      p_route_id: routeId,
-      p_cancel: cancel,
-    });
-    if (error) throw new Error(error.message || 'No fue posible finalizar la ruta');
+    const { error } = await supabase.rpc('finish_collection_route', finishRouteRpcArgs(routeId, cancel, options));
+    if (error) {
+      if (closePending && isFunctionSignatureMissing(error)) {
+        throw new Error('El servidor todavía no permite cerrar la jornada con paradas pendientes. Atiéndelas o cancela la ruta.');
+      }
+      throw new Error(error.message || 'No fue posible finalizar la ruta');
+    }
     return { queued: false };
   } catch (error) {
     if (!isNetworkError(error)) throw error;
-    const queued = await enqueueRouteCommand({ type: 'finish_route', routeId, cancel });
+    const queued = await enqueueRouteCommand(
+      closePending ? { type: 'finish_route', routeId, cancel, closePending, reason } : { type: 'finish_route', routeId, cancel }
+    );
     if (!queued) throw error;
     return { queued: true };
   }

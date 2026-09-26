@@ -150,9 +150,14 @@ async function pushStartRoute(payload: RouteIdPayload): Promise<PushResult> {
 }
 
 async function pushFinishRoute(payload: RouteIdPayload): Promise<PushResult> {
+  // Los parámetros nuevos solo viajan al cerrar con pendientes (comandos
+  // viejos y cancelaciones llaman igual que antes).
   const { error } = await supabase.rpc('finish_collection_route', {
     p_route_id: payload.routeId,
     p_cancel: Boolean(payload.cancel),
+    ...(!payload.cancel && payload.closePending
+      ? { p_close_pending: true, ...(payload.reason?.trim() ? { p_reason: payload.reason.trim() } : {}) }
+      : {}),
   });
   if (error) throw error;
   return { outcome: 'done' };

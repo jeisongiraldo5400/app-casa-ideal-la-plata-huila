@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { fetchRouteFromLocal, fetchRoutesFromLocal } from '@/lib/offline/repositories/offlineRepository';
+import { enqueueRouteCommand, fetchRouteFromLocal, fetchRoutesFromLocal } from '@/lib/offline/repositories/offlineRepository';
 import {
   fetchRouteCandidatesFromLocal,
   readRouteLocalSnapshot,
@@ -14,6 +14,8 @@ import {
   fetchCollectionRoute,
   fetchMyCollectionRoutes,
   fetchRouteCandidates,
+  finishCollectionRoute,
+  finishRouteRpcArgs,
   setCollectionRouteStops,
   withCachedActiveRoute,
 } from '../collectionRouteService';
@@ -224,5 +226,51 @@ describe('lista de rutas sin señal', () => {
   it('no la duplica si ya está en la base local', () => {
     const summary = { id: 'r1', route_date: '2026-09-25', status: 'borrador' as const, stop_count: 1, completed_count: 0, expected_total: 0, collected_total: 0 };
     expect(withCachedActiveRoute([summary], ROUTE)).toEqual([summary]);
+  });
+});
+
+describe('cerrar la jornada', () => {
+  const enqueue = enqueueRouteCommand as jest.Mock;
+  beforeEach(() => {
+    rpc.mockReset();
+    enqueue.mockReset();
+  });
+
+  it('cierre normal y cancelación llaman como antes (sin parámetros nuevos)', () => {
+    expect(finishRouteRpcArgs('r1', false)).toEqual({ p_route_id: 'r1', p_cancel: false });
+    expect(finishRouteRpcArgs('r1', true, { closePending: true, reason: 'x' })).toEqual({ p_route_id: 'r1', p_cancel: true });
+  });
+
+  it('con pendientes manda p_close_pending y el motivo recortado (vacío no viaja)', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    const result = await finishCollectionRoute('r1', false, { closePending: true, reason: '  Se acabó el día ' });
+    expect(result).toEqual({ queued: false });
+    expect(rpc).toHaveBeenCalledWith('finish_collection_route', {
+      p_route_id: 'r1', p_cancel: false, p_close_pending: true, p_reason: 'Se acabó el día',
+    });
+    expect(finishRouteRpcArgs('r1', false, { closePending: true, reason: '   ' })).toEqual({
+      p_route_id: 'r1', p_cancel: false, p_close_pending: true,
+    });
+  });
+
+  it('servidor sin la migración: explica que aún no se puede cerrar con pendientes', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+    await expect(finishCollectionRoute('r1', false, { closePending: true })).rejects.toThrow(/todavía no permite cerrar la jornada/);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('sin señal encola el cierre con pendientes y el motivo', async () => {
+    rpc.mockRejectedValue(new Error('Network request failed'));
+    enqueue.mockResolvedValue(true);
+    const result = await finishCollectionRoute('r1', false, { closePending: true, reason: ' Lluvia ' });
+    expect(result).toEqual({ queued: true });
+    expect(enqueue).toHaveBeenCalledWith({ type: 'finish_route', routeId: 'r1', cancel: false, closePending: true, reason: 'Lluvia' });
+  });
+
+  it('sin señal el cierre normal se encola igual que antes', async () => {
+    rpc.mockRejectedValue(new Error('Network request failed'));
+    enqueue.mockResolvedValue(true);
+    await finishCollectionRoute('r1');
+    expect(enqueue).toHaveBeenCalledWith({ type: 'finish_route', routeId: 'r1', cancel: false });
   });
 });

@@ -102,7 +102,13 @@ export type UpdateRouteStopPayload = OutboxPayloadBase & {
   notes?: string | null;
 };
 
-export type RouteIdPayload = OutboxPayloadBase & { routeId: string; cancel?: boolean };
+export type RouteIdPayload = OutboxPayloadBase & {
+  routeId: string;
+  cancel?: boolean;
+  /** Cierre de jornada con paradas pendientes (quedan «No visitada»). */
+  closePending?: boolean;
+  reason?: string | null;
+};
 export type SelectStopPayload = OutboxPayloadBase & { stopId: string; routeId?: string | null };
 
 export type AttachPagoSupportPayload = OutboxPayloadBase & {

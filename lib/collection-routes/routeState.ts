@@ -1,13 +1,36 @@
 import { CollectionRouteStop, RouteStatus, StopStatus } from './types';
 
-export const FINAL_STOP_STATUSES: StopStatus[] = ['cobrado', 'sin_pago', 'reprogramado', 'omitido'];
+/** Visitas atendidas: el gestor llegó y dejó un resultado. */
+export const VISITED_STOP_STATUSES: StopStatus[] = ['cobrado', 'sin_pago', 'reprogramado', 'omitido'];
+/** Paradas que ya no admiten acciones (las atendidas y las no visitadas al cerrar). */
+export const FINAL_STOP_STATUSES: StopStatus[] = [...VISITED_STOP_STATUSES, 'no_visitada'];
 
 export function isFinalStopStatus(status: StopStatus) {
   return FINAL_STOP_STATUSES.includes(status);
 }
 
+export function isVisitedStopStatus(status: StopStatus) {
+  return VISITED_STOP_STATUSES.includes(status);
+}
+
+/** Paradas que quedarían «No visitada» si se cierra la jornada ahora. */
+export function countPendingStops(stops: Pick<CollectionRouteStop, 'status'>[]) {
+  return stops.filter((stop) => stop.status === 'pendiente' || stop.status === 'actual').length;
+}
+
+/** Resumen de la jornada: visitadas, cobradas, no visitadas y por visitar. */
+export function getRouteOutcomeSummary(stops: Pick<CollectionRouteStop, 'status'>[]) {
+  return {
+    visited: stops.filter((stop) => isVisitedStopStatus(stop.status)).length,
+    collected: stops.filter((stop) => stop.status === 'cobrado').length,
+    notVisited: stops.filter((stop) => stop.status === 'no_visitada').length,
+    pending: countPendingStops(stops),
+  };
+}
+
+/** Progreso de visitas: las no visitadas no cuentan como hechas. */
 export function getRouteProgress(stops: CollectionRouteStop[]) {
-  const completed = stops.filter((stop) => isFinalStopStatus(stop.status)).length;
+  const completed = stops.filter((stop) => isVisitedStopStatus(stop.status)).length;
   return {
     completed,
     total: stops.length,

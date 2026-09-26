@@ -1169,7 +1169,14 @@ export async function fetchRouteFromLocal(routeId: string): Promise<CollectionRo
 
 export type RouteCommandInput =
   | { type: 'start_route'; routeId: string }
-  | { type: 'finish_route'; routeId: string; cancel: boolean }
+  | {
+      type: 'finish_route';
+      routeId: string;
+      cancel: boolean;
+      /** Cerrar la jornada con paradas pendientes: quedan «No visitada». */
+      closePending?: boolean;
+      reason?: string | null;
+    }
   | { type: 'select_route_stop'; stopId: string; routeId?: string | null }
   | {
       type: 'update_route_stop';
@@ -1240,6 +1247,22 @@ export async function enqueueRouteCommand(input: RouteCommandInput) {
         row.rowSyncStatus = 'pending';
       })
     );
+    if (!input.cancel && input.closePending) {
+      // Lo mismo que hará el servidor: pendientes y actual → no visitada.
+      const openStops = (
+        await database
+          .get<CollectionRouteStopRecord>('collection_route_stops')
+          .query(Q.where('route_id', route.id))
+          .fetch()
+      ).filter((row) => row.status === 'pendiente' || row.status === 'actual');
+      const reason = input.reason?.trim() || null;
+      for (const open of openStops) {
+        markStop(open, (row) => {
+          row.status = 'no_visitada';
+          row.outcomeReason = reason;
+        });
+      }
+    }
   }
 
   if (input.type === 'select_route_stop' && stop && stop.status === 'pendiente') {
@@ -1334,7 +1357,11 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
         summary = 'Inicio de ruta';
         break;
       case 'finish_route':
-        summary = payload.cancel ? 'Cancelación de ruta' : 'Cierre de ruta';
+        summary = payload.cancel
+          ? 'Cancelación de ruta'
+          : payload.closePending
+            ? 'Cierre de jornada (pendientes como no visitadas)'
+            : 'Cierre de ruta';
         break;
       case 'select_route_stop':
         summary = 'Selección de parada';

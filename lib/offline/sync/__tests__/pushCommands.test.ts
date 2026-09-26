@@ -151,3 +151,30 @@ describe('pushOutboxItem · clasificación de errores del cobro', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 });
+
+describe('pushOutboxItem · cierre de ruta', () => {
+  beforeEach(() => {
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: null, error: null });
+  });
+
+  it('un comando viejo (sin closePending) llama como antes', async () => {
+    const result = await pushOutboxItem(outboxItem('finish_route', { routeId: 'r1', cancel: false }));
+    expect(result.outcome).toBe('done');
+    expect(mockRpc).toHaveBeenCalledWith('finish_collection_route', { p_route_id: 'r1', p_cancel: false });
+  });
+
+  it('cerrar con pendientes manda p_close_pending y el motivo', async () => {
+    await pushOutboxItem(outboxItem('finish_route', { routeId: 'r1', cancel: false, closePending: true, reason: 'Lluvia' }));
+    expect(mockRpc).toHaveBeenCalledWith('finish_collection_route', {
+      p_route_id: 'r1', p_cancel: false, p_close_pending: true, p_reason: 'Lluvia',
+    });
+  });
+
+  it('sin motivo no manda p_reason; al cancelar no manda nada nuevo', async () => {
+    await pushOutboxItem(outboxItem('finish_route', { routeId: 'r1', cancel: false, closePending: true, reason: null }));
+    await pushOutboxItem(outboxItem('finish_route', { routeId: 'r1', cancel: true, closePending: true }));
+    expect(mockRpc.mock.calls[0][1]).toEqual({ p_route_id: 'r1', p_cancel: false, p_close_pending: true });
+    expect(mockRpc.mock.calls[1][1]).toEqual({ p_route_id: 'r1', p_cancel: true });
+  });
+});

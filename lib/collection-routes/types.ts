@@ -1,5 +1,9 @@
 export type RouteStatus = 'borrador' | 'activa' | 'completada' | 'cancelada';
-export type StopStatus = 'pendiente' | 'actual' | 'cobrado' | 'sin_pago' | 'reprogramado' | 'omitido';
+/**
+ * 'no_visitada' (desde 20261216120000): la jornada se cerró con la parada
+ * pendiente. Es final, pero no cuenta como visita.
+ */
+export type StopStatus = 'pendiente' | 'actual' | 'cobrado' | 'sin_pago' | 'reprogramado' | 'omitido' | 'no_visitada';
 /**
  * Estado de cobro para filtrar al armar la ruta. 'vencidas' = en mora;
  * 'pronto' = al día con una cuota que vence en los próximos 7 días. 'hoy'

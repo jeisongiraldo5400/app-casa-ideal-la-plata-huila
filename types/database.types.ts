@@ -4633,7 +4633,12 @@ export type Database = {
       }
       f_unaccent: { Args: { "": string }; Returns: string }
       finish_collection_route: {
-        Args: { p_cancel?: boolean; p_route_id: string }
+        Args: {
+          p_cancel?: boolean
+          p_close_pending?: boolean
+          p_reason?: string
+          p_route_id: string
+        }
         Returns: undefined
       }
       fn_assert_delivery_order_can_be_returned: {

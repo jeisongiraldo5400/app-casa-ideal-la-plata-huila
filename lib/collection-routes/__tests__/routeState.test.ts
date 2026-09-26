@@ -1,4 +1,13 @@
-import { getNextActionableStop, getRouteProgress, groupRoutesForHome, isFinalStopStatus, moveItem } from '../routeState';
+import {
+  countPendingStops,
+  getNextActionableStop,
+  getRouteOutcomeSummary,
+  getRouteProgress,
+  groupRoutesForHome,
+  isFinalStopStatus,
+  isVisitedStopStatus,
+  moveItem,
+} from '../routeState';
 import { CollectionRouteStop } from '../types';
 
 const stop = (id: string, status: CollectionRouteStop['status']): CollectionRouteStop => ({
@@ -26,8 +35,25 @@ describe('routeState', () => {
     expect(isFinalStopStatus('sin_pago')).toBe(true);
     expect(isFinalStopStatus('reprogramado')).toBe(true);
     expect(isFinalStopStatus('omitido')).toBe(true);
+    expect(isFinalStopStatus('no_visitada')).toBe(true);
     expect(isFinalStopStatus('actual')).toBe(false);
     expect(isFinalStopStatus('pendiente')).toBe(false);
+  });
+
+  it('la no visitada es final pero no cuenta como visita', () => {
+    expect(isVisitedStopStatus('no_visitada')).toBe(false);
+    expect(isVisitedStopStatus('omitido')).toBe(true);
+    expect(getRouteProgress([stop('1', 'cobrado'), stop('2', 'no_visitada')]))
+      .toEqual({ completed: 1, total: 2, percentage: 50 });
+  });
+
+  it('resume la jornada: visitadas, cobradas, no visitadas y pendientes', () => {
+    const stops = [
+      stop('1', 'cobrado'), stop('2', 'sin_pago'), stop('3', 'actual'),
+      stop('4', 'pendiente'), stop('5', 'no_visitada'),
+    ];
+    expect(countPendingStops(stops)).toBe(2);
+    expect(getRouteOutcomeSummary(stops)).toEqual({ visited: 2, collected: 1, notVisited: 1, pending: 2 });
   });
 
   it('calcula progreso sin dividir por cero', () => {
