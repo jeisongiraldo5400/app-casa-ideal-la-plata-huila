@@ -101,6 +101,39 @@ describe('fetchMisCobros', () => {
     expect(mockedLoadLocal).not.toHaveBeenCalled();
   });
 
+  it('mapea el desglose por método, descuentos y anulados del resumen (20261230130000)', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        ...SERVER,
+        summary: {
+          ...SERVER.summary,
+          total_discount: '1000',
+          pronto_pago_count: 1,
+          total_voided: '30000',
+          by_method: [
+            { payment_method_id: 'm2', payment_method_name: 'Transferencia', is_cash: false, count: 1, total: '30000.00', total_discount: '0' },
+            { payment_method_id: null, payment_method_name: null, is_cash: false, count: '1', total: '50000', total_discount: '1000' },
+          ],
+        },
+      },
+      error: null,
+    });
+    const page = await fetchMisCobros(QUERY);
+    expect(page.summary.total_discount).toBe(1000);
+    expect(page.summary.pronto_pago_count).toBe(1);
+    expect(page.summary.total_voided).toBe(30000);
+    expect(page.summary.by_method).toEqual([
+      { payment_method_id: 'm2', payment_method_name: 'Transferencia', is_cash: false, count: 1, total: 30000, total_discount: 0 },
+      { payment_method_id: null, payment_method_name: null, is_cash: false, count: 1, total: 50000, total_discount: 1000 },
+    ]);
+  });
+
+  it('un servidor sin el desglose deja by_method sin definir (la pantalla lo oculta)', async () => {
+    rpc.mockResolvedValue({ data: SERVER, error: null });
+    const page = await fetchMisCobros(QUERY);
+    expect(page.summary.by_method).toBeUndefined();
+  });
+
   it('el admin que consulta a otro cobrador envía su id', async () => {
     rpc.mockResolvedValue({ data: SERVER, error: null });
     const page = await fetchMisCobros({ ...QUERY, collectorId: 'g2', collectorName: 'Gestor Dos', isSelf: false });
@@ -121,6 +154,8 @@ describe('fetchMisCobros', () => {
     ]);
     expect(page.summary.total_collected).toBe(10000);
     expect(page.summary.total_cash).toBe(7000);
+    // El desglose por método también sale sin señal, con los pagos del teléfono.
+    expect(page.summary.by_method?.reduce((total, method) => total + method.total, 0)).toBe(10000);
     expect(page.unsentCount).toBe(1);
     // Sin señal se sabe el efectivo guardado y se avisa de los negocios cerrados.
     expect(page.cashMethodIds).toEqual(['m1']);

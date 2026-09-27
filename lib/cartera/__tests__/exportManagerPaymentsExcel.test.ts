@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import {
   DETAIL_HEADER,
+  METHODS_HEADER,
   MONEY_FORMAT,
   XLSX_MIME_TYPE,
   XLSX_UTI,
@@ -172,7 +173,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     );
     expect(XLSX_UTI).toBe('org.openxmlformats.spreadsheetml.sheet');
-    expect(writtenWorkbook().SheetNames).toEqual(['Cobros', 'Resumen']);
+    expect(writtenWorkbook().SheetNames).toEqual(['Cobros', 'Resumen', 'Por método']);
   });
 
   it('la hoja «Cobros» conserva las 16 columnas en orden, con «Tipo» y «Descuento» junto a «Valor»', async () => {
@@ -388,6 +389,65 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     );
     expect(valueCell('Último cobro').v).toBe('Sin cobros');
     expect(valueCell('Filas exportadas').v).toBe(1);
+  });
+
+  it('la hoja «Por método» usa el desglose del servidor y el «Resumen» suma descuentos y anulados', async () => {
+    mockFetchManagerPayments.mockResolvedValueOnce({
+      rows: [payment()],
+      summary: {
+        ...summary(3),
+        total_cash: 70_000,
+        total_discount: 1_000,
+        total_voided: 30_000,
+        by_method: [
+          { payment_method_id: 'm2', payment_method_name: 'Transferencia', is_cash: false, count: 1, total: '100000', total_discount: 0 },
+          { payment_method_id: 'm1', payment_method_name: 'Efectivo', is_cash: true, count: 2, total: 70_000, total_discount: 1_000 },
+          { payment_method_id: null, payment_method_name: null, is_cash: false, count: 1, total: 7_000, total_discount: 0 },
+        ],
+      },
+    });
+
+    await exportAndShareManagerPaymentsExcel({ manager, filters });
+
+    const workbook = writtenWorkbook();
+    const lines = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Por método'], { header: 1, raw: true, defval: '' });
+    expect(lines).toEqual([
+      [...METHODS_HEADER],
+      ['Transferencia', 'No', 1, 100_000, 0],
+      ['Efectivo', 'Sí', 2, 70_000, 1_000],
+      ['Sin método', 'No', 1, 7_000, 0],
+      ['Total', '', 4, 177_000, 1_000],
+    ]);
+    expect(workbook.Sheets['Por método'].D2).toEqual(expect.objectContaining({ t: 'n', z: MONEY_FORMAT }));
+    const resumen = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Resumen, { header: 1, raw: true, defval: '' });
+    const value = (label: string) => resumen.find((line) => line[0] === label)?.[1];
+    expect(value('Efectivo')).toBe(70_000);
+    expect(value('Descuentos pronto pago')).toBe(1_000);
+    expect(value('Valor anulado (no suma)')).toBe(30_000);
+  });
+
+  it('con un servidor sin desglose, «Por método» se arma con las filas vigentes exportadas', async () => {
+    mockFetchManagerPayments.mockResolvedValueOnce({
+      rows: [
+        payment({ payment_method_id: 'm1', payment_method_name: 'Efectivo', amount: 10_000 }),
+        payment({ payment_method_id: 'm1', payment_method_name: 'Efectivo', amount: 5_000, discount_amount: 500 }),
+        payment({ payment_method_id: 'm2', payment_method_name: 'Nequi', amount: 40_000 }),
+        payment({ payment_method_id: 'm2', payment_method_name: 'Nequi', amount: 99_000, receipt_status: 'anulado' }),
+      ],
+      summary: summary(4),
+    });
+
+    await exportAndShareManagerPaymentsExcel({ manager, filters });
+
+    const workbook = writtenWorkbook();
+    const lines = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Por método'], { header: 1, raw: true, defval: '' });
+    expect(lines.slice(1)).toEqual([
+      ['Nequi', '', 1, 40_000, 0],
+      ['Efectivo', '', 2, 15_000, 500],
+      ['Total', '', 3, 55_000, 500],
+    ]);
+    const resumen = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Resumen, { header: 1, raw: true, defval: '' });
+    expect(resumen.find((line) => line[0] === 'Descuentos pronto pago')).toBeUndefined();
   });
 
   it('sin cobros genera el libro solo con encabezados', async () => {

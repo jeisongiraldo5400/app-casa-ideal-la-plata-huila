@@ -1,10 +1,12 @@
 import { useTheme } from '@/components/theme';
 import { IconSize, Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { formatCOP } from '@/lib/creditCalculator';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCobradoHoy } from './useCobradoHoy';
 
 /**
  * El único acceso a «Cobros» desde Cartera, para quien registra cobros: admin,
@@ -17,7 +19,14 @@ export function MisCobrosEntryButton() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
-  if (!isAdmin() && !isGestorCobro() && !isRecaudador()) return null;
+  const canCollect = isAdmin() || isGestorCobro() || isRecaudador();
+  const hoy = useCobradoHoy(canCollect);
+  if (!canCollect) return null;
+  const hint = hoy
+    ? `Hoy: ${formatCOP(hoy.total)} · ${hoy.count} ${hoy.count === 1 ? 'cobro' : 'cobros'}`
+    : isAdmin()
+      ? 'Por cobrador, fecha, método y cierre'
+      : 'Lo que cobré, por fecha, método y cierre';
   return (
     <Pressable
       accessibilityRole="button"
@@ -30,7 +39,7 @@ export function MisCobrosEntryButton() {
       </View>
       <View style={styles.text}>
         <Text style={[styles.title, { color: colors.text.primary }]}>Cobros</Text>
-        <Text style={[styles.hint, { color: colors.text.secondary }]} numberOfLines={1}>{isAdmin() ? 'Por cobrador, fecha, método y cierre' : 'Lo que cobré, por fecha, método y cierre'}</Text>
+        <Text style={[styles.hint, { color: colors.text.secondary }]} numberOfLines={1} testID="mis-cobros-hoy">{hint}</Text>
       </View>
       <MaterialIcons name="chevron-right" size={IconSize.md} color={colors.text.secondary} />
     </Pressable>

@@ -11,6 +11,7 @@ import {
   filterLocalMisCobros,
   type MisCobroRow,
   type MisCobrosFilters,
+  type MisCobrosMethodTotal,
   type MisCobrosPage,
   type MisCobrosScope,
   type MisCobrosSummary,
@@ -46,7 +47,7 @@ export function receiptStatusParam(status: MisCobrosFilters['status']): 'todos' 
 }
 
 type RpcResult = {
-  summary?: Partial<Record<keyof MisCobrosSummary, number | string | null>>;
+  summary?: Partial<Record<keyof MisCobrosSummary, unknown>>;
   rows?: Record<string, unknown>[];
   cash_method_ids?: string[];
 };
@@ -99,6 +100,23 @@ function mapSummary(summary: RpcResult['summary'] = {}): MisCobrosSummary {
     total_cash: toNumber(summary.total_cash),
     cash_count: toNumber(summary.cash_count),
     average_payment: summary.average_payment == null ? undefined : toNumber(summary.average_payment),
+    total_discount: summary.total_discount == null ? undefined : toNumber(summary.total_discount),
+    pronto_pago_count: summary.pronto_pago_count == null ? undefined : toNumber(summary.pronto_pago_count),
+    total_voided: summary.total_voided == null ? undefined : toNumber(summary.total_voided),
+    // Un servidor sin 20261230130000 no lo manda: la pantalla oculta el desglose.
+    by_method: Array.isArray(summary.by_method) ? summary.by_method.map(mapMethodTotal) : undefined,
+  };
+}
+
+export function mapMethodTotal(value: unknown): MisCobrosMethodTotal {
+  const item = (value || {}) as Record<string, unknown>;
+  return {
+    payment_method_id: item.payment_method_id == null ? null : String(item.payment_method_id),
+    payment_method_name: item.payment_method_name == null ? null : String(item.payment_method_name),
+    is_cash: item.is_cash == null ? null : Boolean(item.is_cash),
+    count: toNumber(item.count),
+    total: toNumber(item.total),
+    total_discount: toNumber(item.total_discount),
   };
 }
 

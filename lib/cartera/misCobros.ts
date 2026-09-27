@@ -85,6 +85,24 @@ export type MisCobroRow = {
   expected_total?: number | null;
 };
 
+/**
+ * Un renglón del desglose por método de pago (`summary.by_method`,
+ * 20261230130000): solo pagos vigentes que cumplen los filtros (todo el
+ * filtro, no la página). `payment_method_id` null = pagos sin método
+ * (anteriores al dato).
+ */
+export type MisCobrosMethodTotal = {
+  payment_method_id: string | null;
+  payment_method_name: string | null;
+  /** null = no se sabe (sin señal y sin la lista de métodos en efectivo). */
+  is_cash: boolean | null;
+  count: number;
+  /** Dinero recibido con ese método. */
+  total: number;
+  /** Descuentos de pronto pago de esos pagos (no son dinero). */
+  total_discount: number;
+};
+
 export type MisCobrosSummary = {
   total_count: number;
   valid_count: number;
@@ -96,6 +114,16 @@ export type MisCobrosSummary = {
   cash_count: number | null;
   /** Promedio por pago vigente; solo lo calcula el servidor. */
   average_payment?: number;
+  /** Descuentos de pronto pago de los pagos vigentes y cuántos pronto pagos hubo. */
+  total_discount?: number;
+  pronto_pago_count?: number;
+  /** Dinero de los pagos anulados (no suma al total); solo el servidor nuevo. */
+  total_voided?: number;
+  /**
+   * Desglose por método, de mayor a menor total. Ausente con un servidor sin
+   * la migración 20261230130000.
+   */
+  by_method?: MisCobrosMethodTotal[];
 };
 
 export type MisCobrosPage = {
@@ -301,17 +329,74 @@ export function filterLocalMisCobros(
 
   const counted = matched.filter((row) => row.receipt_status !== 'anulado' && row.local_state !== 'rechazado');
   const cashRows = cash ? counted.filter((row) => row.payment_method_is_cash) : null;
+  const voided = matched.filter((row) => row.receipt_status === 'anulado');
+  const prontoPagos = counted.filter((row) => row.payment_kind === 'pronto_pago');
   return {
     rows: matched,
     summary: {
       total_count: matched.length,
       valid_count: counted.length,
-      voided_count: matched.filter((row) => row.receipt_status === 'anulado').length,
+      voided_count: voided.length,
       total_collected: sumAmounts(counted),
       total_cash: cashRows ? sumAmounts(cashRows) : null,
       cash_count: cashRows ? cashRows.length : null,
+      total_discount: sumCents(counted.map((row) => row.discount_amount)),
+      pronto_pago_count: prontoPagos.length,
+      total_voided: sumAmounts(voided),
+      by_method: totalsByMethod(counted),
     },
   };
+}
+
+/**
+ * Desglose por método de pago, como `summary.by_method` del servidor: un
+ * renglón por método (los pagos sin método juntos), de mayor a menor total.
+ * Recibe solo las filas que suman (vigentes y no rechazadas).
+ */
+export function totalsByMethod(rows: MisCobroRow[]): MisCobrosMethodTotal[] {
+  const groups = new Map<string, { row: MisCobrosMethodTotal; cents: number; discountCents: number }>();
+  for (const row of rows) {
+    const key = row.payment_method_id ?? '';
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        row: {
+          payment_method_id: row.payment_method_id ?? null,
+          payment_method_name: row.payment_method_name ?? null,
+          is_cash: row.payment_method_is_cash,
+          count: 0,
+          total: 0,
+          total_discount: 0,
+        },
+        cents: 0,
+        discountCents: 0,
+      };
+      groups.set(key, group);
+    }
+    group.row.count += 1;
+    group.row.payment_method_name ||= row.payment_method_name ?? null;
+    group.cents += Math.round(Number(row.amount || 0) * 100);
+    group.discountCents += Math.round(Number(row.discount_amount || 0) * 100);
+  }
+  return [...groups.values()]
+    .map(({ row, cents, discountCents }) => ({ ...row, total: cents / 100, total_discount: discountCents / 100 }))
+    .sort(
+      (a, b) =>
+        b.total - a.total ||
+        // Sin nombre al final, como NULLS LAST del servidor.
+        (a.payment_method_name == null ? 1 : 0) - (b.payment_method_name == null ? 1 : 0) ||
+        (a.payment_method_name || '').localeCompare(b.payment_method_name || '')
+    );
+}
+
+/** Nombre visible de un renglón del desglose. */
+export function methodTotalLabel(method: Pick<MisCobrosMethodTotal, 'payment_method_name' | 'payment_method_id'>): string {
+  if (method.payment_method_name) return method.payment_method_name;
+  return method.payment_method_id ? 'Método sin nombre' : 'Sin método';
+}
+
+function sumCents(values: (number | null | undefined)[]): number {
+  return values.reduce<number>((total, value) => total + Math.round(Number(value || 0) * 100), 0) / 100;
 }
 
 /** Suma a centavos para no arrastrar ruido de coma flotante. */

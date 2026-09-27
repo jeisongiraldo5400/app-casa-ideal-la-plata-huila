@@ -10,6 +10,8 @@ import {
   initialMisCobrosFilters,
   isPorEntregarACaja,
   porEntregarACajaFilters,
+  methodTotalLabel,
+  totalsByMethod,
 } from '../misCobros';
 
 const EFECTIVO = 'm-efectivo';
@@ -112,6 +114,70 @@ describe('filterLocalMisCobros (Mis cobros sin señal)', () => {
 
   it('el filtro de cierre no se aplica sin señal (el teléfono no lo sabe)', () => {
     expect(run({ inCierre: 'si' }).rows).toHaveLength(5);
+  });
+
+  it('desglose por método como el servidor: solo lo que suma, de mayor a menor', () => {
+    const { summary } = run();
+    expect(summary.by_method).toEqual([
+      { payment_method_id: EFECTIVO, payment_method_name: 'Efectivo', is_cash: true, count: 2, total: 57000, total_discount: 0 },
+      { payment_method_id: CONSIGNACION, payment_method_name: 'Consignación', is_cash: false, count: 1, total: 30000, total_discount: 0 },
+    ]);
+    // Anulados aparte; los rechazados no están ni en el total ni en lo anulado.
+    expect(summary.total_voided).toBe(20000);
+    const sum = (summary.by_method ?? []).reduce((total, method) => total + method.total, 0);
+    expect(sum).toBe(summary.total_collected);
+  });
+
+  it('el desglose sigue a los filtros (fechas, métodos, estado)', () => {
+    expect(run({ from: '2026-09-01', to: '2026-09-10' }).summary.by_method?.map((m) => [m.payment_method_id, m.total])).toEqual([
+      [EFECTIVO, 50000],
+      [CONSIGNACION, 30000],
+    ]);
+    expect(run({ paymentMethodIds: [CONSIGNACION] }).summary.by_method?.map((m) => m.payment_method_id)).toEqual([CONSIGNACION]);
+    const anulados = run({ status: 'anulados' }).summary;
+    expect(anulados.by_method).toEqual([]);
+    expect(anulados.total_voided).toBe(20000);
+  });
+
+  it('sin la lista de efectivo el desglose sale igual pero sin saber cuál es efectivo', () => {
+    expect(run({}, { ...SELF, cashMethodIds: null }).summary.by_method?.map((m) => m.is_cash)).toEqual([null, null]);
+  });
+
+  it('descuentos de pronto pago y pagos sin método', () => {
+    const result = filterLocalMisCobros(
+      [
+        pago({ payment_id: 'a', amount: 5000, payment_kind: 'pronto_pago', discount_amount: 1000 }),
+        pago({ payment_id: 'b', amount: 2000, payment_method_id: null, payment_method_name: null }),
+      ],
+      DEFAULT_MIS_COBROS_FILTERS,
+      SELF
+    );
+    expect(result.summary.total_discount).toBe(1000);
+    expect(result.summary.pronto_pago_count).toBe(1);
+    expect(result.summary.by_method).toEqual([
+      { payment_method_id: EFECTIVO, payment_method_name: 'Efectivo', is_cash: true, count: 1, total: 5000, total_discount: 1000 },
+      { payment_method_id: null, payment_method_name: null, is_cash: false, count: 1, total: 2000, total_discount: 0 },
+    ]);
+    expect(methodTotalLabel(result.summary.by_method![1])).toBe('Sin método');
+  });
+});
+
+describe('totalsByMethod', () => {
+  it('suma a centavos y ordena por total; empate: sin nombre al final', () => {
+    const rows = filterLocalMisCobros(
+      [
+        pago({ payment_id: 'x', amount: 0.1, payment_method_id: null, payment_method_name: null }),
+        pago({ payment_id: 'y', amount: 0.2, payment_method_id: null, payment_method_name: null }),
+        pago({ payment_id: 'z', amount: 0.3 }),
+      ],
+      DEFAULT_MIS_COBROS_FILTERS,
+      SELF
+    ).rows;
+    const groups = totalsByMethod(rows);
+    expect(groups.map((g) => [g.payment_method_name, g.total])).toEqual([
+      ['Efectivo', 0.3],
+      [null, 0.3],
+    ]);
   });
 });
 

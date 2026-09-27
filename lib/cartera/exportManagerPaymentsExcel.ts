@@ -8,6 +8,7 @@ import {
   fetchManagerPayments,
   type CollectionManager,
   type ManagerPayment,
+  type ManagerPaymentMethodTotal,
   type ManagerPaymentsParams,
 } from '@/lib/cartera/carteraService';
 
@@ -42,6 +43,8 @@ const SITE_LABEL: Record<string, string> = {
 
 export const DETAIL_SHEET_NAME = 'Cobros';
 export const SUMMARY_SHEET_NAME = 'Resumen';
+export const METHODS_SHEET_NAME = 'Por método';
+export const METHODS_HEADER = ['Método de pago', 'Efectivo', 'Pagos', 'Total', 'Descuento pronto pago'] as const;
 
 export const DETAIL_HEADER = [
   'Fecha y hora pago',
@@ -155,6 +158,45 @@ function paymentMethodLabel(payment: ManagerPayment, names: Map<string, string>)
   return '';
 }
 
+/**
+ * Desglose por método para la hoja «Por método»: el del servidor
+ * (`summary.by_method`, sobre todo el filtro) o, con un servidor anterior, el
+ * de las filas exportadas vigentes. Mismo orden: mayor total primero.
+ */
+export function managerPaymentsByMethod(
+  summary: ManagerPaymentsSummary,
+  rows: ManagerPayment[],
+  names: Map<string, string> = new Map()
+): ManagerPaymentMethodTotal[] {
+  if (Array.isArray(summary.by_method)) return summary.by_method;
+  const groups = new Map<string, { item: ManagerPaymentMethodTotal; cents: number; discountCents: number }>();
+  for (const payment of rows) {
+    if (payment.receipt_status === 'anulado') continue;
+    const key = payment.payment_method_id ?? '';
+    let group = groups.get(key);
+    if (!group) {
+      const name = paymentMethodLabel(payment, names) || null;
+      group = {
+        item: { payment_method_id: payment.payment_method_id ?? null, payment_method_name: name, is_cash: null, count: 0, total: 0, total_discount: 0 },
+        cents: 0,
+        discountCents: 0,
+      };
+      groups.set(key, group);
+    }
+    group.item.count += 1;
+    group.cents += Math.round(Number(payment.amount || 0) * 100);
+    group.discountCents += Math.round(Number(payment.discount_amount || 0) * 100);
+  }
+  return [...groups.values()]
+    .map(({ item, cents, discountCents }) => ({ ...item, total: cents / 100, total_discount: discountCents / 100 }))
+    .sort((a, b) => Number(b.total) - Number(a.total));
+}
+
+function methodSheetName(method: ManagerPaymentMethodTotal) {
+  if (method.payment_method_name) return method.payment_method_name;
+  return method.payment_method_id ? 'Método sin nombre' : 'Sin método';
+}
+
 export async function fetchAllManagerPayments(
   managerId: string,
   filters: ManagerPaymentFilters
@@ -260,7 +302,16 @@ export function buildManagerPaymentsWorkbook(options: {
     ['Pagos vigentes', Number(summary.valid_count || 0)],
     ['Pagos anulados', Number(summary.voided_count || 0)],
     ['Recaudo neto', moneyCell(summary.total_collected)],
+    ...(summary.total_cash != null
+      ? [['Efectivo', moneyCell(summary.total_cash)] as (XLSX.CellObject | string | number)[]]
+      : []),
     ['Promedio por pago', moneyCell(summary.average_payment)],
+    ...(summary.total_discount != null
+      ? [['Descuentos pronto pago', moneyCell(summary.total_discount)] as (XLSX.CellObject | string | number)[]]
+      : []),
+    ...(summary.total_voided != null
+      ? [['Valor anulado (no suma)', moneyCell(summary.total_voided)] as (XLSX.CellObject | string | number)[]]
+      : []),
     [
       'Último cobro',
       dateCell(toExcelDateSerial(summary.last_payment_date), DATE_TIME_FORMAT, 'Sin cobros'),
@@ -269,9 +320,31 @@ export function buildManagerPaymentsWorkbook(options: {
   ]);
   summarySheet['!cols'] = [{ wch: 22 }, { wch: 34 }];
 
+  // «Por método»: pagos vigentes que cumplen los filtros, agrupados por método.
+  const methods = managerPaymentsByMethod(summary, rows, methodNames);
+  const methodsSheet = sheetFromRows([
+    [...METHODS_HEADER],
+    ...methods.map((method) => [
+      methodSheetName(method),
+      method.is_cash == null ? '' : method.is_cash ? 'Sí' : 'No',
+      Number(method.count || 0),
+      moneyCell(method.total),
+      moneyCell(method.total_discount),
+    ]),
+    [
+      'Total',
+      '',
+      methods.reduce((total, method) => total + Number(method.count || 0), 0),
+      moneyCell(methods.reduce((total, method) => total + Math.round(Number(method.total || 0) * 100), 0) / 100),
+      moneyCell(methods.reduce((total, method) => total + Math.round(Number(method.total_discount || 0) * 100), 0) / 100),
+    ],
+  ]);
+  methodsSheet['!cols'] = [{ wch: 26 }, { wch: 10 }, { wch: 8 }, { wch: 16 }, { wch: 20 }];
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, detailSheet, DETAIL_SHEET_NAME);
   XLSX.utils.book_append_sheet(workbook, summarySheet, SUMMARY_SHEET_NAME);
+  XLSX.utils.book_append_sheet(workbook, methodsSheet, METHODS_SHEET_NAME);
   return workbook;
 }
 

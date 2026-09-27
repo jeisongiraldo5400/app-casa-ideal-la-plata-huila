@@ -1,4 +1,4 @@
-import type { CarteraPageQuery, CarteraRow } from './types';
+import type { CarteraOwnScope, CarteraPageQuery, CarteraRow } from './types';
 import { normalizeCarteraSearch } from './carteraFilters';
 import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
@@ -42,6 +42,16 @@ export type ManagerPayment = {
   support_path: string | null;
   support_mime: string | null;
   support_file_name: string | null;
+};
+
+/** Renglón de `summary.by_method` de `get_collection_manager_payments` (solo pagos vigentes). */
+export type ManagerPaymentMethodTotal = {
+  payment_method_id: string | null;
+  payment_method_name: string | null;
+  is_cash: boolean | null;
+  count: number;
+  total: number | string;
+  total_discount: number | string;
 };
 
 export type CarteraDashboard = {
@@ -120,7 +130,11 @@ export async function fetchCarteraPage(params: CarteraPageQuery) {
   }
 }
 
-export async function fetchCarteraDashboard(municipioId = '') {
+/**
+ * Tablero de cartera. `ownScope`: sólo para el respaldo sin señal armado desde
+ * la base local (el servidor ya calcula el alcance propio del recaudador).
+ */
+export async function fetchCarteraDashboard(municipioId = '', ownScope?: CarteraOwnScope | null) {
   try {
     const { data, error } = await supabase.rpc('get_cartera_management_dashboard', {
       p_municipio_id: municipioId || null,
@@ -133,7 +147,7 @@ export async function fetchCarteraDashboard(municipioId = '') {
     if (!isNetworkError(error)) throw error;
     const snapshot = await loadReportSnapshot<CarteraDashboard>(`cartera-dashboard:${municipioId}`);
     if (snapshot) return snapshot.payload;
-    const local = await fetchCarteraDashboardFromLocal();
+    const local = await fetchCarteraDashboardFromLocal(ownScope);
     if (local) return local;
     throw error;
   }
@@ -195,6 +209,13 @@ export async function fetchManagerPayments(managerId: string, params: ManagerPay
       total_collected: number;
       average_payment: number;
       last_payment_date: string | null;
+      /** Pronto pago (20261024120000) y desglose por método (20261230130000); ausentes en servidores anteriores. */
+      total_cash?: number | null;
+      cash_count?: number | null;
+      total_discount?: number | null;
+      pronto_pago_count?: number | null;
+      total_voided?: number | null;
+      by_method?: ManagerPaymentMethodTotal[] | null;
     };
     rows: ManagerPayment[];
   };

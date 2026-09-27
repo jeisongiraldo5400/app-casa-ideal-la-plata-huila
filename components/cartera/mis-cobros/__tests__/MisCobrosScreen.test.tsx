@@ -138,6 +138,53 @@ describe('MisCobrosScreen', () => {
     expect(screen.queryByText('Cambiar')).toBeNull();
   });
 
+  it('la tarjeta de totales desglosa por método y se actualiza al cambiar filtros', async () => {
+    mockedFetch
+      .mockResolvedValueOnce({
+        ...PAGE,
+        summary: {
+          ...PAGE.summary,
+          total_collected: 157000,
+          total_discount: 1000,
+          pronto_pago_count: 1,
+          total_voided: 20000,
+          by_method: [
+            { payment_method_id: 'm2', payment_method_name: 'Transferencia', is_cash: false, count: 2, total: 100000, total_discount: 0 },
+            { payment_method_id: 'm1', payment_method_name: 'Efectivo', is_cash: true, count: 3, total: 50000, total_discount: 1000 },
+            { payment_method_id: null, payment_method_name: null, is_cash: false, count: 1, total: 7000, total_discount: 0 },
+          ],
+        },
+      })
+      .mockResolvedValue({
+        ...PAGE,
+        summary: {
+          ...PAGE.summary,
+          by_method: [{ payment_method_id: 'm1', payment_method_name: 'Efectivo', is_cash: true, count: 1, total: 50000, total_discount: 0 }],
+        },
+      });
+    renderScreen();
+    await waitFor(() => expect(screen.getByTestId('mis-cobros-por-metodo')).toBeTruthy());
+    expect(screen.getByText('Por método de pago')).toBeTruthy();
+    expect(screen.getByText(money(100000))).toBeTruthy();
+    expect(screen.getByText(' (2)')).toBeTruthy();
+    expect(screen.getByText(money(7000))).toBeTruthy();
+    expect(screen.getByText(/Sin método/)).toBeTruthy();
+    expect(screen.getByText(/Descuentos por pronto pago: .*1\.000 \(1\)/)).toBeTruthy();
+    expect(screen.getByText(`Anulado (no suma): ${money(20000)}`)).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Este mes'));
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(money(100000))).toBeNull());
+    expect(screen.queryByText(/Sin método/)).toBeNull();
+    expect(screen.getByText(' (1)')).toBeTruthy();
+  });
+
+  it('sin desglose del servidor (versión anterior) no muestra la sección', async () => {
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Ana Pérez')).toBeTruthy());
+    expect(screen.queryByTestId('mis-cobros-por-metodo')).toBeNull();
+  });
+
   it('el rango Desde/Hasta está a la vista y el total dice de qué fechas es', async () => {
     renderScreen();
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
@@ -185,8 +232,8 @@ describe('MisCobrosScreen', () => {
   it('el segmento de estado vuelve a pedir con ese estado', async () => {
     renderScreen();
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
-    // El primero es el segmento; el segundo, la etiqueta del total de anulados.
-    fireEvent.press(screen.getAllByText('Anulados')[0]);
+    // El primero es el conteo de la tarjeta de totales; el segundo, el segmento de estado.
+    fireEvent.press(screen.getAllByText('Anulados')[1]);
     await waitFor(() =>
       expect(mockedFetch).toHaveBeenLastCalledWith(
         expect.objectContaining({ filters: expect.objectContaining({ status: 'anulados' }) })
@@ -309,7 +356,8 @@ describe('MisCobrosScreen', () => {
     renderScreen();
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
     fireEvent.press(screen.getByText('De mi cartera'));
-    fireEvent.press(screen.getAllByText('Anulados')[0]);
+    // El primero es el conteo de la tarjeta de totales; el segundo, el segmento de estado.
+    fireEvent.press(screen.getAllByText('Anulados')[1]);
     await waitFor(() => expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'portfolio' })));
 
     // Mientras carga, el botón espera.

@@ -46,6 +46,8 @@ export async function loadMisCobrosFromLocal(): Promise<LocalMisCobro[] | null> 
       payment_method_name: pago.paymentMethodName ?? null,
       payment_site: pago.paymentSite ?? null,
       payment_kind: pago.paymentKind ?? null,
+      // Descuento de pronto pago: el desglose por método lo suma aparte (no es dinero).
+      discount_amount: pago.discountAmount == null ? null : Number(pago.discountAmount),
       created_by_name: pago.createdByName ?? null,
       sync_status: pago.rowSyncStatus || 'synced',
     };

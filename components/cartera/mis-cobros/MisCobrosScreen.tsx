@@ -35,6 +35,7 @@ import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleShe
 import { MisCobroCard } from './MisCobroCard';
 import { MisCobrosDateRange } from './MisCobrosDateRange';
 import { MisCobrosFilterSheet } from './MisCobrosFilterSheet';
+import { MisCobrosMethodBreakdown } from './MisCobrosMethodBreakdown';
 import { useCobroReceiptActions } from './useCobroReceiptActions';
 
 const PAGE_SIZE = 20;
@@ -284,6 +285,64 @@ export function MisCobrosScreen() {
         </View>
       ) : null}
 
+      {fromCache ? (
+        <View style={[styles.notice, { backgroundColor: `${colors.warning.main}14`, borderColor: colors.warning.main }]}>
+          <MaterialIcons name="cloud-off" size={18} color={colors.warning.main} />
+          <Text style={[styles.noticeText, { color: colors.text.primary }]}>
+            Sin señal: pagos guardados en el teléfono ({formatLocalDataLabel(lastSyncedAt).toLowerCase()}). Los que aún no se envían van marcados.
+            {cierreIgnored ? ' El filtro de cierre se aplica al volver la conexión.' : ''}
+            {closedMissing ? ' No incluye pagos de negocios ya cerrados.' : ''}
+          </Text>
+        </View>
+      ) : unsentCount > 0 && isSelf && scope === 'performed' ? (
+        <View style={[styles.notice, { backgroundColor: `${colors.info.main}14`, borderColor: colors.info.main }]}>
+          <MaterialIcons name="cloud-upload" size={18} color={colors.info.main} />
+          <Text style={[styles.noticeText, { color: colors.text.primary }]}>
+            {unsentCount === 1 ? 'Hay 1 cobro guardado en el teléfono que aún no se envía' : `Hay ${unsentCount} cobros guardados en el teléfono que aún no se envían`}: aparecerán aquí al sincronizar.
+          </Text>
+        </View>
+      ) : null}
+
+      <MisCobrosDateRange
+        value={{ from: filters.from, to: filters.to }}
+        onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
+      />
+
+      {/* Lo primero que se ve: cuánto se cobró en las fechas elegidas. */}
+      <Card variant="outlined" style={styles.totals}>
+        <Metric
+          label={`Total cobrado · ${rangeLabel(filters) ?? 'todas las fechas'}`}
+          value={formatCOP(summary.total_collected)}
+          tone="success"
+          size="md"
+        />
+        <View style={styles.totalsRow}>
+          <Metric
+            label={summary.cash_count == null ? 'Efectivo' : `Efectivo (${summary.cash_count})`}
+            value={summary.total_cash == null ? 'Sin dato' : formatCOP(summary.total_cash)}
+            style={styles.totalsCell}
+          />
+          <Metric label="Cobros" value={String(summary.total_count)} style={styles.totalsCell} />
+          <Metric label="Anulados" value={String(summary.voided_count)} tone={summary.voided_count ? 'error' : 'default'} style={styles.totalsCell} />
+        </View>
+        <MisCobrosMethodBreakdown summary={summary} />
+        {summary.average_payment != null ? (
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>
+            Promedio por cobro: {formatCOP(summary.average_payment)}
+          </Text>
+        ) : null}
+        {summary.total_cash == null ? (
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>
+            Conéctate una vez para saber qué métodos son efectivo.
+          </Text>
+        ) : null}
+      </Card>
+
+      {/* Separación clara entre el resumen y el listado de pagos. */}
+      <View style={[styles.listDivider, { borderTopColor: colors.divider }]}>
+        <Text style={[styles.listTitle, { color: colors.text.primary }]}>Pagos</Text>
+      </View>
+
       <SearchField
         value={searchInput}
         onChangeText={setSearchInput}
@@ -320,29 +379,6 @@ export function MisCobrosScreen() {
         />
       </View>
 
-      {fromCache ? (
-        <View style={[styles.notice, { backgroundColor: `${colors.warning.main}14`, borderColor: colors.warning.main }]}>
-          <MaterialIcons name="cloud-off" size={18} color={colors.warning.main} />
-          <Text style={[styles.noticeText, { color: colors.text.primary }]}>
-            Sin señal: pagos guardados en el teléfono ({formatLocalDataLabel(lastSyncedAt).toLowerCase()}). Los que aún no se envían van marcados.
-            {cierreIgnored ? ' El filtro de cierre se aplica al volver la conexión.' : ''}
-            {closedMissing ? ' No incluye pagos de negocios ya cerrados.' : ''}
-          </Text>
-        </View>
-      ) : unsentCount > 0 && isSelf && scope === 'performed' ? (
-        <View style={[styles.notice, { backgroundColor: `${colors.info.main}14`, borderColor: colors.info.main }]}>
-          <MaterialIcons name="cloud-upload" size={18} color={colors.info.main} />
-          <Text style={[styles.noticeText, { color: colors.text.primary }]}>
-            {unsentCount === 1 ? 'Hay 1 cobro guardado en el teléfono que aún no se envía' : `Hay ${unsentCount} cobros guardados en el teléfono que aún no se envían`}: aparecerán aquí al sincronizar.
-          </Text>
-        </View>
-      ) : null}
-
-      <MisCobrosDateRange
-        value={{ from: filters.from, to: filters.to }}
-        onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
-      />
-
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ selected: cajaActive }}
@@ -364,34 +400,6 @@ export function MisCobrosScreen() {
         </View>
         <MaterialIcons name={cajaActive ? 'close' : 'chevron-right'} size={20} color={colors.text.secondary} />
       </Pressable>
-
-      <Card variant="outlined" style={styles.totals}>
-        <Metric
-          label={`Total cobrado · ${rangeLabel(filters) ?? 'todas las fechas'}`}
-          value={formatCOP(summary.total_collected)}
-          tone="success"
-          size="md"
-        />
-        <View style={styles.totalsRow}>
-          <Metric
-            label={summary.cash_count == null ? 'Efectivo' : `Efectivo (${summary.cash_count})`}
-            value={summary.total_cash == null ? 'Sin dato' : formatCOP(summary.total_cash)}
-            style={styles.totalsCell}
-          />
-          <Metric label="Cobros" value={String(summary.total_count)} style={styles.totalsCell} />
-          <Metric label="Anulados" value={String(summary.voided_count)} tone={summary.voided_count ? 'error' : 'default'} style={styles.totalsCell} />
-        </View>
-        {summary.average_payment != null ? (
-          <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Promedio por cobro: {formatCOP(summary.average_payment)}
-          </Text>
-        ) : null}
-        {summary.total_cash == null ? (
-          <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Conéctate una vez para saber qué métodos son efectivo.
-          </Text>
-        ) : null}
-      </Card>
     </View>
   );
 
@@ -497,6 +505,8 @@ const styles = StyleSheet.create({
   filterSummary: { ...Typography.metadata, flex: 1 },
   notice: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start', borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md },
   noticeText: { ...Typography.caption, flex: 1 },
+  listDivider: { borderTopWidth: 2, marginTop: Spacing.sm, paddingTop: Spacing.lg },
+  listTitle: { ...Typography.section },
   totals: { gap: Spacing.md },
   totalsRow: { flexDirection: 'row', gap: Spacing.md },
   totalsCell: { flex: 1 },
