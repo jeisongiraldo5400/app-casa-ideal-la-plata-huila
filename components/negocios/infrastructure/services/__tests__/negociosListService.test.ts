@@ -65,6 +65,33 @@ describe('negociosListService', () => {
     expect(page.summary).toEqual({ totalCount: 1, totalSaldo: 10, moraCount: 0 });
   });
 
+  it('las fechas del negocio sólo viajan si están puestas', async () => {
+    mockRpc.mockResolvedValue({ data: { rows: [], summary: {} }, error: null });
+    await fetchNegociosPage({
+      scope: 'todos',
+      gestorId: null,
+      search: '',
+      filters: { ...DEFAULT_NEGOCIOS_LIST_FILTERS, dateFrom: '2026-09-01', dateTo: '2026-09-30' },
+      limit: 50,
+      offset: 0,
+    });
+    expect(mockRpc).toHaveBeenLastCalledWith(
+      'list_negocios_movil',
+      expect.objectContaining({ p_date_from: '2026-09-01', p_date_to: '2026-09-30' })
+    );
+    await fetchNegociosPage({
+      scope: 'todos',
+      gestorId: null,
+      search: '',
+      filters: DEFAULT_NEGOCIOS_LIST_FILTERS,
+      limit: 50,
+      offset: 0,
+    });
+    const args = mockRpc.mock.calls[mockRpc.mock.calls.length - 1][1];
+    expect(args.p_date_from).toBeUndefined();
+    expect(args.p_date_to).toBeUndefined();
+  });
+
   it('el gestor sólo viaja en «Por cobrar»', async () => {
     mockRpc.mockResolvedValue({ data: { rows: [], summary: {} }, error: null });
     await fetchNegociosPage({

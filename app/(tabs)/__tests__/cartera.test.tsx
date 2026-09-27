@@ -31,12 +31,19 @@ jest.mock('@/lib/cartera/carteraCatalogs', () => ({
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
 /** Se cambia en la prueba del recaudador; el resto de casos lo deja en false. */
 let mockSoloBusqueda = false;
+/** Recaudador que además es vendedor (así están los de producción). */
+let mockRecaudadorVendedor = false;
 jest.mock('@/hooks/useUserRoles', () => ({
   useUserRoles: () => ({
     isAdmin: () => false,
     isGestorCobro: () => false,
+    isRecaudador: () => mockSoloBusqueda || mockRecaudadorVendedor,
+    isVendedor: () => mockRecaudadorVendedor,
     onlyFindsBySearch: () => mockSoloBusqueda,
   }),
+}));
+jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
 }));
 jest.mock('@/lib/offline/store/syncStore', () => ({
   useSyncStore: (selector: (state: { lastSyncedAt: number | null }) => unknown) =>
@@ -144,6 +151,7 @@ describe('Pantalla de Cartera', () => {
   beforeEach(() => {
     resetCarteraCache();
     mockSoloBusqueda = false;
+    mockRecaudadorVendedor = false;
     focusCallback = null;
     mockPush.mockReset();
     mockedLoad.mockReset().mockResolvedValue(result);
@@ -158,6 +166,19 @@ describe('Pantalla de Cartera', () => {
     expect(mockedLoad).toHaveBeenCalledTimes(1);
     expect(mockedLoad).toHaveBeenCalledWith(expect.objectContaining({ page: 1, includeDashboard: true }));
     await waitFor(() => expect(mockedCatalogs).toHaveBeenCalledTimes(1));
+  });
+
+  it('sin rol de recaudador no acota la cartera local (ownScope null)', async () => {
+    await renderScreen();
+    expect(mockedLoad).toHaveBeenCalledWith(expect.objectContaining({ ownScope: null }));
+  });
+
+  it('recaudador + vendedor: sin señal ve sólo su propia cartera (ownScope)', async () => {
+    mockRecaudadorVendedor = true;
+    await renderScreen();
+    expect(mockedLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ ownScope: { userId: 'user-1', vendedor: true, gestor: false } })
+    );
   });
 
   it('no vuelve a pedir nada al volver a la pantalla enseguida', async () => {

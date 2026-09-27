@@ -39,6 +39,20 @@ export type CarteraQuery = {
 export type CarteraPageQuery = CarteraQuery & {
   page: number;
   pageSize: number;
+  /**
+   * Sólo sin señal. El recaudador no admin baja TODOS los negocios al teléfono
+   * (para cobrar cualquiera sin señal), pero sin término de búsqueda ve sólo su
+   * propia cartera, igual que el servidor (20261125120000). Sin esto, sin
+   * señal veía la cartera completa de la empresa.
+   */
+  ownScope?: CarteraOwnScope | null;
+};
+
+/** Cartera propia de quien la consulta: vendedor (vendió o registró) o gestor (asignado). */
+export type CarteraOwnScope = {
+  userId: string;
+  vendedor: boolean;
+  gestor: boolean;
 };
 
 /** Fila devuelta por `get_cartera_cuotas` (y reconstruida desde la base local). */

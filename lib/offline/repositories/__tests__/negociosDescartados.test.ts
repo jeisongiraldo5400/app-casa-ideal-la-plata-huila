@@ -4,7 +4,7 @@
  * teléfono, pero no sale en la lista de Negocios. Tampoco debe salir en la
  * ficha del cliente sin señal, en la cartera local ni en Mis cobros.
  */
-import { fetchCarteraFromLocal, fetchCustomerNegociosFromLocal } from '../offlineRepository';
+import { fetchCarteraDashboardFromLocal, fetchCarteraFromLocal, fetchCustomerNegociosFromLocal } from '../offlineRepository';
 import { loadMisCobrosFromLocal } from '../misCobrosRepository';
 
 type Row = Record<string, unknown> & { id: string };
@@ -132,4 +132,51 @@ describe('negocios descartados por el usuario, fuera de la ficha, la cartera y M
     expect((await fetchCarteraFromLocal(carteraQuery))?.totalCount).toBe(3);
     expect(await loadMisCobrosFromLocal()).toHaveLength(3);
   });
+
+describe('cartera sin señal del recaudador no admin: sólo la propia sin buscar', () => {
+  beforeEach(() => {
+    // n1 lo vendió u1; n2 es ajeno sin gestor; n3 es ajeno y está asignado a u1.
+    mockTables = {
+      customers: [{ id: 'c1', name: 'Ana', idNumber: '123', phone: null, sellerId: 'u1' }],
+      negocios: [
+        negocio('n1', 20260001),
+        { ...negocio('n2', 20260002), sellerId: 'otro', createdBy: 'otro' },
+        { ...negocio('n3', 20260003), sellerId: 'otro', createdBy: 'otro', gestorCobroId: 'u1' },
+      ],
+      negocio_cuotas: [cuota('q1', 'n1'), cuota('q2', 'n2'), cuota('q3', 'n3')],
+      negocio_pagos: [],
+      profiles: [],
+      sync_outbox: [],
+    };
+  });
+
+  it('como vendedor: sólo lo que vendió o registró', async () => {
+    const ownScope = { userId: 'u1', vendedor: true, gestor: false };
+    const result = await fetchCarteraFromLocal({ ...carteraQuery, ownScope });
+    expect(result?.rows.map((row) => row.negocio_id)).toEqual(['n1']);
+    const dashboard = await fetchCarteraDashboardFromLocal(ownScope);
+    expect(dashboard?.summary.total_balance).toBe(100000);
+  });
+
+  it('como gestor: lo asignado; con los dos roles, ambos', async () => {
+    const gestor = await fetchCarteraFromLocal({ ...carteraQuery, ownScope: { userId: 'u1', vendedor: false, gestor: true } });
+    expect(gestor?.rows.map((row) => row.negocio_id)).toEqual(['n3']);
+    const ambos = await fetchCarteraFromLocal({ ...carteraQuery, ownScope: { userId: 'u1', vendedor: true, gestor: true } });
+    expect(ambos?.rows.map((row) => row.negocio_id).sort()).toEqual(['n1', 'n3']);
+  });
+
+  it('buscando encuentra cualquier negocio (para cobrarlo)', async () => {
+    const result = await fetchCarteraFromLocal({
+      ...carteraQuery,
+      search: 'ana',
+      ownScope: { userId: 'u1', vendedor: true, gestor: false },
+    });
+    expect(result?.totalCount).toBe(3);
+  });
+
+  it('sin ownScope (admin y demás) todo lo descargado, como antes', async () => {
+    expect((await fetchCarteraFromLocal(carteraQuery))?.totalCount).toBe(3);
+    expect((await fetchCarteraDashboardFromLocal())?.summary.total_balance).toBe(300000);
+  });
+});
 });

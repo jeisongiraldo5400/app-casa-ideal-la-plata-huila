@@ -1,9 +1,23 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { DEFAULT_NEGOCIOS_LIST_FILTERS } from '@/lib/negocios/negociosListQuery';
+import { DEFAULT_NEGOCIOS_LIST_FILTERS, negociosDatePresetRange } from '@/lib/negocios/negociosListQuery';
+import { bogotaDateValue } from '@/lib/localDate';
 import { NegociosFilterSheet } from '../NegociosFilterSheet';
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
+/** Calendario de mentira: muestra el valor y un botón que pone el 2026-09-15. */
+jest.mock('../NegocioDatePicker', () => {
+  const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  const mockReact = jest.requireActual<typeof import('react')>('react');
+  return {
+    NegocioDatePicker: (props: { value: string; accessibilityLabel?: string; onChange: (value: string) => void }) =>
+      mockReact.createElement(
+        Pressable,
+        { accessibilityLabel: props.accessibilityLabel, onPress: () => props.onChange('2026-09-15') },
+        mockReact.createElement(Text, null, props.value || 'Cualquier fecha')
+      ),
+  };
+});
 jest.mock('@/components/ui', () => {
   const { Pressable, Text, View } = jest.requireActual<typeof import('react-native')>('react-native');
   const mockReact = jest.requireActual<typeof import('react')>('react');
@@ -100,5 +114,23 @@ describe('NegociosFilterSheet', () => {
     fireEvent.press(screen.getByText('Limpiar'));
     fireEvent.press(screen.getByText('Aplicar'));
     expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_NEGOCIOS_LIST_FILTERS, order: 'municipio' });
+  });
+
+  it('fecha del negocio: un atajo pone Desde/Hasta y viaja al aplicar', () => {
+    const onApply = renderSheet('todos');
+    fireEvent.press(screen.getByText('Este mes'));
+    fireEvent.press(screen.getByText('Aplicar'));
+    const expected = negociosDatePresetRange('este_mes', bogotaDateValue(new Date()));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining(expected));
+  });
+
+  it('fecha del negocio: Desde a mano, se quita con la x, y un rango al revés avisa', () => {
+    const onApply = renderSheet('todos', { ...DEFAULT_NEGOCIOS_LIST_FILTERS, dateTo: '2026-09-01' });
+    fireEvent.press(screen.getByLabelText('Fecha del negocio desde'));
+    expect(screen.getByText('La fecha «Desde» no puede ser posterior a «Hasta».')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Quitar fecha hasta'));
+    expect(screen.queryByText('La fecha «Desde» no puede ser posterior a «Hasta».')).toBeNull();
+    fireEvent.press(screen.getByText('Aplicar'));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ dateFrom: '2026-09-15', dateTo: '' }));
   });
 });

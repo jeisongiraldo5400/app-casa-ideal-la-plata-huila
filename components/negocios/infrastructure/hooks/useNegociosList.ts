@@ -3,6 +3,7 @@ import { errorMessage, logHandledError } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   EMPTY_NEGOCIOS_SUMMARY,
+  isNegociosSearchTerm,
   type NegocioListRow,
   type NegociosListFilters,
   type NegociosListSummary,
@@ -21,7 +22,7 @@ export type UseNegociosListParams = {
   search: string;
   filters: NegociosListFilters;
   userId: string | null;
-  /** Recaudador «puro»: sin término no hay lista que pedir. */
+  /** «Buscar» del recaudador (no admin): sin término no hay lista que pedir. */
   searchOnly: boolean;
   /** Falso mientras falta algo para consultar (p. ej. admin sin gestor elegido). */
   enabled: boolean;
@@ -70,7 +71,7 @@ export function useNegociosList(params: UseNegociosListParams) {
 
   const reload = useCallback(async () => {
     const current = ++request.current;
-    if (!enabled || !userId || (scope === 'todos' && searchOnly && !search.trim())) {
+    if (!enabled || !userId || (scope === 'todos' && searchOnly && !isNegociosSearchTerm(search))) {
       setState(INITIAL);
       return;
     }

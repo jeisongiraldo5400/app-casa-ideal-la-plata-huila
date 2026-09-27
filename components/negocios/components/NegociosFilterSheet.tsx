@@ -3,8 +3,13 @@ import { useTheme } from '@/components/theme';
 import { ActionBar, Button, FullScreenModal } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import type { LocationMasters } from '@/lib/locations/locationsService';
+import { bogotaDateValue } from '@/lib/localDate';
 import {
   DEFAULT_NEGOCIOS_LIST_FILTERS,
+  matchingNegociosDatePreset,
+  NEGOCIOS_DATE_PRESETS,
+  negociosDatePresetRange,
+  negociosDateRangeError,
   NEGOCIO_COBRO_FILTER_OPTIONS,
   NEGOCIO_DUE_DAYS_OPTIONS,
   NEGOCIOS_ORDER_OPTIONS,
@@ -15,6 +20,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { NegocioDatePicker } from './NegocioDatePicker';
 
 type Props = {
   visible: boolean;
@@ -27,7 +33,7 @@ type Props = {
 };
 
 /**
- * Filtros de Negocios: ubicación, estado, cobro y orden. Se edita un borrador
+ * Filtros de Negocios: ubicación, fecha del negocio, estado, cobro y orden. Se edita un borrador
  * y sólo «Aplicar» consulta: cambiar tres cosas no dispara tres consultas.
  */
 export function NegociosFilterSheet({ visible, scope, value, masters, mastersLoading, onApply, onClose }: Props) {
@@ -41,6 +47,37 @@ export function NegociosFilterSheet({ visible, scope, value, masters, mastersLoa
   }, [visible, value]);
 
   const patch = (next: Partial<NegociosListFilters>) => setDraft((prev) => ({ ...prev, ...next }));
+  const today = bogotaDateValue(new Date());
+  const dateError = negociosDateRangeError(draft.dateFrom, draft.dateTo);
+  const datePreset = matchingNegociosDatePreset(draft, today);
+
+  const dateEnd = (key: 'dateFrom' | 'dateTo', caption: string, minDate: string | null) => (
+    <View style={styles.dateEnd}>
+      <Text style={[styles.hint, { color: colors.text.secondary }]}>{caption}</Text>
+      <View style={styles.dateRow}>
+        <View style={styles.datePicker}>
+          <NegocioDatePicker
+            value={draft[key]}
+            onChange={(next) => patch({ [key]: next } as Partial<NegociosListFilters>)}
+            colors={colors}
+            label="Cualquier fecha"
+            accessibilityLabel={`Fecha del negocio ${caption.toLowerCase()}`}
+            minDate={minDate}
+          />
+        </View>
+        {draft[key] ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Quitar fecha ${caption.toLowerCase()}`}
+            onPress={() => patch({ [key]: '' } as Partial<NegociosListFilters>)}
+            hitSlop={8}
+            style={styles.dateClear}>
+            <MaterialIcons name="close" size={20} color={colors.text.secondary} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
 
   const chip = (key: string, label: string, selected: boolean, onPress: () => void) => (
     <Pressable
@@ -76,7 +113,7 @@ export function NegociosFilterSheet({ visible, scope, value, masters, mastersLoa
               onPress={() => setDraft({ ...DEFAULT_NEGOCIOS_LIST_FILTERS, order: draft.order })}
               style={styles.footerButton}
             />
-            <Button title="Aplicar" onPress={() => onApply(draft)} style={styles.footerButton} />
+            <Button title="Aplicar" onPress={() => onApply(draft)} disabled={Boolean(dateError)} style={styles.footerButton} />
           </View>
         </ActionBar>
       }>
@@ -95,6 +132,29 @@ export function NegociosFilterSheet({ visible, scope, value, masters, mastersLoa
             onChange={(next) => patch(next)}
             colors={colors}
           />
+        </View>
+
+        <View style={styles.group} testID="negocios-filtro-fecha">
+          <Text style={[styles.section, { color: colors.text.primary }]}>Fecha del negocio</Text>
+          <View style={styles.chips}>
+            {NEGOCIOS_DATE_PRESETS.map((option) =>
+              chip(`fecha-${option.value}`, option.label, datePreset === option.value, () =>
+                patch(
+                  datePreset === option.value
+                    ? { dateFrom: '', dateTo: '' }
+                    : negociosDatePresetRange(option.value, today)
+                )
+              )
+            )}
+          </View>
+          {/* «Desde» sin límite; «Hasta» empieza en «Desde» si ya hay uno. */}
+          {dateEnd('dateFrom', 'Desde', null)}
+          {dateEnd('dateTo', 'Hasta', draft.dateFrom || null)}
+          {dateError ? (
+            <Text accessibilityRole="alert" style={[styles.hint, styles.dateError, { color: colors.error.main }]}>
+              {dateError}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.group}>
@@ -149,4 +209,9 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', gap: Spacing.md },
   footerButton: { flex: 1 },
   pressed: { opacity: 0.8 },
+  dateEnd: { gap: 4 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  datePicker: { flex: 1 },
+  dateClear: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  dateError: { fontWeight: '700' },
 });

@@ -41,6 +41,13 @@ export type NegociosListFilters = {
   /** Días de «vence en N días»; sólo cuenta con `cobro = 'por_vencer'`. */
   days: number;
   order: NegociosOrder;
+  /**
+   * Rango sobre la fecha del negocio (`deal_date`, la que muestra la
+   * tarjeta), 'aaaa-mm-dd' inclusivo; '' = sin límite. Mismo criterio que el
+   * filtro «Desde/Hasta» de la web (20261230120000).
+   */
+  dateFrom: string;
+  dateTo: string;
 };
 
 export const DEFAULT_NEGOCIOS_LIST_FILTERS: NegociosListFilters = {
@@ -51,6 +58,8 @@ export const DEFAULT_NEGOCIOS_LIST_FILTERS: NegociosListFilters = {
   cobro: 'todos',
   days: 7,
   order: 'recientes',
+  dateFrom: '',
+  dateTo: '',
 };
 
 export const NEGOCIOS_SCOPE_LABEL: Record<NegociosScope, string> = {
@@ -58,6 +67,54 @@ export const NEGOCIOS_SCOPE_LABEL: Record<NegociosScope, string> = {
   mios: 'Míos',
   por_cobrar: 'Por cobrar',
 };
+
+/** «Todos» del recaudador no es la lista completa: es el buscador para cobrar. */
+export const NEGOCIOS_SEARCH_SCOPE_LABEL = 'Buscar';
+
+// ---------------------------------------------------------------------------
+// Fecha del negocio
+// ---------------------------------------------------------------------------
+
+export type NegociosDatePreset = 'este_mes' | 'mes_pasado' | 'ultimos_30' | 'este_ano';
+
+export const NEGOCIOS_DATE_PRESETS: { value: NegociosDatePreset; label: string }[] = [
+  { value: 'este_mes', label: 'Este mes' },
+  { value: 'mes_pasado', label: 'Mes pasado' },
+  { value: 'ultimos_30', label: 'Últimos 30 días' },
+  { value: 'este_ano', label: 'Este año' },
+];
+
+/** Rango de un atajo, con `today` = 'aaaa-mm-dd' (hoy en Bogotá). */
+export function negociosDatePresetRange(preset: NegociosDatePreset, today: string): { dateFrom: string; dateTo: string } {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  if (preset === 'este_mes') return { dateFrom: `${today.slice(0, 8)}01`, dateTo: today };
+  if (preset === 'este_ano') return { dateFrom: `${year}-01-01`, dateTo: today };
+  if (preset === 'ultimos_30') return { dateFrom: addDays(today, -29), dateTo: today };
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const lastDay = new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate();
+  const mm = String(prevMonth).padStart(2, '0');
+  return { dateFrom: `${prevYear}-${mm}-01`, dateTo: `${prevYear}-${mm}-${String(lastDay).padStart(2, '0')}` };
+}
+
+/** Atajo que coincide exactamente con el rango puesto, si alguno. */
+export function matchingNegociosDatePreset(
+  range: { dateFrom: string; dateTo: string },
+  today: string
+): NegociosDatePreset | null {
+  const hit = NEGOCIOS_DATE_PRESETS.find(({ value }) => {
+    const preset = negociosDatePresetRange(value, today);
+    return preset.dateFrom === range.dateFrom && preset.dateTo === range.dateTo;
+  });
+  return hit ? hit.value : null;
+}
+
+/** El servidor rechaza «Desde» posterior a «Hasta»: se avisa antes de aplicar. */
+export function negociosDateRangeError(dateFrom: string, dateTo: string): string | null {
+  if (dateFrom && dateTo && dateFrom > dateTo) return 'La fecha «Desde» no puede ser posterior a «Hasta».';
+  return null;
+}
 
 export const NEGOCIO_STATUS_FILTER_OPTIONS: { value: NegocioStatusFilter; label: string }[] = [
   { value: 'todos', label: 'Todos' },
@@ -103,6 +160,7 @@ export function countActiveNegociosFilters(filters: NegociosListFilters): number
     filters.veredaId,
     filters.status !== 'todos',
     filters.cobro !== 'todos',
+    Boolean(filters.dateFrom || filters.dateTo),
   ].filter(Boolean).length;
 }
 
@@ -404,13 +462,22 @@ const compareNullableText = (a: string | null, b: string | null) => {
   return normalizeText(a).localeCompare(normalizeText(b));
 };
 
+/**
+ * ¿Hay algo que buscar? Mismo corte que el servidor para la búsqueda del
+ * recaudador (20261230120000): sin letras ni dígitos no hay término, y un «%»
+ * o un «-» no deben listar todos los negocios.
+ */
+export function isNegociosSearchTerm(search: string): boolean {
+  return /[\p{L}\p{N}]/u.test(search);
+}
+
 /** Espejo local de `list_negocios_movil` (sin paginar: el teléfono tiene todo). */
 export function queryLocalNegocios(
   entries: LocalNegocioEntry[],
   query: LocalListQuery
 ): { rows: NegocioListRow[]; summary: NegociosListSummary } {
   const { scope, userId, filters, today } = query;
-  if (scope === 'todos' && query.searchOnly && !query.search.trim()) {
+  if (scope === 'todos' && query.searchOnly && !isNegociosSearchTerm(query.search)) {
     return { rows: [], summary: EMPTY_NEGOCIOS_SUMMARY };
   }
   const gestor = query.gestorId || userId;
@@ -425,6 +492,10 @@ export function queryLocalNegocios(
       return false;
     }
     if (!matchesStatus(row.status, filters.status)) return false;
+    // Fecha del negocio, inclusiva. Sin fecha (no debería: es NOT NULL) no
+    // pasa un filtro de fecha.
+    if (filters.dateFrom && (!row.deal_date || row.deal_date.slice(0, 10) < filters.dateFrom)) return false;
+    if (filters.dateTo && (!row.deal_date || row.deal_date.slice(0, 10) > filters.dateTo)) return false;
     if (filters.departamentoId && row.departamento_id !== filters.departamentoId) return false;
     if (filters.municipioId && row.municipio_id !== filters.municipioId) return false;
     if (filters.veredaId && row.vereda_id !== filters.veredaId) return false;
@@ -461,12 +532,15 @@ export function queryLocalNegocios(
   };
   rows.sort(comparators[filters.order]);
 
+  // Búsqueda del recaudador: cuántos encontró, pero no el saldo ni la mora de
+  // lo encontrado (no es su cartera; igual que el servidor).
+  const searchOnly = scope === 'todos' && Boolean(query.searchOnly);
   return {
     rows,
     summary: {
       totalCount: rows.length,
-      totalSaldo: rows.reduce((total, row) => total + row.remaining_balance, 0),
-      moraCount: rows.filter((row) => row.has_mora).length,
+      totalSaldo: searchOnly ? 0 : rows.reduce((total, row) => total + row.remaining_balance, 0),
+      moraCount: searchOnly ? 0 : rows.filter((row) => row.has_mora).length,
     },
   };
 }
@@ -491,21 +565,44 @@ export type NegociosRoleFlags = {
 };
 
 /**
- * Pestañas que ve cada rol (regla del usuario, 2026-09-25):
- * - «Todos»: SOLO admin y recaudador.
- * - «Míos»: el vendedor (los negocios que él hizo).
+ * Pestañas que ve cada rol (regla del usuario, 2026-09-26: «la cartera total
+ * solo la pueden ver los administradores»):
+ * - «Todos»: la lista completa, con su saldo total, SOLO el admin.
+ * - «Míos»: el vendedor (su propia cartera).
  * - «Por cobrar»: el gestor de cobro (los asignados a él) y el admin (elige el gestor).
+ * - «Buscar»: el recaudador no admin, tenga o no otros roles. Es «Todos» en
+ *   modo sólo búsqueda: encuentra cualquier negocio para cobrarlo, sin lista
+ *   ni totales. Va al final: si también es vendedor o gestor, su cartera abre
+ *   primero.
  * Un rol sin ninguna de esas ve «Míos», nunca todos.
  */
 export function availableNegociosScopes(roles: NegociosRoleFlags): NegociosScope[] {
   const scopes: NegociosScope[] = [];
-  if (roles.isAdmin || roles.isRecaudador) scopes.push('todos');
+  if (roles.isAdmin) scopes.push('todos');
   if (roles.isVendedor) scopes.push('mios');
   if (roles.isGestorCobro || roles.isAdmin) scopes.push('por_cobrar');
+  if (roles.isRecaudador && !roles.isAdmin) scopes.push('todos');
   return scopes.length ? scopes : ['mios'];
 }
 
-/** Pestaña inicial: la pedida por la ruta si el rol la tiene; el gestor abre en «Por cobrar». */
+/**
+ * «Todos» sólo por búsqueda: el recaudador que no es admin (20261230120000).
+ * Sin término no hay lista; con término, las coincidencias sin saldo total.
+ */
+export function negociosScopeIsSearchOnly(scope: NegociosScope, roles: NegociosRoleFlags): boolean {
+  return scope === 'todos' && !roles.isAdmin && Boolean(roles.isRecaudador);
+}
+
+/** Etiqueta de la pestaña: «Todos» del recaudador se llama «Buscar». */
+export function negociosScopeLabel(scope: NegociosScope, roles: NegociosRoleFlags): string {
+  return negociosScopeIsSearchOnly(scope, roles) ? NEGOCIOS_SEARCH_SCOPE_LABEL : NEGOCIOS_SCOPE_LABEL[scope];
+}
+
+/**
+ * Pestaña inicial: la pedida por la ruta si el rol la tiene; el gestor abre en
+ * «Por cobrar»; el admin en «Todos»; los demás en su primera pestaña (su
+ * propia cartera antes que el buscador del recaudador).
+ */
 export function initialNegociosScope(
   available: NegociosScope[],
   roles: NegociosRoleFlags,
@@ -513,5 +610,6 @@ export function initialNegociosScope(
 ): NegociosScope {
   if (requested && (available as string[]).includes(requested)) return requested as NegociosScope;
   if (roles.isGestorCobro && !roles.isAdmin && available.includes('por_cobrar')) return 'por_cobrar';
-  return available.includes('todos') ? 'todos' : available[0];
+  if (roles.isAdmin && available.includes('todos')) return 'todos';
+  return available[0];
 }

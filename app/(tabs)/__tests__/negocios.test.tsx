@@ -32,7 +32,8 @@ jest.mock('expo-router', () => ({
   },
 }));
 
-type Roles = { admin: boolean; vendedor: boolean; gestor: boolean; soloBusqueda: boolean };
+/** `recaudador`: tiene el rol (con o sin otros); `soloBusqueda`: recaudador sin más roles. */
+type Roles = { admin: boolean; vendedor: boolean; gestor: boolean; soloBusqueda: boolean; recaudador?: boolean };
 let mockRoles: Roles = { admin: false, vendedor: false, gestor: true, soloBusqueda: false };
 jest.mock('@/hooks/useUserRoles', () => ({
   useUserRoles: () => ({
@@ -40,7 +41,7 @@ jest.mock('@/hooks/useUserRoles', () => ({
     isVendedor: () => mockRoles.vendedor,
     isGestorCobro: () => mockRoles.gestor,
     onlyFindsBySearch: () => mockRoles.soloBusqueda,
-    isRecaudador: () => mockRoles.soloBusqueda,
+    isRecaudador: () => mockRoles.soloBusqueda || Boolean(mockRoles.recaudador),
   }),
 }));
 jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
@@ -237,12 +238,42 @@ describe('Negocios (lista unificada)', () => {
     expect(screen.getByText('Gestor: Gestor Dos')).toBeTruthy();
   });
 
-  it('el recaudador ve todos los negocios sin tener que buscar', async () => {
+  it('el recaudador puro no ve la lista completa: busca para cobrar, sin saldo total', async () => {
     mockRoles = { admin: false, vendedor: false, gestor: false, soloBusqueda: true };
     render(<NegociosScreen />);
-    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: '' }));
-    expect(screen.queryByText('Busca el negocio que vas a cobrar')).toBeNull();
+    expect(await screen.findByText('Busca el negocio que vas a cobrar')).toBeTruthy();
+    // Sin término ni se pregunta al servidor.
+    expect(mockPage).not.toHaveBeenCalled();
     expect(screen.queryByText('Por cobrar')).toBeNull();
+    fireEvent.changeText(screen.getByPlaceholderText('Cliente, cédula o número del negocio'), 'pena');
+    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: 'pena' }), { timeout: 2000 });
+    expect(await screen.findByText('Calle 1 · La Playa · Álamo')).toBeTruthy();
+    // Encuentra el negocio para cobrarlo, pero no ve el saldo total.
+    expect(screen.queryByText('Saldo total')).toBeNull();
+    expect(screen.queryByLabelText(/saldo total/)).toBeNull();
+  });
+
+  it('recaudador que también es vendedor: abre en «Míos» con sus totales y «Buscar» sin lista', async () => {
+    mockRoles = { admin: false, vendedor: true, gestor: false, soloBusqueda: false, recaudador: true };
+    render(<NegociosScreen />);
+    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'mios' }));
+    expect(screen.queryByText('Todos')).toBeNull();
+    expect(screen.getByText('Buscar')).toBeTruthy();
+    expect(await screen.findByLabelText(/1 negocios, saldo total/)).toBeTruthy();
+    mockPage.mockClear();
+    fireEvent.press(screen.getByText('Buscar'));
+    expect(await screen.findByText('Busca el negocio que vas a cobrar')).toBeTruthy();
+    expect(mockPage).not.toHaveBeenCalled();
+    expect(screen.queryByText('Saldo total')).toBeNull();
+  });
+
+  it('el admin ve «Todos» con la lista completa y el saldo total', async () => {
+    mockRoles = { admin: true, vendedor: false, gestor: false, soloBusqueda: false, recaudador: true };
+    render(<NegociosScreen />);
+    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: '' }));
+    expect(screen.getByText('Todos')).toBeTruthy();
+    expect(screen.queryByText('Buscar')).toBeNull();
+    expect(await screen.findByLabelText(/1 negocios, saldo total .*200\.000, 1 en mora/)).toBeTruthy();
   });
 
   it('sin señal usa el teléfono con los mismos filtros y lo avisa', async () => {

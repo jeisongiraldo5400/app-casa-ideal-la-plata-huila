@@ -20,7 +20,9 @@ import {
   countActiveNegociosFilters,
   DEFAULT_NEGOCIOS_LIST_FILTERS,
   initialNegociosScope,
-  NEGOCIOS_SCOPE_LABEL,
+  isNegociosSearchTerm,
+  negociosScopeIsSearchOnly,
+  negociosScopeLabel,
   type NegociosListFilters,
   type NegociosListSummary,
   type NegociosScope,
@@ -46,10 +48,11 @@ type Colors = ReturnType<typeof getColors>;
 type Gestor = { id: string; name: string };
 
 const SEARCH_PLACEHOLDER = 'Buscar por cliente, cédula o número';
+const SEARCH_ONLY_PLACEHOLDER = 'Cliente, cédula o número del negocio';
 
 /**
- * Negocios: una sola lista con pestañas de alcance (Todos, Míos, Por cobrar)
- * según el rol, buscador, filtros de ubicación/estado/cobro, orden y resumen
+ * Negocios: una sola lista con pestañas de alcance (Todos, Míos, Por cobrar,
+ * y «Buscar» para el recaudador) según el rol, buscador, filtros de ubicación/estado/cobro, orden y resumen
  * de lo filtrado. Con señal pregunta al servidor (`list_negocios_movil`);
  * sin señal filtra la base del teléfono con las mismas reglas.
  */
@@ -109,9 +112,12 @@ export function NegociosListScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Regla del usuario (2026-09-25): admin y recaudador ven todos los negocios
-  // en «Todos»; ya no es «solo lo que busque» aquí (Cartera sigue igual).
-  const searchOnly = false;
+  // Regla del usuario (2026-09-26): la cartera total sólo la ve el admin. Para
+  // el recaudador «Todos» es «Buscar»: encuentra cualquier negocio para
+  // cobrarlo, sin lista completa ni saldo total (20261230120000). Su propia
+  // cartera, si es vendedor o gestor, está en «Míos» / «Por cobrar».
+  const searchOnly = negociosScopeIsSearchOnly(scope, roleFlags);
+  const hasSearchTerm = isNegociosSearchTerm(query);
   // El admin que no es gestor tiene que elegir de quién es la cartera.
   const needsGestor = scope === 'por_cobrar' && admin && !gestorCobro && !gestor;
 
@@ -187,12 +193,16 @@ export function NegociosListScreen() {
         />
       );
     }
-    if (searchOnly && !query.trim()) {
+    if (searchOnly && !hasSearchTerm) {
       return (
         <ScreenState
           icon="search"
           title="Busca el negocio que vas a cobrar"
-          description="Escribe su número o la cédula del cliente. No se muestra la lista completa de negocios."
+          description={
+            scopes.length > 1
+              ? 'Escribe el nombre o la cédula del cliente, o el número del negocio. Aquí no se muestra la lista completa de negocios; tu cartera está en la otra pestaña.'
+              : 'Escribe el nombre o la cédula del cliente, o el número del negocio. Aquí no se muestra la lista completa de negocios.'
+          }
         />
       );
     }
@@ -272,7 +282,7 @@ export function NegociosListScreen() {
       ) : null}
       {scopes.length > 1 ? (
         <SegmentedControl
-          items={scopes.map((value) => ({ value, label: NEGOCIOS_SCOPE_LABEL[value] }))}
+          items={scopes.map((value) => ({ value, label: negociosScopeLabel(value, roleFlags) }))}
           value={scope}
           onChange={(value) => {
             setScopeTouched(true);
@@ -286,7 +296,7 @@ export function NegociosListScreen() {
       <SearchField
         value={query}
         onChangeText={setQuery}
-        placeholder={SEARCH_PLACEHOLDER}
+        placeholder={searchOnly ? SEARCH_ONLY_PLACEHOLDER : SEARCH_PLACEHOLDER}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -300,7 +310,9 @@ export function NegociosListScreen() {
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {!initialLoading && !needsGestor && list.summary.totalCount > 0 ? (
+      {/* El saldo total es de la cartera propia (o de toda, para el admin);
+          la búsqueda del recaudador no lo muestra. */}
+      {!initialLoading && !needsGestor && !searchOnly && list.summary.totalCount > 0 ? (
         <SummaryRow summary={list.summary} colors={colors} />
       ) : null}
     </View>
@@ -309,7 +321,7 @@ export function NegociosListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <FlatList
-        data={needsGestor || (searchOnly && !query.trim()) ? [] : rows}
+        data={needsGestor || (searchOnly && !hasSearchTerm) ? [] : rows}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"

@@ -3,7 +3,7 @@ import { localDateValue } from '@/lib/localDate';
 // Solo tipos, y desde un módulo sin dependencias (`lib/cartera/types`): así el
 // dominio comparte el vocabulario de filtros con el servicio remoto sin
 // importar la capa de I/O ni invertir la dirección de dependencias.
-import type { CarteraQuery } from '@/lib/cartera/types';
+import type { CarteraOwnScope, CarteraQuery } from '@/lib/cartera/types';
 
 export type LocalCuota = {
   id: string;
@@ -115,6 +115,21 @@ export function filterCarteraCuotas<
     if (params.filter === 'por_vencer') return row.dueDate >= today && row.dueDate <= horizonDate;
     return true;
   });
+}
+
+/**
+ * ¿El negocio es de la cartera propia de quien consulta? Espejo del alcance
+ * sin término de `get_cartera_cuotas` / `get_cartera_management_dashboard`
+ * para el recaudador no admin (20261125120000): como vendedor, lo que vendió
+ * o registró; como gestor, lo asignado. Sin esos roles, nada.
+ */
+export function inOwnCartera(
+  negocio: { sellerId?: string | null; createdBy?: string | null; gestorCobroId?: string | null } | null | undefined,
+  scope: CarteraOwnScope
+): boolean {
+  if (!negocio) return false;
+  if (scope.vendedor && (negocio.sellerId === scope.userId || negocio.createdBy === scope.userId)) return true;
+  return scope.gestor && negocio.gestorCobroId === scope.userId;
 }
 
 export type CarteraLocalSummary = {

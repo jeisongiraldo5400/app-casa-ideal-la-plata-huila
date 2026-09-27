@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
@@ -12,6 +13,7 @@ import { countActiveCarteraFilters, describeCarteraFilters } from '@/lib/cartera
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { useUltimaGestion } from '@/components/collection-routes/useUltimaGestion';
@@ -27,12 +29,24 @@ export default function CarteraScreen() {
 function CarteraScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { isAdmin, onlyFindsBySearch } = useUserRoles();
+  const { isAdmin, isRecaudador, isVendedor, isGestorCobro, onlyFindsBySearch } = useUserRoles();
+  const { user } = useAuth();
   // El recaudador cobra en cualquier negocio pero no recorre la cartera: solo
   // ve lo que busca (20261125120000). Aquí se explica por qué, en vez de dejar
   // una lista vacía.
   const searchOnly = onlyFindsBySearch();
-  const list = useCarteraList({ searchOnly });
+  // Recaudador no admin que además es vendedor o gestor: el teléfono tiene
+  // TODOS los negocios (para cobrar sin señal), pero sin señal y sin buscar ve
+  // sólo su propia cartera, como con señal (la cartera total es del admin).
+  const recaudadorNoAdmin = isRecaudador() && !isAdmin();
+  const vendedor = isVendedor();
+  const gestor = isGestorCobro();
+  const userId = user?.id ?? null;
+  const ownScope = useMemo(
+    () => (recaudadorNoAdmin && userId ? { userId, vendedor, gestor } : null),
+    [gestor, recaudadorNoAdmin, userId, vendedor]
+  );
+  const list = useCarteraList({ searchOnly, ownScope });
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const online = useSyncStore((state) => state.online);
   // Última novedad de ruta de los negocios listados: una consulta por página.

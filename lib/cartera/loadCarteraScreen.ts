@@ -32,8 +32,8 @@ export async function loadCarteraScreen(params: CarteraPageQuery & {
 
   const list = fetchCarteraPage(params);
   const dashboard: Promise<CarteraDashboard | null> = params.includeDashboard
-    ? fetchCarteraDashboard(params.municipioId).catch(async () => {
-        const local = await fetchCarteraDashboardFromLocal();
+    ? fetchCarteraDashboard(params.municipioId, params.ownScope).catch(async () => {
+        const local = await fetchCarteraDashboardFromLocal(params.ownScope);
         return local ?? emptyCarteraDashboard();
       })
     : Promise.resolve(null);

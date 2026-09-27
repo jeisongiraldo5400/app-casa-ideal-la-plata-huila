@@ -64,6 +64,10 @@ export async function fetchNegociosPage(params: NegociosPageParams): Promise<Neg
     p_order: filters.order,
     p_limit: params.limit,
     p_offset: params.offset,
+    // Sólo si hay fecha: sin ellas la llamada es la de siempre y sirve contra
+    // un servidor que aún no tiene 20261230120000.
+    p_date_from: filters.dateFrom || undefined,
+    p_date_to: filters.dateTo || undefined,
   });
   if (error) throw error;
   const payload = (data ?? {}) as { rows?: Record<string, unknown>[]; summary?: unknown };

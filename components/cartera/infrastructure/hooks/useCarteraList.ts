@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { DEFAULT_CARTERA_FILTERS, type CarteraFilterValues } from '@/components/cartera/CarteraFilterModal';
 import type { CarteraDashboard, CarteraRow } from '@/lib/cartera/carteraService';
+import type { CarteraOwnScope } from '@/lib/cartera/types';
 import { loadCarteraScreen } from '@/lib/cartera/loadCarteraScreen';
 import { carteraFiltersKey, getCarteraStamp, invalidateCartera, markCarteraLoaded, needsCarteraRefresh } from '@/lib/cartera/carteraCache';
 import { EMPTY_CARTERA_CATALOGS, loadCarteraCatalogs, type CarteraCatalogs } from '@/lib/cartera/carteraCatalogs';
@@ -21,7 +22,14 @@ const INITIAL_FILTERS: CarteraFilterValues = DEFAULT_CARTERA_FILTERS;
  * cartera; solo ve lo que busca (20261125120000). El servidor no le devuelve
  * nada sin término, así que sin término ni se pide.
  */
-export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
+export function useCarteraList({
+  searchOnly,
+  ownScope = null,
+}: {
+  searchOnly: boolean;
+  /** Recaudador no admin: sin señal y sin término, sólo su propia cartera. */
+  ownScope?: CarteraOwnScope | null;
+}) {
   const router = useRouter();
   const [filters, setFilters] = useState<CarteraFilterValues>(INITIAL_FILTERS);
   const [draftFilters, setDraftFilters] = useState<CarteraFilterValues>(INITIAL_FILTERS);
@@ -74,7 +82,13 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
       if (reset) setLoading(true);
       else setLoadingMore(true);
       try {
-        const result = await loadCarteraScreen({ ...filters, page: target, pageSize: PAGE_SIZE, includeDashboard: reset });
+        const result = await loadCarteraScreen({
+          ...filters,
+          page: target,
+          pageSize: PAGE_SIZE,
+          includeDashboard: reset,
+          ownScope,
+        });
         if (seq !== requestSeq.current) return;
         setRows((current) => (reset ? result.rows : [...current, ...result.rows]));
         setTotalCount(result.totalCount);
@@ -109,7 +123,7 @@ export function useCarteraList({ searchOnly }: { searchOnly: boolean }) {
         }
       }
     },
-    [filters, searchOnly]
+    [filters, ownScope, searchOnly]
   );
 
   useFocusEffect(

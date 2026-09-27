@@ -5,7 +5,13 @@ import {
   DEFAULT_NEGOCIOS_LIST_FILTERS,
   formatNegocioLocationLine,
   initialNegociosScope,
+  isNegociosSearchTerm,
   mapServerNegocioRow,
+  matchingNegociosDatePreset,
+  negociosDatePresetRange,
+  negociosDateRangeError,
+  negociosScopeIsSearchOnly,
+  negociosScopeLabel,
   mapServerSummary,
   matchesNegocioSearch,
   negocioVeredaLocal,
@@ -246,6 +252,25 @@ describe('negociosListQuery · modo sin conexión (espejo de list_negocios_movil
     expect(ids(run({}, { scope: 'todos', searchOnly: true, search: 'peña' }))).toBe('n1');
   });
 
+  it('búsqueda del recaudador: sin letras ni dígitos no lista nada y nunca da saldo ni mora', () => {
+    // «%», «-» o espacios no son un término (igual que el servidor, 20261230120000).
+    expect(run({}, { scope: 'todos', searchOnly: true, search: '%' }).rows).toHaveLength(0);
+    expect(run({}, { scope: 'todos', searchOnly: true, search: ' - ' }).rows).toHaveLength(0);
+    // Con término: cuántos encontró, pero no el saldo ni la mora de la cartera ajena.
+    const found = run({}, { scope: 'todos', searchOnly: true, search: 'peña' });
+    expect(found.summary).toEqual({ totalCount: 1, totalSaldo: 0, moraCount: 0 });
+    // Sus propias pestañas conservan los totales.
+    expect(run({}, { scope: 'mios', userId: 'vendedor-1', searchOnly: true }).summary.totalSaldo).toBeGreaterThan(0);
+  });
+
+  it('fecha del negocio: desde / hasta inclusivos y combinables', () => {
+    expect(ids(run({ dateFrom: '2026-09-02', dateTo: '2026-09-03' }, { scope: 'todos' }))).toBe('n3,n2');
+    expect(ids(run({ dateFrom: '2026-09-07' }, { scope: 'todos' }))).toBe('n8,n7');
+    expect(ids(run({ dateTo: '2026-09-01' }, { scope: 'todos' }))).toBe('n1');
+    expect(ids(run({ dateFrom: '2026-09-01', dateTo: '2026-09-03', status: 'activos' }))).toBe('n3,n2,n1');
+    expect(run({ dateFrom: '2026-10-01' }, { scope: 'todos' }).summary.totalCount).toBe(0);
+  });
+
   it('sin cuotas descargadas usa el saldo guardado', () => {
     const entry = buildLocalNegocioEntry(input({ id: 'x', storedBalance: 42000 }), TODAY, names);
     expect(entry.row.remaining_balance).toBe(42000);
@@ -335,7 +360,56 @@ describe('negociosListQuery · servidor y utilidades', () => {
     expect(statusOptionsForScope('todos').map((option) => option.value)).toContain('cerrado');
   });
 
-  it('pestañas por rol y pestaña inicial: «Todos» solo admin y recaudador', () => {
+  it('fecha: atajos, coincidencia y error de rango', () => {
+    expect(negociosDatePresetRange('este_mes', '2026-09-25')).toEqual({ dateFrom: '2026-09-01', dateTo: '2026-09-25' });
+    expect(negociosDatePresetRange('mes_pasado', '2026-03-10')).toEqual({ dateFrom: '2026-02-01', dateTo: '2026-02-28' });
+    expect(negociosDatePresetRange('mes_pasado', '2026-01-10')).toEqual({ dateFrom: '2025-12-01', dateTo: '2025-12-31' });
+    expect(negociosDatePresetRange('ultimos_30', '2026-09-25')).toEqual({ dateFrom: '2026-08-27', dateTo: '2026-09-25' });
+    expect(negociosDatePresetRange('este_ano', '2026-09-25')).toEqual({ dateFrom: '2026-01-01', dateTo: '2026-09-25' });
+    expect(matchingNegociosDatePreset({ dateFrom: '2026-09-01', dateTo: '2026-09-25' }, '2026-09-25')).toBe('este_mes');
+    expect(matchingNegociosDatePreset({ dateFrom: '2026-09-02', dateTo: '' }, '2026-09-25')).toBeNull();
+    expect(negociosDateRangeError('2026-09-10', '2026-09-01')).toMatch(/Desde/);
+    expect(negociosDateRangeError('2026-09-01', '2026-09-01')).toBeNull();
+    expect(negociosDateRangeError('', '2026-09-01')).toBeNull();
+    expect(countActiveNegociosFilters({ ...DEFAULT_NEGOCIOS_LIST_FILTERS, dateFrom: '2026-09-01', dateTo: '2026-09-30' })).toBe(1);
+  });
+
+  it('término de búsqueda: hace falta una letra o un dígito', () => {
+    expect(isNegociosSearchTerm('')).toBe(false);
+    expect(isNegociosSearchTerm('  %_- ')).toBe(false);
+    expect(isNegociosSearchTerm('ñ')).toBe(true);
+    expect(isNegociosSearchTerm('7')).toBe(true);
+  });
+
+  it('recaudador (2026-09-26): «Buscar» en vez de «Todos», al final; la cartera total es del admin', () => {
+    const recaudador = { isAdmin: false, isVendedor: false, isGestorCobro: false, isRecaudador: true };
+    const recaudadorVendedor = { isAdmin: false, isVendedor: true, isGestorCobro: false, isRecaudador: true };
+    const recaudadorGestor = { isAdmin: false, isVendedor: false, isGestorCobro: true, isRecaudador: true };
+    const adminRecaudador = { isAdmin: true, isVendedor: false, isGestorCobro: false, isRecaudador: true };
+    const admin = { isAdmin: true, isVendedor: false, isGestorCobro: false };
+    const vendedor = { isAdmin: false, isVendedor: true, isGestorCobro: false };
+
+    expect(availableNegociosScopes(recaudadorVendedor)).toEqual(['mios', 'todos']);
+    expect(availableNegociosScopes(recaudadorGestor)).toEqual(['por_cobrar', 'todos']);
+    expect(availableNegociosScopes(adminRecaudador)).toEqual(['todos', 'por_cobrar']);
+    // Abre en su propia cartera; el recaudador puro, en el buscador.
+    expect(initialNegociosScope(availableNegociosScopes(recaudadorVendedor), recaudadorVendedor)).toBe('mios');
+    expect(initialNegociosScope(availableNegociosScopes(recaudadorGestor), recaudadorGestor)).toBe('por_cobrar');
+    expect(initialNegociosScope(availableNegociosScopes(recaudador), recaudador)).toBe('todos');
+
+    expect(negociosScopeIsSearchOnly('todos', recaudador)).toBe(true);
+    expect(negociosScopeIsSearchOnly('todos', recaudadorVendedor)).toBe(true);
+    expect(negociosScopeIsSearchOnly('mios', recaudadorVendedor)).toBe(false);
+    expect(negociosScopeIsSearchOnly('todos', adminRecaudador)).toBe(false);
+    expect(negociosScopeIsSearchOnly('todos', admin)).toBe(false);
+    expect(negociosScopeIsSearchOnly('todos', vendedor)).toBe(false);
+
+    expect(negociosScopeLabel('todos', recaudadorVendedor)).toBe('Buscar');
+    expect(negociosScopeLabel('mios', recaudadorVendedor)).toBe('Míos');
+    expect(negociosScopeLabel('todos', admin)).toBe('Todos');
+  });
+
+  it('pestañas por rol y pestaña inicial: «Todos» con lista solo el admin', () => {
     const gestor = { isAdmin: false, isVendedor: false, isGestorCobro: true };
     const vendedor = { isAdmin: false, isVendedor: true, isGestorCobro: false };
     const vendedorGestor = { isAdmin: false, isVendedor: true, isGestorCobro: true };

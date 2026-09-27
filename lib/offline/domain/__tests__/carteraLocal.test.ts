@@ -1,6 +1,7 @@
 import {
   applyPagoToCuotas,
   filterCarteraCuotas,
+  inOwnCartera,
   sortCarteraCuotas,
   searchCustomersLocal,
   summarizeCarteraFromCuotas,
@@ -178,5 +179,17 @@ describe('sortCarteraCuotas', () => {
     const copia = [...original];
     sortCarteraCuotas(original);
     expect(original).toEqual(copia);
+  });
+});
+
+describe('inOwnCartera (recaudador no admin sin señal)', () => {
+  const negocio = { sellerId: 'v', createdBy: 'r', gestorCobroId: 'g' };
+  it('vendedor: vendió o registró; gestor: asignado; sin roles: nada', () => {
+    expect(inOwnCartera(negocio, { userId: 'v', vendedor: true, gestor: false })).toBe(true);
+    expect(inOwnCartera(negocio, { userId: 'r', vendedor: true, gestor: false })).toBe(true);
+    expect(inOwnCartera(negocio, { userId: 'g', vendedor: true, gestor: false })).toBe(false);
+    expect(inOwnCartera(negocio, { userId: 'g', vendedor: false, gestor: true })).toBe(true);
+    expect(inOwnCartera(negocio, { userId: 'v', vendedor: false, gestor: false })).toBe(false);
+    expect(inOwnCartera(undefined, { userId: 'v', vendedor: true, gestor: true })).toBe(false);
   });
 });
