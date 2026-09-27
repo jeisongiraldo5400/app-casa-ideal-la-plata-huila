@@ -3,7 +3,6 @@ import { errorMessage, logHandledError } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   EMPTY_NEGOCIOS_SUMMARY,
-  isNegociosSearchTerm,
   type NegocioListRow,
   type NegociosListFilters,
   type NegociosListSummary,
@@ -22,8 +21,6 @@ export type UseNegociosListParams = {
   search: string;
   filters: NegociosListFilters;
   userId: string | null;
-  /** «Buscar» del recaudador (no admin): sin término no hay lista que pedir. */
-  searchOnly: boolean;
   /** Falso mientras falta algo para consultar (p. ej. admin sin gestor elegido). */
   enabled: boolean;
   /**
@@ -66,18 +63,18 @@ export function useNegociosList(params: UseNegociosListParams) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const { scope, gestorId, search, filters, userId, searchOnly, enabled } = params;
+  const { scope, gestorId, search, filters, userId, enabled } = params;
   const online = params.online !== false;
 
   const reload = useCallback(async () => {
     const current = ++request.current;
-    if (!enabled || !userId || (scope === 'todos' && searchOnly && !isNegociosSearchTerm(search))) {
+    if (!enabled || !userId) {
       setState(INITIAL);
       return;
     }
     setState((prev) => ({ ...prev, loading: true, error: null }));
     if (!online) {
-      const local = await fetchNegociosFromLocal({ scope, userId, gestorId, search, filters, searchOnly }).catch(
+      const local = await fetchNegociosFromLocal({ scope, userId, gestorId, search, filters }).catch(
         () => null
       );
       if (current !== request.current) return;
@@ -102,7 +99,7 @@ export function useNegociosList(params: UseNegociosListParams) {
     } catch (error) {
       if (current !== request.current) return;
       if (isNetworkError(error)) {
-        const local = await fetchNegociosFromLocal({ scope, userId, gestorId, search, filters, searchOnly }).catch(
+        const local = await fetchNegociosFromLocal({ scope, userId, gestorId, search, filters }).catch(
           () => null
         );
         if (current !== request.current) return;
@@ -119,7 +116,7 @@ export function useNegociosList(params: UseNegociosListParams) {
         error: errorMessage(error, 'No se pudieron cargar los negocios'),
       }));
     }
-  }, [enabled, filters, gestorId, online, scope, search, searchOnly, userId]);
+  }, [enabled, filters, gestorId, online, scope, search, userId]);
 
   const loadMore = useCallback(async () => {
     const snapshot = stateRef.current;

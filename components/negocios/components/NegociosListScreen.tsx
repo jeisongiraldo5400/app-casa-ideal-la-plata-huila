@@ -13,18 +13,14 @@ import {
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { formatCOP } from '@/lib/creditCalculator';
 import { EMPTY_LOCATION_MASTERS, type LocationMasters } from '@/lib/locations/locationsService';
 import {
   availableNegociosScopes,
   countActiveNegociosFilters,
   DEFAULT_NEGOCIOS_LIST_FILTERS,
   initialNegociosScope,
-  isNegociosSearchTerm,
-  negociosScopeIsSearchOnly,
-  negociosScopeLabel,
+  NEGOCIOS_SCOPE_LABEL,
   type NegociosListFilters,
-  type NegociosListSummary,
   type NegociosScope,
 } from '@/lib/negocios/negociosListQuery';
 import { negocioCardOpensSyncQueue, withUnsyncedNegociosFirst } from '@/lib/negocios/negocioSyncBadge';
@@ -48,12 +44,11 @@ type Colors = ReturnType<typeof getColors>;
 type Gestor = { id: string; name: string };
 
 const SEARCH_PLACEHOLDER = 'Buscar por cliente, cédula o número';
-const SEARCH_ONLY_PLACEHOLDER = 'Cliente, cédula o número del negocio';
 
 /**
- * Negocios: una sola lista con pestañas de alcance (Todos, Míos, Por cobrar,
- * y «Buscar» para el recaudador) según el rol, buscador, filtros de ubicación/estado/cobro, orden y resumen
- * de lo filtrado. Con señal pregunta al servidor (`list_negocios_movil`);
+ * Negocios: una sola lista con pestañas de alcance (Todos, Míos, Por cobrar)
+ * según el rol, buscador, filtros de ubicación/estado/cobro y orden. Sin
+ * totales: el saldo de la cartera se ve en Cartera (2026-09-27). Con señal pregunta al servidor (`list_negocios_movil`);
  * sin señal filtra la base del teléfono con las mismas reglas.
  */
 export function NegociosListScreen() {
@@ -112,12 +107,6 @@ export function NegociosListScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Regla del usuario (2026-09-26): la cartera total sólo la ve el admin. Para
-  // el recaudador «Todos» es «Buscar»: encuentra cualquier negocio para
-  // cobrarlo, sin lista completa ni saldo total (20261230120000). Su propia
-  // cartera, si es vendedor o gestor, está en «Míos» / «Por cobrar».
-  const searchOnly = negociosScopeIsSearchOnly(scope, roleFlags);
-  const hasSearchTerm = isNegociosSearchTerm(query);
   // El admin que no es gestor tiene que elegir de quién es la cartera.
   const needsGestor = scope === 'por_cobrar' && admin && !gestorCobro && !gestor;
 
@@ -127,7 +116,6 @@ export function NegociosListScreen() {
     search: debouncedQuery,
     filters,
     userId,
-    searchOnly,
     enabled: !needsGestor,
     online,
   });
@@ -165,9 +153,9 @@ export function NegociosListScreen() {
   // negocio que acaba de crear sin señal (aún no tiene gestor asignado). No
   // cuando el admin mira la cartera de otro gestor.
   const rows = useMemo(() => {
-    if (searchOnly || hasFilters || (scope === 'por_cobrar' && gestor)) return list.rows as any[];
+    if (hasFilters || (scope === 'por_cobrar' && gestor)) return list.rows as any[];
     return withUnsyncedNegociosFirst<any>(list.rows, syncOverlay.items, syncOverlay.states);
-  }, [gestor, hasFilters, list.rows, scope, searchOnly, syncOverlay]);
+  }, [gestor, hasFilters, list.rows, scope, syncOverlay]);
 
   // Productos de las tarjetas visibles: una consulta por página, no por tarjeta.
   const products = useNegociosProducts(rows.map((row: { id: string }) => row.id));
@@ -190,19 +178,6 @@ export function NegociosListScreen() {
           description="Verás los negocios que tiene asignados para cobrar."
           actionLabel="Elegir gestor"
           onAction={() => setPickerVisible(true)}
-        />
-      );
-    }
-    if (searchOnly && !hasSearchTerm) {
-      return (
-        <ScreenState
-          icon="search"
-          title="Busca el negocio que vas a cobrar"
-          description={
-            scopes.length > 1
-              ? 'Escribe el nombre o la cédula del cliente, o el número del negocio. Aquí no se muestra la lista completa de negocios; tu cartera está en la otra pestaña.'
-              : 'Escribe el nombre o la cédula del cliente, o el número del negocio. Aquí no se muestra la lista completa de negocios.'
-          }
         />
       );
     }
@@ -282,7 +257,7 @@ export function NegociosListScreen() {
       ) : null}
       {scopes.length > 1 ? (
         <SegmentedControl
-          items={scopes.map((value) => ({ value, label: negociosScopeLabel(value, roleFlags) }))}
+          items={scopes.map((value) => ({ value, label: NEGOCIOS_SCOPE_LABEL[value] }))}
           value={scope}
           onChange={(value) => {
             setScopeTouched(true);
@@ -296,7 +271,7 @@ export function NegociosListScreen() {
       <SearchField
         value={query}
         onChangeText={setQuery}
-        placeholder={searchOnly ? SEARCH_ONLY_PLACEHOLDER : SEARCH_PLACEHOLDER}
+        placeholder={SEARCH_PLACEHOLDER}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -310,18 +285,13 @@ export function NegociosListScreen() {
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {/* El saldo total es de la cartera propia (o de toda, para el admin);
-          la búsqueda del recaudador no lo muestra. */}
-      {!initialLoading && !needsGestor && !searchOnly && list.summary.totalCount > 0 ? (
-        <SummaryRow summary={list.summary} colors={colors} />
-      ) : null}
     </View>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <FlatList
-        data={needsGestor || (searchOnly && !hasSearchTerm) ? [] : rows}
+        data={needsGestor ? [] : rows}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -419,29 +389,6 @@ function FilterBar({
   );
 }
 
-/** Cantidad, saldo y mora de lo filtrado (no sólo de lo cargado). */
-function SummaryRow({ summary, colors }: { summary: NegociosListSummary; colors: Colors }) {
-  const { totalCount, totalSaldo, moraCount } = summary;
-  return (
-    <View
-      style={[styles.summary, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}
-      accessibilityLabel={`${totalCount} negocios, saldo total ${formatCOP(totalSaldo)}, ${moraCount} en mora`}>
-      <SummaryItem label={totalCount === 1 ? 'Negocio' : 'Negocios'} value={String(totalCount)} colors={colors} />
-      <SummaryItem label="Saldo total" value={formatCOP(totalSaldo)} colors={colors} />
-      <SummaryItem label="En mora" value={String(moraCount)} colors={colors} tone={moraCount > 0 ? colors.error.main : undefined} />
-    </View>
-  );
-}
-
-function SummaryItem({ label, value, colors, tone }: { label: string; value: string; colors: Colors; tone?: string }) {
-  return (
-    <View style={styles.summaryItem}>
-      <Text style={[styles.summaryValue, { color: tone ?? colors.text.primary }]} numberOfLines={1}>{value}</Text>
-      <Text style={[styles.summaryLabel, { color: colors.text.secondary }]}>{label}</Text>
-    </View>
-  );
-}
-
 /** Admin en «Por cobrar»: de qué gestor es la cartera que se ve. */
 function GestorRow({
   gestor,
@@ -487,10 +434,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.chip,
   },
   filterText: { ...Typography.bodySmallStrong },
-  summary: { flexDirection: 'row', borderWidth: 1, borderRadius: Radius.control, paddingVertical: Spacing.sm },
-  summaryItem: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.xs },
-  summaryValue: { ...Typography.bodyStrong },
-  summaryLabel: { ...Typography.caption },
   gestorRow: {
     minHeight: 48,
     flexDirection: 'row',

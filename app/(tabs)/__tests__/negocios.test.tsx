@@ -157,7 +157,7 @@ beforeEach(() => {
 });
 
 describe('Negocios (lista unificada)', () => {
-  it('el gestor abre en «Por cobrar», ve la tarjeta con ubicación y atraso, y el resumen', async () => {
+  it('el gestor abre en «Por cobrar» y ve la tarjeta con ubicación y atraso, sin totales', async () => {
     render(<NegociosScreen />);
     await waitFor(() => expect(mockPage).toHaveBeenCalled());
     expect(lastCall()).toMatchObject({ scope: 'por_cobrar', gestorId: null, search: '' });
@@ -167,7 +167,8 @@ describe('Negocios (lista unificada)', () => {
     expect(await screen.findByText('Calle 1 · La Playa · Álamo')).toBeTruthy();
     expect(screen.getByText(/20 días de atraso/)).toBeTruthy();
     expect(screen.getByText('José Peña · CC 1.061.111')).toBeTruthy();
-    expect(screen.getByLabelText(/1 negocios, saldo total .*200\.000, 1 en mora/)).toBeTruthy();
+    // La lista no muestra totales a nadie (2026-09-27): para eso está Cartera.
+    expect(screen.queryByText('Saldo total')).toBeNull();
   });
 
   it('cambiar a «Todos» vuelve a consultar con ese alcance (admin)', async () => {
@@ -238,42 +239,33 @@ describe('Negocios (lista unificada)', () => {
     expect(screen.getByText('Gestor: Gestor Dos')).toBeTruthy();
   });
 
-  it('el recaudador puro no ve la lista completa: busca para cobrar, sin saldo total', async () => {
+  it('el recaudador puro ve «Todos» con la lista completa, sin saldo total', async () => {
     mockRoles = { admin: false, vendedor: false, gestor: false, soloBusqueda: true };
     render(<NegociosScreen />);
-    expect(await screen.findByText('Busca el negocio que vas a cobrar')).toBeTruthy();
-    // Sin término ni se pregunta al servidor.
-    expect(mockPage).not.toHaveBeenCalled();
-    expect(screen.queryByText('Por cobrar')).toBeNull();
-    fireEvent.changeText(screen.getByPlaceholderText('Cliente, cédula o número del negocio'), 'pena');
-    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: 'pena' }), { timeout: 2000 });
+    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: '' }));
     expect(await screen.findByText('Calle 1 · La Playa · Álamo')).toBeTruthy();
-    // Encuentra el negocio para cobrarlo, pero no ve el saldo total.
+    expect(screen.queryByText('Por cobrar')).toBeNull();
     expect(screen.queryByText('Saldo total')).toBeNull();
-    expect(screen.queryByLabelText(/saldo total/)).toBeNull();
   });
 
-  it('recaudador que también es vendedor: abre en «Míos» con sus totales y «Buscar» sin lista', async () => {
+  it('recaudador que también es vendedor: abre en «Míos» y tiene «Todos»', async () => {
     mockRoles = { admin: false, vendedor: true, gestor: false, soloBusqueda: false, recaudador: true };
     render(<NegociosScreen />);
     await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'mios' }));
-    expect(screen.queryByText('Todos')).toBeNull();
-    expect(screen.getByText('Buscar')).toBeTruthy();
-    expect(await screen.findByLabelText(/1 negocios, saldo total/)).toBeTruthy();
-    mockPage.mockClear();
-    fireEvent.press(screen.getByText('Buscar'));
-    expect(await screen.findByText('Busca el negocio que vas a cobrar')).toBeTruthy();
-    expect(mockPage).not.toHaveBeenCalled();
+    expect(screen.queryByText('Buscar')).toBeNull();
+    fireEvent.press(screen.getByText('Todos'));
+    await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: '' }));
+    expect(await screen.findByText('Calle 1 · La Playa · Álamo')).toBeTruthy();
     expect(screen.queryByText('Saldo total')).toBeNull();
   });
 
-  it('el admin ve «Todos» con la lista completa y el saldo total', async () => {
+  it('el admin ve «Todos» con la lista completa y tampoco ve totales', async () => {
     mockRoles = { admin: true, vendedor: false, gestor: false, soloBusqueda: false, recaudador: true };
     render(<NegociosScreen />);
     await waitFor(() => expect(lastCall()).toMatchObject({ scope: 'todos', search: '' }));
     expect(screen.getByText('Todos')).toBeTruthy();
-    expect(screen.queryByText('Buscar')).toBeNull();
-    expect(await screen.findByLabelText(/1 negocios, saldo total .*200\.000, 1 en mora/)).toBeTruthy();
+    expect(await screen.findByText('Calle 1 · La Playa · Álamo')).toBeTruthy();
+    expect(screen.queryByText('Saldo total')).toBeNull();
   });
 
   it('sin señal usa el teléfono con los mismos filtros y lo avisa', async () => {

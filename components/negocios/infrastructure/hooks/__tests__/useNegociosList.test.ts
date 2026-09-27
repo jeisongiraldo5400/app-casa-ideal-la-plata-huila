@@ -26,7 +26,6 @@ const base: UseNegociosListParams = {
   search: '',
   filters: DEFAULT_NEGOCIOS_LIST_FILTERS,
   userId: 'gestor-1',
-  searchOnly: false,
   enabled: true,
 };
 
@@ -88,8 +87,7 @@ describe('useNegociosList', () => {
       gestorId: 'gestor-2',
       search: 'x',
       filters: DEFAULT_NEGOCIOS_LIST_FILTERS,
-      searchOnly: false,
-    });
+        });
     expect(result.current.fromCache).toBe(true);
     expect(result.current.summary.moraCount).toBe(1);
     // Sin señal no hay más páginas que pedir.
@@ -115,14 +113,10 @@ describe('useNegociosList', () => {
     expect(mockLocal).not.toHaveBeenCalled();
   });
 
-  it('no consulta si falta el gestor o si el recaudador no ha escrito', async () => {
+  it('no consulta si falta el gestor', async () => {
     const { result, rerender } = renderHook((props: UseNegociosListParams) => useNegociosList(props), {
       initialProps: { ...base, enabled: false },
     });
-    await act(async () => {
-      await result.current.reload();
-    });
-    rerender({ ...base, scope: 'todos', searchOnly: true, search: '' });
     await act(async () => {
       await result.current.reload();
     });

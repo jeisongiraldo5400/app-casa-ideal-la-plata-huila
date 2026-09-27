@@ -68,9 +68,6 @@ export const NEGOCIOS_SCOPE_LABEL: Record<NegociosScope, string> = {
   por_cobrar: 'Por cobrar',
 };
 
-/** «Todos» del recaudador no es la lista completa: es el buscador para cobrar. */
-export const NEGOCIOS_SEARCH_SCOPE_LABEL = 'Buscar';
-
 // ---------------------------------------------------------------------------
 // Fecha del negocio
 // ---------------------------------------------------------------------------
@@ -451,8 +448,6 @@ export type LocalListQuery = {
   search: string;
   filters: NegociosListFilters;
   today: string;
-  /** Recaudador «puro»: sin término no ve lista. */
-  searchOnly?: boolean;
 };
 
 const compareNullableText = (a: string | null, b: string | null) => {
@@ -462,24 +457,12 @@ const compareNullableText = (a: string | null, b: string | null) => {
   return normalizeText(a).localeCompare(normalizeText(b));
 };
 
-/**
- * ¿Hay algo que buscar? Mismo corte que el servidor para la búsqueda del
- * recaudador (20261230120000): sin letras ni dígitos no hay término, y un «%»
- * o un «-» no deben listar todos los negocios.
- */
-export function isNegociosSearchTerm(search: string): boolean {
-  return /[\p{L}\p{N}]/u.test(search);
-}
-
 /** Espejo local de `list_negocios_movil` (sin paginar: el teléfono tiene todo). */
 export function queryLocalNegocios(
   entries: LocalNegocioEntry[],
   query: LocalListQuery
 ): { rows: NegocioListRow[]; summary: NegociosListSummary } {
   const { scope, userId, filters, today } = query;
-  if (scope === 'todos' && query.searchOnly && !isNegociosSearchTerm(query.search)) {
-    return { rows: [], summary: EMPTY_NEGOCIOS_SUMMARY };
-  }
   const gestor = query.gestorId || userId;
   const soonLimit = addDays(today, Math.max(0, filters.days));
 
@@ -532,15 +515,12 @@ export function queryLocalNegocios(
   };
   rows.sort(comparators[filters.order]);
 
-  // Búsqueda del recaudador: cuántos encontró, pero no el saldo ni la mora de
-  // lo encontrado (no es su cartera; igual que el servidor).
-  const searchOnly = scope === 'todos' && Boolean(query.searchOnly);
   return {
     rows,
     summary: {
       totalCount: rows.length,
-      totalSaldo: searchOnly ? 0 : rows.reduce((total, row) => total + row.remaining_balance, 0),
-      moraCount: searchOnly ? 0 : rows.filter((row) => row.has_mora).length,
+      totalSaldo: rows.reduce((total, row) => total + row.remaining_balance, 0),
+      moraCount: rows.filter((row) => row.has_mora).length,
     },
   };
 }
@@ -565,16 +545,15 @@ export type NegociosRoleFlags = {
 };
 
 /**
- * Pestañas que ve cada rol (regla del usuario, 2026-09-26: «la cartera total
- * solo la pueden ver los administradores»):
- * - «Todos»: la lista completa, con su saldo total, SOLO el admin.
+ * Pestañas que ve cada rol:
+ * - «Todos»: la lista completa, el admin y el recaudador (2026-09-27: «un
+ *   recaudador ve los negocios y los puede ver todos por el momento»). El
+ *   servidor no le entrega al recaudador el saldo total (20261231180000) y la
+ *   lista ya no muestra totales a nadie: para eso está Cartera.
  * - «Míos»: el vendedor (su propia cartera).
  * - «Por cobrar»: el gestor de cobro (los asignados a él) y el admin (elige el gestor).
- * - «Buscar»: el recaudador no admin, tenga o no otros roles. Es «Todos» en
- *   modo sólo búsqueda: encuentra cualquier negocio para cobrarlo, sin lista
- *   ni totales. Va al final: si también es vendedor o gestor, su cartera abre
- *   primero.
- * Un rol sin ninguna de esas ve «Míos», nunca todos.
+ * El «Todos» del recaudador va al final: si también es vendedor o gestor, su
+ * cartera abre primero. Un rol sin ninguna de esas ve «Míos», nunca todos.
  */
 export function availableNegociosScopes(roles: NegociosRoleFlags): NegociosScope[] {
   const scopes: NegociosScope[] = [];
@@ -583,19 +562,6 @@ export function availableNegociosScopes(roles: NegociosRoleFlags): NegociosScope
   if (roles.isGestorCobro || roles.isAdmin) scopes.push('por_cobrar');
   if (roles.isRecaudador && !roles.isAdmin) scopes.push('todos');
   return scopes.length ? scopes : ['mios'];
-}
-
-/**
- * «Todos» sólo por búsqueda: el recaudador que no es admin (20261230120000).
- * Sin término no hay lista; con término, las coincidencias sin saldo total.
- */
-export function negociosScopeIsSearchOnly(scope: NegociosScope, roles: NegociosRoleFlags): boolean {
-  return scope === 'todos' && !roles.isAdmin && Boolean(roles.isRecaudador);
-}
-
-/** Etiqueta de la pestaña: «Todos» del recaudador se llama «Buscar». */
-export function negociosScopeLabel(scope: NegociosScope, roles: NegociosRoleFlags): string {
-  return negociosScopeIsSearchOnly(scope, roles) ? NEGOCIOS_SEARCH_SCOPE_LABEL : NEGOCIOS_SCOPE_LABEL[scope];
 }
 
 /**
