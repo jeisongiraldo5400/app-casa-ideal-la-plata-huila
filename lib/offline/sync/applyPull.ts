@@ -322,6 +322,8 @@ export async function applyPullPayload(database: Database, payload: PullPayload,
       operations,
       await upsertById<CatalogPaymentMethod>(database, 'catalog_payment_methods', row.id, (record) => {
         record.name = row.name;
+        // Ausente en un servidor anterior a 20261221120000: queda en false.
+        record.requiresSupport = row.requires_support === true;
       })
     );
   }

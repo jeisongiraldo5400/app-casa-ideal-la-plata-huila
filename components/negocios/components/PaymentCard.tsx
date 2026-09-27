@@ -5,6 +5,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import { isProntoPago, pagoDiscount } from '@/lib/negocios/negocioBalance';
 import { paymentSiteLabel } from '@/lib/paymentSite';
+import type { PagoSupportUiState } from '@/lib/pagoSupportRules';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -47,10 +48,23 @@ type Props = {
   printing?: boolean;
   /** Si viene, se muestra «Anular» (con permiso, con conexión y pago vigente). */
   onVoid?: () => void;
+  /** Estado del soporte (`pagoSupportUiState`); sin él se pinta como antes. */
+  supportState?: PagoSupportUiState;
+  /** Si viene, se muestra «Adjuntar» (pago sin soporte y con permiso). */
+  onAttachSupport?: () => void;
 };
 
 /** Tarjeta de un pago con sus recibos y acciones (soporte, PDF, imprimir). */
-export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing, onVoid }: Props) {
+export function PaymentCard({
+  pago,
+  onOpenSupport,
+  onShare,
+  onPrint,
+  printing,
+  onVoid,
+  supportState,
+  onAttachSupport,
+}: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const voided = pago.receipt_status === 'anulado';
@@ -59,6 +73,15 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing, o
   const prontoPago = isProntoPago(pago);
   const discount = pagoDiscount(pago);
   const voidNote = voided ? voidReasonFromNotes(pago.notes) : null;
+  // Igual que el «Adjuntar» en rojo de la web: el método exige soporte y falta.
+  const supportMissingRequired = !voided && supportState === 'required_missing';
+  const supportText = pago.support_path
+    ? pago.support_file_name || 'Adjunto'
+    : supportState === 'queued'
+      ? 'Pendiente de subir'
+      : supportMissingRequired
+        ? 'Falta (obligatorio para este método)'
+        : 'Sin adjunto';
 
   return (
     <ListCard
@@ -99,8 +122,13 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing, o
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Sitio: {paymentSiteLabel(pago.payment_site)}
           </Text>
-          <Text style={[styles.meta, { color: colors.text.secondary }]}>
-            Soporte: {pago.support_path ? pago.support_file_name || 'Adjunto' : 'Sin adjunto'}
+          <Text
+            style={[
+              styles.meta,
+              { color: supportMissingRequired ? colors.error.main : colors.text.secondary },
+              supportMissingRequired && styles.discount,
+            ]}>
+            Soporte: {supportText}
           </Text>
           <Text style={[styles.meta, { color: colors.text.secondary }]}>
             Registrado por: {pago.created_by_name || 'Sin registro'}
@@ -124,6 +152,17 @@ export function PaymentCard({ pago, onOpenSupport, onShare, onPrint, printing, o
             color={colors.primary.main}
             backgroundColor={`${colors.primary.main}12`}
             onPress={() => onOpenSupport(pago.support_path as string)}
+            style={styles.action}
+          />
+        ) : null}
+        {!pago.support_path && onAttachSupport && !voided ? (
+          <IconButton
+            icon="attach-file"
+            label="Adjuntar"
+            accessibilityLabel={supportMissingRequired ? 'Adjuntar soporte obligatorio del pago' : 'Adjuntar soporte del pago'}
+            color={supportMissingRequired ? colors.error.main : colors.primary.main}
+            backgroundColor={`${supportMissingRequired ? colors.error.main : colors.primary.main}12`}
+            onPress={onAttachSupport}
             style={styles.action}
           />
         ) : null}

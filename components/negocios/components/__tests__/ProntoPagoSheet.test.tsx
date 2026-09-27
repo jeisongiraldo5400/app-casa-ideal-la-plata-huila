@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ProntoPagoSheet } from '../ProntoPagoSheet';
 import { buildProntoPagoSummary, PRONTO_PAGO_OFFLINE_MESSAGE } from '@/lib/negocios/prontoPago';
@@ -13,6 +13,8 @@ jest.mock('@expo/vector-icons', () => {
     MaterialIcons: ({ name }: { name: string }) => ReactModule.createElement(Text, null, name),
   };
 });
+
+jest.mock('@/lib/pickPagoSupportFile', () => ({ pickPagoSupportFile: jest.fn(async () => null) }));
 
 /** El selector de método usa `useSafeAreaInsets`, que exige el proveedor. */
 const SAFE_AREA_METRICS = {
@@ -129,7 +131,40 @@ describe('ProntoPagoSheet', () => {
       paymentMethodId: 'pm-2',
       receiptNumber: 'F-10',
       netAmount: 1_000_000,
+      supportFile: null,
+      supportRequired: false,
     });
+  });
+
+  it('con un método que exige soporte no deja revisar hasta adjuntarlo y lo envía', async () => {
+    const file = { uri: 'file:///c.jpg', mimeType: 'image/jpeg', name: 'consignacion.jpg', size: 10 };
+    const pickSupport = jest.fn(async () => file);
+    const utils = renderSheet({
+      paymentMethods: [
+        { id: 'pm-1', name: 'Efectivo' },
+        { id: 'pm-3', name: 'Consignación', requiresSupport: true },
+      ],
+      pickSupport,
+    });
+    expect(utils.getByText('Adjuntar soporte (opcional)')).toBeTruthy();
+    chooseMethod(utils, 'Consignación');
+
+    expect(utils.getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();
+    expect(utils.getByText(/Este método de pago exige adjuntar el soporte/)).toBeTruthy();
+    fireEvent.press(utils.getByText('Revisar'));
+    expect(utils.queryByText('Confirmar pronto pago')).toBeNull();
+
+    fireEvent.press(utils.getByText('Adjuntar soporte (obligatorio)'));
+    fireEvent.press(utils.getByText('Galería'));
+    await waitFor(() => expect(utils.getByText('consignacion.jpg')).toBeTruthy());
+    expect(pickSupport).toHaveBeenCalledWith('gallery');
+
+    fireEvent.press(utils.getByText('Revisar'));
+    expect(utils.getByText(/Soporte consignacion\.jpg/)).toBeTruthy();
+    fireEvent.press(utils.getByText('Confirmar pronto pago'));
+    expect(utils.props.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentMethodId: 'pm-3', supportFile: file, supportRequired: true })
+    );
   });
 
   it('sin motivo confirma sin la línea «Motivo» y envía null (con descuento > 0)', () => {

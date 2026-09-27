@@ -229,6 +229,94 @@ describe('registerPagoOffline', () => {
 });
 
 /**
+ * Consignación (método con `requires_support`): sin soporte no se guarda el
+ * cobro, y el archivo se copia al teléfono ANTES de guardar el pago, para que
+ * un fallo al copiarlo no deje un pago de consignación sin soporte.
+ */
+describe('registerPagoOffline con soporte obligatorio', () => {
+  const localFiles = jest.requireMock('@/lib/offline/security/localFiles') as {
+    persistPagoSupportFile: jest.Mock;
+    deleteLocalPagoSupportFile: jest.Mock;
+  };
+  const consignacion = {
+    ...baseInput,
+    paymentMethodId: 'pm-2',
+    paymentMethodName: 'Consignación',
+    supportRequired: true,
+  };
+  const file = { uri: 'file:///cache/consignacion.jpg', mimeType: 'image/jpeg', name: 'consignacion.jpg' };
+
+  beforeEach(() => {
+    mockKeySeq = 0;
+    mockBatch.mockReset();
+    mockPrepareOutboxRecord.mockReset();
+    mockPrepareOutboxRecord.mockImplementation((_db, type, payload, key) => ({
+      op: 'create',
+      table: 'sync_outbox',
+      changes: { type, payload, key },
+    }));
+    localFiles.persistPagoSupportFile.mockReset();
+    localFiles.deleteLocalPagoSupportFile.mockReset();
+    seed();
+  });
+
+  it('sin soporte no guarda nada y lo explica', async () => {
+    await expect(registerPagoOffline(consignacion)).rejects.toThrow(
+      'Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).'
+    );
+    expect(mockBatch).not.toHaveBeenCalled();
+    expect(localFiles.persistPagoSupportFile).not.toHaveBeenCalled();
+  });
+
+  it('copia el soporte antes de guardar el pago y lo encola tras el pago, sin copiarlo dos veces', async () => {
+    localFiles.persistPagoSupportFile.mockResolvedValue('file:///docs/soportes/copia.jpg');
+
+    const result = await registerPagoOffline({ ...consignacion, supportFile: file });
+
+    expect(result.supportWarning).toBeNull();
+    expect(localFiles.persistPagoSupportFile).toHaveBeenCalledTimes(1);
+    expect(localFiles.persistPagoSupportFile.mock.invocationCallOrder[0]).toBeLessThan(
+      mockBatch.mock.invocationCallOrder[0]
+    );
+    // Primer batch: el pago; segundo: el archivo y el comando attach_pago_support.
+    expect(mockBatch).toHaveBeenCalledTimes(2);
+    const uploadOps = mockBatch.mock.calls[1] as Op[];
+    expect(uploadOps.find((op) => op.table === 'file_uploads')?.changes).toMatchObject({
+      localUri: 'file:///docs/soportes/copia.jpg',
+      pagoLocalId: 'key-1',
+      status: 'pending',
+    });
+    const attach = mockPrepareOutboxRecord.mock.calls.find(([, type]) => type === 'attach_pago_support');
+    expect(attach?.[2]).toMatchObject({ negocioId: 'neg-1', pagoLocalId: 'key-1', lane: 'negocio:neg-1' });
+  });
+
+  it('si no se puede copiar el soporte, el cobro no se guarda', async () => {
+    localFiles.persistPagoSupportFile.mockRejectedValue(new Error('Sin espacio en el teléfono'));
+
+    await expect(registerPagoOffline({ ...consignacion, supportFile: file })).rejects.toThrow('Sin espacio en el teléfono');
+    expect(mockBatch).not.toHaveBeenCalled();
+  });
+
+  it('si falla el guardado del pago, borra la copia del soporte', async () => {
+    localFiles.persistPagoSupportFile.mockResolvedValue('file:///docs/soportes/copia.jpg');
+    mockBatch.mockRejectedValueOnce(new Error('disco lleno'));
+
+    await expect(registerPagoOffline({ ...consignacion, supportFile: file })).rejects.toThrow('disco lleno');
+    expect(localFiles.deleteLocalPagoSupportFile).toHaveBeenCalledWith('file:///docs/soportes/copia.jpg');
+  });
+
+  it('con un método sin soporte obligatorio conserva el flujo de siempre (copia después del pago)', async () => {
+    localFiles.persistPagoSupportFile.mockResolvedValue('file:///docs/soportes/copia.jpg');
+
+    await registerPagoOffline({ ...baseInput, supportFile: file });
+
+    expect(mockBatch.mock.invocationCallOrder[0]).toBeLessThan(
+      localFiles.persistPagoSupportFile.mock.invocationCallOrder[0]
+    );
+  });
+});
+
+/**
  * El caso real de campo: con señal débil la petición puede tardar el tiempo
  * límite completo antes de fallar. Si el estado de conexión ya dice que no hay
  * red, el cobro se guarda directo en el teléfono sin tocar el servidor.

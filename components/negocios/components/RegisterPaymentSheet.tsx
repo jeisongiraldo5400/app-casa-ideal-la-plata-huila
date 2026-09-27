@@ -1,14 +1,15 @@
 import { useTheme } from '@/components/theme';
 import { Button, Input, ModalSheet, OptionPickerField } from '@/components/ui';
-import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
+import { Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
 import { MAX_MONEY_DECIMALS, applyMoneyTextChange } from '@/lib/moneyInput';
 import { pagoAmountInputOptions } from '@/lib/negocios/registerPagoRpc';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
-import React, { useEffect, useState } from 'react';
+import { PagoSupportPicker, type PagoSupportSource } from './PagoSupportPicker';
+import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-export type PagoSupportSource = 'camera' | 'gallery' | 'document';
+export type { PagoSupportSource };
 
 type Props = {
   visible: boolean;
@@ -33,6 +34,8 @@ type Props = {
   paymentMethodId: string;
   onChangePaymentMethod: (value: string) => void;
   paymentMethodsLoading?: boolean;
+  /** El método elegido exige adjuntar el soporte (p. ej. consignación). */
+  supportRequired?: boolean;
   supportFile: PagoSupportLocalFile | null;
   onPickSupport: (source: PagoSupportSource) => void;
   onRemoveSupport: () => void;
@@ -40,19 +43,9 @@ type Props = {
   onSubmit: () => void;
 };
 
-const SUPPORT_SOURCES: { source: PagoSupportSource; label: string; icon: 'photo-camera' | 'photo-library' | 'attach-file' }[] = [
-  { source: 'camera', label: 'Tomar foto', icon: 'photo-camera' },
-  { source: 'gallery', label: 'Galería', icon: 'photo-library' },
-  { source: 'document', label: 'Archivo / PDF', icon: 'attach-file' },
-];
-
 /**
- * Hoja modal para registrar un pago (valor, recibo físico y soporte).
- *
- * Las opciones de origen del soporte se muestran dentro de la propia hoja y no
- * con `Alert`/`ActionSheetIOS`: en Android `Alert.alert` solo admite 3 botones y
- * no es cancelable por defecto, así que con 4-5 opciones se perdía "Cancelar" y
- * el diálogo quedaba sin forma de cerrarse.
+ * Hoja modal para registrar un pago (valor, recibo físico y soporte). El
+ * selector del soporte es `PagoSupportPicker`, compartido con el pronto pago.
  */
 export function RegisterPaymentSheet({
   visible,
@@ -69,6 +62,7 @@ export function RegisterPaymentSheet({
   paymentMethodId,
   onChangePaymentMethod,
   paymentMethodsLoading = false,
+  supportRequired = false,
   supportFile,
   onPickSupport,
   onRemoveSupport,
@@ -77,19 +71,9 @@ export function RegisterPaymentSheet({
 }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const [choosingSupport, setChoosingSupport] = useState(false);
-
-  useEffect(() => {
-    if (!visible) setChoosingSupport(false);
-  }, [visible]);
-
+  const missingRequiredSupport = supportRequired && !supportFile;
   const amountOptions = pagoAmountInputOptions(amountDecimalPlaces);
   const acceptsDecimals = amountOptions.decimalPlaces > 0;
-
-  const pickSupport = (source: PagoSupportSource) => {
-    setChoosingSupport(false);
-    onPickSupport(source);
-  };
 
   return (
     <ModalSheet
@@ -105,7 +89,7 @@ export function RegisterPaymentSheet({
             title="Guardar pago"
             onPress={onSubmit}
             loading={saving}
-            disabled={!paymentMethodId}
+            disabled={!paymentMethodId || missingRequiredSupport}
             style={styles.footerButton}
           />
         </>
@@ -157,56 +141,14 @@ export function RegisterPaymentSheet({
           </Text>
         ) : null}
       </View>
-      {choosingSupport ? (
-        <View style={[styles.supportOptions, { borderColor: colors.divider }]}>
-          <Text style={[styles.supportTitle, { color: colors.text.secondary }]}>Soporte de pago</Text>
-          {SUPPORT_SOURCES.map((item) => (
-            <Button
-              key={item.source}
-              title={item.label}
-              variant="ghost"
-              size="sm"
-              icon={item.icon}
-              onPress={() => pickSupport(item.source)}
-              disabled={saving}
-              style={styles.supportOption}
-            />
-          ))}
-          {supportFile ? (
-            <Button
-              title="Quitar soporte"
-              variant="ghost"
-              size="sm"
-              icon="delete-outline"
-              onPress={() => {
-                setChoosingSupport(false);
-                onRemoveSupport();
-              }}
-              disabled={saving}
-              style={styles.supportOption}
-              textStyle={{ color: colors.error.main }}
-            />
-          ) : null}
-          <Button
-            title="Cancelar"
-            variant="outline"
-            size="sm"
-            onPress={() => setChoosingSupport(false)}
-            accessibilityLabel="Cancelar selección de soporte"
-          />
-        </View>
-      ) : (
-        <Button
-          title={supportFile ? supportFile.name : 'Adjuntar soporte (opcional)'}
-          variant="outline"
-          size="sm"
-          icon={supportFile ? 'check-circle' : 'attach-file'}
-          onPress={() => setChoosingSupport(true)}
-          disabled={saving}
-          accessibilityLabel={supportFile ? `Soporte adjunto: ${supportFile.name}. Cambiar` : 'Adjuntar soporte de pago'}
-          textStyle={styles.supportText}
-        />
-      )}
+      <PagoSupportPicker
+        visible={visible}
+        supportRequired={supportRequired}
+        supportFile={supportFile}
+        onPickSupport={onPickSupport}
+        onRemoveSupport={onRemoveSupport}
+        disabled={saving}
+      />
     </ModalSheet>
   );
 }
@@ -217,8 +159,4 @@ const styles = StyleSheet.create({
   fieldHint: { ...Typography.caption, marginTop: Spacing.xs },
   field: { marginBottom: 0 },
   footerButton: { flex: 1 },
-  supportText: { flexShrink: 1 },
-  supportOptions: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.control, padding: Spacing.sm, gap: Spacing.xs },
-  supportTitle: { ...Typography.caption, paddingHorizontal: Spacing.xs, marginBottom: Spacing.xs },
-  supportOption: { alignSelf: 'stretch', justifyContent: 'flex-start' },
 });

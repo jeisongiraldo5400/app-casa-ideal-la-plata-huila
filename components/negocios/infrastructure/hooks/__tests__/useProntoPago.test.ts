@@ -4,12 +4,16 @@ import { PRONTO_PAGO_OFFLINE_MESSAGE, PRONTO_PAGO_PENDING_SYNC_MESSAGE } from '@
 import { fetchPaymentMethods } from '../../services/paymentMethodsService';
 import { fetchProntoPagoCuotas, registerProntoPago } from '../../services/negocioPagosService';
 import { PRONTO_PAGO_NETWORK_RETRY_MESSAGE, useProntoPago } from '../useProntoPago';
+import { attachOrQueuePagoSupport } from '@/lib/pagoSupportAttach';
 
 jest.mock('@/lib/offline/repositories/offlineRepository', () => ({
   hasUnsettledSyncForNegocio: jest.fn(async () => false),
 }));
 jest.mock('../../services/paymentMethodsService', () => ({
   fetchPaymentMethods: jest.fn(async () => [{ id: 'pm-1', name: 'Efectivo' }]),
+}));
+jest.mock('@/lib/pagoSupportAttach', () => ({
+  attachOrQueuePagoSupport: jest.fn(),
 }));
 jest.mock('../../services/negocioPagosService', () => ({
   fetchProntoPagoCuotas: jest.fn(),
@@ -38,6 +42,8 @@ const values = {
   paymentMethodId: 'pm-1',
   receiptNumber: null,
   netAmount: 900_000,
+  supportFile: null,
+  supportRequired: false,
 };
 
 type HookProps = Parameters<typeof useProntoPago>[0];
@@ -191,5 +197,62 @@ describe('useProntoPago', () => {
 
     expect(mockedRegister).not.toHaveBeenCalled();
     expect(result.current.notice?.text).toBe(PRONTO_PAGO_PENDING_SYNC_MESSAGE);
+  });
+
+  describe('soporte', () => {
+    const mockedAttach = attachOrQueuePagoSupport as jest.MockedFunction<typeof attachOrQueuePagoSupport>;
+    const file = { uri: 'file:///soporte.jpg', mimeType: 'image/jpeg', name: 'soporte.jpg', size: 10 };
+    const withSupport = { ...values, supportFile: file, supportRequired: true };
+
+    it('sin soporte no intenta adjuntar', async () => {
+      mockedRegister.mockResolvedValueOnce('pago-1');
+      const { result, onRegistered } = setup();
+      await openSheet(result);
+      await act(async () => result.current.submit(values));
+      expect(mockedAttach).not.toHaveBeenCalled();
+      expect(onRegistered).toHaveBeenCalledWith(expect.objectContaining({ supportOutcome: null, supportWarning: null }));
+    });
+
+    it('sube el soporte con el id del pago y encola ante cualquier fallo', async () => {
+      mockedRegister.mockResolvedValueOnce('pago-1');
+      mockedAttach.mockResolvedValueOnce('attached');
+      const { result, onRegistered } = setup();
+      await openSheet(result);
+      await act(async () => result.current.submit(withSupport));
+      expect(mockedAttach).toHaveBeenCalledWith({
+        negocioId: 'neg-1',
+        pagoId: 'pago-1',
+        file,
+        online: true,
+        queueOnAnyError: true,
+      });
+      expect(onRegistered).toHaveBeenCalledWith(expect.objectContaining({ supportOutcome: 'attached', supportWarning: null }));
+    });
+
+    it('si el soporte queda en cola avisa que se adjuntará al volver la señal', async () => {
+      mockedRegister.mockResolvedValueOnce('pago-1');
+      mockedAttach.mockResolvedValueOnce('queued');
+      const { result, onRegistered } = setup();
+      await openSheet(result);
+      await act(async () => result.current.submit(withSupport));
+      expect(onRegistered).toHaveBeenCalledWith(
+        expect.objectContaining({
+          supportOutcome: 'queued',
+          supportWarning: expect.stringContaining('cuando se recupere la conexión'),
+        })
+      );
+    });
+
+    it('si el soporte falla del todo el pronto pago sigue registrado y se avisa', async () => {
+      mockedRegister.mockResolvedValueOnce('pago-1');
+      mockedAttach.mockRejectedValueOnce(new Error('disco lleno'));
+      const { result, onRegistered } = setup();
+      await openSheet(result);
+      await act(async () => result.current.submit(withSupport));
+      expect(result.current.visible).toBe(false);
+      expect(onRegistered).toHaveBeenCalledWith(
+        expect.objectContaining({ pagoId: 'pago-1', supportWarning: expect.stringContaining('disco lleno') })
+      );
+    });
   });
 });

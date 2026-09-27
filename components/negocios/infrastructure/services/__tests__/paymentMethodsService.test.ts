@@ -1,4 +1,4 @@
-import { fetchPaymentMethods } from '../paymentMethodsService';
+import { fetchPaymentMethods, paymentMethodRequiresSupport, supportRequiredMessage } from '../paymentMethodsService';
 
 const mockFrom = jest.fn();
 const mockFetchLocal = jest.fn();
@@ -32,11 +32,37 @@ describe('fetchPaymentMethods', () => {
     const query = chain({ data: [{ id: 'pm-1', name: 'Efectivo' }], error: null });
     mockFrom.mockReturnValue(query);
 
-    await expect(fetchPaymentMethods()).resolves.toEqual([{ id: 'pm-1', name: 'Efectivo' }]);
+    await expect(fetchPaymentMethods()).resolves.toEqual([{ id: 'pm-1', name: 'Efectivo', requiresSupport: false }]);
     expect(mockFrom).toHaveBeenCalledWith('payment_methods');
+    // `*`: la app sigue funcionando contra un servidor sin `requires_support`.
+    expect(query.select).toHaveBeenCalledWith('*');
     expect(query.is).toHaveBeenCalledWith('deleted_at', null);
     expect(query.order).toHaveBeenCalledWith('name');
     expect(mockFetchLocal).not.toHaveBeenCalled();
+  });
+
+  it('lee la bandera requires_support (consignación exige soporte)', async () => {
+    mockFrom.mockReturnValue(
+      chain({
+        data: [
+          { id: 'pm-1', name: 'Consignación', requires_support: true },
+          { id: 'pm-2', name: 'Efectivo', requires_support: false },
+        ],
+        error: null,
+      })
+    );
+
+    const methods = await fetchPaymentMethods();
+    expect(methods).toEqual([
+      { id: 'pm-1', name: 'Consignación', requiresSupport: true },
+      { id: 'pm-2', name: 'Efectivo', requiresSupport: false },
+    ]);
+    expect(paymentMethodRequiresSupport(methods, 'pm-1')).toBe(true);
+    expect(paymentMethodRequiresSupport(methods, 'pm-2')).toBe(false);
+    expect(paymentMethodRequiresSupport(methods, '')).toBe(false);
+    expect(supportRequiredMessage('Consignación')).toBe(
+      'El método de pago «Consignación» exige adjuntar el soporte (foto o PDF del comprobante).'
+    );
   });
 
   it('sin red cae al catálogo descargado (el cobro offline exige elegir método)', async () => {

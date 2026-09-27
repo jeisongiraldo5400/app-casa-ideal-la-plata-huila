@@ -9,8 +9,6 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '@/components/theme';
 import {
   ActionBar,
@@ -55,7 +53,7 @@ import { NegocioContactDetailsSheet } from '@/components/negocios/components/Neg
 import { canEditNegocioContactDetails } from '@/lib/negocios/negocioEditRules';
 import { labelNegocioOrigen, resolveNegocioOrigen } from '@/lib/negocios/negocioOrigen';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { PaymentCard } from '@/components/negocios/components/PaymentCard';
+import { PaymentCard, type PaymentRow } from '@/components/negocios/components/PaymentCard';
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { displayProfileName, fetchProfileNames } from '@/lib/profileNames';
 import { getCachedProfileName, setCachedProfileName } from '@/lib/offline/security/secureKeys';
@@ -94,16 +92,21 @@ import { fetchRegisteredPagoReceipt } from '@/components/negocios/infrastructure
 import { runSync } from '@/lib/offline/sync/syncEngine';
 import {
   openPagoSupport,
-  uploadAndAttachPagoSupport,
   validatePagoSupportLocalFile,
   type PagoSupportLocalFile,
 } from '@/lib/uploadPagoSupport';
+import { attachOrQueuePagoSupport } from '@/lib/pagoSupportAttach';
+import { pickPagoSupportFile } from '@/lib/pickPagoSupportFile';
+import { canAttachPagoSupport, pagoSupportUiState } from '@/lib/pagoSupportRules';
+import { AttachPagoSupportSheet } from '@/components/negocios/components/AttachPagoSupportSheet';
+import { useAttachPagoSupport } from '@/components/negocios/infrastructure/hooks/useAttachPagoSupport';
+import { usePaymentMethodsCatalog } from '@/components/negocios/infrastructure/hooks/usePaymentMethodsCatalog';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalDb,
   deleteRejectedPagoLocal,
+  fetchPagoSupportLocalState,
   listRejectedPagosFromLocal,
-  queuePagoSupportUpload,
   registerPagoOffline,
   registerPagoWithFallback,
   type RejectedPagoRow,
@@ -124,6 +127,8 @@ import {
 } from '@/lib/negocios/registerPagoRpc';
 import {
   fetchPaymentMethods,
+  paymentMethodRequiresSupport,
+  supportRequiredMessage,
   type PaymentMethodOption,
 } from '@/components/negocios/infrastructure/services/paymentMethodsService';
 import { errorMessage } from '@/lib/errorMessage';
@@ -184,7 +189,7 @@ function NegocioDetailScreenInner() {
   /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
   const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
   const { user } = useAuth();
-  const { isAdmin, isGestorCobro, isRecaudador } = useUserRoles();
+  const { isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   // Cobro en ruta: la parada solo cuenta el primer cobro y solo si sigue
@@ -629,75 +634,36 @@ function NegocioDetailScreenInner() {
     amountOptions: payAmountOptions,
   });
 
-  const pickSupportFromCamera = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permiso requerido', 'Activa la cámara para capturar el soporte.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    const file: PagoSupportLocalFile = {
-      uri: asset.uri,
-      mimeType: asset.mimeType || 'image/jpeg',
-      name: asset.fileName || `soporte-${Date.now()}.jpg`,
-      size: asset.fileSize,
-    };
-    const validationError = validatePagoSupportLocalFile(file);
-    if (validationError) return Alert.alert('Archivo inválido', validationError);
-    setPaySupportFile(file);
-  };
-
-  const pickSupportFromGallery = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permiso requerido', 'Activa la galería para adjuntar el soporte.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    const file: PagoSupportLocalFile = {
-      uri: asset.uri,
-      mimeType: asset.mimeType || 'image/jpeg',
-      name: asset.fileName || `soporte-${Date.now()}.jpg`,
-      size: asset.fileSize,
-    };
-    const validationError = validatePagoSupportLocalFile(file);
-    if (validationError) return Alert.alert('Archivo inválido', validationError);
-    setPaySupportFile(file);
-  };
-
-  const pickSupportDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'image/*'],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    const file: PagoSupportLocalFile = {
-      uri: asset.uri,
-      mimeType: asset.mimeType || 'application/pdf',
-      name: asset.name || `soporte-${Date.now()}.pdf`,
-      size: asset.size,
-    };
-    const validationError = validatePagoSupportLocalFile(file);
-    if (validationError) return Alert.alert('Archivo inválido', validationError);
-    setPaySupportFile(file);
-  };
+  // «Adjuntar después»: qué pagos tienen soporte en cola y cuáles solo existen
+  // en el teléfono. Se relee con la cola (al subir, el soporte deja de estar
+  // pendiente) y con cada recarga de la lista de pagos.
+  const [supportLocal, setSupportLocal] = useState<{ queuedPagoIds: Set<string>; localPagoIds: Set<string> }>(
+    () => ({ queuedPagoIds: new Set(), localPagoIds: new Set() })
+  );
+  const reloadSupportLocal = useCallback(() => {
+    if (!id) return;
+    fetchPagoSupportLocalState(id)
+      .then(setSupportLocal)
+      .catch(() => undefined);
+  }, [id]);
+  useEffect(() => {
+    reloadSupportLocal();
+  }, [reloadSupportLocal, pagos, pendingCount]);
+  const supportMethods = usePaymentMethodsCatalog(pagos.length > 0);
+  const attachSupport = useAttachPagoSupport({
+    onDone: (outcome) => {
+      reloadSupportLocal();
+      if (outcome === 'attached') {
+        invalidateCartera();
+        void load();
+      }
+    },
+  });
 
   const choosePaySupport = (source: PagoSupportSource) => {
-    if (source === 'camera') return void pickSupportFromCamera();
-    if (source === 'gallery') return void pickSupportFromGallery();
-    return void pickSupportDocument();
+    void pickPagoSupportFile(source).then((file) => {
+      if (file) setPaySupportFile(file);
+    });
   };
 
   const printReceiptAfterPago = async (input: {
@@ -721,6 +687,7 @@ function NegocioDetailScreenInner() {
       physicalReceiptNumber: input.physicalReceiptNumber,
       negocioNumero: negocio.numero,
       customerName,
+      customerIdNumber: customerMeta.id_number ?? null,
       sellerName,
       registeredBy: registeredByName,
       paymentMethodName: input.paymentMethodName,
@@ -743,7 +710,14 @@ function NegocioDetailScreenInner() {
     if (canUseLocalDb()) void runSync('mutation');
   };
 
-  const onProntoPagoRegistered = async ({ pagoId, values, paidAt, paymentMethodName }: ProntoPagoRegistered) => {
+  const onProntoPagoRegistered = async ({
+    pagoId,
+    values,
+    paidAt,
+    paymentMethodName,
+    supportOutcome,
+    supportWarning,
+  }: ProntoPagoRegistered) => {
     const countedInRoute = Boolean(routeStop.stopId);
     routeStop.consume();
     void pagoForm.remember(values.paymentMethodId);
@@ -779,11 +753,16 @@ function NegocioDetailScreenInner() {
       paymentMethodName,
       prontoPago: { discountAmount, discountReason, expectedTotal },
     });
+    const prontoPagoBody = countedInRoute
+      ? 'El negocio quedó saldado y la parada se completó.'
+      : 'El negocio quedó saldado.';
     notifyPagoResult(
       'Pronto pago registrado',
-      countedInRoute
-        ? 'El negocio quedó saldado y la parada se completó.'
-        : 'El negocio quedó saldado.',
+      supportWarning
+        ? `${prontoPagoBody}\n\nSoporte: ${supportWarning}`
+        : supportOutcome === 'attached'
+          ? `${prontoPagoBody} Soporte adjunto.`
+          : prontoPagoBody,
       printed
     );
   };
@@ -824,6 +803,11 @@ function NegocioDetailScreenInner() {
     }
     const paymentMethodLabel =
       paymentMethods.find((method) => method.id === payMethodId)?.name || null;
+    // Consignación (u otro método marcado en el catálogo): el soporte es obligatorio.
+    const supportRequired = paymentMethodRequiresSupport(paymentMethods, payMethodId);
+    if (supportRequired && !paySupportFile) {
+      return Alert.alert('Soporte obligatorio', supportRequiredMessage(paymentMethodLabel));
+    }
     if (pagoAmountExceedsBalance(amount, pendingBalance)) {
       return Alert.alert(
         'Valor supera el saldo',
@@ -877,33 +861,23 @@ function NegocioDetailScreenInner() {
         let supportWarning = '';
         if (paySupportFile && pagoId) {
           try {
-            await uploadAndAttachPagoSupport({
+            // Con señal se sube ya; si falla (por red o no) el archivo se copia
+            // al teléfono y se encola en la cola de sincronización.
+            const outcome = await attachOrQueuePagoSupport({
               negocioId: negocio.id,
               pagoId,
               file: paySupportFile,
+              online: true,
+              queueOnAnyError: true,
             });
-          } catch (supportError: any) {
-            if (canUseLocalDb()) {
-              try {
-                await queuePagoSupportUpload({
-                  negocioId: negocio.id,
-                  pagoLocalId: null,
-                  pagoServerId: pagoId,
-                  file: paySupportFile,
-                });
-                supportWarning =
-                  'El pago quedó registrado. El soporte se adjuntará automáticamente cuando se recupere la conexión.';
-              } catch (queueError: unknown) {
-                supportWarning =
-                  (queueError instanceof Error ? queueError.message : '') ||
-                  supportError?.message ||
-                  'El pago quedó registrado, pero no se pudo conservar el soporte.';
-              }
-            } else {
+            if (outcome === 'queued') {
               supportWarning =
-                supportError?.message ||
-                'El pago quedó registrado, pero no se adjuntó el soporte.';
+                'El pago quedó registrado. El soporte se adjuntará automáticamente cuando se recupere la conexión.';
             }
+          } catch (supportError: unknown) {
+            supportWarning =
+              (supportError instanceof Error ? supportError.message : '') ||
+              'El pago quedó registrado, pero no se adjuntó el soporte.';
           }
         }
 
@@ -975,6 +949,7 @@ function NegocioDetailScreenInner() {
           idempotencyKey,
           routeStopId: stopForPago,
           supportFile: paySupportFile,
+          supportRequired,
           registeredBy: registeredByName,
         });
         paymentIdempotencyKey.current = null;
@@ -1138,6 +1113,7 @@ function NegocioDetailScreenInner() {
       physicalReceiptNumber: pago.receipt_number,
       negocioNumero: negocio.numero,
       customerName,
+      customerIdNumber: customerMeta.id_number ?? null,
       sellerName,
       registeredBy: pago.created_by_name,
       paymentMethodName: pago.payment_method_name,
@@ -1168,6 +1144,7 @@ function NegocioDetailScreenInner() {
       physicalReceiptNumber: pago.receipt_number,
       negocioNumero: negocio.numero,
       customerName,
+      customerIdNumber: customerMeta.id_number ?? null,
       sellerName,
       registeredBy: pago.created_by_name,
       paymentMethodName: pago.payment_method_name,
@@ -1511,6 +1488,47 @@ function NegocioDetailScreenInner() {
   });
   const prontoPagoDecimals = prontoPagoDecimalPlaces(negocio.formula_snapshot, payMoneyDecimals);
   const canVoidPagos = serverPagoPermissions.canVoidPago === true;
+  /**
+   * Soporte de cada pago: estado visible y «Adjuntar» si falta. Con los
+   * permisos de `attach_negocio_pago_support`; filas del teléfono de pagos ya
+   * sincronizados no traen el soporte, así que en ellas no se ofrece.
+   */
+  const paymentSupportProps = (pago: PaymentRow & { payment_method_id?: string | null; created_by?: string | null }) => {
+    const supportState = pagoSupportUiState({
+      pago,
+      queuedPagoIds: supportLocal.queuedPagoIds,
+      localPagoIds: supportLocal.localPagoIds,
+      methods: supportMethods,
+    });
+    const pagoIsLocal = supportLocal.localPagoIds.has(pago.id);
+    const canAttach =
+      (supportState === 'missing' || supportState === 'required_missing') &&
+      pago.receipt_status !== 'anulado' &&
+      canAttachPagoSupport({
+        userId: user?.id,
+        isAdmin: isAdmin(),
+        isVendedor: isVendedor(),
+        isGestorCobro: isGestorCobro(),
+        isRecaudador: isRecaudador(),
+        negocio,
+        pagoCreatedBy: pago.created_by,
+        pagoIsLocal,
+      });
+    return {
+      supportState,
+      onAttachSupport: canAttach
+        ? () =>
+            attachSupport.open({
+              negocioId: negocio.id,
+              pagoId: pago.id,
+              title: `${formatCOP(Number(pago.amount))} · ${pago.virtual_receipt_number || 'Provisional'}`,
+              supportRequired: supportState === 'required_missing',
+              methodName: pago.payment_method_name ?? null,
+              pagoIsLocal,
+            })
+        : undefined,
+    };
+  };
   const address =
     [negocio.direccion, negocio.vereda?.nombre, negocio.municipio?.nombre, negocio.municipio?.departamento?.nombre]
       .filter(Boolean)
@@ -1784,6 +1802,7 @@ function NegocioDetailScreenInner() {
                       ? () => voidPago.request(pago)
                       : undefined
                   }
+                  {...paymentSupportProps(pago)}
                 />
               ))}
             </View>
@@ -1929,6 +1948,7 @@ function NegocioDetailScreenInner() {
         onSubmit={(values) => void prontoPago.submit(values)}
       />
 
+      <AttachPagoSupportSheet attach={attachSupport} online={online} />
       <VoidPagoSheet
         pago={voidPago.target}
         onClose={voidPago.close}
@@ -1975,6 +1995,7 @@ function NegocioDetailScreenInner() {
           setPayMethodId(value);
         }}
         paymentMethodsLoading={paymentMethodsLoading}
+        supportRequired={paymentMethodRequiresSupport(paymentMethods, payMethodId)}
         supportFile={paySupportFile}
         onPickSupport={choosePaySupport}
         onRemoveSupport={() => setPaySupportFile(null)}

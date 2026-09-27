@@ -2,7 +2,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 import { OFFLINE_ORDER_TABLES } from './migrations';
 
 export const schema = appSchema({
-  version: 12,
+  version: 13,
   tables: [
     tableSchema({
       name: 'customers',
@@ -182,7 +182,11 @@ export const schema = appSchema({
     }),
     tableSchema({
       name: 'catalog_payment_methods',
-      columns: [{ name: 'name', type: 'string' }],
+      columns: [
+        { name: 'name', type: 'string' },
+        // v13: el método exige soporte al cobrar (consignación).
+        { name: 'requires_support', type: 'boolean', isOptional: true },
+      ],
     }),
     tableSchema({
       // Catálogo de producto (v9). Se baja aparte, bajo demanda: son ~2.100

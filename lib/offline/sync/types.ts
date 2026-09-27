@@ -328,7 +328,12 @@ export type PullMunicipio = {
 };
 export type PullVereda = { id: string; nombre: string; municipio_id: string; is_active: boolean };
 export type PullDepartamento = { id: string; nombre: string; is_active: boolean };
-export type PullPaymentMethod = { id: string; name: string };
+export type PullPaymentMethod = {
+  id: string;
+  name: string;
+  /** Desde 20261221120000: el cobro con este método exige soporte. */
+  requires_support?: boolean | null;
+};
 export type PullProfile = { id: string; full_name: string | null; email: string | null };
 export type PullCreditSettings = {
   id: string;
@@ -580,8 +585,12 @@ export function cursorFromServerTime(serverTime: string, overlapMs = PULL_CURSOR
  * 10: vereda propia del negocio (`vereda_id`, 20261217120000). Los negocios ya
  * bajan completos con `p_options`, pero la descarga completa única garantiza
  * que también se rellenen las filas guardadas antes de la v12.
+ *
+ * 11: `requires_support` en los métodos de pago (20261221120000). El catálogo
+ * de métodos baja por cursor: sin una descarga completa, un teléfono que ya lo
+ * tenía no volvería a recibir «Consignación» con la bandera.
  */
-export const PULL_PAYLOAD_VERSION = '10';
+export const PULL_PAYLOAD_VERSION = '11';
 export const PULL_PAYLOAD_VERSION_META_KEY = 'pull_payload_version';
 
 export type PullScope = 'cobro' | 'completo';

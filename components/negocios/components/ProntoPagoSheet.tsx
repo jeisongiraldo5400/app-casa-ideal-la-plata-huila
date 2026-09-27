@@ -10,6 +10,10 @@ import {
   validateProntoPago,
   type ProntoPagoSummary,
 } from '@/lib/negocios/prontoPago';
+import { pickPagoSupportFile, type PagoSupportSource } from '@/lib/pickPagoSupportFile';
+import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
+import { paymentMethodRequiresSupport } from '../infrastructure/services/paymentMethodsService';
+import { PagoSupportPicker } from './PagoSupportPicker';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
@@ -23,6 +27,10 @@ export type ProntoPagoFormValues = {
   receiptNumber: string | null;
   /** Total a pagar (dinero) = pendiente − descuento. */
   netAmount: number;
+  /** Soporte elegido; se sube después de registrar (su ruta lleva el id del pago). */
+  supportFile: PagoSupportLocalFile | null;
+  /** El método exige soporte (`payment_methods.requires_support`). */
+  supportRequired: boolean;
 };
 
 export type ProntoPagoNotice = { tone: 'warning' | 'error'; text: string };
@@ -36,8 +44,10 @@ type Props = {
   summary: ProntoPagoSummary | null;
   /** Decimales admitidos en el descuento (0–2). */
   decimalPlaces: number;
-  paymentMethods: { id: string; name: string }[];
+  paymentMethods: { id: string; name: string; requiresSupport?: boolean }[];
   paymentMethodsLoading?: boolean;
+  /** Cámara/galería/PDF; se inyecta en pruebas. */
+  pickSupport?: (source: PagoSupportSource) => Promise<PagoSupportLocalFile | null>;
   saving: boolean;
   /** Motivo por el que no se puede registrar ahora (sin red, cola pendiente). */
   blockedReason: string | null;
@@ -48,7 +58,8 @@ type Props = {
 /**
  * Hoja para liquidar el negocio con descuento por pronto pago: muestra el
  * pendiente total, pide el descuento y su motivo (opcional), calcula el total a pagar en
- * vivo y pide confirmación antes de enviar. Solo funciona con conexión.
+ * vivo y pide confirmación antes de enviar. Solo funciona con conexión. El
+ * soporte es obligatorio si el método lo exige (`requires_support`).
  */
 export function ProntoPagoSheet({
   visible,
@@ -59,6 +70,7 @@ export function ProntoPagoSheet({
   decimalPlaces,
   paymentMethods,
   paymentMethodsLoading = false,
+  pickSupport = pickPagoSupportFile,
   saving,
   blockedReason,
   notice,
@@ -74,6 +86,7 @@ export function ProntoPagoSheet({
   const [receipt, setReceipt] = useState('');
   const [showCuotas, setShowCuotas] = useState(false);
   const [attempted, setAttempted] = useState(false);
+  const [supportFile, setSupportFile] = useState<PagoSupportLocalFile | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -84,6 +97,7 @@ export function ProntoPagoSheet({
     setReceipt('');
     setShowCuotas(false);
     setAttempted(false);
+    setSupportFile(null);
   }, [visible]);
 
   const pendingTotal = summary?.pendingTotal ?? 0;
@@ -104,15 +118,24 @@ export function ProntoPagoSheet({
   const cuotas = summary?.cuotas ?? [];
   const unavailable = loading || !summary || Boolean(blockedReason);
   const methodName = paymentMethods.find((method) => method.id === methodId)?.name || '';
+  // Consignación (u otro método marcado en el catálogo): sin soporte no se revisa.
+  const supportRequired = paymentMethodRequiresSupport(paymentMethods, methodId);
+  const missingRequiredSupport = supportRequired && !supportFile;
+
+  const chooseSupport = (source: PagoSupportSource) => {
+    void pickSupport(source).then((file) => {
+      if (file) setSupportFile(file);
+    });
+  };
 
   const review = () => {
     setAttempted(true);
-    if (unavailable || !validation.valid) return;
+    if (unavailable || !validation.valid || missingRequiredSupport) return;
     setStep('confirm');
   };
 
   const confirm = () => {
-    if (unavailable || saving || !validation.valid) return;
+    if (unavailable || saving || !validation.valid || missingRequiredSupport) return;
     onSubmit({
       pendingTotal,
       discountAmount: discount,
@@ -120,6 +143,8 @@ export function ProntoPagoSheet({
       paymentMethodId: methodId,
       receiptNumber: receipt.trim() || null,
       netAmount: validation.netAmount,
+      supportFile,
+      supportRequired,
     });
   };
 
@@ -139,7 +164,7 @@ export function ProntoPagoSheet({
         <Button
           title="Revisar"
           onPress={review}
-          disabled={unavailable || saving}
+          disabled={unavailable || saving || missingRequiredSupport}
           style={styles.footerButton}
           accessibilityLabel="Revisar pronto pago"
         />
@@ -151,7 +176,7 @@ export function ProntoPagoSheet({
           title="Confirmar pronto pago"
           onPress={confirm}
           loading={saving}
-          disabled={unavailable || !validation.valid}
+          disabled={unavailable || !validation.valid || missingRequiredSupport}
           style={styles.footerButton}
         />
       </>
@@ -275,6 +300,14 @@ export function ProntoPagoSheet({
               containerStyle={styles.field}
               accessibilityLabel="Número de recibo físico"
             />
+            <PagoSupportPicker
+              visible={visible}
+              supportRequired={supportRequired}
+              supportFile={supportFile}
+              onPickSupport={chooseSupport}
+              onRemoveSupport={() => setSupportFile(null)}
+              disabled={saving}
+            />
             {attempted && validation.pendingError ? (
               <Text style={[styles.fieldHint, { color: colors.error.main }]}>{validation.pendingError}</Text>
             ) : null}
@@ -301,6 +334,7 @@ export function ProntoPagoSheet({
             <Text style={[styles.caption, { color: colors.text.secondary }]}>
               Método: {methodName}
               {receipt.trim() ? ` · Recibo físico ${receipt.trim()}` : ''}
+              {supportFile ? ` · Soporte ${supportFile.name}` : ''}
             </Text>
             <Text style={[styles.warning, { color: colors.text.primary }]}>
               Todas las cuotas quedarán pagadas y el negocio quedará saldado.

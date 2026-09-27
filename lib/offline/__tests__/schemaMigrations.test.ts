@@ -3,6 +3,7 @@ import {
   migrations,
   NEGOCIO_LOCATION_COLUMNS,
   NEGOCIO_NAME_COLUMNS,
+  PAYMENT_METHOD_SUPPORT_COLUMNS,
   PRONTO_PAGO_PAGO_COLUMNS,
   REJECTED_PAGO_COLUMNS,
 } from '../migrations';
@@ -101,7 +102,27 @@ describe('esquema local v12: vereda propia del negocio', () => {
     const tables = schema.tables as unknown as { name: string; columns: { name: string }[] }[];
     const negocios = tables.find((table) => table.name === 'negocios')!;
     expect(negocios.columns.find((column) => column.name === 'vereda_id')).toEqual(NEGOCIO_LOCATION_COLUMNS[0]);
-    expect(schema.version).toBe(12);
+    expect(schema.version).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe('esquema local v13: soporte obligatorio por método de pago', () => {
+  it('la migración a 13 agrega catalog_payment_methods.requires_support opcional y la instalación nueva la trae', () => {
+    const toThirteen = migrations.sortedMigrations.find((migration) => migration.toVersion === 13);
+    expect(toThirteen).toBeDefined();
+    const steps = toThirteen!.steps as unknown as AddColumnsStep[];
+    expect(steps).toEqual([
+      { type: 'add_columns', table: 'catalog_payment_methods', columns: PAYMENT_METHOD_SUPPORT_COLUMNS },
+    ]);
+    expect(PAYMENT_METHOD_SUPPORT_COLUMNS).toEqual([{ name: 'requires_support', type: 'boolean', isOptional: true }]);
+    const tables = schema.tables as unknown as { name: string; columns: { name: string }[] }[];
+    const methods = tables.find((table) => table.name === 'catalog_payment_methods')!;
+    expect(methods.columns.find((column) => column.name === 'requires_support')).toEqual(
+      PAYMENT_METHOD_SUPPORT_COLUMNS[0]
+    );
+    expect(schema.version).toBe(13);
+    // Descarga completa única: sin ella el teléfono no recibiría la bandera.
+    expect(Number(PULL_PAYLOAD_VERSION)).toBeGreaterThanOrEqual(11);
   });
 });
 
@@ -111,7 +132,8 @@ describe('pullCursorForPayloadVersion', () => {
   });
 
   it('fuerza una descarga completa tras actualizar la app (versión ausente o anterior)', () => {
-    expect(PULL_PAYLOAD_VERSION).toBe('10');
+    expect(PULL_PAYLOAD_VERSION).toBe('11');
+    expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '10')).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '9')).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', null)).toBeNull();
     expect(pullCursorForPayloadVersion('2026-09-10T00:00:00Z', '8')).toBeNull();

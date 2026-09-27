@@ -48,6 +48,14 @@ export const NEGOCIO_CREATOR_COLUMNS = [
 /** Columnas de `negocios` añadidas en la versión 12 (también en `schema.ts`). */
 export const NEGOCIO_LOCATION_COLUMNS = [{ name: 'vereda_id', type: 'string' as const, isOptional: true }];
 
+/**
+ * Columnas de `catalog_payment_methods` añadidas en la versión 13 (también en
+ * `schema.ts`): el método exige soporte al cobrar (20261221120000).
+ */
+export const PAYMENT_METHOD_SUPPORT_COLUMNS = [
+  { name: 'requires_support', type: 'boolean' as const, isOptional: true },
+];
+
 /** Tablas del catálogo de producto añadidas en la versión 9 (también en `schema.ts`). */
 export const CATALOG_PRODUCT_TABLES = [
   {
@@ -154,6 +162,12 @@ export const OFFLINE_ORDER_TABLES = [
 
 export const migrations = schemaMigrations({
   migrations: [
+    {
+      // Soporte obligatorio por método de pago (20261221120000): sin la
+      // bandera, el cobro sin señal con consignación no exigiría el soporte.
+      toVersion: 13,
+      steps: [addColumns({ table: 'catalog_payment_methods', columns: PAYMENT_METHOD_SUPPORT_COLUMNS })],
+    },
     {
       // Vereda propia del negocio (20261217120000): sin ella el teléfono
       // mostraba y filtraba por la vereda del cliente.

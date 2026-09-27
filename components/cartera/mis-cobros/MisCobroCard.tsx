@@ -3,6 +3,7 @@ import { ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import type { MisCobroRow } from '@/lib/cartera/misCobros';
 import { cobroReceiptData } from '@/lib/cartera/cobroReceipt';
+import { MisCobroAttachSupport } from './MisCobroAttachSupport';
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 import { MaterialIcons } from '@expo/vector-icons';
 import { formatCOP } from '@/lib/creditCalculator';
@@ -92,6 +93,7 @@ export function MisCobroCard({ row, onPress, showRegisteredBy = false, actions }
       ) : null}
       {actions && (receipt || row.support_path) ? (
         <View style={styles.actions}>
+          <MisCobroAttachSupport row={row} />
           {row.support_path ? (
             <Pressable
               accessibilityRole="button"

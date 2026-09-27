@@ -2980,6 +2980,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          requires_support: boolean
           updated_at: string | null
         }
         Insert: {
@@ -2987,6 +2988,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          requires_support?: boolean
           updated_at?: string | null
         }
         Update: {
@@ -2994,6 +2996,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          requires_support?: boolean
           updated_at?: string | null
         }
         Relationships: []

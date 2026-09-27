@@ -115,6 +115,29 @@ describe('RegisterPaymentSheet · método de pago', () => {
   });
 });
 
+describe('RegisterPaymentSheet · soporte obligatorio (consignación)', () => {
+  it('sin soporte bloquea el guardado y lo pide', () => {
+    const { getByText, props } = renderSheet({ paymentMethodId: 'pm-2', supportRequired: true });
+
+    expect(getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();
+    expect(getByText('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).')).toBeTruthy();
+    fireEvent.press(getByText('Guardar pago'));
+    expect(props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('con el soporte adjunto deja guardar', () => {
+    const { getByText, queryByText, props } = renderSheet({
+      paymentMethodId: 'pm-2',
+      supportRequired: true,
+      supportFile: { uri: 'file:///tmp/consignacion.jpg', mimeType: 'image/jpeg', name: 'consignacion.jpg' },
+    });
+
+    expect(queryByText('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).')).toBeNull();
+    fireEvent.press(getByText('Guardar pago'));
+    expect(props.onSubmit).toHaveBeenCalled();
+  });
+});
+
 describe('RegisterPaymentSheet · valor con centavos', () => {
   /** Hoja controlada como en el detalle del negocio: el padre guarda el texto que devuelve. */
   function ControlledSheet({

@@ -13,6 +13,7 @@ import {
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { hasUnsettledSyncForNegocio } from '@/lib/offline/repositories/offlineRepository';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { attachOrQueuePagoSupport, type PagoSupportAttachOutcome } from '@/lib/pagoSupportAttach';
 import type { ProntoPagoFormValues, ProntoPagoNotice } from '../../components/ProntoPagoSheet';
 import { fetchPaymentMethods, type PaymentMethodOption } from '../services/paymentMethodsService';
 import { fetchProntoPagoCuotas, registerProntoPago } from '../services/negocioPagosService';
@@ -22,6 +23,10 @@ export type ProntoPagoRegistered = {
   values: ProntoPagoFormValues;
   paidAt: string;
   paymentMethodName: string | null;
+  /** Resultado del soporte: adjuntado, en la cola del teléfono o null si no llevaba. */
+  supportOutcome: PagoSupportAttachOutcome | null;
+  /** El pronto pago quedó registrado pero el soporte no (se adjunta desde Pagos). */
+  supportWarning: string | null;
 };
 
 export const PRONTO_PAGO_NETWORK_RETRY_MESSAGE =
@@ -179,6 +184,36 @@ export function useProntoPago({ negocioId, routeStopId = null, online, fromLocal
       // Confirmado por el servidor: la hoja se cierra y la pantalla refresca,
       // imprime y avisa. Un fallo ahí ya no es un fallo del pronto pago.
       attemptRef.current = null;
+
+      // El soporte se sube después: su ruta lleva el id del pago. Si falla, el
+      // archivo se copia al teléfono y se encola (`attach_pago_support`); el
+      // pronto pago ya está confirmado y no se revierte por el soporte.
+      let supportOutcome: PagoSupportAttachOutcome | null = null;
+      let supportWarning: string | null = null;
+      if (values.supportFile) {
+        savingRef.current = true;
+        setSaving(true);
+        try {
+          supportOutcome = await attachOrQueuePagoSupport({
+            negocioId,
+            pagoId,
+            file: values.supportFile,
+            online: true,
+            queueOnAnyError: true,
+          });
+          if (supportOutcome === 'queued') {
+            supportWarning = 'El soporte se adjuntará automáticamente cuando se recupere la conexión.';
+          }
+        } catch (error) {
+          supportWarning = `No se adjuntó el soporte${
+            error instanceof Error && error.message ? `: ${error.message}` : ''
+          }. Adjúntelo desde «Pagos y recibos».`;
+        } finally {
+          savingRef.current = false;
+          setSaving(false);
+        }
+      }
+
       setVisible(false);
       try {
         await onRegistered({
@@ -186,6 +221,8 @@ export function useProntoPago({ negocioId, routeStopId = null, online, fromLocal
           values,
           paidAt: attempt.paidAt,
           paymentMethodName: paymentMethods.find((method) => method.id === values.paymentMethodId)?.name ?? null,
+          supportOutcome,
+          supportWarning,
         });
       } catch (error) {
         console.warn('[pronto-pago] fallo posterior al registro', error);

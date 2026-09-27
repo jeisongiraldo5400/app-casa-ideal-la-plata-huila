@@ -86,3 +86,49 @@ describe('PaymentCard · anular', () => {
     expect(voidReasonFromNotes(null)).toBeNull();
   });
 });
+
+describe('PaymentCard · adjuntar soporte después', () => {
+  const sinSoporte: PaymentRow = { ...abono, support_path: null };
+
+  it('sin handler no ofrece «Adjuntar» (como antes)', () => {
+    const { queryByLabelText, getByText } = renderCard(sinSoporte);
+    expect(queryByLabelText(/Adjuntar soporte/)).toBeNull();
+    expect(getByText('Soporte: Sin adjunto')).toBeTruthy();
+  });
+
+  it('con método que lo exige lo destaca y abre el adjunto', () => {
+    const onAttachSupport = jest.fn();
+    const { getByText, getByLabelText } = render(
+      <PaymentCard
+        pago={sinSoporte}
+        onShare={jest.fn()}
+        onPrint={jest.fn()}
+        supportState="required_missing"
+        onAttachSupport={onAttachSupport}
+      />
+    );
+    expect(getByText('Soporte: Falta (obligatorio para este método)')).toBeTruthy();
+    fireEvent.press(getByLabelText('Adjuntar soporte obligatorio del pago'));
+    expect(onAttachSupport).toHaveBeenCalledTimes(1);
+  });
+
+  it('en cola del teléfono dice que está pendiente de subir', () => {
+    const { getByText } = render(
+      <PaymentCard pago={sinSoporte} onShare={jest.fn()} onPrint={jest.fn()} supportState="queued" />
+    );
+    expect(getByText('Soporte: Pendiente de subir')).toBeTruthy();
+  });
+
+  it('un pago anulado o con soporte no ofrece «Adjuntar»', () => {
+    for (const pago of [
+      { ...sinSoporte, receipt_status: 'anulado' },
+      { ...abono, support_path: 'n/p1.jpg', support_file_name: 'recibo.jpg' },
+    ]) {
+      const { queryByLabelText, unmount } = render(
+        <PaymentCard pago={pago} onShare={jest.fn()} onPrint={jest.fn()} supportState="missing" onAttachSupport={jest.fn()} />
+      );
+      expect(queryByLabelText(/Adjuntar soporte/)).toBeNull();
+      unmount();
+    }
+  });
+});

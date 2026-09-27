@@ -4,7 +4,7 @@ import { createIdempotencyKey } from '@/lib/idempotency';
 import { MOBILE_PAYMENT_SITE } from '@/lib/paymentSite';
 import { normalizePagoAmountForServer } from '@/lib/negocios/registerPagoRpc';
 import type { Municipio } from '@/lib/cartera/carteraService';
-import type { CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
+import type { CarteraOwnScope, CarteraPageQuery, CarteraRow } from '@/lib/cartera/types';
 import type { CollectionRoute, CollectionRouteSummary } from '@/lib/collection-routes/types';
 import type { CustomerWithNegocios } from '@/lib/customers/customerNegocios';
 import {
@@ -39,6 +39,7 @@ import {
   applyPagoToCuotas,
   emptyCarteraDashboard,
   filterCarteraCuotas,
+  inOwnCartera,
   searchCustomersLocal,
   sortCarteraCuotas,
   summarizeCarteraFromCuotas,
@@ -88,6 +89,7 @@ import {
   persistPagoSupportFile,
 } from '../security/localFiles';
 import { isNetworkError } from '../security/sessionPolicy';
+import { pagoSupportQueueTarget } from '@/lib/pagoSupportRules';
 
 export function canUseLocalDb() {
   return isDatabaseOpen();
@@ -727,9 +729,20 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
   };
 }
 
-export async function fetchCarteraDashboardFromLocal() {
+/**
+ * Tablero de cartera sin señal. `ownScope` (recaudador no admin): los totales
+ * son de su propia cartera, nunca de todo lo descargado (20261125120000).
+ */
+export async function fetchCarteraDashboardFromLocal(ownScope?: CarteraOwnScope | null) {
   if (!canUseLocalDb()) return null;
-  const cuotas = await getDatabase().get<NegocioCuota>('negocio_cuotas').query().fetch();
+  const database = getDatabase();
+  const allCuotas = await database.get<NegocioCuota>('negocio_cuotas').query().fetch();
+  let cuotas = allCuotas;
+  if (ownScope) {
+    const negocios = await database.get<Negocio>('negocios').query().fetch();
+    const own = new Set(negocios.filter((row) => inOwnCartera(row, ownScope)).map((row) => row.id));
+    cuotas = allCuotas.filter((cuota) => own.has(cuota.negocioId));
+  }
   const summary = summarizeCarteraFromCuotas(
     cuotas.map((cuota) => ({
       id: cuota.id,
@@ -759,9 +772,18 @@ export async function fetchCarteraFromLocal(
     fetchProfileNamesFromLocal(),
     loadDiscardedNegocioIds(database),
   ]);
-  // Las cuotas de un negocio descartado por el usuario no cuentan en la cartera.
-  const cuotas = discarded.size ? allCuotas.filter((cuota) => !discarded.has(cuota.negocioId)) : allCuotas;
   const negocioById = new Map(negocios.map((row) => [row.id, row]));
+  // Recaudador no admin sin término: sólo su propia cartera, como el servidor
+  // (20261125120000). Buscando, cualquier negocio (lo necesita para cobrarlo).
+  const ownScope = params.ownScope && !(params.search || '').trim() ? params.ownScope : null;
+  // Las cuotas de un negocio descartado por el usuario no cuentan en la cartera.
+  const cuotas =
+    discarded.size || ownScope
+      ? allCuotas.filter(
+          (cuota) =>
+            !discarded.has(cuota.negocioId) && (!ownScope || inOwnCartera(negocioById.get(cuota.negocioId), ownScope))
+        )
+      : allCuotas;
   const customerById = new Map(customers.map((row) => [row.id, row]));
   // Métodos de pago con abonos vigentes por negocio: el RPC resuelve así el
   // filtro porque los abonos son FIFO y no quedan atados a una cuota.
@@ -841,14 +863,14 @@ export async function fetchMunicipiosFromLocal(): Promise<Municipio[] | null> {
     .map((row) => ({ id: row.id, nombre: row.nombre }));
 }
 
-export type LocalPaymentMethod = { id: string; name: string };
+export type LocalPaymentMethod = { id: string; name: string; requiresSupport: boolean };
 
 /** Métodos de pago descargados; `null` si no hay base local disponible. */
 export async function fetchPaymentMethodsFromLocal(): Promise<LocalPaymentMethod[] | null> {
   if (!canUseLocalDb()) return null;
   const rows = await getDatabase().get<CatalogPaymentMethod>('catalog_payment_methods').query().fetch();
   return rows
-    .map((row) => ({ id: row.id, name: row.name }))
+    .map((row) => ({ id: row.id, name: row.name, requiresSupport: row.requiresSupport === true }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -890,9 +912,17 @@ export async function registerPagoOffline(input: {
   idempotencyKey?: string | null;
   routeStopId?: string | null;
   supportFile?: PagoSupportLocalFile | null;
+  /**
+   * El método exige soporte (`payment_methods.requires_support`): sin archivo
+   * no se guarda el pago, y el archivo se copia al teléfono antes de guardarlo.
+   */
+  supportRequired?: boolean;
   /** Nombre del usuario que registra el pago (para mostrarlo sin red). */
   registeredBy?: string | null;
 }) {
+  if (input.supportRequired && !input.supportFile) {
+    throw new Error('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).');
+  }
   // A centavos, igual que el cobro con red: un entero no cambia (ni el hash de
   // idempotencia) y un valor con decimales no arrastra ruido de coma flotante.
   const amount = normalizePagoAmountForServer(input.amount);
@@ -966,6 +996,18 @@ export async function registerPagoOffline(input: {
   const cuotaById = new Map(cuotas.map((row) => [row.id, row]));
   const nowIso = new Date().toISOString();
 
+  // Con soporte obligatorio, el archivo se copia al almacenamiento de la app
+  // ANTES de guardar el pago: si la copia falla, el cobro no se guarda y el
+  // usuario puede reintentar. Así no queda un pago de consignación sin soporte.
+  const persistedSupportUri =
+    input.supportRequired && input.supportFile
+      ? await persistPagoSupportFile(input.supportFile.uri, createIdempotencyKey(), input.supportFile.name)
+      : null;
+  const discardPersistedSupport = async (error: unknown): Promise<never> => {
+    if (persistedSupportUri) await deleteLocalPagoSupportFile(persistedSupportUri);
+    throw error;
+  };
+
   await database.write(async () => {
     const operations: Model[] = [
       database.get<NegocioPago>('negocio_pagos').prepareCreate((record) => {
@@ -1031,7 +1073,7 @@ export async function registerPagoOffline(input: {
     }
     operations.push(prepareOutboxRecord(database, paymentCommandType, paymentPayload, idempotencyKey));
     await database.batch(...operations);
-  });
+  }).catch(discardPersistedSupport);
 
   let supportWarning: string | null = null;
   if (input.supportFile) {
@@ -1042,6 +1084,7 @@ export async function registerPagoOffline(input: {
         pagoServerId: null,
         file: input.supportFile,
         lane,
+        persistedUri: persistedSupportUri,
       });
     } catch (error) {
       supportWarning =
@@ -1102,14 +1145,13 @@ export async function queuePagoSupportUpload(input: {
   file: PagoSupportLocalFile;
   /** Carril del pago al que pertenece; garantiza que se suba después del pago. */
   lane?: string;
+  /** Copia local ya hecha (soporte obligatorio: se copia antes de guardar el pago). */
+  persistedUri?: string | null;
 }) {
   const database = getDatabase();
-  const fileLocalId = createIdempotencyKey();
-  const localUri = await persistPagoSupportFile(
-    input.file.uri,
-    fileLocalId,
-    input.file.name
-  );
+  const localUri =
+    input.persistedUri ||
+    (await persistPagoSupportFile(input.file.uri, createIdempotencyKey(), input.file.name));
 
   let upload: FileUpload;
   try {
@@ -1144,6 +1186,80 @@ export async function queuePagoSupportUpload(input: {
   void refreshPendingCount();
   void runSync('mutation');
   return upload;
+}
+
+/**
+ * Estado local del soporte de los pagos de un negocio: qué pagos tienen un
+ * archivo esperando subir y cuáles solo existen en el teléfono (sin enviar).
+ * Sin base local devuelve conjuntos vacíos.
+ */
+export async function fetchPagoSupportLocalState(negocioId: string): Promise<{
+  queuedPagoIds: Set<string>;
+  localPagoIds: Set<string>;
+}> {
+  const queuedPagoIds = new Set<string>();
+  const localPagoIds = new Set<string>();
+  if (!canUseLocalDb()) return { queuedPagoIds, localPagoIds };
+  const database = getDatabase();
+  const [uploads, pagos] = await Promise.all([
+    database
+      .get<FileUpload>('file_uploads')
+      .query(Q.where('negocio_id', negocioId), Q.where('status', Q.notIn(['done', 'failed'])))
+      .fetch(),
+    database
+      .get<NegocioPago>('negocio_pagos')
+      .query(Q.where('negocio_id', negocioId), Q.where('sync_status', 'pending'))
+      .fetch(),
+  ]);
+  for (const upload of uploads) {
+    if (upload.pagoLocalId) queuedPagoIds.add(upload.pagoLocalId);
+    if (upload.pagoServerId) queuedPagoIds.add(upload.pagoServerId);
+  }
+  for (const pago of pagos) localPagoIds.add(pago.id);
+  return { queuedPagoIds, localPagoIds };
+}
+
+/**
+ * «Adjuntar después» sin señal: encola el soporte de un pago YA registrado
+ * (del servidor o aún en la cola del teléfono). El archivo se copia al
+ * almacenamiento de la app y el comando `attach_pago_support` va en el carril
+ * del pago cuando este aún no se ha enviado.
+ */
+export async function queueSupportForExistingPago(input: {
+  negocioId: string;
+  pagoId: string;
+  file: PagoSupportLocalFile;
+}) {
+  if (!canUseLocalDb()) {
+    throw new Error('Sin conexión y sin datos descargados: adjunte el soporte cuando vuelva la señal.');
+  }
+  const { queuedPagoIds } = await fetchPagoSupportLocalState(input.negocioId);
+  if (queuedPagoIds.has(input.pagoId)) {
+    throw new Error('Este pago ya tiene un soporte pendiente de subir.');
+  }
+  const database = getDatabase();
+  const localPago = await findOrNull<NegocioPago>('negocio_pagos', input.pagoId);
+  const commands = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(
+      Q.where('type', Q.oneOf(['register_pago', 'register_route_pago'])),
+      Q.where('status', Q.oneOf([...UNSETTLED_OUTBOX_STATUSES]))
+    )
+    .fetch();
+  const target = pagoSupportQueueTarget({
+    pagoId: input.pagoId,
+    localPago: localPago ? { rowSyncStatus: localPago.rowSyncStatus } : null,
+    pagoCommands: commands.map((item) => ({
+      payload: parseOutboxPayload<{ pagoLocalId?: unknown; lane?: unknown }>(item),
+    })),
+  });
+  return queuePagoSupportUpload({
+    negocioId: input.negocioId,
+    pagoLocalId: target.pagoLocalId,
+    pagoServerId: target.pagoServerId,
+    file: input.file,
+    lane: target.lane,
+  });
 }
 
 export async function fetchRoutesFromLocal(): Promise<CollectionRouteSummary[] | null> {
