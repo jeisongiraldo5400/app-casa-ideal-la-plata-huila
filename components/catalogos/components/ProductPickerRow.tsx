@@ -11,9 +11,11 @@ interface ProductPickerRowProps {
   selected: boolean;
   pending: boolean;
   onToggle: () => void;
+  /** Abre la foto en grande; tocar la miniatura no cambia la selección. */
+  onPreview?: () => void;
 }
 
-export function ProductPickerRow({ item, selected, pending, onToggle }: ProductPickerRowProps) {
+export function ProductPickerRow({ item, selected, pending, onToggle, onPreview }: ProductPickerRowProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const meta = [item.categoryName, item.brandName].filter(Boolean).join(' · ');
@@ -24,7 +26,13 @@ export function ProductPickerRow({ item, selected, pending, onToggle }: ProductP
       disabled={pending}
       accessibilityLabel={`${item.displayName}${item.stockQuantity === 0 ? ', agotado' : ''}, ${selected ? 'en el catálogo' : 'no seleccionado'}`}>
       <View style={styles.row}>
-        <CatalogProductThumb uri={item.coverImageUrl} size={64} recyclingKey={item.productId} />
+        <CatalogProductThumb
+          uri={item.coverImageUrl}
+          size={64}
+          recyclingKey={item.productId}
+          accessibilityLabel={item.displayName}
+          onPress={onPreview}
+        />
         <View style={styles.copy}>
           <Text style={[styles.name, { color: colors.text.primary }]} numberOfLines={2}>
             {item.displayName}

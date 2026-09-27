@@ -6,6 +6,8 @@ export { useShareLinkFlow } from './infrastructure/hooks/useShareLinkFlow';
 export { CatalogListCard } from './components/CatalogListCard';
 export { CatalogHeaderCard } from './components/CatalogHeaderCard';
 export { CatalogProductThumb } from './components/CatalogProductThumb';
+export { CatalogImageViewer } from './components/CatalogImageViewer';
+export type { ImagePreviewTarget } from './infrastructure/hooks/useProductGallery';
 export { CatalogSectionsSummary } from './components/CatalogSectionsSummary';
 export { CatalogTextsSheet } from './components/CatalogTextsSheet';
 export { CategoryFilterField } from './components/CategoryFilterField';

@@ -9,6 +9,8 @@ import { pluralize } from '@/lib/catalogos/labels';
 import { summarizeSectionProducts } from '@/lib/catalogos/sectionCounts';
 import type { CatalogSection } from '@/lib/catalogos/types';
 import type { CategoryPreviewLookup, ProductLookup } from '../infrastructure/hooks/useCatalogDetail';
+import type { ImagePreviewTarget } from '../infrastructure/hooks/useProductGallery';
+import { CatalogImageViewer } from './CatalogImageViewer';
 import { CatalogProductThumb } from './CatalogProductThumb';
 
 interface CatalogSectionsSummaryProps {
@@ -26,6 +28,7 @@ export function CatalogSectionsSummary({ sections, products, categories }: Catal
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const firstSectionId = sections[0]?.id ?? null;
+  const [preview, setPreview] = useState<ImagePreviewTarget | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(firstSectionId);
   // Las categorías llegan asíncronas y cambian al abrir otro catálogo. Al
   // seguir el id de la primera (y no la longitud) solo se reabre cuando de
@@ -73,7 +76,14 @@ export function CatalogSectionsSummary({ sections, products, categories }: Catal
                 {visible.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                     {visible.map((product) => (
-                      <CatalogProductThumb key={product.productId} uri={product.coverImageUrl} size={64} recyclingKey={product.productId} accessibilityLabel={product.displayName} />
+                      <CatalogProductThumb
+                        key={product.productId}
+                        uri={product.coverImageUrl}
+                        size={64}
+                        recyclingKey={product.productId}
+                        accessibilityLabel={product.displayName}
+                        onPress={() => setPreview({ title: product.displayName, coverUrl: product.coverImageUrl, slug: product.slug })}
+                      />
                     ))}
                     {hidden > 0 ? <View style={[styles.more, { backgroundColor: colors.surface.sunken }]}><Text style={[styles.moreText, { color: colors.text.secondary }]}>+{hidden}</Text></View> : null}
                   </ScrollView>
@@ -89,6 +99,7 @@ export function CatalogSectionsSummary({ sections, products, categories }: Catal
           </Card>
         );
       })}
+      <CatalogImageViewer target={preview} onClose={() => setPreview(null)} />
     </View>
   );
 }

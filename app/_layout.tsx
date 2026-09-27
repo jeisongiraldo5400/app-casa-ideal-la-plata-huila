@@ -147,6 +147,7 @@ function RootLayoutNav() {
         <Stack.Screen name="catalogo/[id]" options={catalogoScreenOptions} />
         <Stack.Screen name="catalogo/[id]/productos" options={catalogoScreenOptions} />
         <Stack.Screen name="catalogo/[id]/compartir" options={catalogoScreenOptions} />
+        <Stack.Screen name="catalogo/enviar-producto" options={catalogoScreenOptions} />
         <Stack.Screen name="ruta-cobros/[id]" options={{ headerShown: false, animation: detailAnimation }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>

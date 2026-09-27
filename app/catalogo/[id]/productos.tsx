@@ -5,7 +5,7 @@ import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { ActionBar, BackButton, Button, Pagination, ScreenErrorBoundary, ScreenState, SearchField } from '@/components/ui';
-import { CategoryFilterField, ProductPickerRow, useCatalogDetail, useProductPicker } from '@/components/catalogos';
+import { CatalogImageViewer, CategoryFilterField, ProductPickerRow, useCatalogDetail, useProductPicker, type ImagePreviewTarget } from '@/components/catalogos';
 import type { CatalogSection } from '@/lib/catalogos/types';
 import { pluralize } from '@/lib/catalogos/labels';
 
@@ -73,6 +73,7 @@ function ProductPicker({ catalogId, sections, canShare }: ProductPickerProps) {
   const colors = getColors(isDark);
   const picker = useProductPicker(catalogId, sections);
   const [finishing, setFinishing] = useState(false);
+  const [preview, setPreview] = useState<ImagePreviewTarget | null>(null);
   const screenOptions = { title: 'Productos', headerLeft: () => <BackButton /> };
   const categoryCount = sections.reduce((total, section) => total + section.items.filter((item) => item.itemType === 'category').length, 0);
   const selectedCount = picker.selected.size;
@@ -106,6 +107,7 @@ function ProductPicker({ catalogId, sections, canShare }: ProductPickerProps) {
             selected={picker.selected.has(item.productId)}
             pending={picker.pendingIds.has(item.productId)}
             onToggle={() => void picker.toggle(item)}
+            onPreview={() => setPreview({ title: item.displayName, coverUrl: item.coverImageUrl, slug: item.slug })}
           />
         ))}
       </View>
@@ -137,6 +139,7 @@ function ProductPicker({ catalogId, sections, canShare }: ProductPickerProps) {
           style={styles.primary}
         />
       </ActionBar>
+      <CatalogImageViewer target={preview} onClose={() => setPreview(null)} />
     </View>
   );
 }

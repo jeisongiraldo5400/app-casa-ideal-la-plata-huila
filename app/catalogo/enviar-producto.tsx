@@ -6,11 +6,13 @@ import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { BackButton, Card, Pagination, ScreenErrorBoundary, ScreenState, SearchField } from '@/components/ui';
 import {
+  CatalogImageViewer,
   ProductPickerRow,
   ShareLinkCreateForm,
   ShareLinkResultSheet,
   useCatalogAccess,
   useCatalogosStore,
+  type ImagePreviewTarget,
 } from '@/components/catalogos';
 import { usePublishedProductSearch } from '@/components/catalogos/infrastructure/hooks/usePublishedProductSearch';
 import type { CreateShareLinkRequest, ShareLinkResult } from '@/components/catalogos/infrastructure/hooks/useShareLinkFlow';
@@ -50,6 +52,7 @@ function EnviarProductoInner() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<ShareLinkResult | null>(null);
   const [publicTitle, setPublicTitle] = useState('');
+  const [preview, setPreview] = useState<ImagePreviewTarget | null>(null);
 
   const screenOptions = { title: 'Enviar un producto', headerLeft: () => <BackButton /> };
   const siteConfigured = catalogSiteUrl() !== null;
@@ -133,6 +136,7 @@ function EnviarProductoInner() {
                 selected={chosen?.productId === item.productId}
                 pending={false}
                 onToggle={() => setChosen((current) => (current?.productId === item.productId ? null : item))}
+                onPreview={() => setPreview({ title: item.displayName, coverUrl: item.coverImageUrl, slug: item.slug })}
               />
             ))}
             <Pagination
@@ -163,6 +167,7 @@ function EnviarProductoInner() {
       </ScrollView>
 
       <ShareLinkResultSheet result={result} publicTitle={publicTitle} onClose={() => setResult(null)} />
+      <CatalogImageViewer target={preview} onClose={() => setPreview(null)} />
     </View>
   );
 }
