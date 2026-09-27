@@ -39,6 +39,15 @@ describe('buildNegocioReceiptHtml', () => {
     expect(html).toContain('Saldo pendiente');
   });
 
+  it('muestra la cédula del cliente debajo del nombre y la omite si no hay', () => {
+    const html = buildNegocioReceiptHtml({ ...sample, customerIdNumber: '1.061.111' });
+    expect(html).toContain(
+      '<span>Cliente</span><strong>Cliente</strong></div>\n  <div class="field wide"><span>C.C.</span><strong>1.061.111</strong>'
+    );
+    expect(buildNegocioReceiptHtml(sample)).not.toContain('C.C.');
+    expect(buildNegocioReceiptHtml({ ...sample, customerIdNumber: ' ' })).not.toContain('C.C.');
+  });
+
   it('marca el recibo anulado con sello y aviso', () => {
     const html = buildNegocioReceiptHtml({ ...sample, status: 'anulado' });
 

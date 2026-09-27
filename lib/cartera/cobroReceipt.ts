@@ -29,6 +29,7 @@ export function cobroReceiptData(row: MisCobroRow): NegocioReceiptData | null {
     physicalReceiptNumber: row.receipt_number,
     negocioNumero: row.negocio_numero,
     customerName: row.customer_name,
+    customerIdNumber: row.customer_id_number ?? null,
     registeredBy: row.created_by_name ?? null,
     paymentMethodName: row.payment_method_name,
     paymentSiteName: paymentSiteLabel(row.payment_site),

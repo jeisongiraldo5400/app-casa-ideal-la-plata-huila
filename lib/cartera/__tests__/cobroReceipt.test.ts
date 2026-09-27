@@ -34,6 +34,11 @@ describe('cobroReceiptData', () => {
     expect(cobroReceiptData({ ...row, remaining_after_payment: undefined })?.remainingBalance).toBe(20_000);
   });
 
+  it('lleva la cédula del cliente que ya trae la fila', () => {
+    expect(cobroReceiptData({ ...row, customer_id_number: '1.061.111' })?.customerIdNumber).toBe('1.061.111');
+    expect(cobroReceiptData({ ...row, customer_id_number: null })?.customerIdNumber).toBeNull();
+  });
+
   it('un pago del teléfono o sin saldo no tiene recibo', () => {
     expect(cobroReceiptData({ ...row, local_state: 'pendiente' })).toBeNull();
     expect(cobroReceiptData({ ...row, remaining_balance: null, remaining_after_payment: null })).toBeNull();

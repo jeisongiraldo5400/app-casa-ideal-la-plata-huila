@@ -12,6 +12,8 @@ export type NegocioReceiptData = {
   physicalReceiptNumber?: string | null;
   negocioNumero: number;
   customerName: string;
+  /** Cédula del cliente (`customers.id_number`); sin valor no se imprime la línea. */
+  customerIdNumber?: string | null;
   /** Vendedor del negocio (compatibilidad); si no hay `registeredBy` se usa como autor. */
   sellerName?: string | null;
   /** Usuario que registró el pago. */
@@ -69,6 +71,12 @@ export function prontoPagoReceiptAmounts(
     discount,
     amount,
   };
+}
+
+/** Cédula del cliente tal como se guardó, o null si no hay (la línea se omite). */
+export function receiptCustomerIdNumber(data: Pick<NegocioReceiptData, 'customerIdNumber'>) {
+  const value = String(data.customerIdNumber ?? '').trim();
+  return value || null;
 }
 
 export function receiptRegisteredBy(data: Pick<NegocioReceiptData, 'registeredBy' | 'sellerName'>) {
@@ -180,6 +188,9 @@ export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
   ${field('Descuento pronto pago', esc(formatCOP(pronto.discount)))}${discountReason ? `
   ${field('Motivo del descuento', esc(discountReason), true)}` : ''}`
     : '';
+  const customerIdNumber = receiptCustomerIdNumber(data);
+  const customerIdField = customerIdNumber ? `
+  ${field('C.C.', esc(customerIdNumber), true)}` : '';
   const pendingConfirmation = isPendingConfirmationReceipt(data);
   // Aviso de pago sin confirmar. Reutiliza `.balance` (recuadro ya existente):
   // RECEIPT_CSS no se toca porque debe seguir idéntico al del web.
@@ -207,7 +218,7 @@ ${pendingBanner}
 <section class="fields">
   ${field('Negocio', esc(formatNegocioCodigo(data.negocioNumero)))}
   ${field('Fecha y hora de pago', esc(formatPaymentDateTime(data.paidAt)))}
-  ${field('Cliente', esc(data.customerName), true)}${prontoPagoFields}
+  ${field('Cliente', esc(data.customerName), true)}${customerIdField}${prontoPagoFields}
   ${field('Método de pago', esc(data.paymentMethodName) || 'No registrado')}
   ${field('Sitio de pago', esc(data.paymentSiteName) || 'No registrado')}
   ${field('Recibo físico', esc(data.physicalReceiptNumber) || 'No aplica')}

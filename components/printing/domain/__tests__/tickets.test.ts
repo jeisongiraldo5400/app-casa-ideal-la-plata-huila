@@ -141,6 +141,19 @@ describe('buildPaymentTicket', () => {
     expect(texts).toContain('Sitio de pago: No registrado');
   });
 
+  it('imprime la cédula debajo del cliente y la omite si no hay', () => {
+    const lines = (data: typeof receipt) =>
+      buildPaymentTicket(data)
+        .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+        .map((line) => line.text);
+    const withId = lines({ ...receipt, customerIdNumber: '1.061.111.222' });
+    const clienteAt = withId.findIndex((text) => text.startsWith('Cliente:'));
+    expect(withId[clienteAt + 1]).toBe('C.C.: 1.061.111.222');
+    expect(withId.every((text) => text.length <= 32)).toBe(true);
+    expect(lines({ ...receipt, customerIdNumber: '  ' }).join('\n')).not.toContain('C.C.');
+    expect(lines(receipt).join('\n')).not.toContain('C.C.');
+  });
+
   it('marca recibos anulados', () => {
     const texts = buildPaymentTicket({ ...receipt, status: 'anulado' })
       .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')

@@ -5,6 +5,7 @@ import {
   isPendingConfirmationReceipt,
   isProntoPagoReceipt,
   prontoPagoReceiptAmounts,
+  receiptCustomerIdNumber,
   receiptRegisteredBy,
   type NegocioReceiptData,
 } from '@/lib/negocioReceiptHtml';
@@ -22,6 +23,8 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
   const pronto = prontoPagoReceiptAmounts(data);
   // Motivo opcional: sin motivo no se imprime la línea (igual que el recibo PDF).
   const discountReason = String(data.discountReason ?? '').trim();
+  // Sin cédula registrada se omite la línea (igual que el recibo PDF).
+  const customerIdNumber = receiptCustomerIdNumber(data);
   const lines: TicketLine[] = [
     { type: 'text', text: 'CASA IDEAL', align: 'center', bold: true, size: 2 },
     { type: 'text', text: prontoPago ? 'Recibo de pago - Pronto pago' : 'Recibo de pago', align: 'center' },
@@ -46,6 +49,7 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...textLines(`Recibo: ${data.receiptNumber}`),
     ...textLines(`Negocio: ${formatNegocioCodigo(data.negocioNumero)}`),
     ...textLines(`Cliente: ${data.customerName}`),
+    ...(customerIdNumber ? textLines(`C.C.: ${customerIdNumber}`) : []),
     ...textLines(`Fecha y hora: ${formatPaymentDateTime(data.paidAt)}`),
     ...textLines(`Recibo fisico: ${data.physicalReceiptNumber || 'No aplica'}`),
     // Mismos campos y textos por defecto que el recibo PDF (negocioReceiptHtml).
