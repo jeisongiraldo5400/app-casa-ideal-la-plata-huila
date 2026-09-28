@@ -15,18 +15,25 @@ export default function CatalogosEquipoScreen() {
   if (!CATALOGOS_HABILITADOS) return <Redirect href="/(tabs)" />;
   return (
     <ScreenErrorBoundary screen="Catálogos del equipo">
-      <CatalogosEquipoInner />
+      <CatalogosEquipoGuard />
     </ScreenErrorBoundary>
   );
+}
+
+/** Solo administradores (decisión del usuario, 2026-09-28); los demás vuelven a Catálogos. */
+function CatalogosEquipoGuard() {
+  const access = useCatalogAccess();
+  if (access.loading) return null;
+  if (!access.canSeeTeamCatalogs) return <Redirect href={'/(tabs)/catalogos' as never} />;
+  return <CatalogosEquipoInner />;
 }
 
 /**
  * «Catálogos del equipo»: lo que crearon OTRAS personas, aparte de la pestaña
  * Catálogos (que solo muestra lo propio) y agrupado por quien lo creó.
  *
- * Qué aparece lo decide la RLS: al administrador, todo; a los demás, lo que un
- * administrador publicó al equipo o alguien compartió con ellos. Los envíos de
- * un producto de otras personas no se listan aquí (se ven en el panel web).
+ * Solo para administradores. Los envíos de un producto de otras personas no
+ * se listan aquí (se ven en el panel web).
  */
 function CatalogosEquipoInner() {
   const router = useRouter();

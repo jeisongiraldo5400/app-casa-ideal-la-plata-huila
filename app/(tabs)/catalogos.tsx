@@ -131,9 +131,10 @@ function CatalogosScreenInner() {
           onPress={() => router.push('/catalogo/enviar-producto' as never)}
         />
       ) : null}
-      {/* Lo de otras personas, en su propia pantalla: en la misma lista se
-          confundía lo que hace uno con lo que hacen los demás. */}
-      {others.length > 0 ? (
+      {/* Lo de otras personas, en su propia pantalla y solo para
+          administradores: en la misma lista se confundía lo que hace uno con
+          lo que hacen los demás. */}
+      {access.canSeeTeamCatalogs && others.length > 0 ? (
         <ActionCard
           compact
           title="Catálogos del equipo"

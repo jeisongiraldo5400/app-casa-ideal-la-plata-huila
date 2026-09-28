@@ -14,13 +14,20 @@ describe('deriveCatalogAccess', () => {
   it.each([CATALOG_ROLES.SYSTEM_ADMIN, CATALOG_ROLES.ADMIN, CATALOG_ROLES.EDITOR, CATALOG_ROLES.SELLER])(
     'da las mismas capacidades a %s (en móvil todos crean y comparten lo suyo)',
     (role) => {
-      expect(deriveCatalogAccess([role])).toEqual({
+      expect(deriveCatalogAccess([role])).toMatchObject({
         canAccessCatalogs: true,
         canManageCatalog: true,
         canCreateShareLink: true,
       });
     }
   );
+
+  it('«Catálogos del equipo» solo para administradores', () => {
+    expect(deriveCatalogAccess([CATALOG_ROLES.SYSTEM_ADMIN]).canSeeTeamCatalogs).toBe(true);
+    expect(deriveCatalogAccess([CATALOG_ROLES.ADMIN]).canSeeTeamCatalogs).toBe(true);
+    expect(deriveCatalogAccess([CATALOG_ROLES.EDITOR]).canSeeTeamCatalogs).toBe(false);
+    expect(deriveCatalogAccess([CATALOG_ROLES.SELLER, 'vendedor']).canSeeTeamCatalogs).toBe(false);
+  });
 
   it('ignora mayúsculas y espacios en el nombre del rol', () => {
     expect(hasCatalogRole([' Catalog_Seller '])).toBe(true);

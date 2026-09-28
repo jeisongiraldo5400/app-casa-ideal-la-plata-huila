@@ -20,18 +20,22 @@ export type CatalogAccess = {
   canManageCatalog: boolean;
   /** Genera y reemite enlaces (permiso `catalog.catalogs.share` o `catalog.catalogs.publish`). */
   canCreateShareLink: boolean;
+  /** Ve «Catálogos del equipo» (lo de otras personas): solo `admin` y `catalog_admin` (2026-09-28). */
+  canSeeTeamCatalogs: boolean;
 };
 
 export const NO_CATALOG_ACCESS: CatalogAccess = {
   canAccessCatalogs: false,
   canManageCatalog: false,
   canCreateShareLink: false,
+  canSeeTeamCatalogs: false,
 };
 
 export const FULL_CATALOG_ACCESS: CatalogAccess = {
   canAccessCatalogs: true,
   canManageCatalog: true,
   canCreateShareLink: true,
+  canSeeTeamCatalogs: false,
 };
 
 export function hasCatalogRole(roleNames: readonly string[]): boolean {
@@ -40,5 +44,8 @@ export function hasCatalogRole(roleNames: readonly string[]): boolean {
 }
 
 export function deriveCatalogAccess(roleNames: readonly string[]): CatalogAccess {
-  return hasCatalogRole(roleNames) ? FULL_CATALOG_ACCESS : NO_CATALOG_ACCESS;
+  if (!hasCatalogRole(roleNames)) return NO_CATALOG_ACCESS;
+  const roles = new Set(roleNames.map((role) => role.trim().toLowerCase()));
+  const isAdministrator = roles.has(CATALOG_ROLES.SYSTEM_ADMIN) || roles.has(CATALOG_ROLES.ADMIN);
+  return { ...FULL_CATALOG_ACCESS, canSeeTeamCatalogs: isAdministrator };
 }
