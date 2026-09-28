@@ -11,6 +11,7 @@ import {
   isPorEntregarACaja,
   porEntregarACajaFilters,
   methodTotalLabel,
+  misCobroCuotaLabel,
   totalsByMethod,
 } from '../misCobros';
 
@@ -249,5 +250,21 @@ describe('«Cobros» abre en Hoy y atajo «Por entregar a caja»', () => {
     expect(isPorEntregarACaja({ ...filters, from: '2026-09-01' }, [EFECTIVO])).toBe(false);
     expect(isPorEntregarACaja({ ...filters, paymentMethodIds: [EFECTIVO, CONSIGNACION] }, [EFECTIVO])).toBe(false);
     expect(isPorEntregarACaja(filters, null)).toBe(false);
+  });
+});
+
+describe('misCobroCuotaLabel', () => {
+  it('usa la cuota que manda el servidor', () => {
+    expect(misCobroCuotaLabel(pago({ cuota_label: 'Inicial + Cuota 1 (parcial)' }))).toBe('Inicial + Cuota 1 (parcial)');
+    expect(misCobroCuotaLabel(pago({ payment_kind: 'pronto_pago', cuota_label: 'Pronto pago · cuotas 3–6' }))).toBe(
+      'Pronto pago · cuotas 3–6'
+    );
+  });
+
+  it('sin el dato (sin señal o servidor anterior) muestra lo de antes', () => {
+    expect(misCobroCuotaLabel(pago({}))).toBe('Abono a la cuota más antigua');
+    expect(misCobroCuotaLabel(pago({ cuota_label: '  ', installment_number: 0 }))).toBe('Cuota inicial');
+    expect(misCobroCuotaLabel(pago({ installment_number: 2 }))).toBe('Cuota 2');
+    expect(misCobroCuotaLabel(pago({ payment_kind: 'pronto_pago' }))).toBe('Todas (pronto pago)');
   });
 });

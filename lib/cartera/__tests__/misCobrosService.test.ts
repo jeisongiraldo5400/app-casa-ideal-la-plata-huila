@@ -173,6 +173,16 @@ describe('fetchMisCobros', () => {
     expect(page.closedNegociosMissing).toBeFalsy();
   });
 
+  it('con señal trae a qué cuota fue el pago; sin el dato queda null (20261231190000)', async () => {
+    rpc.mockResolvedValue({
+      data: { ...SERVER, rows: [{ ...SERVER.rows[0], cuota_label: 'Cuotas 1–2 + Cuota 3 (parcial)' }, SERVER.rows[0]] },
+      error: null,
+    });
+    const page = await fetchMisCobros(QUERY);
+    expect(page.rows[0].cuota_label).toBe('Cuotas 1–2 + Cuota 3 (parcial)');
+    expect(page.rows[1].cuota_label).toBeNull();
+  });
+
   it('si la petición no llega por falta de red, cae a lo guardado', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
     const page = await fetchMisCobros(QUERY);

@@ -69,6 +69,7 @@ function mapServerRow(row: Record<string, unknown>): MisCobroRow {
     customer_name: String(row.customer_name ?? 'Cliente'),
     customer_id_number: (row.customer_id_number as string | null) ?? null,
     installment_number: row.installment_number == null ? null : toNumber(row.installment_number),
+    cuota_label: typeof row.cuota_label === 'string' ? row.cuota_label : null,
     paid_at: String(row.paid_at),
     amount: toNumber(row.amount),
     virtual_receipt_number: (row.virtual_receipt_number as string | null) ?? null,

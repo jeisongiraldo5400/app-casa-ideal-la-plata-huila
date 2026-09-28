@@ -24,6 +24,8 @@ export type CollectionManager = { id: string; full_name: string };
 export type ManagerPayment = {
   payment_id: string; negocio_id: string; negocio_numero: number; customer_name: string;
   installment_number: number | null; paid_at: string; amount: number;
+  /** Cuota(s) que cubrió el pago («Inicial», «Cuotas 1–2»…; 20261231190000). */
+  cuota_label?: string | null;
   virtual_receipt_number: string; receipt_number: string | null;
   receipt_status: 'emitido' | 'anulado'; created_by_name: string; remaining_balance: number;
   /** Sitio de pago crudo ('almacen' | 'app_movil'); null en los pagos anteriores. */

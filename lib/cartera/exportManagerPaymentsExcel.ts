@@ -254,7 +254,11 @@ export function buildManagerPaymentsWorkbook(options: {
       dateCell(toExcelDateSerial(payment.paid_at), DATE_TIME_FORMAT, ''),
       formatNegocioCodigo(payment.negocio_numero),
       payment.customer_name || '',
-      payment.installment_number != null ? Number(payment.installment_number) : 'Auto (FIFO)',
+      payment.cuota_label?.trim()
+        ? payment.cuota_label.trim()
+        : payment.installment_number != null
+          ? Number(payment.installment_number)
+          : 'Auto (FIFO)',
       payment.virtual_receipt_number || '',
       payment.receipt_number || '',
       receiptStatusLabel(payment.receipt_status),

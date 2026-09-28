@@ -301,6 +301,21 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     );
   });
 
+  it('la columna Cuota usa la etiqueta del servidor cuando llega (20261231190000)', async () => {
+    mockFetchManagerPayments.mockResolvedValueOnce({
+      rows: [
+        payment({ installment_number: null, cuota_label: 'Inicial + Cuota 1 (parcial)' }),
+        payment({ installment_number: null, payment_kind: 'pronto_pago', cuota_label: 'Pronto pago · cuotas 3–6' }),
+      ],
+      summary: summary(2),
+    });
+
+    await exportAndShareManagerPaymentsExcel({ manager, filters });
+
+    const rows = detailTable(writtenWorkbook()).rows;
+    expect(rows.map((row) => row.Cuota)).toEqual(['Inicial + Cuota 1 (parcial)', 'Pronto pago · cuotas 3–6']);
+  });
+
   it('si el RPC trae solo el id, resuelve el nombre con el catálogo de métodos de pago', async () => {
     mockFetchPaymentMethods.mockResolvedValueOnce([
       { id: 'm-1', name: 'Efectivo' },

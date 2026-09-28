@@ -11,6 +11,7 @@
  * red) para poder probarlo entero.
  */
 import { bogotaDateValue } from '@/lib/localDate';
+import { labelCuotaNombre } from '@/lib/negocioLabels';
 import { matchesDigits, matchesNormalized } from '@/lib/search/normalizeText';
 
 export type MisCobrosStatus = 'todos' | 'vigentes' | 'anulados';
@@ -53,6 +54,12 @@ export type MisCobroRow = {
   customer_name: string;
   customer_id_number: string | null;
   installment_number: number | null;
+  /**
+   * Cuota(s) que cubrió el pago, armada por el servidor (20261231190000):
+   * «Inicial», «Cuotas 1–2», «Cuota 3 (parcial)», «Pronto pago · cuotas 3–6».
+   * Solo en filas del servidor; sin ella se muestra lo de antes.
+   */
+  cuota_label?: string | null;
   paid_at: string;
   amount: number;
   virtual_receipt_number: string | null;
@@ -402,4 +409,19 @@ function sumCents(values: (number | null | undefined)[]): number {
 /** Suma a centavos para no arrastrar ruido de coma flotante. */
 function sumAmounts(rows: { amount: number }[]): number {
   return rows.reduce((total, row) => total + Math.round(Number(row.amount || 0) * 100), 0) / 100;
+}
+
+/**
+ * Cuota del pago: la etiqueta del servidor («Inicial», «Cuotas 1–2»…) o, sin
+ * ella (pago del teléfono o servidor anterior), lo de antes: los abonos sin
+ * cuota se aplican en orden (FIFO).
+ */
+export function misCobroCuotaLabel(
+  row: Pick<MisCobroRow, 'cuota_label' | 'installment_number' | 'payment_kind'>
+): string {
+  const serverLabel = row.cuota_label?.trim();
+  if (serverLabel) return serverLabel;
+  if (row.installment_number != null) return labelCuotaNombre(row.installment_number);
+  if (row.payment_kind === 'pronto_pago') return 'Todas (pronto pago)';
+  return 'Abono a la cuota más antigua';
 }

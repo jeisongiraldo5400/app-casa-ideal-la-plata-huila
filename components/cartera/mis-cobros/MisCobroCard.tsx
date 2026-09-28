@@ -1,24 +1,17 @@
 import { useTheme } from '@/components/theme';
 import { ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import type { MisCobroRow } from '@/lib/cartera/misCobros';
+import { misCobroCuotaLabel, type MisCobroRow } from '@/lib/cartera/misCobros';
 import { cobroReceiptData } from '@/lib/cartera/cobroReceipt';
 import { MisCobroAttachSupport } from './MisCobroAttachSupport';
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
 import { MaterialIcons } from '@expo/vector-icons';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatPaymentDateTime } from '@/lib/localDate';
-import { labelCuotaNombre, labelNegocioCodigo } from '@/lib/negocioLabels';
+import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { paymentSiteLabel } from '@/lib/paymentSite';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-
-/** Cuota del pago: los abonos sin cuota se aplican en orden (FIFO). */
-function cuotaLabel(row: MisCobroRow): string {
-  if (row.installment_number != null) return labelCuotaNombre(row.installment_number);
-  if (row.payment_kind === 'pronto_pago') return 'Todas (pronto pago)';
-  return 'Abono a la cuota más antigua';
-}
 
 /** Acciones del recibo; sin ellas la tarjeta solo abre el negocio. */
 export type MisCobroCardActions = {
@@ -65,7 +58,7 @@ export function MisCobroCard({ row, onPress, showRegisteredBy = false, actions }
         </Text>
       </View>
       <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
-        {labelNegocioCodigo(row.negocio_numero)} · {cuotaLabel(row)}
+        {labelNegocioCodigo(row.negocio_numero)} · {misCobroCuotaLabel(row)}
       </Text>
       <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={2}>
         {formatPaymentDateTime(row.paid_at)} · {method}
