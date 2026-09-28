@@ -1,16 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { Button, HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
+import { ActionCard, Button, HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { CatalogListCard, useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import {
   CATALOG_LIST_FILTERS,
   matchesCatalogListFilter,
   matchesCatalogListQuery,
   normalizeCatalogQuery,
+  splitCatalogList,
   type CatalogListFilter,
 } from '@/lib/catalogos/catalogListFilters';
 import { isOfflineError } from '@/lib/errorMessage';
@@ -35,6 +37,7 @@ function CatalogosScreenInner() {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<CatalogListFilter>('all');
+  const [quickSharesOpen, setQuickSharesOpen] = useState(false);
 
   // Al volver a la pestaña solo se recarga si pasaron 30 s o hubo cambios.
   useFocusEffect(
@@ -51,12 +54,19 @@ function CatalogosScreenInner() {
   const openCreate = () => router.navigate('/(tabs)/catalogo-create' as never);
 
   const normalizedQuery = normalizeCatalogQuery(query);
-  const filtered = useMemo(
-    () => list.filter((item) => matchesCatalogListFilter(item, filter) && matchesCatalogListQuery(item, normalizedQuery)),
-    [list, filter, normalizedQuery]
+  // Aquí solo lo propio. Lo de otras personas tiene su pantalla («Catálogos
+  // del equipo») y los envíos de un producto van plegados al final.
+  const { editions, quickShares, others } = useMemo(() => splitCatalogList(list), [list]);
+  const matches = useCallback(
+    (item: (typeof list)[number]) => matchesCatalogListFilter(item, filter) && matchesCatalogListQuery(item, normalizedQuery),
+    [filter, normalizedQuery]
   );
+  const filtered = useMemo(() => editions.filter(matches), [editions, matches]);
+  const filteredQuickShares = useMemo(() => quickShares.filter(matches), [quickShares, matches]);
   const hasFilters = filter !== 'all' || normalizedQuery.length > 0;
   const initialLoading = loading && !refreshing && list.length === 0;
+  // Abiertos si se está buscando o si no hay otra cosa que mostrar.
+  const showQuickShares = quickSharesOpen || hasFilters || filtered.length === 0;
 
   if (!access.loading && !access.canAccessCatalogs) {
     return (
@@ -101,7 +111,7 @@ function CatalogosScreenInner() {
       <ScreenState
         icon="auto-stories"
         title="Aún no hay catálogos"
-        description={access.canManageCatalog ? 'Crea el primero y compártelo con un cliente por enlace.' : 'Cuando el equipo publique catálogos aparecerán aquí.'}
+        description={access.canManageCatalog ? 'Crea el primero y compártelo con un cliente por enlace.' : 'Aquí verás los catálogos que crees.'}
         actionLabel={access.canManageCatalog ? 'Nuevo catálogo' : undefined}
         onAction={access.canManageCatalog ? openCreate : undefined}
       />
@@ -119,6 +129,18 @@ function CatalogosScreenInner() {
           subtitle="Por WhatsApp, en un paso"
           icon="send"
           onPress={() => router.push('/catalogo/enviar-producto' as never)}
+        />
+      ) : null}
+      {/* Lo de otras personas, en su propia pantalla: en la misma lista se
+          confundía lo que hace uno con lo que hacen los demás. */}
+      {others.length > 0 ? (
+        <ActionCard
+          compact
+          title="Catálogos del equipo"
+          subtitle={`${others.length} de otras personas`}
+          icon="groups"
+          tone="info"
+          onPress={() => router.push('/catalogo/equipo' as never)}
         />
       ) : null}
       <View style={styles.searchRow}>
@@ -139,9 +161,9 @@ function CatalogosScreenInner() {
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {!initialLoading && hasFilters && list.length > 0 ? (
+      {!initialLoading && hasFilters && editions.length > 0 ? (
         <Text style={[styles.count, { color: colors.text.secondary }]}>
-          {filtered.length} de {list.length} catálogo{list.length === 1 ? '' : 's'}
+          {filtered.length} de {editions.length} catálogo{editions.length === 1 ? '' : 's'}
         </Text>
       ) : null}
     </View>
@@ -156,7 +178,31 @@ function CatalogosScreenInner() {
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />}
         ListHeaderComponent={header}
-        ListEmptyComponent={renderEmpty()}
+        ListEmptyComponent={filteredQuickShares.length > 0 ? null : renderEmpty()}
+        ListFooterComponent={
+          filteredQuickShares.length > 0 ? (
+            <View style={styles.quickShares}>
+              <Pressable
+                onPress={() => setQuickSharesOpen((open) => !open)}
+                style={styles.quickSharesToggle}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showQuickShares }}
+                accessibilityLabel={`Envíos de un producto, ${filteredQuickShares.length}`}
+              >
+                <MaterialIcons name="send" size={18} color={colors.text.secondary} />
+                <Text style={[styles.quickSharesTitle, { color: colors.text.primary }]}>
+                  Envíos de un producto ({filteredQuickShares.length})
+                </Text>
+                <MaterialIcons name={showQuickShares ? 'expand-less' : 'expand-more'} size={22} color={colors.text.secondary} />
+              </Pressable>
+              {showQuickShares
+                ? filteredQuickShares.map((item) => (
+                    <CatalogListCard key={item.id} item={item} onPress={() => router.push(`/catalogo/${item.id}` as never)} />
+                  ))
+                : null}
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => <CatalogListCard item={item} onPress={() => router.push(`/catalogo/${item.id}` as never)} />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -174,4 +220,7 @@ const styles = StyleSheet.create({
   notice: { ...Typography.metadata },
   count: { ...Typography.metadata, textAlign: 'right' },
   separator: { height: Spacing.md },
+  quickShares: { marginTop: Spacing.xl, gap: Spacing.md },
+  quickSharesToggle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
+  quickSharesTitle: { ...Typography.bodyStrong, flex: 1 },
 });

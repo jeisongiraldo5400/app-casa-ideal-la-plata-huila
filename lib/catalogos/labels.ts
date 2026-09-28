@@ -49,8 +49,10 @@ export function shareLinkStatusTone(status: CatalogShareLinkStatus): StatusTone 
 
 const SCOPE_LABEL: Record<CatalogScope, string> = {
   own: 'Tuyo',
-  organization: 'Catálogo global',
-  shared: 'Compartido contigo',
+  organization: 'Publicado al equipo',
+  // Al administrador le llegan también los privados de otros, así que no se
+  // puede afirmar que «te lo compartieron».
+  shared: 'De otra persona',
 };
 
 export function labelCatalogScope(scope: CatalogScope): string {

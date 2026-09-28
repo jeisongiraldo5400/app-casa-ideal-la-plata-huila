@@ -158,7 +158,7 @@ function EnviarProductoInner() {
             submitError={submitError}
             notice={
               siteConfigured
-                ? `Vas a enviar «${chosen.displayName}». Todo el equipo podrá ver este envío en Catálogos.`
+                ? `Vas a enviar «${chosen.displayName}». El enlace es solo tuyo; los administradores también pueden verlo.`
                 : 'Falta configurar la dirección del catálogo: no se pueden generar enlaces.'
             }
             onCreate={send}

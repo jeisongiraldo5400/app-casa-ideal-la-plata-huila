@@ -96,9 +96,6 @@ function CatalogoCompartirInner() {
   }
 
   const blocked = flow.readiness.blockers.length > 0;
-  // El trigger deja en «organization» los catálogos que crea un admin; el primer
-  // enlace los saca de borrador y desde ahí los ve todo el equipo.
-  const publishesToTeam = isOwner && detail.visibility === 'organization' && detail.status === 'draft';
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
@@ -134,7 +131,6 @@ function CatalogoCompartirInner() {
           progress={flow.progress}
           errors={flow.errors}
           submitError={flow.submitError}
-          notice={publishesToTeam ? 'Al crear el enlace, todo el equipo podrá ver este catálogo.' : null}
           onCreate={flow.create}
         />
 

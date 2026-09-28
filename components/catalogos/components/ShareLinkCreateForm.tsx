@@ -15,7 +15,7 @@ interface ShareLinkCreateFormProps {
   progress: SnapshotProgress | null;
   errors: ShareLinkErrors;
   submitError: string | null;
-  /** Aviso de una línea bajo el título (p. ej. que el catálogo se publicará al equipo). */
+  /** Aviso de una línea bajo el título (p. ej. qué producto se va a enviar). */
   notice?: string | null;
   onCreate: (input: CreateShareLinkRequest) => Promise<boolean>;
 }

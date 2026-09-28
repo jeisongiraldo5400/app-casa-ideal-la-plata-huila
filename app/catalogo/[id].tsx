@@ -124,7 +124,7 @@ function CatalogoDetailInner() {
             <Text style={[styles.readOnly, { color: colors.text.secondary }]}>
               {canShare
                 ? 'Lo armó otra persona: puedes compartirlo con tus clientes, pero su contenido se edita desde el panel web.'
-                : 'Catálogo del equipo · solo lectura. Para editarlo, usa el panel web.'}
+                : 'Lo armó otra persona · solo lectura. Para editarlo, usa el panel web.'}
             </Text>
           )}
         </View>
