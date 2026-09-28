@@ -8,7 +8,7 @@ export type PrivateCatalogStatus = 'draft' | 'published' | 'expired' | 'revoked'
 
 /**
  * `private` (por defecto): su dueño, los administradores y quien tenga acceso compartido.
- * `organization`: además todo el equipo. Solo lo pone «Publicar al equipo» en
+ * `organization`: además todo el equipo («global»). Solo lo pone «Publicar como global» en
  * el panel web; crear o enviar un catálogo no lo publica (20261231200000).
  */
 export type CatalogVisibility = 'private' | 'organization';

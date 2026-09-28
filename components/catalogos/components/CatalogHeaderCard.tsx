@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Card, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
+import { isGlobalCatalog } from '@/lib/catalogos/catalogListFilters';
 import { catalogStatusTone, labelCatalogScope, labelCatalogStatus } from '@/lib/catalogos/labels';
 import type { CatalogScope, PrivateCatalog, PrivateCatalogStatus } from '@/lib/catalogos/types';
 import { CatalogImageViewer } from './CatalogImageViewer';
@@ -24,7 +25,10 @@ export function CatalogHeaderCard({ catalog, status, scope, ownerName }: Catalog
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const [coverOpen, setCoverOpen] = useState(false);
-  const byline = scope === 'own' ? labelCatalogScope('own') : `${labelCatalogScope(scope)}${ownerName ? ` · ${ownerName}` : ''}`;
+  const byline =
+    scope === 'own'
+      ? `${labelCatalogScope('own')}${isGlobalCatalog(catalog) ? ' · publicado como global' : ''}`
+      : `${labelCatalogScope(scope)}${ownerName ? ` · ${ownerName}` : ''}`;
 
   return (
     <Card style={styles.card}>

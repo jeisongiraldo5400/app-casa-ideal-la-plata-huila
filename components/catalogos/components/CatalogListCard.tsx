@@ -4,6 +4,7 @@ import { useTheme } from '@/components/theme';
 import { ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { catalogStatusTone, formatCatalogDate, labelCatalogScope, labelCatalogStatus, pluralize } from '@/lib/catalogos/labels';
+import { isGlobalCatalog } from '@/lib/catalogos/catalogListFilters';
 import { catalogDisplayStatus } from '@/lib/catalogos/shareLinks';
 import type { PrivateCatalogListItem } from '@/lib/catalogos/types';
 import { CatalogProductThumb } from './CatalogProductThumb';
@@ -18,12 +19,13 @@ export function CatalogListCard({ item, onPress }: { item: PrivateCatalogListIte
   const showLinkMeta = item.isOwner || item.linkCount > 0;
   const meta = showLinkMeta
     ? [
-        item.isOwner ? null : labelCatalogScope(item.scope),
+        // En lo propio, marca discreta si un administrador lo publicó para todos.
+        item.isOwner ? (isGlobalCatalog(item) ? 'Publicado como global' : null) : labelCatalogScope(item.scope),
         pluralize(item.activeLinkCount, 'enlace activo', 'enlaces activos'),
         pluralize(item.totalViewCount, 'vista', 'vistas'),
         item.nextExpiration ? `vence ${formatCatalogDate(item.nextExpiration)}` : null,
       ]
-    : [labelCatalogScope(item.scope), `actualizado ${formatCatalogDate(item.updatedAt)}`];
+    : [item.isOwner && isGlobalCatalog(item) ? 'Publicado como global' : labelCatalogScope(item.scope), `actualizado ${formatCatalogDate(item.updatedAt)}`];
 
   return (
     <ListCard onPress={onPress} accessibilityLabel={`Catálogo ${item.internalTitle}, ${labelCatalogStatus(status)}`}>

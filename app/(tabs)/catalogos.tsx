@@ -54,9 +54,9 @@ function CatalogosScreenInner() {
   const openCreate = () => router.navigate('/(tabs)/catalogo-create' as never);
 
   const normalizedQuery = normalizeCatalogQuery(query);
-  // Aquí solo lo propio. Lo de otras personas tiene su pantalla («Catálogos
-  // del equipo») y los envíos de un producto van plegados al final.
-  const { editions, quickShares, others } = useMemo(() => splitCatalogList(list), [list]);
+  // Aquí solo lo propio. Lo global de otras personas tiene su pantalla
+  // («Catálogos globales») y los envíos de un producto van plegados al final.
+  const { editions, quickShares, globals } = useMemo(() => splitCatalogList(list), [list]);
   const matches = useCallback(
     (item: (typeof list)[number]) => matchesCatalogListFilter(item, filter) && matchesCatalogListQuery(item, normalizedQuery),
     [filter, normalizedQuery]
@@ -131,19 +131,24 @@ function CatalogosScreenInner() {
           onPress={() => router.push('/catalogo/enviar-producto' as never)}
         />
       ) : null}
-      {/* Lo de otras personas, en su propia pantalla y solo para
-          administradores: en la misma lista se confundía lo que hace uno con
-          lo que hacen los demás. */}
-      {access.canSeeTeamCatalogs && others.length > 0 ? (
-        <ActionCard
-          compact
-          title="Catálogos del equipo"
-          subtitle={`${others.length} de otras personas`}
-          icon="groups"
-          tone="info"
-          onPress={() => router.push('/catalogo/equipo' as never)}
-        />
-      ) : null}
+      {/* Lo que un administrador publicó para todos, en su propia pantalla:
+          en la misma lista se confundía lo que hace uno con lo que hacen los
+          demás. Siempre visible, aunque esté vacía, para que se sepa dónde
+          buscar; mientras carga no se afirma que no haya ninguno. */}
+      <ActionCard
+        compact
+        title="Catálogos globales"
+        subtitle={
+          initialLoading
+            ? 'Publicados para todos'
+            : globals.length === 0
+              ? 'Aún no hay publicados para todos'
+              : `${globals.length} publicado${globals.length === 1 ? '' : 's'} para todos`
+        }
+        icon="public"
+        tone="info"
+        onPress={() => router.push('/catalogo/globales' as never)}
+      />
       <View style={styles.searchRow}>
         <SearchField
           value={query}

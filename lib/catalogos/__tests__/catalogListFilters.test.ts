@@ -1,4 +1,4 @@
-import { groupCatalogsByOwner, matchesCatalogListFilter, matchesCatalogListQuery, normalizeCatalogQuery, splitCatalogList } from '../catalogListFilters';
+import { isGlobalCatalog, matchesCatalogListFilter, matchesCatalogListQuery, normalizeCatalogQuery, splitCatalogList } from '../catalogListFilters';
 import type { PrivateCatalogListItem } from '../types';
 
 function item(overrides: Partial<PrivateCatalogListItem> = {}): PrivateCatalogListItem {
@@ -60,36 +60,39 @@ describe('matchesCatalogListQuery', () => {
 });
 
 describe('splitCatalogList', () => {
-  it('separa lo propio, los envíos de un producto y lo de otras personas', () => {
+  it('vendedor: lo propio en Catálogos y lo global ajeno en «Catálogos globales»', () => {
     const split = splitCatalogList([
       item({ id: 'a' }),
       item({ id: 'b', internalTitle: 'Envío rápido · Sofá' }),
-      item({ id: 'c', isOwner: false, scope: 'organization', ownerId: 'user-2' }),
-      item({ id: 'd', isOwner: false, scope: 'shared', ownerId: 'user-3', internalTitle: 'Envío rápido · Mesa' }),
+      item({ id: 'c', isOwner: false, scope: 'organization', visibility: 'organization', ownerId: 'admin-1' }),
+      // Compartido por colaboración: privado ajeno, no se muestra en el móvil.
+      item({ id: 'd', isOwner: false, scope: 'shared', ownerId: 'user-3' }),
     ]);
     expect(split.editions.map((row) => row.id)).toEqual(['a']);
     expect(split.quickShares.map((row) => row.id)).toEqual(['b']);
-    // Lo ajeno nunca se mezcla con lo propio, sea o no un envío rápido.
-    expect(split.others.map((row) => row.id)).toEqual(['c', 'd']);
+    expect(split.globals.map((row) => row.id)).toEqual(['c']);
+  });
+
+  it('admin: la RLS le trae también lo privado ajeno, pero en el móvil solo ve lo global y sin repetir', () => {
+    const split = splitCatalogList([
+      item({ id: 'mio-global', visibility: 'organization' }),
+      item({ id: 'ajeno-global', isOwner: false, scope: 'organization', visibility: 'organization', ownerId: 'seller-1' }),
+      item({ id: 'ajeno-privado', isOwner: false, scope: 'shared', ownerId: 'seller-1' }),
+      item({ id: 'ajeno-envio', isOwner: false, scope: 'organization', visibility: 'organization', ownerId: 'seller-1', internalTitle: 'Envío rápido · Mesa' }),
+      item({ id: 'ajeno-borrador', isOwner: false, scope: 'organization', visibility: 'organization', status: 'draft', ownerId: 'seller-2' }),
+    ]);
+    // Un global propio sigue en su lista, nunca en «Catálogos globales».
+    expect(split.editions.map((row) => row.id)).toEqual(['mio-global']);
+    expect(split.globals.map((row) => row.id)).toEqual(['ajeno-global']);
+    const shown = [...split.editions, ...split.quickShares, ...split.globals].map((row) => row.id);
+    expect(new Set(shown).size).toBe(shown.length);
   });
 });
 
-describe('groupCatalogsByOwner', () => {
-  it('agrupa por creador, en orden alfabético, conservando el orden de cada grupo', () => {
-    const groups = groupCatalogsByOwner(
-      [item({ id: '1', ownerId: 'b' }), item({ id: '2', ownerId: 'a' }), item({ id: '3', ownerId: 'b' })],
-      new Map([
-        ['a', 'Zoila'],
-        ['b', 'Álvaro'],
-      ])
-    );
-    expect(groups.map((group) => [group.ownerName, group.data.map((row) => row.id)])).toEqual([
-      ['Álvaro', ['1', '3']],
-      ['Zoila', ['2']],
-    ]);
-  });
-
-  it('un perfil sin nombre no esconde sus catálogos', () => {
-    expect(groupCatalogsByOwner([item({ ownerId: 'x' })], new Map())[0]).toMatchObject({ ownerName: 'Usuario sin nombre' });
+describe('isGlobalCatalog', () => {
+  it('solo lo publicado para todos que ya no es borrador', () => {
+    expect(isGlobalCatalog({ visibility: 'organization', status: 'published' })).toBe(true);
+    expect(isGlobalCatalog({ visibility: 'organization', status: 'draft' })).toBe(false);
+    expect(isGlobalCatalog({ visibility: 'private', status: 'published' })).toBe(false);
   });
 });

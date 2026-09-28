@@ -22,13 +22,6 @@ describe('deriveCatalogAccess', () => {
     }
   );
 
-  it('«Catálogos del equipo» solo para administradores', () => {
-    expect(deriveCatalogAccess([CATALOG_ROLES.SYSTEM_ADMIN]).canSeeTeamCatalogs).toBe(true);
-    expect(deriveCatalogAccess([CATALOG_ROLES.ADMIN]).canSeeTeamCatalogs).toBe(true);
-    expect(deriveCatalogAccess([CATALOG_ROLES.EDITOR]).canSeeTeamCatalogs).toBe(false);
-    expect(deriveCatalogAccess([CATALOG_ROLES.SELLER, 'vendedor']).canSeeTeamCatalogs).toBe(false);
-  });
-
   it('ignora mayúsculas y espacios en el nombre del rol', () => {
     expect(hasCatalogRole([' Catalog_Seller '])).toBe(true);
   });
