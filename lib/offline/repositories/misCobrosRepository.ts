@@ -4,11 +4,11 @@ import { Customer, Negocio, NegocioCuota, NegocioPago, Profile } from '../models
 import { canUseLocalDb, loadDiscardedNegocioIds } from './offlineRepository';
 
 /**
- * Pagos guardados en el teléfono para «Mis cobros» sin señal, con cliente,
+ * Pagos guardados en el teléfono para la vista «Pagos» de Cartera sin señal, con cliente,
  * negocio y cuota ya resueltos. `null` si no hay base local.
  *
  * Son los pagos de los negocios descargados más los registrados sin señal
- * (aún en la cola o rechazados). El filtro por cobrador lo hace
+ * (aún en la cola o rechazados). El alcance por rol y los filtros los aplica
  * `filterLocalMisCobros`.
  */
 export async function loadMisCobrosFromLocal(): Promise<LocalMisCobro[] | null> {
@@ -50,6 +50,10 @@ export async function loadMisCobrosFromLocal(): Promise<LocalMisCobro[] | null> 
       discount_amount: pago.discountAmount == null ? null : Number(pago.discountAmount),
       created_by_name: pago.createdByName ?? null,
       sync_status: pago.rowSyncStatus || 'synced',
+      // Alcance por rol sin señal (vista «Pagos»): de quién es la cartera.
+      negocio_seller_id: negocio?.sellerId ?? null,
+      negocio_gestor_cobro_id: negocio?.gestorCobroId ?? null,
+      negocio_created_by: negocio?.createdBy ?? null,
     };
   });
 }

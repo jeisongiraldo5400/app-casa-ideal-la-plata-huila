@@ -1,28 +1,28 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
-import { CollectionManagerPicker } from '@/components/cartera/CollectionManagerPicker';
 import { useTheme } from '@/components/theme';
 import { Button, Card, Metric, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { loadCarteraCatalogs } from '@/lib/cartera/carteraCatalogs';
-import type { CollectionManager } from '@/lib/cartera/carteraService';
 import {
-  cierreParam,
   countActiveMisCobrosFilters,
   EMPTY_MIS_COBROS_SUMMARY,
   initialMisCobrosFilters,
   isPorEntregarACaja,
   misCobrosRangeError,
+  pagosScopeFor,
+  pagosScopeTitle,
   porEntregarACajaFilters,
+  type CarteraPagosScope,
   type MisCobroRow,
   type MisCobrosFilters,
-  type MisCobrosScope,
   type MisCobrosStatus,
   type MisCobrosSummary,
+  type PagosCollector,
 } from '@/lib/cartera/misCobros';
-import { fetchMisCobros, receiptStatusParam } from '@/lib/cartera/misCobrosService';
-import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
+import { fetchCarteraPagos, type CarteraPagosCollector } from '@/lib/cartera/misCobrosService';
+import { exportAndShareCarteraPagosExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
 import { formatCOP } from '@/lib/creditCalculator';
 import { errorMessage } from '@/lib/errorMessage';
 import { formatPaymentDateTime } from '@/lib/localDate';
@@ -30,7 +30,7 @@ import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MisCobroCard } from './MisCobroCard';
 import { MisCobrosDateRange } from './MisCobrosDateRange';
@@ -46,14 +46,6 @@ const STATUS_SEGMENTS: { value: MisCobrosStatus; label: string }[] = [
   { value: 'anulados', label: 'Anulados' },
 ];
 
-/** Alcance: lo que registró el cobrador, o lo de su cartera asignada aunque lo registrara otro. */
-function scopeSegments(isSelf: boolean): { value: MisCobrosScope; label: string }[] {
-  return [
-    { value: 'performed', label: isSelf ? 'Cobrados por mí' : 'Cobrados por él' },
-    { value: 'portfolio', label: isSelf ? 'De mi cartera' : 'De su cartera' },
-  ];
-}
-
 function rangeLabel(filters: MisCobrosFilters): string | null {
   if (!filters.from && !filters.to) return null;
   if (filters.from && filters.from === filters.to) return formatPaymentDateTime(filters.from);
@@ -63,27 +55,38 @@ function rangeLabel(filters: MisCobrosFilters): string | null {
 }
 
 /**
- * «Cobros»: los pagos que registró quien cobra, para separar lo que cobró por
- * fechas, método, sitio, estado y cierre. El gestor de cobro (y el admin)
- * cambia a «De mi cartera»: los pagos de los negocios que tiene asignados,
- * aunque los registrara otro. El administrador puede elegir otro cobrador (la
- * misma regla del diálogo «Cobros de …» de la web). Desde aquí se descarga el
- * Excel y se comparte o reimprime cada recibo.
+ * Vista «Pagos» de Cartera: los abonos recibidos (no las cuotas), con filtros
+ * por fecha, método, sitio, estado, cierre y «Registrado por», totales,
+ * desglose por método, Excel y recibos. El alcance lo pone el servidor por
+ * rol (`list_cartera_payments`): admin todo; gestor y vendedor su cartera más
+ * lo que registraron; recaudador solo lo suyo. Sin señal, los pagos del
+ * teléfono con el mismo alcance. Reemplaza a la antigua pantalla «Cobros».
  */
-export function MisCobrosScreen() {
+export function CarteraPagosView() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { isAdmin, isGestorCobro } = useUserRoles();
+  const { isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
   const receiptActions = useCobroReceiptActions();
   const online = useSyncStore((state) => state.online);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
 
-  const [collector, setCollector] = useState<CollectionManager | null>(null);
-  const [scope, setScope] = useState<MisCobrosScope>('performed');
+  const admin = isAdmin();
+  const vendedor = isVendedor();
+  const gestor = isGestorCobro();
+  const canCollect = admin || gestor || isRecaudador();
+  const userId = user?.id || '';
+  const myName = String(user?.user_metadata?.full_name || user?.email || 'Yo');
+  const me = useMemo<PagosCollector>(() => ({ id: userId, name: myName }), [myName, userId]);
+  const viewer = useMemo(
+    () => ({ userId, userName: null, isAdmin: admin, isVendedor: vendedor, isGestor: gestor }),
+    [admin, gestor, userId, vendedor]
+  );
+
+  const [scope, setScope] = useState<CarteraPagosScope>(() => pagosScopeFor(viewer));
+  const [collectors, setCollectors] = useState<CarteraPagosCollector[]>([]);
   const [exporting, setExporting] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   // Abre en «Hoy»: lo que se revisa al cerrar la jornada.
   const [filters, setFilters] = useState<MisCobrosFilters>(() => initialMisCobrosFilters());
   const [draft, setDraft] = useState<MisCobrosFilters>(() => initialMisCobrosFilters());
@@ -106,8 +109,6 @@ export function MisCobrosScreen() {
   const [error, setError] = useState<string | null>(null);
   useScreenLoading(loading);
 
-  const isSelf = !collector || collector.id === user?.id;
-  const collectorId = collector?.id || user?.id || '';
   // Cada carga lleva un número: una respuesta vieja (filtros ya cambiados) no pisa a la nueva.
   const requestId = useRef(0);
 
@@ -130,7 +131,7 @@ export function MisCobrosScreen() {
 
   const load = useCallback(
     async (target: number) => {
-      if (!collectorId) return;
+      if (!userId) return;
       const rangeError = misCobrosRangeError(filters);
       if (rangeError) {
         setError(rangeError);
@@ -141,16 +142,7 @@ export function MisCobrosScreen() {
       if (target === 1) setLoading(true);
       else setLoadingMore(true);
       try {
-        const result = await fetchMisCobros({
-          filters,
-          page: target,
-          pageSize: PAGE_SIZE,
-          collectorId,
-          collectorName: isSelf ? null : collector?.full_name || null,
-          isSelf,
-          online,
-          scope,
-        });
+        const result = await fetchCarteraPagos({ filters, page: target, pageSize: PAGE_SIZE, viewer, online });
         if (id !== requestId.current) return;
         setRows((current) => (target === 1 ? result.rows : [...current, ...result.rows]));
         setSummary(result.summary);
@@ -160,6 +152,9 @@ export function MisCobrosScreen() {
         setUnsentCount(result.unsentCount);
         if (result.cashMethodIds) setCashMethodIds(result.cashMethodIds);
         setClosedMissing(Boolean(result.closedNegociosMissing));
+        setScope(result.scope);
+        // Sin señal no llega la lista: se conserva la última conocida.
+        if (result.collectors.length) setCollectors(result.collectors);
         setError(null);
       } catch (e) {
         if (id !== requestId.current) return;
@@ -167,7 +162,7 @@ export function MisCobrosScreen() {
           setRows([]);
           setSummary(EMPTY_MIS_COBROS_SUMMARY);
         }
-        setError(errorMessage(e, 'No fue posible cargar los cobros'));
+        setError(errorMessage(e, 'No fue posible cargar los pagos'));
       } finally {
         if (id === requestId.current) {
           setLoading(false);
@@ -176,7 +171,7 @@ export function MisCobrosScreen() {
         }
       }
     },
-    [collector?.full_name, collectorId, filters, isSelf, online, scope]
+    [filters, online, userId, viewer]
   );
 
   useEffect(() => {
@@ -202,24 +197,13 @@ export function MisCobrosScreen() {
       Alert.alert('Excel', 'El Excel se genera con conexión.');
       return;
     }
-    const selfName = String(user?.user_metadata?.full_name || user?.email || 'Mis cobros');
     setExporting(true);
     try {
-      const { rowCount, fileName } = await exportAndShareManagerPaymentsExcel({
-        manager: { id: collectorId, full_name: isSelf ? selfName : collector?.full_name || 'Cobrador' },
-        filters: {
-          scope,
-          dateFrom: filters.from,
-          dateTo: filters.to,
-          receiptStatus: receiptStatusParam(filters.status),
-          search: filters.search,
-          paymentMethodIds: filters.paymentMethodIds,
-          site: filters.site,
-          inCierre: cierreParam(filters.inCierre),
-          paymentMethodsLabel: selectedMethodNames.join(', '),
-        },
+      const { rowCount, fileName } = await exportAndShareCarteraPagosExcel({
+        filters,
+        context: { scope, paymentMethodsLabel: selectedMethodNames.join(', ') },
       });
-      Alert.alert('Reporte listo', rowCount ? `Se compartió ${fileName} (${rowCount} cobros).` : `Se compartió ${fileName} sin cobros.`);
+      Alert.alert('Reporte listo', rowCount ? `Se compartió ${fileName} (${rowCount} pagos).` : `Se compartió ${fileName} sin pagos.`);
     } catch (e) {
       Alert.alert('Error', errorMessage(e, 'No fue posible exportar el reporte'));
     } finally {
@@ -227,7 +211,7 @@ export function MisCobrosScreen() {
     }
   };
 
-  const cajaActive = scope === 'performed' && isPorEntregarACaja(filters, cashMethodIds);
+  const cajaActive = isPorEntregarACaja(filters, cashMethodIds, userId);
   const togglePorEntregarACaja = () => {
     if (cajaActive) {
       setFilters((current) => ({ ...initialMisCobrosFilters(), search: current.search }));
@@ -237,11 +221,14 @@ export function MisCobrosScreen() {
       Alert.alert('Por entregar a caja', 'Conéctate una vez para saber qué métodos de pago son efectivo.');
       return;
     }
-    setScope('performed');
-    setFilters((current) => porEntregarACajaFilters(cashMethodIds, current.search));
+    setFilters((current) => porEntregarACajaFilters(cashMethodIds, me, current.search));
   };
 
-  const showScope = isAdmin() || isGestorCobro();
+  const showRegisteredBy = scope !== 'propios';
+  // «Yo» primero; luego quienes registraron pagos en el alcance (del servidor).
+  const collectorOptions: PagosCollector[] = showRegisteredBy
+    ? [me, ...collectors.filter((item) => item.id !== userId).map((item) => ({ id: item.id, name: item.full_name }))]
+    : [];
   const activeFilters = countActiveMisCobrosFilters(filters);
   const range = rangeLabel(filters);
   const selectedMethodNames = paymentMethods
@@ -252,38 +239,14 @@ export function MisCobrosScreen() {
     selectedMethodNames.length ? selectedMethodNames.join(', ') : null,
     filters.site === 'almacen' ? 'Almacén' : filters.site === 'app_movil' ? 'Aplicación Móvil' : filters.site === 'sin_registro' ? 'Sitio no registrado' : null,
     filters.inCierre === 'si' ? 'En un cierre' : filters.inCierre === 'no' ? 'Sin cierre' : null,
+    filters.createdBy ? `Registró ${filters.createdBy.id === userId ? 'yo' : filters.createdBy.name}` : null,
   ].filter(Boolean).join(' · ');
 
   const header = (
     <View style={styles.header}>
-      {isAdmin() ? (
-        <View style={[styles.collector, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
-          <MaterialIcons name="person" size={20} color={colors.primary.main} />
-          <View style={styles.collectorText}>
-            <Text style={[styles.collectorLabel, { color: colors.text.secondary }]}>Cobrador</Text>
-            <Text style={[styles.collectorName, { color: colors.text.primary }]} numberOfLines={1}>
-              {isSelf ? 'Mis cobros' : collector?.full_name}
-            </Text>
-          </View>
-          {!isSelf ? <Button title="Los míos" size="sm" variant="ghost" onPress={() => setCollector(null)} /> : null}
-          <Button title="Cambiar" size="sm" variant="outline" onPress={() => setPickerOpen(true)} />
-        </View>
-      ) : null}
-
-      {showScope ? (
-        <View style={styles.scope}>
-          <SegmentedControl
-            items={scopeSegments(isSelf)}
-            value={scope}
-            onChange={(value) => setScope(value as MisCobrosScope)}
-          />
-          <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            {scope === 'performed'
-              ? 'Pagos registrados personalmente.'
-              : 'Pagos de los negocios asignados hoy como gestor de cobro, aunque los haya registrado otra persona.'}
-          </Text>
-        </View>
-      ) : null}
+      <Text style={[styles.scopeTitle, { color: colors.text.secondary }]} testID="pagos-alcance">
+        {pagosScopeTitle(scope)}
+      </Text>
 
       {fromCache ? (
         <View style={[styles.notice, { backgroundColor: `${colors.warning.main}14`, borderColor: colors.warning.main }]}>
@@ -294,11 +257,11 @@ export function MisCobrosScreen() {
             {closedMissing ? ' No incluye pagos de negocios ya cerrados.' : ''}
           </Text>
         </View>
-      ) : unsentCount > 0 && isSelf && scope === 'performed' ? (
+      ) : unsentCount > 0 ? (
         <View style={[styles.notice, { backgroundColor: `${colors.info.main}14`, borderColor: colors.info.main }]}>
           <MaterialIcons name="cloud-upload" size={18} color={colors.info.main} />
           <Text style={[styles.noticeText, { color: colors.text.primary }]}>
-            {unsentCount === 1 ? 'Hay 1 cobro guardado en el teléfono que aún no se envía' : `Hay ${unsentCount} cobros guardados en el teléfono que aún no se envían`}: aparecerán aquí al sincronizar.
+            {unsentCount === 1 ? 'Hay 1 pago guardado en el teléfono que aún no se envía' : `Hay ${unsentCount} pagos guardados en el teléfono que aún no se envían`}: aparecerán aquí al sincronizar.
           </Text>
         </View>
       ) : null}
@@ -311,7 +274,7 @@ export function MisCobrosScreen() {
       {/* Lo primero que se ve: cuánto se cobró en las fechas elegidas. */}
       <Card variant="outlined" style={styles.totals}>
         <Metric
-          label={`Total cobrado · ${rangeLabel(filters) ?? 'todas las fechas'}`}
+          label={`Total recibido · ${rangeLabel(filters) ?? 'todas las fechas'}`}
           value={formatCOP(summary.total_collected)}
           tone="success"
           size="md"
@@ -322,13 +285,13 @@ export function MisCobrosScreen() {
             value={summary.total_cash == null ? 'Sin dato' : formatCOP(summary.total_cash)}
             style={styles.totalsCell}
           />
-          <Metric label="Cobros" value={String(summary.total_count)} style={styles.totalsCell} />
+          <Metric label="Pagos" value={String(summary.total_count)} style={styles.totalsCell} />
           <Metric label="Anulados" value={String(summary.voided_count)} tone={summary.voided_count ? 'error' : 'default'} style={styles.totalsCell} />
         </View>
         <MisCobrosMethodBreakdown summary={summary} />
         {summary.average_payment != null ? (
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
-            Promedio por cobro: {formatCOP(summary.average_payment)}
+            Promedio por pago: {formatCOP(summary.average_payment)}
           </Text>
         ) : null}
         {summary.total_cash == null ? (
@@ -338,17 +301,12 @@ export function MisCobrosScreen() {
         ) : null}
       </Card>
 
-      {/* Separación clara entre el resumen y el listado de pagos. */}
-      <View style={[styles.listDivider, { borderTopColor: colors.divider }]}>
-        <Text style={[styles.listTitle, { color: colors.text.primary }]}>Pagos</Text>
-      </View>
-
       <SearchField
         value={searchInput}
         onChangeText={setSearchInput}
         placeholder="Cliente, cédula o negocio"
         autoCorrect={false}
-        accessibilityLabel="Buscar cobros por cliente, cédula o negocio"
+        accessibilityLabel="Buscar pagos por cliente, cédula o negocio"
       />
 
       <SegmentedControl
@@ -375,10 +333,11 @@ export function MisCobrosScreen() {
           variant="outline"
           disabled={exporting || loading}
           onPress={() => void exportExcel()}
-          accessibilityLabel="Descargar Excel de los cobros"
+          accessibilityLabel="Descargar Excel de los pagos"
         />
       </View>
 
+      {canCollect ? (
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ selected: cajaActive }}
@@ -394,12 +353,13 @@ export function MisCobrosScreen() {
           <Text style={[styles.cajaTitle, { color: colors.text.primary }]}>Por entregar a caja</Text>
           <Text style={[styles.hint, { color: colors.text.secondary }]}>
             {cajaActive
-              ? `${formatCOP(summary.total_collected)} en efectivo sin cierre · ${summary.valid_count} ${summary.valid_count === 1 ? 'cobro' : 'cobros'}`
-              : 'Efectivo vigente que aún no entra en un cierre de recaudo.'}
+              ? `${formatCOP(summary.total_collected)} en efectivo sin cierre · ${summary.valid_count} ${summary.valid_count === 1 ? 'pago' : 'pagos'}`
+              : 'Efectivo que registraste y aún no entra en un cierre de recaudo.'}
           </Text>
         </View>
         <MaterialIcons name={cajaActive ? 'close' : 'chevron-right'} size={20} color={colors.text.secondary} />
       </Pressable>
+      ) : null}
     </View>
   );
 
@@ -424,7 +384,7 @@ export function MisCobrosScreen() {
           <MisCobroCard
             row={item}
             onPress={() => router.push(`/negocio/${item.negocio_id}`)}
-            showRegisteredBy={scope === 'portfolio'}
+            showRegisteredBy={showRegisteredBy}
             actions={{
               onShareReceipt: (data) => void receiptActions.shareReceipt(data),
               onPrintReceipt: (data) => void receiptActions.printReceipt(data),
@@ -435,13 +395,13 @@ export function MisCobrosScreen() {
         )}
         ListEmptyComponent={
           loading ? (
-            <ScreenState loading title="Cargando cobros…" variant="inline" />
+            <ScreenState loading title="Cargando pagos…" variant="inline" />
           ) : error ? (
-            <ScreenState icon="error-outline" tone="error" title="No se pudieron cargar los cobros" description={error} actionLabel="Reintentar" onAction={() => void load(1)} variant="inline" />
+            <ScreenState icon="error-outline" tone="error" title="No se pudieron cargar los pagos" description={error} actionLabel="Reintentar" onAction={() => void load(1)} variant="inline" />
           ) : (
             <ScreenState
               icon="receipt-long"
-              title="Sin cobros para estos filtros"
+              title="Sin pagos para estos filtros"
               description={fromCache ? 'Sin señal solo se ven los pagos guardados en el teléfono.' : 'Prueba con otras fechas o quita filtros.'}
               variant="inline"
             />
@@ -464,7 +424,7 @@ export function MisCobrosScreen() {
             </Pressable>
           ) : rows.length ? (
             <Text style={[styles.end, { color: colors.text.secondary }]}>
-              Mostrando {rows.length} de {summary.total_count} cobros
+              Mostrando {rows.length} de {summary.total_count} pagos
             </Text>
           ) : null
         }
@@ -474,20 +434,12 @@ export function MisCobrosScreen() {
         values={draft}
         paymentMethods={paymentMethods}
         offline={fromCache || !online}
+        collectors={collectorOptions}
+        selfId={userId}
         onChange={setDraft}
         onApply={applyFilters}
         onClose={() => setFiltersOpen(false)}
       />
-      {isAdmin() ? (
-        <CollectionManagerPicker
-          visible={pickerOpen}
-          onClose={() => setPickerOpen(false)}
-          onSelect={(manager) => {
-            setCollector(manager);
-            setPickerOpen(false);
-          }}
-        />
-      ) : null}
     </View>
   );
 }
@@ -496,17 +448,11 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   list: { padding: Spacing.xl, paddingBottom: Spacing.xxxl, flexGrow: 1 },
   header: { gap: Spacing.md, marginBottom: Spacing.lg },
-  collector: { minHeight: 56, borderWidth: 1, borderRadius: Radius.control, paddingHorizontal: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  collectorText: { flex: 1 },
-  collectorLabel: { ...Typography.label },
-  collectorName: { ...Typography.bodyStrong },
+  scopeTitle: { ...Typography.metadata },
   filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  scope: { gap: Spacing.xs },
   filterSummary: { ...Typography.metadata, flex: 1 },
   notice: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start', borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md },
   noticeText: { ...Typography.caption, flex: 1 },
-  listDivider: { borderTopWidth: 2, marginTop: Spacing.sm, paddingTop: Spacing.lg },
-  listTitle: { ...Typography.section },
   totals: { gap: Spacing.md },
   totalsRow: { flexDirection: 'row', gap: Spacing.md },
   totalsCell: { flex: 1 },

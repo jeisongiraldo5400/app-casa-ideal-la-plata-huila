@@ -7,17 +7,19 @@ import {
   MONEY_FORMAT,
   XLSX_MIME_TYPE,
   XLSX_UTI,
-  exportAndShareManagerPaymentsExcel,
-  fetchAllManagerPayments,
+  exportAndShareCarteraPagosExcel,
+  fetchAllCarteraPayments,
   toExcelDateSerial,
 } from '../exportManagerPaymentsExcel';
-import type { CollectionManager, ManagerPayment } from '../carteraService';
+import type { ManagerPayment } from '../carteraService';
+import { DEFAULT_MIS_COBROS_FILTERS, type MisCobrosFilters } from '../misCobros';
 
 const mockFetchManagerPayments = jest.fn();
 const mockFetchPaymentMethods = jest.fn();
 
-jest.mock('@/lib/cartera/carteraService', () => ({
-  fetchManagerPayments: (...args: unknown[]) => mockFetchManagerPayments(...args),
+// La vista «Pagos» pagina list_cartera_payments con requestCarteraPayments.
+jest.mock('@/lib/cartera/misCobrosService', () => ({
+  requestCarteraPayments: (...args: unknown[]) => mockFetchManagerPayments(...args),
 }));
 
 jest.mock('@/components/negocios/infrastructure/services/paymentMethodsService', () => ({
@@ -35,13 +37,8 @@ jest.mock('expo-sharing', () => ({
   shareAsync: jest.fn(async () => undefined),
 }));
 
-const filters = {
-  scope: 'performed' as const,
-  dateFrom: '2026-09-01',
-  dateTo: '',
-  receiptStatus: 'todos' as const,
-  search: '',
-};
+const filters: MisCobrosFilters = { ...DEFAULT_MIS_COBROS_FILTERS, from: '2026-09-01' };
+const context = { scope: 'propios' as const };
 
 function payment(overrides: Partial<ManagerPayment> = {}): ManagerPayment {
   return {
@@ -56,7 +53,7 @@ function payment(overrides: Partial<ManagerPayment> = {}): ManagerPayment {
     remaining_balance: 100_000,
     payment_site: 'app_movil',
     created_by_name: 'Gestor',
-    currently_assigned: true,
+    gestor_cobro_name: 'Gestora',
     support_path: null,
     ...overrides,
   } as ManagerPayment;
@@ -101,7 +98,7 @@ function detailCell(sheet: XLSX.WorkSheet, row: number, name: string) {
   return sheet[XLSX.utils.encode_cell({ r: row + 1, c })] as XLSX.CellObject | undefined;
 }
 
-describe('fetchAllManagerPayments', () => {
+describe('fetchAllCarteraPayments', () => {
   beforeEach(() => mockFetchManagerPayments.mockReset());
 
   it('recorre todas las páginas de 50 hasta completar el total', async () => {
@@ -109,21 +106,18 @@ describe('fetchAllManagerPayments', () => {
       .mockResolvedValueOnce({ rows: Array.from({ length: 50 }, () => payment()), summary: summary(60) })
       .mockResolvedValueOnce({ rows: Array.from({ length: 10 }, () => payment()), summary: summary(60) });
 
-    const result = await fetchAllManagerPayments('manager-1', filters);
+    const result = await fetchAllCarteraPayments(filters);
 
     expect(result.rows).toHaveLength(60);
     expect(result.summary.total_count).toBe(60);
     expect(mockFetchManagerPayments).toHaveBeenCalledTimes(2);
-    expect(mockFetchManagerPayments.mock.calls[1]).toEqual([
-      'manager-1',
-      expect.objectContaining({ page: 2, pageSize: 50, scope: 'performed', dateFrom: '2026-09-01' }),
-    ]);
+    expect(mockFetchManagerPayments.mock.calls[1]).toEqual([filters, 2, 50]);
   });
 
   it('se detiene si una página llega incompleta aunque el total diga otra cosa', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(500) });
 
-    const result = await fetchAllManagerPayments('manager-1', filters);
+    const result = await fetchAllCarteraPayments(filters);
 
     expect(result.rows).toHaveLength(1);
     expect(mockFetchManagerPayments).toHaveBeenCalledTimes(1);
@@ -144,9 +138,7 @@ describe('toExcelDateSerial', () => {
   });
 });
 
-describe('exportAndShareManagerPaymentsExcel', () => {
-  const manager = { id: 'manager-1', full_name: 'José Pérez' } as CollectionManager;
-
+describe('exportAndShareCarteraPagosExcel', () => {
   beforeEach(() => {
     mockFetchManagerPayments.mockReset();
     mockFetchPaymentMethods.mockReset();
@@ -158,10 +150,10 @@ describe('exportAndShareManagerPaymentsExcel', () => {
   it('escribe un .xlsx en base64 y lo comparte con el MIME y UTI de Excel', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
 
-    const result = await exportAndShareManagerPaymentsExcel({ manager, filters });
+    const result = await exportAndShareCarteraPagosExcel({ filters, context });
 
     expect(result.rowCount).toBe(1);
-    expect(result.fileName).toMatch(/^Cobros_Jose_Perez_performed_\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(result.fileName).toMatch(/^Pagos_propios_\d{4}-\d{2}-\d{2}\.xlsx$/);
     const [uri] = jest.mocked(FileSystem.writeAsStringAsync).mock.calls[0];
     expect(uri).toBe(`file:///cache/${result.fileName}`);
     expect(Sharing.shareAsync).toHaveBeenCalledWith(uri, {
@@ -176,10 +168,10 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     expect(writtenWorkbook().SheetNames).toEqual(['Cobros', 'Resumen', 'Por método']);
   });
 
-  it('la hoja «Cobros» conserva las 16 columnas en orden, con «Tipo» y «Descuento» junto a «Valor»', async () => {
+  it('la hoja «Cobros» tiene 16 columnas en orden, con «Gestor de cobro» en vez de «Asignación actual»', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const { sheet, header, rows } = detailTable(writtenWorkbook());
     expect(header).toEqual([
@@ -197,7 +189,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       'Método de pago',
       'Sitio de pago',
       'Registrado por',
-      'Asignación actual',
+      'Gestor de cobro',
       'Tiene soporte',
     ]);
     expect(rows).toHaveLength(1);
@@ -214,7 +206,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(2),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const { sheet, rows } = detailTable(writtenWorkbook());
     expect(rows.map((row) => row.Tipo)).toEqual(['Pronto pago', 'Abono']);
@@ -229,7 +221,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(1),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const { sheet } = detailTable(writtenWorkbook());
     const value = detailCell(sheet, 0, 'Valor');
@@ -256,7 +248,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(3),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const { rows } = detailTable(writtenWorkbook());
     expect(rows.map((row) => row['Método de pago'])).toEqual(['Efectivo', '', '']);
@@ -277,13 +269,13 @@ describe('exportAndShareManagerPaymentsExcel', () => {
           receipt_status: 'anulado',
           receipt_number: 'F-9',
           support_path: 'pagos/1.jpg',
-          currently_assigned: false,
+          gestor_cobro_name: null,
         }),
       ],
       summary: summary(1),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const [row] = detailTable(writtenWorkbook()).rows;
     expect(row).toEqual(
@@ -295,7 +287,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
         'Recibo físico': 'F-9',
         'Estado recibo': 'Anulado',
         'Método de pago': 'Transferencia, "Nequi"',
-        'Asignación actual': 'No',
+        'Gestor de cobro': '',
         'Tiene soporte': 'Sí',
       })
     );
@@ -310,7 +302,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(2),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const rows = detailTable(writtenWorkbook()).rows;
     expect(rows.map((row) => row.Cuota)).toEqual(['Inicial + Cuota 1 (parcial)', 'Pronto pago · cuotas 3–6']);
@@ -329,7 +321,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(2),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const { rows } = detailTable(writtenWorkbook());
     expect(rows.map((row) => row['Método de pago'])).toEqual(['Tarjeta', '']);
@@ -344,7 +336,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(1),
     });
 
-    const result = await exportAndShareManagerPaymentsExcel({ manager, filters });
+    const result = await exportAndShareCarteraPagosExcel({ filters, context });
 
     expect(result.rowCount).toBe(1);
     expect(detailTable(writtenWorkbook()).rows[0]['Método de pago']).toBe('');
@@ -352,30 +344,29 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     warn.mockRestore();
   });
 
-  it('lleva al RPC y al «Resumen» el alcance y los filtros de la pantalla «Cobros»', async () => {
+  it('lleva al RPC y al «Resumen» el alcance y los filtros de la vista «Pagos»', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
+    const viewFilters: MisCobrosFilters = {
+      ...filters,
+      paymentMethodIds: ['m1'],
+      site: 'almacen',
+      inCierre: 'no',
+      status: 'vigentes',
+      createdBy: { id: 'g1', name: 'Gestora' },
+    };
 
-    await exportAndShareManagerPaymentsExcel({
-      manager,
-      filters: {
-        ...filters,
-        scope: 'portfolio',
-        paymentMethodIds: ['m1'],
-        site: 'almacen',
-        inCierre: false,
-        paymentMethodsLabel: 'Efectivo',
-      },
+    await exportAndShareCarteraPagosExcel({
+      filters: viewFilters,
+      context: { scope: 'cartera', paymentMethodsLabel: 'Efectivo' },
     });
 
-    const [, params] = mockFetchManagerPayments.mock.calls[0];
-    expect(params).toEqual(
-      expect.objectContaining({ scope: 'portfolio', paymentMethodIds: ['m1'], site: 'almacen', inCierre: false })
-    );
-    expect(params).not.toHaveProperty('paymentMethodsLabel');
+    expect(mockFetchManagerPayments.mock.calls[0]).toEqual([viewFilters, 1, 50]);
     const sheet = writtenWorkbook().Sheets.Resumen;
     const lines = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: '' });
     const value = (label: string) => lines.find((line) => line[0] === label)?.[1];
-    expect(value('Alcance')).toBe('Cartera actualmente asignada');
+    expect(value('Alcance')).toBe('Pagos de tu cartera y los que registraste');
+    expect(value('Registrado por')).toBe('Gestora');
+    expect(value('Estado recibo')).toBe('Vigentes');
     expect(value('Métodos de pago')).toBe('Efectivo');
     expect(value('Sitio de pago')).toBe('Almacén');
     expect(value('Cierre de recaudo')).toBe('Sin cierre');
@@ -384,7 +375,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
   it('la hoja «Resumen» trae filtros con fechas reales y el recaudo como moneda', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [payment()], summary: summary(1) });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const sheet = writtenWorkbook().Sheets.Resumen;
     const lines = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: '' });
@@ -392,8 +383,9 @@ describe('exportAndShareManagerPaymentsExcel', () => {
     const valueCell = (label: string) =>
       sheet[XLSX.utils.encode_cell({ r: byLabel.get(label) as number, c: 1 })] as XLSX.CellObject;
 
-    expect(lines[0][0]).toBe('REPORTE DE COBROS POR GESTOR');
-    expect(valueCell('Gestor').v).toBe('José Pérez');
+    expect(lines[0][0]).toBe('REPORTE DE PAGOS DE CARTERA');
+    expect(valueCell('Alcance').v).toBe('Pagos que registraste');
+    expect(valueCell('Registrado por').v).toBe('Todos');
     expect(valueCell('Fecha desde')).toEqual(expect.objectContaining({ t: 'n', z: 'dd/mm/yyyy' }));
     expect(XLSX.SSF.parse_date_code(valueCell('Fecha desde').v as number)).toEqual(
       expect.objectContaining({ y: 2026, m: 9, d: 1 })
@@ -422,7 +414,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       },
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const workbook = writtenWorkbook();
     const lines = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Por método'], { header: 1, raw: true, defval: '' });
@@ -452,7 +444,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
       summary: summary(4),
     });
 
-    await exportAndShareManagerPaymentsExcel({ manager, filters });
+    await exportAndShareCarteraPagosExcel({ filters, context });
 
     const workbook = writtenWorkbook();
     const lines = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets['Por método'], { header: 1, raw: true, defval: '' });
@@ -468,7 +460,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
   it('sin cobros genera el libro solo con encabezados', async () => {
     mockFetchManagerPayments.mockResolvedValueOnce({ rows: [], summary: summary(0) });
 
-    const result = await exportAndShareManagerPaymentsExcel({ manager, filters });
+    const result = await exportAndShareCarteraPagosExcel({ filters, context });
 
     expect(result.rowCount).toBe(0);
     const { header, rows } = detailTable(writtenWorkbook());
@@ -479,7 +471,7 @@ describe('exportAndShareManagerPaymentsExcel', () => {
   it('si el dispositivo no puede compartir falla antes de consultar el servidor', async () => {
     jest.mocked(Sharing.isAvailableAsync).mockResolvedValue(false);
 
-    await expect(exportAndShareManagerPaymentsExcel({ manager, filters })).rejects.toThrow(
+    await expect(exportAndShareCarteraPagosExcel({ filters, context })).rejects.toThrow(
       'Compartir archivos no está disponible en este dispositivo'
     );
     expect(mockFetchManagerPayments).not.toHaveBeenCalled();

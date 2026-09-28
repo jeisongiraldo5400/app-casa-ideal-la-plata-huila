@@ -5711,6 +5711,22 @@ export type Database = {
           id: string
         }[]
       }
+      list_cartera_payments: {
+        Args: {
+          p_created_by?: string
+          p_date_from?: string
+          p_date_to?: string
+          p_gestor_id?: string
+          p_in_cierre?: boolean
+          p_page?: number
+          p_page_size?: number
+          p_payment_method_ids?: string[]
+          p_payment_site?: string
+          p_receipt_status?: string
+          p_search?: string
+        }
+        Returns: Json
+      }
       list_my_collected_payments: {
         Args: {
           p_collector_id?: string

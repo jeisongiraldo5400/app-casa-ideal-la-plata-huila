@@ -1,13 +1,14 @@
 /**
- * «Cobros»: los pagos de quien cobra, con filtros y totales. Dos alcances:
- * - «performed»: los que registró el cobrador (`list_my_collected_payments`);
- * - «portfolio»: los de los negocios que tiene asignados hoy como gestor de
- *   cobro, aunque los haya registrado otro (`get_collection_manager_payments`
- *   con `p_scope = 'portfolio'`). Solo con señal: el teléfono no sabe qué
- *   negocios estaban asignados a quién.
+ * Vista «Pagos» de Cartera: los abonos recibidos (no las cuotas), con filtros
+ * y totales. Con señal responde `list_cartera_payments` (20261231220000), que
+ * decide el alcance por rol en el servidor:
+ * - admin: todos los pagos de la empresa;
+ * - gestor de cobro: los de sus negocios asignados + los que registró;
+ * - vendedor: los de su cartera (dueño o creador del negocio) + los que registró;
+ * - recaudador puro (o cualquier otro rol): solo los que registró.
  *
- * Ambos RPC son de 20261204120000_mis_cobros. Sin señal se filtran los pagos guardados en el
- * teléfono con las mismas reglas; este módulo es puro (sin base de datos ni
+ * Sin señal se filtran los pagos guardados en el teléfono con las mismas
+ * reglas (`filterLocalMisCobros`); este módulo es puro (sin base de datos ni
  * red) para poder probarlo entero.
  */
 import { bogotaDateValue } from '@/lib/localDate';
@@ -18,8 +19,35 @@ export type MisCobrosStatus = 'todos' | 'vigentes' | 'anulados';
 /** '' = todos; 'sin_registro' = pagos anteriores al dato del sitio. */
 export type MisCobrosSite = '' | 'almacen' | 'app_movil' | 'sin_registro';
 export type MisCobrosCierre = 'todos' | 'si' | 'no';
-/** Registrados por el cobrador, o de su cartera asignada (ver arriba). */
-export type MisCobrosScope = 'performed' | 'portfolio';
+/** Alcance que devolvió el servidor (o el que se deduce de los roles sin señal). */
+export type CarteraPagosScope = 'todos' | 'cartera' | 'propios';
+
+/** Quién registró el pago (filtro «Registrado por»). */
+export type PagosCollector = { id: string; name: string };
+
+/** Persona que consulta: decide el alcance sin señal. Roles por presencia. */
+export type PagosViewer = {
+  userId: string;
+  /** Nombre visible (misma convención del servidor) para reconocer sus pagos sin señal. */
+  userName: string | null;
+  isAdmin: boolean;
+  isVendedor: boolean;
+  isGestor: boolean;
+};
+
+/** Mismo alcance que `list_cartera_payments`. */
+export function pagosScopeFor(viewer: Pick<PagosViewer, 'isAdmin' | 'isVendedor' | 'isGestor'>): CarteraPagosScope {
+  if (viewer.isAdmin) return 'todos';
+  if (viewer.isVendedor || viewer.isGestor) return 'cartera';
+  return 'propios';
+}
+
+/** Texto de cabecera de la vista según el alcance. */
+export function pagosScopeTitle(scope: CarteraPagosScope): string {
+  if (scope === 'todos') return 'Todos los pagos de la empresa';
+  if (scope === 'cartera') return 'Pagos de tu cartera y los que registraste';
+  return 'Pagos que registraste';
+}
 
 export type MisCobrosFilters = {
   /** YYYY-MM-DD, día de Bogotá; vacío = sin límite. Pasado o futuro. */
@@ -32,6 +60,8 @@ export type MisCobrosFilters = {
   inCierre: MisCobrosCierre;
   /** Cliente, cédula o número de negocio (sin tildes). */
   search: string;
+  /** «Registrado por»; null = cualquiera dentro del alcance. */
+  createdBy: PagosCollector | null;
 };
 
 export const DEFAULT_MIS_COBROS_FILTERS: MisCobrosFilters = {
@@ -42,6 +72,7 @@ export const DEFAULT_MIS_COBROS_FILTERS: MisCobrosFilters = {
   status: 'todos',
   inCierre: 'todos',
   search: '',
+  createdBy: null,
 };
 
 /** Estado del pago en el teléfono; null = confirmado por el servidor. */
@@ -73,6 +104,10 @@ export type MisCobroRow = {
   payment_kind: string | null;
   cierre_numero: string | null;
   local_state: MisCobroLocalState;
+  /** Id de quien registró el pago (solo filas del servidor). */
+  created_by?: string | null;
+  /** Gestor de cobro asignado hoy al negocio (solo filas del servidor). */
+  gestor_cobro_name?: string | null;
   /*
    * Solo en filas del servidor (los pagos del teléfono no los traen): quién
    * registró el pago, saldo del negocio, soporte y datos del pronto pago. Con
@@ -179,23 +214,28 @@ export function initialMisCobrosFilters(today = new Date()): MisCobrosFilters {
 }
 
 /**
- * «Por entregar a caja»: lo que el cobrador tiene en la mano y aún no entregó
- * (pagos vigentes, sin cierre de recaudo, solo métodos de efectivo), de
- * cualquier fecha. Conserva la búsqueda.
+ * «Por entregar a caja»: lo que la persona tiene en la mano y aún no entregó
+ * (pagos que ELLA registró, vigentes, sin cierre de recaudo, solo métodos de
+ * efectivo), de cualquier fecha. Conserva la búsqueda.
  */
-export function porEntregarACajaFilters(cashMethodIds: string[], search = ''): MisCobrosFilters {
+export function porEntregarACajaFilters(cashMethodIds: string[], me: PagosCollector, search = ''): MisCobrosFilters {
   return {
     ...DEFAULT_MIS_COBROS_FILTERS,
     paymentMethodIds: [...cashMethodIds],
     status: 'vigentes',
     inCierre: 'no',
     search,
+    createdBy: me,
   };
 }
 
 /** ¿Los filtros puestos son exactamente el atajo «Por entregar a caja»? */
-export function isPorEntregarACaja(filters: MisCobrosFilters, cashMethodIds: string[] | null | undefined): boolean {
-  if (!cashMethodIds?.length) return false;
+export function isPorEntregarACaja(
+  filters: MisCobrosFilters,
+  cashMethodIds: string[] | null | undefined,
+  myId: string | null | undefined
+): boolean {
+  if (!cashMethodIds?.length || !myId || filters.createdBy?.id !== myId) return false;
   const methods = [...filters.paymentMethodIds].sort();
   const cash = [...cashMethodIds].sort();
   return (
@@ -218,6 +258,7 @@ export function countActiveMisCobrosFilters(filters: MisCobrosFilters): number {
   if (filters.site) count += 1;
   if (filters.status !== 'todos') count += 1;
   if (filters.inCierre !== 'todos') count += 1;
+  if (filters.createdBy) count += 1;
   return count;
 }
 
@@ -259,6 +300,10 @@ export type LocalMisCobro = Omit<MisCobroRow, 'payment_method_is_cash' | 'local_
   created_by_name: string | null;
   /** sync_status local: 'synced' | 'pending' | 'rejected' | … */
   sync_status: string;
+  /** Del negocio local: deciden si el pago es de la cartera de quien consulta. */
+  negocio_seller_id?: string | null;
+  negocio_gestor_cobro_id?: string | null;
+  negocio_created_by?: string | null;
 };
 
 function localStateOf(syncStatus: string): MisCobroLocalState {
@@ -274,30 +319,51 @@ function paidDay(paidAt: string): string {
 }
 
 /**
- * Filtra los pagos del teléfono como lo haría el servidor.
+ * Filtra los pagos del teléfono como lo haría `list_cartera_payments`.
  *
- * - De quién: sin señal el teléfono no guarda el id de quien registró el pago,
- *   solo su nombre (`created_by_name`, la misma convención del servidor). Los
- *   pagos aún sin enviar se registraron en este teléfono con la sesión actual:
- *   cuentan solo cuando se consultan los cobros propios.
+ * - Alcance (el mismo del servidor): admin, todos; vendedor, los de negocios
+ *   con seller_id o created_by = él; gestor, los de negocios con
+ *   gestor_cobro_id = él; y cualquiera, los que registró. El recaudador puro
+ *   (que tiene TODOS los negocios en el teléfono para cobrar) ve solo los suyos.
+ * - «Los que registró»: sin señal el teléfono no guarda el id de quien registró
+ *   el pago, solo su nombre (`created_by_name`, la misma convención del
+ *   servidor). Los pagos aún sin enviar o rechazados se registraron en este
+ *   teléfono con la sesión actual: son suyos.
+ * - «Registrado por» se compara por nombre (por id solo para uno mismo).
  * - El filtro de cierre no se aplica: el teléfono no sabe qué entró a un cierre.
  * - Un pago rechazado por el servidor se lista (marcado) pero no suma.
  */
 export function filterLocalMisCobros(
   rows: LocalMisCobro[],
   filters: MisCobrosFilters,
-  options: { collectorName: string | null; isSelf: boolean; cashMethodIds: string[] | null }
+  options: { viewer: PagosViewer; cashMethodIds: string[] | null }
 ): { rows: MisCobroRow[]; summary: MisCobrosSummary } {
-  const name = (options.collectorName || '').trim();
+  const { viewer } = options;
+  const myName = (viewer.userName || '').trim();
   const cash = options.cashMethodIds ? new Set(options.cashMethodIds) : null;
   const methods = filters.paymentMethodIds.length ? new Set(filters.paymentMethodIds) : null;
   const term = filters.search.trim();
+  const createdBy = filters.createdBy;
+  const createdByIsMe = Boolean(createdBy && createdBy.id === viewer.userId);
+  const createdByName = (createdBy?.name || '').trim();
+
+  const isMine = (row: LocalMisCobro) =>
+    Boolean(localStateOf(row.sync_status)) || (Boolean(myName) && (row.created_by_name || '').trim() === myName);
 
   const matched = rows
+    .filter(
+      (row) =>
+        viewer.isAdmin ||
+        isMine(row) ||
+        (viewer.isVendedor &&
+          (row.negocio_seller_id === viewer.userId || row.negocio_created_by === viewer.userId)) ||
+        (viewer.isGestor && row.negocio_gestor_cobro_id === viewer.userId)
+    )
     .filter((row) => {
-      const state = localStateOf(row.sync_status);
-      if (state) return options.isSelf;
-      return Boolean(name) && (row.created_by_name || '').trim() === name;
+      if (!createdBy) return true;
+      if (localStateOf(row.sync_status)) return createdByIsMe;
+      if (createdByIsMe) return isMine(row);
+      return Boolean(createdByName) && (row.created_by_name || '').trim() === createdByName;
     })
     .filter((row) => {
       const day = paidDay(row.paid_at);
@@ -324,7 +390,13 @@ export function filterLocalMisCobros(
         matchesDigits(term, row.negocio_numero, row.customer_id_number)
     )
     .map<MisCobroRow>((row) => {
-      const { created_by_name: _name, sync_status: syncStatus, ...rest } = row;
+      const {
+        sync_status: syncStatus,
+        negocio_seller_id: _seller,
+        negocio_gestor_cobro_id: _gestor,
+        negocio_created_by: _creator,
+        ...rest
+      } = row;
       return {
         ...rest,
         payment_method_is_cash: cash ? row.payment_method_id != null && cash.has(row.payment_method_id) : null,

@@ -1,11 +1,10 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { fetchMisCobros } from '@/lib/cartera/misCobrosService';
-import type { MisCobrosPage } from '@/lib/cartera/misCobros';
+import { fetchCarteraPagos, type CarteraPagosPage } from '@/lib/cartera/misCobrosService';
 import { formatCOP } from '@/lib/creditCalculator';
-import { exportAndShareManagerPaymentsExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
-import { MisCobrosScreen } from '../MisCobrosScreen';
+import { exportAndShareCarteraPagosExcel } from '@/lib/cartera/exportManagerPaymentsExcel';
+import { CarteraPagosView } from '../CarteraPagosView';
 import { bogotaDateValue } from '@/lib/localDate';
 
 jest.mock('@expo/vector-icons', () => {
@@ -22,8 +21,15 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
 }));
 let mockAdmin = false;
 let mockGestor = false;
+let mockVendedor = false;
+let mockRecaudador = true;
 jest.mock('@/hooks/useUserRoles', () => ({
-  useUserRoles: () => ({ isAdmin: () => mockAdmin, isGestorCobro: () => mockGestor }),
+  useUserRoles: () => ({
+    isAdmin: () => mockAdmin,
+    isGestorCobro: () => mockGestor,
+    isVendedor: () => mockVendedor,
+    isRecaudador: () => mockRecaudador,
+  }),
 }));
 jest.mock('@/hooks/useScreenLoading', () => ({ useScreenLoading: () => undefined }));
 let mockOnline = true;
@@ -39,25 +45,7 @@ jest.mock('@/lib/cartera/carteraCatalogs', () => ({
     paymentMethods: [{ id: 'm1', name: 'Efectivo' }],
   }),
 }));
-/** Selector de mentira: un botón que elige a «Gestor Dos». */
-jest.mock('@/components/cartera/CollectionManagerPicker', () => {
-  const ReactModule = jest.requireActual<typeof import('react')>('react');
-  const { Pressable, Text } = jest.requireActual<typeof import('react-native')>('react-native');
-  return {
-    CollectionManagerPicker: (props: { visible: boolean; onSelect: (m: { id: string; full_name: string }) => void }) =>
-      props.visible
-        ? ReactModule.createElement(
-            Pressable,
-            { onPress: () => props.onSelect({ id: 'g2', full_name: 'Gestor Dos' }) },
-            ReactModule.createElement(Text, null, 'fake-elegir-gestor')
-          )
-        : null,
-  };
-});
-jest.mock('@/lib/cartera/misCobrosService', () => ({
-  fetchMisCobros: jest.fn(),
-  receiptStatusParam: (status: string) => (status === 'vigentes' ? 'emitido' : status === 'anulados' ? 'anulado' : 'todos'),
-}));
+jest.mock('@/lib/cartera/misCobrosService', () => ({ fetchCarteraPagos: jest.fn() }));
 const mockShareReceipt = jest.fn();
 const mockPrintReceipt = jest.fn();
 const mockOpenSupport = jest.fn();
@@ -69,13 +57,13 @@ jest.mock('../useCobroReceiptActions', () => ({
     printing: false,
   }),
 }));
-jest.mock('@/lib/cartera/exportManagerPaymentsExcel', () => ({ exportAndShareManagerPaymentsExcel: jest.fn() }));
+jest.mock('@/lib/cartera/exportManagerPaymentsExcel', () => ({ exportAndShareCarteraPagosExcel: jest.fn() }));
 
-const mockedFetch = fetchMisCobros as jest.MockedFunction<typeof fetchMisCobros>;
-const mockedExport = exportAndShareManagerPaymentsExcel as jest.MockedFunction<typeof exportAndShareManagerPaymentsExcel>;
+const mockedFetch = fetchCarteraPagos as jest.MockedFunction<typeof fetchCarteraPagos>;
+const mockedExport = exportAndShareCarteraPagosExcel as jest.MockedFunction<typeof exportAndShareCarteraPagosExcel>;
 const money = (value: number) => formatCOP(value);
 
-const PAGE: MisCobrosPage = {
+const PAGE: CarteraPagosPage = {
   rows: [
     {
       payment_id: 'p1', negocio_id: 'n1', negocio_numero: 20260007, customer_name: 'Ana Pérez', customer_id_number: '1',
@@ -94,20 +82,24 @@ const PAGE: MisCobrosPage = {
   fromCache: false,
   cierreFilterIgnored: false,
   unsentCount: 0,
+  scope: 'propios',
+  collectors: [],
 };
 
 function renderScreen() {
   return render(
     <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } }}>
-      <MisCobrosScreen />
+      <CarteraPagosView />
     </SafeAreaProvider>
   );
 }
 
-describe('MisCobrosScreen', () => {
+describe('CarteraPagosView (Cartera › Pagos)', () => {
   beforeEach(() => {
     mockAdmin = false;
     mockGestor = false;
+    mockVendedor = false;
+    mockRecaudador = true;
     mockOnline = true;
     mockPush.mockReset();
     mockShareReceipt.mockReset();
@@ -117,25 +109,30 @@ describe('MisCobrosScreen', () => {
     mockedFetch.mockReset().mockResolvedValue(PAGE);
   });
 
-  it('carga los cobros propios y muestra totales, efectivo y marcas', async () => {
+  it('carga los pagos con el alcance del rol y muestra totales, efectivo y marcas', async () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('Ana Pérez')).toBeTruthy());
 
     expect(mockedFetch).toHaveBeenCalledWith(
-      expect.objectContaining({ collectorId: 'u1', isSelf: true, collectorName: null, page: 1, online: true })
+      expect.objectContaining({
+        viewer: { userId: 'u1', userName: null, isAdmin: false, isVendedor: false, isGestor: false },
+        page: 1,
+        online: true,
+      })
     );
+    expect(screen.getByTestId('pagos-alcance').props.children).toBe('Pagos que registraste');
     // Abre en «Hoy».
     const first = mockedFetch.mock.calls[0][0] as { filters: { from: string; to: string } };
     expect(first.filters.from).toBe(bogotaDateValue());
     expect(first.filters.to).toBe(bogotaDateValue());
-    expect(screen.queryByText('Total cobrado · todas las fechas')).toBeNull();
+    expect(screen.queryByText('Total recibido · todas las fechas')).toBeNull();
     expect(screen.getAllByText(money(50000)).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Efectivo (1)')).toBeTruthy();
     expect(screen.getByText('En cierre CR-2026-0003')).toBeTruthy();
     expect(screen.getByText('Anulado')).toBeTruthy();
     expect(screen.getByText('Pendiente de enviar')).toBeTruthy();
-    // Solo el administrador elige cobrador.
-    expect(screen.queryByText('Cambiar')).toBeNull();
+    // Solo ve lo suyo: la tarjeta no repite quién registró.
+    expect(screen.queryByText(/Registró /)).toBeNull();
   });
 
   it('la tarjeta de totales desglosa por método y se actualiza al cambiar filtros', async () => {
@@ -196,8 +193,8 @@ describe('MisCobrosScreen', () => {
     const call = mockedFetch.mock.calls[1][0] as { filters: { from: string; to: string } };
     expect(call.filters.from).toMatch(/^\d{4}-\d{2}-01$/);
     expect(call.filters.to >= call.filters.from).toBe(true);
-    expect(screen.getByText(/^Total cobrado · /)).toBeTruthy();
-    expect(screen.queryByText('Total cobrado · todas las fechas')).toBeNull();
+    expect(screen.getByText(/^Total recibido · /)).toBeTruthy();
+    expect(screen.queryByText('Total recibido · todas las fechas')).toBeNull();
   });
 
   it('«Por entregar a caja»: efectivo vigente sin cierre de cualquier fecha, con su total', async () => {
@@ -206,12 +203,18 @@ describe('MisCobrosScreen', () => {
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
     fireEvent.press(screen.getByTestId('mis-cobros-por-entregar'));
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
-    const call = mockedFetch.mock.calls[1][0] as { filters: Record<string, unknown>; scope: string };
+    const call = mockedFetch.mock.calls[1][0] as { filters: Record<string, unknown> };
     expect(call.filters).toEqual(
-      expect.objectContaining({ from: '', to: '', status: 'vigentes', inCierre: 'no', paymentMethodIds: ['m1'] })
+      expect.objectContaining({
+        from: '',
+        to: '',
+        status: 'vigentes',
+        inCierre: 'no',
+        paymentMethodIds: ['m1'],
+        createdBy: { id: 'u1', name: 'gestor@casaideal.test' },
+      })
     );
-    expect(call.scope).toBe('performed');
-    await waitFor(() => expect(screen.getByText(`${money(50000)} en efectivo sin cierre · 1 cobro`)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(`${money(50000)} en efectivo sin cierre · 1 pago`)).toBeTruthy());
 
     // Tocar de nuevo vuelve a «Hoy».
     fireEvent.press(screen.getByTestId('mis-cobros-por-entregar'));
@@ -241,7 +244,15 @@ describe('MisCobrosScreen', () => {
     );
   });
 
-  it('abre el negocio al tocar un cobro', async () => {
+  it('el vendedor (no cobra) no ve «Por entregar a caja»', async () => {
+    mockRecaudador = false;
+    mockVendedor = true;
+    renderScreen();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('mis-cobros-por-entregar')).toBeNull();
+  });
+
+  it('abre el negocio al tocar un pago', async () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('Ana Pérez')).toBeTruthy());
     fireEvent.press(screen.getByText('Ana Pérez'));
@@ -271,105 +282,86 @@ describe('MisCobrosScreen', () => {
     await waitFor(() => expect(screen.getByText(/No incluye pagos de negocios ya cerrados/)).toBeTruthy());
   });
 
-  it('con señal avisa de los cobros del teléfono aún sin enviar', async () => {
+  it('con señal avisa de los pagos del teléfono aún sin enviar', async () => {
     mockedFetch.mockResolvedValue({ ...PAGE, unsentCount: 2 });
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/Hay 2 cobros guardados en el teléfono que aún no se envían/)).toBeTruthy());
-  });
-
-  it('el administrador ve el selector de cobrador', async () => {
-    mockAdmin = true;
-    renderScreen();
-    await waitFor(() => expect(screen.getByText('Cambiar')).toBeTruthy());
-    expect(screen.getByText('Cobrador')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Hay 2 pagos guardados en el teléfono que aún no se envían/)).toBeTruthy());
   });
 
   it('un error del servidor se muestra como error, no como lista vacía', async () => {
-    mockedFetch.mockRejectedValue(new Error('Solo un administrador puede ver los cobros de otro usuario'));
+    mockedFetch.mockRejectedValue(new Error('El rango de fechas es inválido'));
     renderScreen();
-    await waitFor(() => expect(screen.getByText('No se pudieron cargar los cobros')).toBeTruthy());
-    expect(screen.queryByText('Sin cobros para estos filtros')).toBeNull();
+    await waitFor(() => expect(screen.getByText('No se pudieron cargar los pagos')).toBeTruthy());
+    expect(screen.queryByText('Sin pagos para estos filtros')).toBeNull();
   });
 
-  describe('alcance: cobrados por mí / de mi cartera', () => {
-    it('quien no es gestor ni admin (recaudador) no ve el segmento y consulta lo registrado', async () => {
+  describe('alcance y «Registrado por»', () => {
+    const CARTERA_PAGE: CarteraPagosPage = {
+      ...PAGE,
+      scope: 'cartera',
+      collectors: [
+        { id: 'u1', full_name: 'Yo mismo', count: 1 },
+        { id: 'g2', full_name: 'Gestor Dos', count: 4 },
+      ],
+      rows: [{ ...PAGE.rows[0], created_by_name: 'Gestor Dos' }],
+    };
+
+    it('recaudador puro: sin filtro «Registrado por»', async () => {
       renderScreen();
       await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
-      expect(screen.queryByText('De mi cartera')).toBeNull();
-      expect(mockedFetch).toHaveBeenCalledWith(expect.objectContaining({ scope: 'performed' }));
+      fireEvent.press(screen.getByText(/^Filtros/));
+      expect(screen.queryByText('Registrado por')).toBeNull();
     });
 
-    it('el gestor cambia a «De mi cartera»: pide ese alcance y cada cobro dice quién lo registró', async () => {
+    it('gestor: título de su cartera, cada pago dice quién lo registró y filtra por esa persona', async () => {
       mockGestor = true;
+      mockRecaudador = false;
+      mockedFetch.mockResolvedValue(CARTERA_PAGE);
       renderScreen();
-      await waitFor(() => expect(screen.getByText('Cobrados por mí')).toBeTruthy());
-      expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'performed', isSelf: true }));
-      expect(screen.queryByText(/Registró /)).toBeNull();
+      await waitFor(() => expect(screen.getByText('RV-1 · Registró Gestor Dos')).toBeTruthy());
+      expect(screen.getByTestId('pagos-alcance').props.children).toBe('Pagos de tu cartera y los que registraste');
 
-      mockedFetch.mockResolvedValue({
-        ...PAGE,
-        rows: [{ ...PAGE.rows[0], created_by_name: 'Otra Persona' }],
-      });
-      fireEvent.press(screen.getByText('De mi cartera'));
+      fireEvent.press(screen.getByText(/^Filtros/));
+      expect(screen.getByText('Registrado por')).toBeTruthy();
+      expect(screen.getByLabelText('Yo')).toBeTruthy();
+      fireEvent.press(screen.getByLabelText('Gestor Dos'));
+      fireEvent.press(screen.getByText('Aplicar'));
 
       await waitFor(() =>
         expect(mockedFetch).toHaveBeenLastCalledWith(
-          expect.objectContaining({ scope: 'portfolio', collectorId: 'u1', isSelf: true })
+          expect.objectContaining({ filters: expect.objectContaining({ createdBy: { id: 'g2', name: 'Gestor Dos' } }) })
         )
       );
-      await waitFor(() => expect(screen.getByText('RV-1 · Registró Otra Persona')).toBeTruthy());
-      expect(screen.getByText(/negocios asignados hoy como gestor de cobro/)).toBeTruthy();
+      // La tarjeta y el resumen de filtros lo dicen.
+      expect(screen.getAllByText(/Registró Gestor Dos$/)).toHaveLength(2);
     });
 
-    it('sin señal, «De mi cartera» explica que necesita conexión', async () => {
-      mockGestor = true;
-      renderScreen();
-      await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
-      mockedFetch.mockRejectedValue(new Error('Sin señal: los cobros de la cartera asignada se consultan con conexión.'));
-      fireEvent.press(screen.getByText('De mi cartera'));
-      await waitFor(() => expect(screen.getByText(/se consultan con conexión/)).toBeTruthy());
-    });
-
-    it('el admin elige otro cobrador y ve sus dos alcances', async () => {
+    it('admin: todos los pagos de la empresa', async () => {
       mockAdmin = true;
+      mockedFetch.mockResolvedValue({ ...CARTERA_PAGE, scope: 'todos' });
       renderScreen();
-      await waitFor(() => expect(screen.getByText('Cambiar')).toBeTruthy());
-
-      fireEvent.press(screen.getByText('Cambiar'));
-      fireEvent.press(screen.getByText('fake-elegir-gestor'));
-
-      await waitFor(() =>
-        expect(mockedFetch).toHaveBeenLastCalledWith(
-          expect.objectContaining({ collectorId: 'g2', collectorName: 'Gestor Dos', isSelf: false, scope: 'performed' })
-        )
-      );
-      expect(screen.getByText('Gestor Dos')).toBeTruthy();
-      fireEvent.press(screen.getByText('De su cartera'));
-      await waitFor(() =>
-        expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ collectorId: 'g2', scope: 'portfolio' }))
-      );
+      await waitFor(() => expect(screen.getByTestId('pagos-alcance').props.children).toBe('Todos los pagos de la empresa'));
+      expect(mockedFetch).toHaveBeenCalledWith(expect.objectContaining({ viewer: expect.objectContaining({ isAdmin: true }) }));
     });
   });
 
-  it('descarga el Excel con el cobrador, el alcance y los filtros vigentes', async () => {
-    mockGestor = true;
+  it('descarga el Excel con el alcance y los filtros vigentes', async () => {
+    mockedFetch.mockResolvedValue({ ...PAGE, scope: 'cartera' });
     renderScreen();
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
-    fireEvent.press(screen.getByText('De mi cartera'));
     // El primero es el conteo de la tarjeta de totales; el segundo, el segmento de estado.
     fireEvent.press(screen.getAllByText('Anulados')[1]);
-    await waitFor(() => expect(mockedFetch).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'portfolio' })));
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
 
-    // Mientras carga, el botón espera.
     await waitFor(() =>
-      expect(screen.getByLabelText('Descargar Excel de los cobros').props.accessibilityState.disabled).toBe(false)
+      expect(screen.getByLabelText('Descargar Excel de los pagos').props.accessibilityState.disabled).toBe(false)
     );
-    fireEvent.press(screen.getByLabelText('Descargar Excel de los cobros'));
+    fireEvent.press(screen.getByLabelText('Descargar Excel de los pagos'));
 
     await waitFor(() => expect(mockedExport).toHaveBeenCalledTimes(1));
     expect(mockedExport).toHaveBeenCalledWith({
-      manager: { id: 'u1', full_name: 'gestor@casaideal.test' },
-      filters: expect.objectContaining({ scope: 'portfolio', receiptStatus: 'anulado', paymentMethodIds: [], inCierre: null }),
+      filters: expect.objectContaining({ status: 'anulados', paymentMethodIds: [], inCierre: 'todos' }),
+      context: { scope: 'cartera', paymentMethodsLabel: '' },
     });
   });
 

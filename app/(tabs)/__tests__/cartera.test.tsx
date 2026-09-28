@@ -7,12 +7,14 @@ import { loadCarteraCatalogs } from '@/lib/cartera/carteraCatalogs';
 import { resetCarteraCache } from '@/lib/cartera/carteraCache';
 
 const mockPush = jest.fn();
+/** Parámetros de la ruta (`?vista=pagos`). */
+let mockParams: Record<string, string> = {};
 /** Última función que la pantalla registró en `useFocusEffect`: volver a llamarla es volver a la pantalla. */
 let focusCallback: (() => void) | null = null;
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => mockParams,
   useFocusEffect: (callback: () => void) => {
     const mockReact = jest.requireActual<typeof import('react')>('react');
     focusCallback = callback;
@@ -51,10 +53,10 @@ jest.mock('@/lib/offline/store/syncStore', () => ({
 }));
 jest.mock('@/lib/offline/sync/downloadData', () => ({ formatLocalDataLabel: () => 'Datos locales' }));
 jest.mock('@/components/offline', () => ({ DownloadDataButton: () => null }));
-jest.mock('@/components/cartera/mis-cobros/MisCobrosEntryButton', () => {
+jest.mock('@/components/cartera/mis-cobros/CarteraPagosView', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   const mockReact = jest.requireActual<typeof import('react')>('react');
-  return { MisCobrosEntryButton: () => mockReact.createElement(Text, null, 'fake-cobros') };
+  return { CarteraPagosView: () => mockReact.createElement(Text, null, 'fake-vista-pagos') };
 });
 /**
  * Modal de filtros de mentira: expone botones para simular el borrador, aplicar
@@ -153,6 +155,7 @@ describe('Pantalla de Cartera', () => {
     mockSoloBusqueda = false;
     mockRecaudadorVendedor = false;
     focusCallback = null;
+    mockParams = {};
     mockPush.mockReset();
     mockedLoad.mockReset().mockResolvedValue(result);
     mockedCatalogs
@@ -252,12 +255,33 @@ describe('Pantalla de Cartera', () => {
     expect(screen.getByText('Cobro por búsqueda')).toBeTruthy();
   });
 
-  // Un solo acceso: «Cobros» reemplaza a «Cobros de mi cartera» / «Ver cobros por gestor».
-  it('ofrece un único acceso a «Cobros» y ya no el de cobros por gestor', async () => {
-    const screen = await renderScreen();
-    expect(screen.getAllByText('fake-cobros')).toHaveLength(1);
-    expect(screen.queryByText('Cobros de mi cartera')).toBeNull();
-    expect(screen.queryByText('Ver cobros por gestor')).toBeNull();
+  // Pedido del usuario (2026-09-28): una vista de pagos dentro de Cartera.
+  describe('vistas «Cuotas» y «Pagos»', () => {
+    it('abre en «Cuotas» y cambia a «Pagos» con el selector de arriba', async () => {
+      const screen = await renderScreen();
+      // El selector va primero, arriba de todo.
+      expect(screen.getAllByText('Cuotas')[0]).toBeTruthy();
+      expect(screen.queryByText('fake-vista-pagos')).toBeNull();
+
+      fireEvent.press(screen.getByText('Pagos'));
+      expect(screen.getByText('fake-vista-pagos')).toBeTruthy();
+
+      // Volver a «Cuotas» no recarga la lista (sigue montada).
+      fireEvent.press(screen.getAllByText('Cuotas')[0]);
+      expect(screen.queryByText('fake-vista-pagos')).toBeNull();
+      expect(mockedLoad).toHaveBeenCalledTimes(1);
+    });
+
+    it('?vista=pagos abre directo en «Pagos»', async () => {
+      mockParams = { vista: 'pagos' };
+      const screen = await renderScreen();
+      expect(screen.getByText('fake-vista-pagos')).toBeTruthy();
+    });
+
+    it('ya no hay botón aparte de «Cobros»', async () => {
+      const screen = await renderScreen();
+      expect(screen.queryByText('Cobros')).toBeNull();
+    });
   });
 
   describe('buscador de cuotas', () => {

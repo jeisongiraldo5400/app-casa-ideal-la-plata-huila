@@ -6,7 +6,7 @@ import {
   loadMisCobrosFromLocal,
 } from '@/lib/offline/repositories/misCobrosRepository';
 import { DEFAULT_MIS_COBROS_FILTERS, type LocalMisCobro } from '../misCobros';
-import { CASH_METHODS_SNAPSHOT, PORTFOLIO_NEEDS_CONNECTION, fetchMisCobros, type MisCobrosQuery } from '../misCobrosService';
+import { CASH_METHODS_SNAPSHOT, fetchCarteraPagos, type CarteraPagosQuery } from '../misCobrosService';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
 jest.mock('@/lib/offline/repositories/offlineRepository', () => ({
@@ -26,13 +26,12 @@ const mockedSave = saveReportSnapshot as jest.MockedFunction<typeof saveReportSn
 const mockedUnsent = countUnsentPagosLocal as jest.MockedFunction<typeof countUnsentPagosLocal>;
 const mockedName = fetchProfileNameFromLocal as jest.MockedFunction<typeof fetchProfileNameFromLocal>;
 
-const QUERY: MisCobrosQuery = {
+/** Recaudador puro u1: sin señal solo ve lo que él registró. */
+const QUERY: CarteraPagosQuery = {
   filters: DEFAULT_MIS_COBROS_FILTERS,
   page: 1,
   pageSize: 20,
-  collectorId: 'u1',
-  collectorName: null,
-  isSelf: true,
+  viewer: { userId: 'u1', userName: null, isAdmin: false, isVendedor: false, isGestor: false },
   online: true,
 };
 
@@ -64,7 +63,7 @@ const LOCAL: LocalMisCobro[] = [
   },
 ];
 
-describe('fetchMisCobros', () => {
+describe('fetchCarteraPagos (vista Pagos)', () => {
   beforeEach(() => {
     rpc.mockReset();
     mockedLoadLocal.mockReset().mockResolvedValue(LOCAL);
@@ -74,22 +73,22 @@ describe('fetchMisCobros', () => {
     mockedName.mockReset().mockResolvedValue('Gestor Uno');
   });
 
-  it('con señal llama al RPC: lo propio va sin cobrador y solo con los filtros usados', async () => {
+  it('con señal llama a list_cartera_payments solo con los filtros usados', async () => {
     rpc.mockResolvedValue({ data: SERVER, error: null });
-    const page = await fetchMisCobros({
+    const page = await fetchCarteraPagos({
       ...QUERY,
       filters: { ...DEFAULT_MIS_COBROS_FILTERS, from: '2026-09-01', paymentMethodIds: ['m1', 'm2'], inCierre: 'no', status: 'vigentes', search: ' ana ' },
     });
 
-    expect(rpc).toHaveBeenCalledWith('list_my_collected_payments', {
-      p_collector_id: undefined,
-      p_from: '2026-09-01',
-      p_to: undefined,
+    expect(rpc).toHaveBeenCalledWith('list_cartera_payments', {
+      p_date_from: '2026-09-01',
+      p_date_to: undefined,
       p_payment_method_ids: ['m1', 'm2'],
       p_payment_site: undefined,
-      p_status: 'vigentes',
-      p_in_cierre: false,
+      p_created_by: undefined,
       p_search: 'ana',
+      p_receipt_status: 'vigentes',
+      p_in_cierre: false,
       p_page: 1,
       p_page_size: 20,
     });
@@ -118,7 +117,7 @@ describe('fetchMisCobros', () => {
       },
       error: null,
     });
-    const page = await fetchMisCobros(QUERY);
+    const page = await fetchCarteraPagos(QUERY);
     expect(page.summary.total_discount).toBe(1000);
     expect(page.summary.pronto_pago_count).toBe(1);
     expect(page.summary.total_voided).toBe(30000);
@@ -130,20 +129,68 @@ describe('fetchMisCobros', () => {
 
   it('un servidor sin el desglose deja by_method sin definir (la pantalla lo oculta)', async () => {
     rpc.mockResolvedValue({ data: SERVER, error: null });
-    const page = await fetchMisCobros(QUERY);
+    const page = await fetchCarteraPagos(QUERY);
     expect(page.summary.by_method).toBeUndefined();
   });
 
-  it('el admin que consulta a otro cobrador envía su id', async () => {
+  it('«Registrado por», sitio, estado y cierre llegan al RPC; trae alcance, quién registró y gestor', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        ...SERVER,
+        scope: 'cartera',
+        collectors: [{ id: 'g2', full_name: 'Gestor Dos', count: '3' }, { id: null }],
+        rows: [{ ...SERVER.rows[0], created_by: 'g2', created_by_name: 'Gestor Dos', gestor_cobro_name: 'Gestor Dos' }],
+      },
+      error: null,
+    });
+    const page = await fetchCarteraPagos({
+      ...QUERY,
+      filters: {
+        ...DEFAULT_MIS_COBROS_FILTERS,
+        to: '2026-09-30',
+        site: 'almacen',
+        status: 'anulados',
+        inCierre: 'si',
+        createdBy: { id: 'g2', name: 'Gestor Dos' },
+      },
+    });
+    expect(rpc.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        p_date_to: '2026-09-30',
+        p_payment_site: 'almacen',
+        p_receipt_status: 'anulados',
+        p_in_cierre: true,
+        p_created_by: 'g2',
+      })
+    );
+    expect(page.scope).toBe('cartera');
+    expect(page.collectors).toEqual([{ id: 'g2', full_name: 'Gestor Dos', count: 3 }]);
+    expect(page.rows[0]).toMatchObject({ created_by: 'g2', created_by_name: 'Gestor Dos', gestor_cobro_name: 'Gestor Dos' });
+  });
+
+  it('sin alcance en la respuesta usa el de los roles', async () => {
     rpc.mockResolvedValue({ data: SERVER, error: null });
-    const page = await fetchMisCobros({ ...QUERY, collectorId: 'g2', collectorName: 'Gestor Dos', isSelf: false });
-    expect(rpc.mock.calls[0][1].p_collector_id).toBe('g2');
-    expect(page.unsentCount).toBe(0);
-    expect(mockedUnsent).not.toHaveBeenCalled();
+    expect((await fetchCarteraPagos(QUERY)).scope).toBe('propios');
+    expect((await fetchCarteraPagos({ ...QUERY, viewer: { ...QUERY.viewer, isAdmin: true } })).scope).toBe('todos');
+  });
+
+  it('sin señal respeta el alcance del rol: el recaudador no ve pagos ajenos del teléfono', async () => {
+    mockedLoadLocal.mockResolvedValue([
+      ...LOCAL,
+      { ...LOCAL[1], payment_id: 'l3', created_by_name: 'Otra', negocio_seller_id: 'u1' },
+    ]);
+    const recaudador = await fetchCarteraPagos({ ...QUERY, online: false });
+    expect(recaudador.rows.map((row) => row.payment_id)).toEqual(['l1', 'l2']);
+    expect(recaudador.scope).toBe('propios');
+    expect(recaudador.collectors).toEqual([]);
+
+    const vendedor = await fetchCarteraPagos({ ...QUERY, online: false, viewer: { ...QUERY.viewer, isVendedor: true } });
+    expect(vendedor.rows.map((row) => row.payment_id).sort()).toEqual(['l1', 'l2', 'l3']);
+    expect(vendedor.scope).toBe('cartera');
   });
 
   it('sin señal usa los pagos del teléfono, incluidos los pendientes, y el efectivo guardado', async () => {
-    const page = await fetchMisCobros({ ...QUERY, online: false, filters: { ...DEFAULT_MIS_COBROS_FILTERS, inCierre: 'si' } });
+    const page = await fetchCarteraPagos({ ...QUERY, online: false, filters: { ...DEFAULT_MIS_COBROS_FILTERS, inCierre: 'si' } });
 
     expect(rpc).not.toHaveBeenCalled();
     expect(page.fromCache).toBe(true);
@@ -167,7 +214,7 @@ describe('fetchMisCobros', () => {
       data: { ...SERVER, rows: [{ ...SERVER.rows[0], remaining_balance: '20000', remaining_after_payment: '150000' }] },
       error: null,
     });
-    const page = await fetchMisCobros(QUERY);
+    const page = await fetchCarteraPagos(QUERY);
     expect(page.rows[0]).toMatchObject({ remaining_balance: 20000, remaining_after_payment: 150000 });
     expect(page.cashMethodIds).toEqual(['m1']);
     expect(page.closedNegociosMissing).toBeFalsy();
@@ -178,74 +225,27 @@ describe('fetchMisCobros', () => {
       data: { ...SERVER, rows: [{ ...SERVER.rows[0], cuota_label: 'Cuotas 1–2 + Cuota 3 (parcial)' }, SERVER.rows[0]] },
       error: null,
     });
-    const page = await fetchMisCobros(QUERY);
+    const page = await fetchCarteraPagos(QUERY);
     expect(page.rows[0].cuota_label).toBe('Cuotas 1–2 + Cuota 3 (parcial)');
     expect(page.rows[1].cuota_label).toBeNull();
   });
 
   it('si la petición no llega por falta de red, cae a lo guardado', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
-    const page = await fetchMisCobros(QUERY);
+    const page = await fetchCarteraPagos(QUERY);
     expect(page.fromCache).toBe(true);
     expect(page.rows).toHaveLength(2);
   });
 
-  it('un rechazo del servidor (permiso) no se disfraza de datos locales', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'Solo un administrador puede ver los cobros de otro usuario' } });
-    await expect(fetchMisCobros({ ...QUERY, isSelf: false, collectorId: 'g2' })).rejects.toThrow('Solo un administrador');
+  it('un rechazo del servidor no se disfraza de datos locales', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'El rango de fechas es inválido' } });
+    await expect(fetchCarteraPagos(QUERY)).rejects.toThrow('El rango de fechas es inválido');
     expect(mockedLoadLocal).not.toHaveBeenCalled();
   });
 
   it('pagina lo guardado igual que el servidor', async () => {
-    const page = await fetchMisCobros({ ...QUERY, online: false, page: 2, pageSize: 1 });
+    const page = await fetchCarteraPagos({ ...QUERY, online: false, page: 2, pageSize: 1 });
     expect(page.rows.map((row) => row.payment_id)).toEqual(['l2']);
     expect(page.summary.total_count).toBe(2);
-  });
-
-  describe('«De mi cartera» (cartera asignada)', () => {
-    it('con señal pide get_collection_manager_payments con alcance portfolio y los mismos filtros', async () => {
-      rpc.mockResolvedValue({
-        data: {
-          summary: { ...SERVER.summary, average_payment: '40000' },
-          rows: [{ ...SERVER.rows[0], created_by_name: 'Otra', remaining_balance: '120000', support_path: 'p.jpg', discount_amount: '0' }],
-        },
-        error: null,
-      });
-      const page = await fetchMisCobros({
-        ...QUERY,
-        scope: 'portfolio',
-        filters: { ...DEFAULT_MIS_COBROS_FILTERS, to: '2026-09-30', paymentMethodIds: ['m1'], site: 'almacen', status: 'anulados', inCierre: 'si', search: ' 1023 ' },
-      });
-
-      expect(rpc).toHaveBeenCalledWith('get_collection_manager_payments', {
-        p_gestor_id: 'u1',
-        p_scope: 'portfolio',
-        p_date_from: undefined,
-        p_date_to: '2026-09-30',
-        p_receipt_status: 'anulado',
-        p_search: '1023',
-        p_page: 1,
-        p_page_size: 20,
-        p_payment_method_ids: ['m1'],
-        p_payment_site: 'almacen',
-        p_in_cierre: true,
-      });
-      expect(page.summary.average_payment).toBe(40000);
-      expect(page.rows[0]).toMatchObject({ created_by_name: 'Otra', remaining_balance: 120000, support_path: 'p.jpg' });
-      expect(page.unsentCount).toBe(0);
-      expect(mockedUnsent).not.toHaveBeenCalled();
-    });
-
-    it('sin señal no inventa la cartera con los pagos del teléfono: pide conexión', async () => {
-      await expect(fetchMisCobros({ ...QUERY, scope: 'portfolio', online: false })).rejects.toThrow(PORTFOLIO_NEEDS_CONNECTION);
-      expect(rpc).not.toHaveBeenCalled();
-      expect(mockedLoadLocal).not.toHaveBeenCalled();
-    });
-
-    it('si la petición no llega, también pide conexión', async () => {
-      rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
-      await expect(fetchMisCobros({ ...QUERY, scope: 'portfolio' })).rejects.toThrow(PORTFOLIO_NEEDS_CONNECTION);
-      expect(mockedLoadLocal).not.toHaveBeenCalled();
-    });
   });
 });

@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { SegmentedControl } from '@/components/ui';
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
 import { CarteraFilterModal } from '@/components/cartera/CarteraFilterModal';
@@ -7,7 +9,7 @@ import { CarteraCuotaRow } from '@/components/cartera/CarteraCuotaRow';
 import { CarteraEmptyState } from '@/components/cartera/CarteraEmptyState';
 import { CarteraListFooter } from '@/components/cartera/CarteraListFooter';
 import { CarteraListHeader } from '@/components/cartera/CarteraListHeader';
-import { MisCobrosEntryButton } from '@/components/cartera/mis-cobros/MisCobrosEntryButton';
+import { CarteraPagosView } from '@/components/cartera/mis-cobros/CarteraPagosView';
 import { useCarteraList } from '@/components/cartera/infrastructure/hooks/useCarteraList';
 import { countActiveCarteraFilters, describeCarteraFilters } from '@/lib/cartera/carteraFilters';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
@@ -18,10 +20,39 @@ import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { useUltimaGestion } from '@/components/collection-routes/useUltimaGestion';
 
+type CarteraVista = 'cuotas' | 'pagos';
+
+const VISTAS: { value: CarteraVista; label: string }[] = [
+  { value: 'cuotas', label: 'Cuotas' },
+  { value: 'pagos', label: 'Pagos' },
+];
+
+/**
+ * Cartera con dos vistas separadas: «Cuotas» (lo que se debe) y «Pagos» (los
+ * abonos recibidos, con sus filtros y totales). `?vista=pagos` abre en Pagos.
+ */
 export default function CarteraScreen() {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  const params = useLocalSearchParams<{ vista?: string }>();
+  const requested: CarteraVista = params.vista === 'pagos' ? 'pagos' : 'cuotas';
+  const [vista, setVista] = useState<CarteraVista>(requested);
+  useEffect(() => {
+    if (params.vista) setVista(requested);
+  }, [params.vista, requested]);
+
   return (
     <ScreenErrorBoundary screen="Cartera">
-      <CarteraScreenInner />
+      <View style={[styles.container, { backgroundColor: colors.background.default }]}>
+        <View style={styles.switcher}>
+          <SegmentedControl items={VISTAS} value={vista} onChange={(value) => setVista(value as CarteraVista)} />
+        </View>
+        {/* Cuotas queda montada: al volver de Pagos no se recarga ni pierde filtros. */}
+        <View style={[styles.container, vista !== 'cuotas' && styles.hidden]}>
+          <CarteraScreenInner />
+        </View>
+        {vista === 'pagos' ? <CarteraPagosView /> : null}
+      </View>
     </ScreenErrorBoundary>
   );
 }
@@ -79,9 +110,6 @@ function CarteraScreenInner() {
             onReload={list.reload}
             showSummary={!searchOnly}
             summary={list.dashboard?.summary}
-            // Un solo acceso a «Cobros»: lo registrado, la cartera asignada,
-            // otro cobrador (admin), Excel y recibos viven en esa pantalla.
-            actions={<MisCobrosEntryButton />}
             search={filters.search || ''}
             onSearchChange={list.changeSearch}
             filtersDescription={describeCarteraFilters(filters)}
@@ -131,5 +159,7 @@ function CarteraScreenInner() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  switcher: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.md },
+  hidden: { display: 'none' },
   list: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
 });

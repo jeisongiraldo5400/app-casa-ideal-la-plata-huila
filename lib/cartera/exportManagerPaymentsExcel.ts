@@ -4,13 +4,13 @@ import * as XLSX from 'xlsx';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { paymentSiteLabel } from '@/lib/paymentSite';
 import { fetchPaymentMethods } from '@/components/negocios/infrastructure/services/paymentMethodsService';
-import {
-  fetchManagerPayments,
-  type CollectionManager,
-  type ManagerPayment,
-  type ManagerPaymentMethodTotal,
-  type ManagerPaymentsParams,
+import type {
+  ManagerPayment,
+  ManagerPaymentMethodTotal,
+  ManagerPaymentsSummary,
 } from '@/lib/cartera/carteraService';
+import { pagosScopeTitle, type CarteraPagosScope, type MisCobrosFilters } from '@/lib/cartera/misCobros';
+import { requestCarteraPayments } from '@/lib/cartera/misCobrosService';
 
 const PAGE_SIZE = 50;
 const MAX_ROWS = 10_000;
@@ -29,11 +29,6 @@ const BOGOTA_OFFSET_MS = 5 * 60 * 60 * 1000;
 const MS_PER_DAY = 86_400_000;
 /** Días entre el 1899-12-30 (día 0 de Excel) y el 1970-01-01. */
 const EXCEL_UNIX_EPOCH_DAYS = 25_569;
-
-const SCOPE_LABEL = {
-  performed: 'Registrados por el cobrador',
-  portfolio: 'Cartera actualmente asignada',
-} as const;
 
 const SITE_LABEL: Record<string, string> = {
   almacen: 'Almacén',
@@ -61,20 +56,19 @@ export const DETAIL_HEADER = [
   'Método de pago',
   'Sitio de pago',
   'Registrado por',
-  'Asignación actual',
+  'Gestor de cobro',
   'Tiene soporte',
 ] as const;
 
 /** Ancho (en caracteres) de cada columna de DETAIL_HEADER, en el mismo orden. */
-const DETAIL_WIDTHS = [18, 14, 30, 12, 16, 14, 13, 12, 14, 14, 22, 18, 17, 24, 17, 13];
+const DETAIL_WIDTHS = [18, 14, 30, 12, 16, 14, 13, 12, 14, 14, 22, 18, 17, 24, 24, 13];
 
-/** Los filtros de la pantalla «Cobros», sin la página. */
-export type ManagerPaymentFilters = Omit<ManagerPaymentsParams, 'page' | 'pageSize'> & {
-  /** Nombres de los métodos elegidos, solo para la hoja «Resumen». */
+/** Contexto del reporte: alcance del servidor y nombres para la hoja «Resumen». */
+export type CarteraPagosExcelContext = {
+  scope: CarteraPagosScope;
+  /** Nombres de los métodos elegidos. */
   paymentMethodsLabel?: string;
 };
-
-type ManagerPaymentsSummary = Awaited<ReturnType<typeof fetchManagerPayments>>['summary'];
 
 /**
  * Serial de fecha de Excel con la hora de pared de Bogotá (la misma que muestra
@@ -197,21 +191,18 @@ function methodSheetName(method: ManagerPaymentMethodTotal) {
   return method.payment_method_id ? 'Método sin nombre' : 'Sin método';
 }
 
-export async function fetchAllManagerPayments(
-  managerId: string,
-  filters: ManagerPaymentFilters
-) {
+/** Todas las filas del filtro (páginas de 50 de `list_cartera_payments`, tope 10.000). */
+export async function fetchAllCarteraPayments(filters: MisCobrosFilters) {
   const allRows: ManagerPayment[] = [];
   let page = 1;
   let summary: ManagerPaymentsSummary | null = null;
 
   while (allRows.length < MAX_ROWS) {
-    const { paymentMethodsLabel: _label, ...params } = filters;
-    const result = await fetchManagerPayments(managerId, {
-      ...params,
-      page,
-      pageSize: PAGE_SIZE,
-    });
+    const response = await requestCarteraPayments(filters, page, PAGE_SIZE);
+    const result = {
+      summary: (response.summary || {}) as unknown as ManagerPaymentsSummary,
+      rows: (response.rows || []) as unknown as ManagerPayment[],
+    };
     if (!summary) summary = result.summary;
     allRows.push(...result.rows);
     const total = Number(result.summary.total_count || 0);
@@ -238,14 +229,14 @@ export async function fetchAllManagerPayments(
  * formato de moneda y fechas como fechas reales de Excel.
  */
 export function buildManagerPaymentsWorkbook(options: {
-  manager: CollectionManager;
-  filters: ManagerPaymentFilters;
+  filters: MisCobrosFilters;
+  context: CarteraPagosExcelContext;
   summary: ManagerPaymentsSummary;
   rows: ManagerPayment[];
   methodNames?: Map<string, string>;
   generatedAt?: Date;
 }): XLSX.WorkBook {
-  const { manager, filters, summary, rows } = options;
+  const { filters, context, summary, rows } = options;
   const methodNames = options.methodNames ?? new Map<string, string>();
   const generatedAt = options.generatedAt ?? new Date();
 
@@ -270,7 +261,7 @@ export function buildManagerPaymentsWorkbook(options: {
       paymentMethodLabel(payment, methodNames),
       paymentSiteLabel(payment.payment_site),
       payment.created_by_name || '',
-      payment.currently_assigned ? 'Sí' : 'No',
+      payment.gestor_cobro_name || '',
       payment.support_path ? 'Sí' : 'No',
     ];
     return cells;
@@ -281,24 +272,20 @@ export function buildManagerPaymentsWorkbook(options: {
   detailSheet['!autofilter'] = { ref: detailSheet['!ref'] as string };
 
   const summarySheet = sheetFromRows([
-    ['REPORTE DE COBROS POR GESTOR'],
-    ['Gestor', manager.full_name],
-    ['Alcance', SCOPE_LABEL[filters.scope]],
-    ['Fecha desde', dateCell(calendarDaySerial(filters.dateFrom), DATE_FORMAT, 'Sin filtro')],
-    ['Fecha hasta', dateCell(calendarDaySerial(filters.dateTo), DATE_FORMAT, 'Sin filtro')],
+    ['REPORTE DE PAGOS DE CARTERA'],
+    ['Alcance', pagosScopeTitle(context.scope)],
+    ['Registrado por', filters.createdBy?.name || 'Todos'],
+    ['Fecha desde', dateCell(filters.from ? calendarDaySerial(filters.from) : null, DATE_FORMAT, 'Sin filtro')],
+    ['Fecha hasta', dateCell(filters.to ? calendarDaySerial(filters.to) : null, DATE_FORMAT, 'Sin filtro')],
     [
       'Estado recibo',
-      filters.receiptStatus === 'todos'
-        ? 'Todos'
-        : filters.receiptStatus === 'anulado'
-          ? 'Anulados'
-          : 'Vigentes',
+      filters.status === 'todos' ? 'Todos' : filters.status === 'anulados' ? 'Anulados' : 'Vigentes',
     ],
-    ['Métodos de pago', filters.paymentMethodsLabel || 'Todos'],
+    ['Métodos de pago', context.paymentMethodsLabel || 'Todos'],
     ['Sitio de pago', (filters.site && SITE_LABEL[filters.site]) || 'Todos'],
     [
       'Cierre de recaudo',
-      filters.inCierre == null ? 'Todos' : filters.inCierre ? 'En un cierre' : 'Sin cierre',
+      filters.inCierre === 'todos' ? 'Todos' : filters.inCierre === 'si' ? 'En un cierre' : 'Sin cierre',
     ],
     ['Búsqueda', filters.search || '—'],
     ['Generado', dateCell(toExcelDateSerial(generatedAt), DATE_TIME_FORMAT, '')],
@@ -352,19 +339,9 @@ export function buildManagerPaymentsWorkbook(options: {
   return workbook;
 }
 
-export function managerPaymentsFileName(
-  manager: CollectionManager,
-  scope: ManagerPaymentFilters['scope'],
-  now: Date = new Date()
-) {
-  const safeName = manager.full_name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')
-    .replace(/_+/g, '_')
-    .slice(0, 40);
+export function carteraPagosFileName(scope: CarteraPagosScope, now: Date = new Date()) {
   const dateStamp = now.toISOString().slice(0, 10);
-  return `Cobros_${safeName || 'gestor'}_${scope}_${dateStamp}.xlsx`;
+  return `Pagos_${scope}_${dateStamp}.xlsx`;
 }
 
 /**
@@ -372,11 +349,11 @@ export function managerPaymentsFileName(
  * Todo ocurre en el teléfono (SheetJS en JS puro), así que no depende de red
  * más allá de la consulta de cobros.
  */
-export async function exportAndShareManagerPaymentsExcel(options: {
-  manager: CollectionManager;
-  filters: ManagerPaymentFilters;
+export async function exportAndShareCarteraPagosExcel(options: {
+  filters: MisCobrosFilters;
+  context: CarteraPagosExcelContext;
 }): Promise<{ fileName: string; rowCount: number }> {
-  const { manager, filters } = options;
+  const { filters, context } = options;
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error('Compartir archivos no está disponible en este dispositivo');
   }
@@ -384,12 +361,12 @@ export async function exportAndShareManagerPaymentsExcel(options: {
     throw new Error('No hay acceso al almacenamiento temporal del dispositivo');
   }
 
-  const { summary, rows } = await fetchAllManagerPayments(manager.id, filters);
+  const { summary, rows } = await fetchAllCarteraPayments(filters);
   const methodNames = await resolveMissingMethodNames(rows);
-  const workbook = buildManagerPaymentsWorkbook({ manager, filters, summary, rows, methodNames });
+  const workbook = buildManagerPaymentsWorkbook({ filters, context, summary, rows, methodNames });
   const base64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx', compression: true });
 
-  const fileName = managerPaymentsFileName(manager, filters.scope);
+  const fileName = carteraPagosFileName(context.scope);
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
 
   await FileSystem.writeAsStringAsync(fileUri, base64, {

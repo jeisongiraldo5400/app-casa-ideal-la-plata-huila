@@ -12,7 +12,10 @@ import {
   porEntregarACajaFilters,
   methodTotalLabel,
   misCobroCuotaLabel,
+  pagosScopeFor,
+  pagosScopeTitle,
   totalsByMethod,
+  type PagosViewer,
 } from '../misCobros';
 
 const EFECTIVO = 'm-efectivo';
@@ -54,13 +57,16 @@ const ROWS: LocalMisCobro[] = [
 ];
 
 type Options = Parameters<typeof filterLocalMisCobros>[2];
-const SELF: Options = { collectorName: 'Gestor Uno', isSelf: true, cashMethodIds: [EFECTIVO] };
+/** Recaudador puro llamado «Gestor Uno»: solo ve lo que él registró. */
+const RECAUDADOR: PagosViewer = { userId: 'u1', userName: 'Gestor Uno', isAdmin: false, isVendedor: false, isGestor: false };
+const SELF: Options = { viewer: RECAUDADOR, cashMethodIds: [EFECTIVO] };
+const ADMIN: Options = { viewer: { ...RECAUDADOR, isAdmin: true }, cashMethodIds: [EFECTIVO] };
 
 function run(filters: Partial<MisCobrosFilters> = {}, options: Options = SELF) {
   return filterLocalMisCobros(ROWS, { ...DEFAULT_MIS_COBROS_FILTERS, ...filters }, options);
 }
 
-describe('filterLocalMisCobros (Mis cobros sin señal)', () => {
+describe('filterLocalMisCobros (vista Pagos sin señal)', () => {
   it('lista los propios (por nombre) y los aún sin enviar; no los de otro cobrador', () => {
     const result = run();
     expect(result.rows.map((row) => row.payment_id)).toEqual(['p5', 'p4', 'p3', 'p2', 'p1']);
@@ -86,9 +92,52 @@ describe('filterLocalMisCobros (Mis cobros sin señal)', () => {
     expect(rows[0].payment_method_is_cash).toBeNull();
   });
 
-  it('al consultar a otro cobrador no mezcla los pendientes de este teléfono', () => {
-    const result = run({}, { collectorName: 'Gestor Dos', isSelf: false, cashMethodIds: [EFECTIVO] });
+  it('«Registrado por» otra persona (admin): por nombre y sin los pendientes de este teléfono', () => {
+    const result = run({ createdBy: { id: 'u2', name: 'Gestor Dos' } }, ADMIN);
     expect(result.rows.map((row) => row.payment_id)).toEqual(['p6']);
+  });
+
+  it('«Registrado por» yo: los míos por nombre más los de este teléfono', () => {
+    const result = run({ createdBy: { id: 'u1', name: 'Gestor Uno' } }, ADMIN);
+    expect(result.rows.map((row) => row.payment_id)).toEqual(['p5', 'p4', 'p3', 'p2', 'p1']);
+  });
+
+  it('el recaudador puro no ve pagos ajenos aunque filtre por otra persona', () => {
+    expect(run({ createdBy: { id: 'u2', name: 'Gestor Dos' } }).rows).toHaveLength(0);
+  });
+
+  it('las filas conservan quién registró el pago', () => {
+    expect(run({}, ADMIN).rows.find((row) => row.payment_id === 'p6')?.created_by_name).toBe('Gestor Dos');
+  });
+
+  it('alcance por rol sin señal: admin todo; vendedor y gestor su cartera más lo suyo', () => {
+    const rows: LocalMisCobro[] = [
+      pago({ payment_id: 'a', created_by_name: 'Otro', negocio_seller_id: 'u1' }),
+      pago({ payment_id: 'b', created_by_name: 'Otro', negocio_created_by: 'u1' }),
+      pago({ payment_id: 'c', created_by_name: 'Otro', negocio_gestor_cobro_id: 'u1' }),
+      pago({ payment_id: 'd', created_by_name: 'Otro' }),
+      pago({ payment_id: 'e', created_by_name: 'Gestor Uno' }),
+    ];
+    const ids = (viewer: Partial<PagosViewer>) =>
+      filterLocalMisCobros(rows, DEFAULT_MIS_COBROS_FILTERS, { viewer: { ...RECAUDADOR, ...viewer }, cashMethodIds: null })
+        .rows.map((row) => row.payment_id)
+        .sort();
+    expect(ids({ isAdmin: true })).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(ids({ isVendedor: true })).toEqual(['a', 'b', 'e']);
+    expect(ids({ isGestor: true })).toEqual(['c', 'e']);
+    expect(ids({ isVendedor: true, isGestor: true })).toEqual(['a', 'b', 'c', 'e']);
+    // Recaudador puro: tiene todos los negocios en el teléfono, pero solo ve lo suyo.
+    expect(ids({})).toEqual(['e']);
+  });
+
+  it('el alcance y su título, como el servidor', () => {
+    expect(pagosScopeFor({ isAdmin: true, isVendedor: true, isGestor: false })).toBe('todos');
+    expect(pagosScopeFor({ isAdmin: false, isVendedor: true, isGestor: false })).toBe('cartera');
+    expect(pagosScopeFor({ isAdmin: false, isVendedor: false, isGestor: true })).toBe('cartera');
+    expect(pagosScopeFor({ isAdmin: false, isVendedor: false, isGestor: false })).toBe('propios');
+    expect(pagosScopeTitle('todos')).toBe('Todos los pagos de la empresa');
+    expect(pagosScopeTitle('cartera')).toBe('Pagos de tu cartera y los que registraste');
+    expect(pagosScopeTitle('propios')).toBe('Pagos que registraste');
   });
 
   it('filtra por día de Bogotá, con el día final entero', () => {
@@ -192,8 +241,9 @@ describe('ayudas de filtros', () => {
         paymentMethodIds: ['a', 'b'],
         inCierre: 'no',
         search: 'ana',
+        createdBy: { id: 'u2', name: 'Otra' },
       })
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it('rechaza un rango invertido', () => {
@@ -226,7 +276,8 @@ describe('misCobrosPresetRange', () => {
   });
 });
 
-describe('«Cobros» abre en Hoy y atajo «Por entregar a caja»', () => {
+describe('«Pagos» abre en Hoy y atajo «Por entregar a caja»', () => {
+  const ME = { id: 'u1', name: 'Gestor Uno' };
   const now = new Date('2026-09-25T20:00:00Z');
 
   it('abre en hoy (día de Bogotá) y sin otros filtros', () => {
@@ -234,22 +285,25 @@ describe('«Cobros» abre en Hoy y atajo «Por entregar a caja»', () => {
   });
 
   it('por entregar a caja: vigentes, sin cierre, solo efectivo, de cualquier fecha y con la búsqueda', () => {
-    const filters = porEntregarACajaFilters([EFECTIVO], 'ana');
+    const filters = porEntregarACajaFilters([EFECTIVO], ME, 'ana');
     expect(filters).toEqual({
       ...DEFAULT_MIS_COBROS_FILTERS,
       paymentMethodIds: [EFECTIVO],
       status: 'vigentes',
       inCierre: 'no',
       search: 'ana',
+      createdBy: ME,
     });
-    expect(isPorEntregarACaja(filters, [EFECTIVO])).toBe(true);
+    expect(isPorEntregarACaja(filters, [EFECTIVO], 'u1')).toBe(true);
   });
 
-  it('deja de ser el atajo si se cambia un filtro o no se conoce el efectivo', () => {
-    const filters = porEntregarACajaFilters([EFECTIVO]);
-    expect(isPorEntregarACaja({ ...filters, from: '2026-09-01' }, [EFECTIVO])).toBe(false);
-    expect(isPorEntregarACaja({ ...filters, paymentMethodIds: [EFECTIVO, CONSIGNACION] }, [EFECTIVO])).toBe(false);
-    expect(isPorEntregarACaja(filters, null)).toBe(false);
+  it('deja de ser el atajo si se cambia un filtro, otra persona o no se conoce el efectivo', () => {
+    const filters = porEntregarACajaFilters([EFECTIVO], ME);
+    expect(isPorEntregarACaja({ ...filters, from: '2026-09-01' }, [EFECTIVO], 'u1')).toBe(false);
+    expect(isPorEntregarACaja({ ...filters, paymentMethodIds: [EFECTIVO, CONSIGNACION] }, [EFECTIVO], 'u1')).toBe(false);
+    expect(isPorEntregarACaja({ ...filters, createdBy: null }, [EFECTIVO], 'u1')).toBe(false);
+    expect(isPorEntregarACaja(filters, [EFECTIVO], 'u2')).toBe(false);
+    expect(isPorEntregarACaja(filters, null, 'u1')).toBe(false);
   });
 });
 

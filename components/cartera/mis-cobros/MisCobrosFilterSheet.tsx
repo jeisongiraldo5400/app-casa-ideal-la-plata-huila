@@ -8,6 +8,7 @@ import {
   type MisCobrosFilters,
   type MisCobrosSite,
   type MisCobrosStatus,
+  type PagosCollector,
 } from '@/lib/cartera/misCobros';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
@@ -40,12 +41,26 @@ type Props = {
   paymentMethods: { id: string; name: string }[];
   /** Sin señal el teléfono no sabe qué entró a un cierre. */
   offline: boolean;
+  /** Opciones de «Registrado por»; vacío = no se ofrece (solo ve lo suyo). */
+  collectors?: PagosCollector[];
+  /** Id de quien consulta: su opción se llama «Yo». */
+  selfId?: string;
   onChange: (next: MisCobrosFilters) => void;
   onApply: () => void;
   onClose: () => void;
 };
 
-export function MisCobrosFilterSheet({ visible, values, paymentMethods, offline, onChange, onApply, onClose }: Props) {
+export function MisCobrosFilterSheet({
+  visible,
+  values,
+  paymentMethods,
+  offline,
+  collectors = [],
+  selfId,
+  onChange,
+  onApply,
+  onClose,
+}: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const patch = (next: Partial<MisCobrosFilters>) => onChange({ ...values, ...next });
@@ -80,7 +95,7 @@ export function MisCobrosFilterSheet({ visible, values, paymentMethods, offline,
     <FullScreenModal
       visible={visible}
       onClose={onClose}
-      title="Filtrar mis cobros"
+      title="Filtrar pagos"
       footer={
         <ActionBar>
           <View style={styles.footer}>
@@ -101,6 +116,26 @@ export function MisCobrosFilterSheet({ visible, values, paymentMethods, offline,
               : <Text style={[styles.hint, { color: colors.text.secondary }]}>No hay métodos de pago descargados.</Text>}
           </View>
         </View>
+
+        {collectors.length ? (
+          <View style={styles.group}>
+            <Text style={[styles.label, { color: colors.text.secondary }]}>Registrado por</Text>
+            <View style={styles.chips}>
+              {chip('created-all', 'Todos', !values.createdBy, () => patch({ createdBy: null }))}
+              {collectors.map((collector) =>
+                chip(
+                  `created-${collector.id}`,
+                  collector.id === selfId ? 'Yo' : collector.name,
+                  values.createdBy?.id === collector.id,
+                  () => patch({ createdBy: { id: collector.id, name: collector.name } })
+                )
+              )}
+            </View>
+            {offline ? (
+              <Text style={[styles.hint, { color: colors.text.secondary }]}>Sin señal se reconoce a la persona por su nombre.</Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.group}>
           <Text style={[styles.label, { color: colors.text.secondary }]}>Sitio de pago</Text>

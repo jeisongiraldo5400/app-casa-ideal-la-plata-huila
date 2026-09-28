@@ -40,13 +40,14 @@ export type ManagerPayment = {
   discount_amount?: number | string | null;
   discount_reason?: string | null;
   expected_total?: number | string | null;
-  currently_assigned: boolean;
+  /** Gestor de cobro asignado hoy al negocio (`list_cartera_payments`). */
+  gestor_cobro_name?: string | null;
   support_path: string | null;
   support_mime: string | null;
   support_file_name: string | null;
 };
 
-/** Renglón de `summary.by_method` de `get_collection_manager_payments` (solo pagos vigentes). */
+/** Renglón de `summary.by_method` de `list_cartera_payments` (solo pagos vigentes). */
 export type ManagerPaymentMethodTotal = {
   payment_method_id: string | null;
   payment_method_name: string | null;
@@ -175,50 +176,18 @@ export async function searchCollectionManagers(search: string) {
   return (data || []) as CollectionManager[];
 }
 
-/** Filtros de `get_collection_manager_payments` que usa el Excel de «Cobros». */
-export type ManagerPaymentsParams = {
-  scope: 'performed' | 'portfolio';
-  dateFrom: string;
-  dateTo: string;
-  receiptStatus: 'todos' | 'emitido' | 'anulado';
-  search: string;
-  /** Vacío = todos. */
-  paymentMethodIds?: string[];
-  /** '' = todos; 'sin_registro' = pagos anteriores al dato. */
-  site?: string;
-  /** null = todos. */
-  inCierre?: boolean | null;
-  page: number;
-  pageSize: number;
+/** Resumen de `list_cartera_payments` que usa el Excel de la vista «Pagos». */
+export type ManagerPaymentsSummary = {
+  total_count: number;
+  valid_count: number;
+  voided_count: number;
+  total_collected: number;
+  average_payment: number;
+  last_payment_date: string | null;
+  total_cash?: number | null;
+  cash_count?: number | null;
+  total_discount?: number | null;
+  pronto_pago_count?: number | null;
+  total_voided?: number | null;
+  by_method?: ManagerPaymentMethodTotal[] | null;
 };
-
-export async function fetchManagerPayments(managerId: string, params: ManagerPaymentsParams) {
-  const { data, error } = await supabase.rpc('get_collection_manager_payments', {
-    p_gestor_id: managerId, p_scope: params.scope,
-    p_date_from: params.dateFrom || undefined, p_date_to: params.dateTo || undefined,
-    p_receipt_status: params.receiptStatus, p_search: params.search.trim(),
-    p_page: params.page, p_page_size: params.pageSize,
-    p_payment_method_ids: params.paymentMethodIds?.length ? params.paymentMethodIds : undefined,
-    p_payment_site: params.site || undefined,
-    p_in_cierre: params.inCierre ?? undefined,
-  });
-  if (error) throw new Error(error.message || 'No fue posible cargar cobros');
-  return data as unknown as {
-    summary: {
-      total_count: number;
-      valid_count: number;
-      voided_count: number;
-      total_collected: number;
-      average_payment: number;
-      last_payment_date: string | null;
-      /** Pronto pago (20261024120000) y desglose por método (20261230130000); ausentes en servidores anteriores. */
-      total_cash?: number | null;
-      cash_count?: number | null;
-      total_discount?: number | null;
-      pronto_pago_count?: number | null;
-      total_voided?: number | null;
-      by_method?: ManagerPaymentMethodTotal[] | null;
-    };
-    rows: ManagerPayment[];
-  };
-}
