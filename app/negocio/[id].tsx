@@ -23,6 +23,7 @@ import {
 import { IconSize, Spacing, Typography, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
+import { formatPaymentDateTime } from '@/lib/localDate';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
 import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE } from '@/lib/negocioContractHtml';
@@ -1684,6 +1685,13 @@ function NegocioDetailScreenInner() {
               <Text testID="negocio-registered-by" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
                 Creado por: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{createdByName || '—'}</Text>
               </Text>
+              {/* Fecha y hora en que se registró (hora de Colombia). Un negocio
+                  creado sin señal aún no la tiene: la pone el servidor. */}
+              {negocio?.created_at ? (
+                <Text testID="negocio-created-at" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
+                  Creado el: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{formatPaymentDateTime(negocio.created_at)}</Text>
+                </Text>
+              ) : null}
               {soldForOwnerNotice ? (
                 <Text testID="negocio-sold-for-owner" style={[styles.helper, { color: colors.info.main }]}>
                   {soldForOwnerNotice}
