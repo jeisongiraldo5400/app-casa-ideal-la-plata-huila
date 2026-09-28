@@ -14,7 +14,7 @@ export const CATALOG_ROLES = {
 export const CATALOG_ROLE_NAMES: readonly string[] = Object.values(CATALOG_ROLES);
 
 export type CatalogAccess = {
-  /** Ve el módulo: lista y detalle de catálogos propios y del equipo. */
+  /** Ve el módulo: sus catálogos y los de otras personas que la RLS le deja ver. */
   canAccessCatalogs: boolean;
   /** Crea catálogos y edita los propios (permiso `catalog.catalogs.manage`). */
   canManageCatalog: boolean;

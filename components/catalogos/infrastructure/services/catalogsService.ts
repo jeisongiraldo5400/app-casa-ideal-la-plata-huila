@@ -66,8 +66,9 @@ export async function currentUserId(): Promise<string> {
 }
 
 /**
- * Catálogos visibles para quien mira (propios + del equipo). No filtra por
- * dueño: de eso se encarga la RLS. Los enlaces solo llegan para los propios
+ * Catálogos visibles para quien mira: los propios, los publicados al equipo,
+ * los compartidos con él y, al administrador, todos. No filtra por dueño: de
+ * eso se encarga la RLS; la pantalla separa lo propio de lo ajeno. Los enlaces solo llegan para los propios
  * (la RLS devuelve vacío en los ajenos), así que el resumen queda en cero ahí.
  * Enlaces y versiones se piden solo para los catálogos listados.
  */
@@ -179,8 +180,9 @@ export type CreatePrivateCatalogInput = {
 
 /**
  * Mismo insert que `createPrivateCatalogAction` del web. No envía
- * `visibility`: el trigger `set_catalog_default_visibility` la sube a
- * `organization` cuando quien crea es administrador.
+ * `visibility`: todo catálogo nace privado (lo ven su dueño y los
+ * administradores). Mostrarlo al equipo es una acción explícita del panel web
+ * («Publicar al equipo», 20261231200000).
  */
 export async function createPrivateCatalog(input: CreatePrivateCatalogInput): Promise<{ id: string }> {
   const ownerId = await currentUserId();

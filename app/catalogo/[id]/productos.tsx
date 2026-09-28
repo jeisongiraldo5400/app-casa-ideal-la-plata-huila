@@ -57,7 +57,7 @@ function CatalogoProductosGate() {
       <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
         <Stack.Screen options={screenOptions} />
         <View style={styles.centered}>
-          <ScreenState icon="lock-outline" title="Solo el autor puede editar" description="Este catálogo es del equipo. Puedes verlo, pero no cambiar su selección." />
+          <ScreenState icon="lock-outline" title="Solo el autor puede editar" description="Este catálogo es de otra persona. Puedes verlo, pero no cambiar su selección." />
         </View>
       </View>
     );

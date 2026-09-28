@@ -7,8 +7,9 @@ import type { PublicCatalogProductDetail } from './publicCatalogTypes';
 export type PrivateCatalogStatus = 'draft' | 'published' | 'expired' | 'revoked' | 'archived';
 
 /**
- * `private`: lo ve su dueño (y quien tenga acceso compartido).
- * `organization`: lo ve todo el equipo, y solo cuando deja de ser borrador.
+ * `private` (por defecto): su dueño, los administradores y quien tenga acceso compartido.
+ * `organization`: además todo el equipo. Solo lo pone «Publicar al equipo» en
+ * el panel web; crear o enviar un catálogo no lo publica (20261231200000).
  */
 export type CatalogVisibility = 'private' | 'organization';
 export type CatalogTemplate = 'editorial' | 'minimal' | 'immersive' | 'promocional';
