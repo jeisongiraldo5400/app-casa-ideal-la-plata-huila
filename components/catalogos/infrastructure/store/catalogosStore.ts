@@ -3,7 +3,7 @@ import { errorMessage } from '@/lib/errorMessage';
 import { needsRefresh, type CacheStamp } from '@/lib/catalogos/cacheFreshness';
 import type { PrivateCatalogDetail, PrivateCatalogListItem } from '@/lib/catalogos/types';
 import { currentUserId, listPrivateCatalogs } from '../services/catalogsService';
-import { loadCatalogDetailBundle, type CatalogDetailBundle } from '../services/catalogDetailService';
+import { loadCatalogDetailBundle, loadFullCategoryPreviews, type CatalogDetailBundle } from '../services/catalogDetailService';
 
 export type CatalogDetailEntry = CatalogDetailBundle & CacheStamp;
 
@@ -27,6 +27,11 @@ interface CatalogosState {
   loadDetail: (id: string, viewerId: string | null, options?: { force?: boolean }) => Promise<CatalogDetailEntry | null>;
   /** Cambia el detalle en memoria (p. ej. tras guardar textos) sin refetch. */
   patchDetail: (id: string, updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => void;
+  /**
+   * Completa en el detalle cacheado la lista de categorías completas que solo
+   * tenían la muestra inicial («Ver más»). No marca nada para recargar.
+   */
+  loadFullCategories: (id: string, categoryIds: readonly string[]) => Promise<void>;
   /** Marca el detalle y la lista para recargar la próxima vez que se muestren. */
   invalidateCatalog: (id: string) => void;
 }
@@ -157,6 +162,19 @@ export const useCatalogosStore = create<CatalogosState>((set, get) => ({
         // Título o textos cambiados: la lista debe reflejarlos al volver.
         listStamp: state.listStamp ? { ...state.listStamp, stale: true } : null,
       };
+    });
+  },
+
+  loadFullCategories: async (id, categoryIds) => {
+    if (categoryIds.length === 0) return;
+    const full = await loadFullCategoryPreviews(categoryIds);
+    set((state) => {
+      const current = state.details[id];
+      // Archivado o descartado mientras tanto: no se resucita.
+      if (!current) return {};
+      const categories = new Map(current.categories);
+      for (const [categoryId, preview] of full) categories.set(categoryId, preview);
+      return { details: { ...state.details, [id]: { ...current, categories } } };
     });
   },
 

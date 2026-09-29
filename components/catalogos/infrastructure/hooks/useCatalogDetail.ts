@@ -34,6 +34,8 @@ export type CatalogDetailState = {
   reload: () => Promise<void>;
   /** Actualiza el detalle en memoria (p. ej. tras guardar textos) sin refetch. */
   setDetail: (updater: (current: PrivateCatalogDetail) => PrivateCatalogDetail) => void;
+  /** Trae enteras las categorías completas indicadas («Ver más»). */
+  loadCategories: (categoryIds: readonly string[]) => Promise<void>;
 };
 
 /**
@@ -58,6 +60,7 @@ export function useCatalogDetail(id: string | undefined, { refreshWhenStale = tr
   const entry = useCatalogosStore((state) => (id ? state.details[id] : undefined));
   const loadDetail = useCatalogosStore((state) => state.loadDetail);
   const patchDetail = useCatalogosStore((state) => state.patchDetail);
+  const loadFullCategories = useCatalogosStore((state) => state.loadFullCategories);
   const [loading, setLoading] = useState(!entry);
   const [error, setError] = useState<string | null>(null);
   const [isNetworkFailure, setIsNetworkFailure] = useState(false);
@@ -119,6 +122,13 @@ export function useCatalogDetail(id: string | undefined, { refreshWhenStale = tr
     [id, patchDetail]
   );
 
+  const loadCategories = useCallback(
+    async (categoryIds: readonly string[]) => {
+      if (id) await loadFullCategories(id, categoryIds);
+    },
+    [id, loadFullCategories]
+  );
+
   const detail = notFound ? null : (entry?.detail ?? null);
   const isOwner = useMemo(() => Boolean(detail && viewerId && detail.ownerId === viewerId), [detail, viewerId]);
   // Si el detalle cargó, la RLS ya confirmó que puede verlo; lo único que falta
@@ -138,6 +148,7 @@ export function useCatalogDetail(id: string | undefined, { refreshWhenStale = tr
     canShare,
     reload,
     setDetail,
+    loadCategories,
   };
 }
 

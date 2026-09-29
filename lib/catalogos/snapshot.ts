@@ -77,23 +77,74 @@ export type SnapshotAnalysis = {
   warnings: string[];
 };
 
+/**
+ * Quita de cada grupo lo que ya apareció en uno anterior: un producto se
+ * muestra una sola vez, en la primera sección que lo tiene. `merge` recibe el
+ * que se queda y la repetición descartada. Copia de `dedupeAcrossSections`
+ * (`catalogo-casa-ideal/src/features/private-catalogs/category-sync.ts`).
+ */
+export function dedupeAcrossSections<T>(
+  groups: readonly (readonly T[])[],
+  key: (value: T) => string,
+  merge?: (kept: T, repeated: T) => void
+): { groups: T[][]; repeated: number[] } {
+  const kept = new Map<string, T>();
+  const repeated: number[] = [];
+  const result = groups.map((group) => {
+    let dropped = 0;
+    const next: T[] = [];
+    for (const value of group) {
+      const id = key(value);
+      const previous = kept.get(id);
+      if (previous !== undefined) {
+        merge?.(previous, value);
+        dropped += 1;
+        continue;
+      }
+      kept.set(id, value);
+      next.push(value);
+    }
+    repeated.push(dropped);
+    return next;
+  });
+  return { groups: result, repeated };
+}
+
 export function buildMagazineSnapshot({ catalog, sections, index, detailBySlug, publishedAt }: BuildSnapshotInput): SnapshotAnalysis {
-  const snapshotSections = sections.map((section) => ({
+  const resolved = sections.map((section) =>
+    section.items.flatMap((item) =>
+      matchListingItems(index, item.itemType, item.referenceId).flatMap<MagazineProduct>((product) => {
+        const detail = detailBySlug.get(product.slug);
+        return detail ? [{ ...detail, featured: item.isFeatured }] : [];
+      })
+    )
+  );
+  // Como el web: un producto sale una sola vez, en la primera sección que lo
+  // tiene (p. ej. suelto y además dentro de su categoría completa). Si alguna
+  // aparición lo destacaba, queda destacado.
+  const deduped = dedupeAcrossSections(
+    resolved,
+    (product) => product.productId,
+    (kept, repeated) => {
+      kept.featured = kept.featured || repeated.featured;
+    }
+  );
+
+  const snapshotSections = sections.map((section, position) => ({
     id: section.id,
     title: section.title,
     kicker: section.kicker,
     body: section.body,
     imageUrl: section.imageUrl,
-    products: section.items.flatMap((item) =>
-      matchListingItems(index, item.itemType, item.referenceId).flatMap<MagazineProduct>((product) => {
-        const detail = detailBySlug.get(product.slug);
-        return detail ? [{ ...detail, featured: item.isFeatured }] : [];
-      })
-    ),
+    products: deduped.groups[position] ?? [],
   }));
 
   const readiness = evaluateCatalogReadiness(
-    snapshotSections.map((section) => ({ title: section.title, productCount: section.products.length }))
+    snapshotSections.map((section, position) => ({
+      title: section.title,
+      productCount: section.products.length,
+      repeatedCount: deduped.repeated[position] ?? 0,
+    }))
   );
 
   return {

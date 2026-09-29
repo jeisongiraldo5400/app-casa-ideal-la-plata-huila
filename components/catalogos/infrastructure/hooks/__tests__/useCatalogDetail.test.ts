@@ -194,7 +194,7 @@ describe('useCatalogDetail', () => {
     expect(mockedGet).toHaveBeenCalledTimes(2);
   });
 
-  it('de las categorías completas solo pide la muestra de miniaturas y su total', async () => {
+  it('de las categorías completas solo pide la primera página (10) y su total', async () => {
     const withCategory = detail('vendedor-1');
     withCategory.sections = [
       { id: 's-1', title: 'Sala', kicker: null, body: null, imageUrl: null, sortOrder: 0, items: [{ id: 'i-1', itemType: 'category', referenceId: 'cat-sala', isFeatured: false, sortOrder: 0 }] },
@@ -204,6 +204,6 @@ describe('useCatalogDetail', () => {
 
     await waitFor(() => expect(result.current.categories.get('cat-sala')?.totalCount).toBe(12));
     const { listPublicCatalogCategoryPreview } = jest.requireMock('../../services/publicCatalogService');
-    expect(listPublicCatalogCategoryPreview).toHaveBeenCalledWith('cat-sala', 8);
+    expect(listPublicCatalogCategoryPreview).toHaveBeenCalledWith('cat-sala', 10);
   });
 });

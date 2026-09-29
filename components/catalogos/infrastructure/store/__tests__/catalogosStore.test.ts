@@ -1,12 +1,14 @@
 import type { PrivateCatalogListItem } from '@/lib/catalogos/types';
+import { loadFullCategoryPreviews } from '../../services/catalogDetailService';
 import { listPrivateCatalogs } from '../../services/catalogsService';
+import type { CatalogDetailEntry } from '../catalogosStore';
 import { useCatalogosStore } from '../catalogosStore';
 
 jest.mock('../../services/catalogsService', () => ({
   currentUserId: jest.fn(async () => 'user-1'),
   listPrivateCatalogs: jest.fn(),
 }));
-jest.mock('../../services/catalogDetailService', () => ({ loadCatalogDetailBundle: jest.fn() }));
+jest.mock('../../services/catalogDetailService', () => ({ loadCatalogDetailBundle: jest.fn(), loadFullCategoryPreviews: jest.fn() }));
 
 const mockedList = listPrivateCatalogs as jest.MockedFunction<typeof listPrivateCatalogs>;
 
@@ -92,5 +94,31 @@ describe('useCatalogosStore.fetchList', () => {
 
     expect(useCatalogosStore.getState().list).toEqual([item('a')]);
     expect(useCatalogosStore.getState().error).toBeTruthy();
+  });
+});
+
+describe('useCatalogosStore.loadFullCategories', () => {
+  const mockedFull = loadFullCategoryPreviews as jest.MockedFunction<typeof loadFullCategoryPreviews>;
+
+  it('completa las categorías del detalle cacheado sin marcarlo para recargar', async () => {
+    const sample = { items: [], totalCount: 30 };
+    const full = { items: [{ productId: 'p-1' }], totalCount: 1 } as never;
+    const entry = { detail: { id: 'c-1' }, products: new Map(), categories: new Map([['cat-a', sample], ['cat-b', sample]]), ownerName: null, loadedAt: 1, stale: false } as unknown as CatalogDetailEntry;
+    useCatalogosStore.setState({ details: { 'c-1': entry } });
+    mockedFull.mockResolvedValue(new Map([['cat-a', full]]));
+
+    await useCatalogosStore.getState().loadFullCategories('c-1', ['cat-a']);
+
+    const after = useCatalogosStore.getState().details['c-1'];
+    expect(mockedFull).toHaveBeenCalledWith(['cat-a']);
+    expect(after.categories.get('cat-a')).toBe(full);
+    expect(after.categories.get('cat-b')).toBe(sample);
+    expect(after.stale).toBe(false);
+  });
+
+  it('no resucita un detalle que ya no está en caché', async () => {
+    mockedFull.mockResolvedValue(new Map());
+    await useCatalogosStore.getState().loadFullCategories('c-9', ['cat-a']);
+    expect(useCatalogosStore.getState().details['c-9']).toBeUndefined();
   });
 });
