@@ -5,15 +5,19 @@ import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { useTheme } from '@/components/theme';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { ActionCard, Button, HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
+import { Button, HeroActionCard, ScreenErrorBoundary, ScreenState, SearchField, SegmentedControl } from '@/components/ui';
 import { CatalogListCard, useCatalogAccess, useCatalogosStore } from '@/components/catalogos';
 import {
-  CATALOG_LIST_FILTERS,
+  catalogFilterItems,
+  catalogTabItems,
+  formatCatalogStatusSummary,
   matchesCatalogListFilter,
   matchesCatalogListQuery,
   normalizeCatalogQuery,
   splitCatalogList,
+  summarizeCatalogStatuses,
   type CatalogListFilter,
+  type CatalogTab,
 } from '@/lib/catalogos/catalogListFilters';
 import { isOfflineError } from '@/lib/errorMessage';
 
@@ -36,6 +40,7 @@ function CatalogosScreenInner() {
   const access = useCatalogAccess();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<CatalogTab>('mine');
   const [filter, setFilter] = useState<CatalogListFilter>('all');
   const [quickSharesOpen, setQuickSharesOpen] = useState(false);
 
@@ -54,19 +59,28 @@ function CatalogosScreenInner() {
   const openCreate = () => router.navigate('/(tabs)/catalogo-create' as never);
 
   const normalizedQuery = normalizeCatalogQuery(query);
-  // Aquí solo lo propio. Lo global de otras personas tiene su pantalla
-  // («Catálogos globales») y los envíos de un producto van plegados al final.
+  // Dos pestañas, cada una con su propia lista (nunca mezcladas): «Mis
+  // catálogos» (lo propio; los envíos rápidos plegados al final) y «Globales»
+  // (lo que otras personas publicaron para todos).
   const { editions, quickShares, globals } = useMemo(() => splitCatalogList(list), [list]);
+  const mine = useMemo(() => [...editions, ...quickShares], [editions, quickShares]);
+  const statusSummary = useMemo(() => summarizeCatalogStatuses(mine), [mine]);
+  const onGlobals = tab === 'globals';
   const matches = useCallback(
     (item: (typeof list)[number]) => matchesCatalogListFilter(item, filter) && matchesCatalogListQuery(item, normalizedQuery),
     [filter, normalizedQuery]
   );
   const filtered = useMemo(() => editions.filter(matches), [editions, matches]);
   const filteredQuickShares = useMemo(() => quickShares.filter(matches), [quickShares, matches]);
-  const hasFilters = filter !== 'all' || normalizedQuery.length > 0;
+  const visibleGlobals = useMemo(
+    () => globals.filter((item) => matchesCatalogListQuery(item, normalizedQuery)),
+    [globals, normalizedQuery]
+  );
+  const hasFilters = onGlobals ? normalizedQuery.length > 0 : filter !== 'all' || normalizedQuery.length > 0;
   const initialLoading = loading && !refreshing && list.length === 0;
   // Abiertos si se está buscando o si no hay otra cosa que mostrar.
   const showQuickShares = quickSharesOpen || hasFilters || filtered.length === 0;
+  const quickSharesInList = onGlobals ? [] : filteredQuickShares;
 
   if (!access.loading && !access.canAccessCatalogs) {
     return (
@@ -75,6 +89,11 @@ function CatalogosScreenInner() {
       </View>
     );
   }
+
+  const clearFilters = () => {
+    setQuery('');
+    setFilter('all');
+  };
 
   const renderEmpty = () => {
     if (initialLoading) return <ScreenState loading title="Cargando catálogos…" variant="inline" />;
@@ -98,12 +117,18 @@ function CatalogosScreenInner() {
         <ScreenState
           icon="filter-list-off"
           title="Sin coincidencias"
-          description="Ningún catálogo coincide con la búsqueda o el filtro."
+          description={onGlobals ? 'Ningún catálogo coincide con la búsqueda.' : 'Ningún catálogo coincide con la búsqueda o el filtro.'}
           actionLabel="Limpiar filtros"
-          onAction={() => {
-            setQuery('');
-            setFilter('all');
-          }}
+          onAction={clearFilters}
+        />
+      );
+    }
+    if (onGlobals) {
+      return (
+        <ScreenState
+          icon="public"
+          title="Aún no hay catálogos globales"
+          description="Cuando un administrador publique un catálogo como global, aparecerá aquí."
         />
       );
     }
@@ -120,35 +145,30 @@ function CatalogosScreenInner() {
 
   const header = (
     <View style={styles.header}>
-      {/* Lo más común es mandar UN producto: 4 de cada 5 ediciones en
-          producción tenían uno solo. Va arriba, a un toque. */}
+      {/* Lo más común es mandar uno o pocos productos: 4 de cada 5 ediciones
+          en producción tenían uno solo. Va arriba, a un toque. */}
       {access.canManageCatalog && access.canCreateShareLink ? (
         <HeroActionCard
           compact
-          title="Enviar un producto"
-          subtitle="Por WhatsApp, en un paso"
+          title="Enviar productos"
+          subtitle="Por WhatsApp, uno o varios en un enlace"
           icon="send"
           onPress={() => router.push('/catalogo/enviar-producto' as never)}
         />
       ) : null}
-      {/* Lo que un administrador publicó para todos, en su propia pantalla:
-          en la misma lista se confundía lo que hace uno con lo que hacen los
-          demás. Siempre visible, aunque esté vacía, para que se sepa dónde
-          buscar; mientras carga no se afirma que no haya ninguno. */}
-      <ActionCard
-        compact
-        title="Catálogos globales"
-        subtitle={
-          initialLoading
-            ? 'Publicados para todos'
-            : globals.length === 0
-              ? 'Aún no hay publicados para todos'
-              : `${globals.length} publicado${globals.length === 1 ? '' : 's'} para todos`
-        }
-        icon="public"
-        tone="info"
-        onPress={() => router.push('/catalogo/globales' as never)}
+      {/* Mientras carga no se afirma ningún número. */}
+      <SegmentedControl
+        items={catalogTabItems({ mine: mine.length, globals: globals.length }).map((item) =>
+          initialLoading ? { ...item, badge: undefined } : item
+        )}
+        value={tab}
+        onChange={(value) => setTab(value as CatalogTab)}
       />
+      {onGlobals ? (
+        <Text style={[styles.hint, { color: colors.text.secondary }]}>
+          Publicados por un administrador para todos. Ábrelos y envíalos a tus clientes.
+        </Text>
+      ) : null}
       <View style={styles.searchRow}>
         <SearchField
           value={query}
@@ -159,15 +179,30 @@ function CatalogosScreenInner() {
           returnKeyType="search"
           containerStyle={styles.search}
         />
-        {access.canManageCatalog ? <Button title="Nuevo" icon="add" size="sm" onPress={openCreate} accessibilityLabel="Nuevo catálogo" /> : null}
+        {!onGlobals && access.canManageCatalog ? (
+          <Button title="Nuevo" icon="add" size="sm" onPress={openCreate} accessibilityLabel="Nuevo catálogo" />
+        ) : null}
       </View>
-      <SegmentedControl items={CATALOG_LIST_FILTERS} value={filter} onChange={(value) => setFilter(value as CatalogListFilter)} />
+      {!onGlobals ? (
+        <>
+          {!initialLoading && mine.length > 0 ? (
+            <Text style={[styles.summary, { color: colors.text.secondary }]} accessibilityLabel={`Tus catálogos: ${formatCatalogStatusSummary(statusSummary)}`}>
+              {formatCatalogStatusSummary(statusSummary)}
+            </Text>
+          ) : null}
+          <SegmentedControl
+            items={catalogFilterItems(statusSummary, filter)}
+            value={filter}
+            onChange={(value) => setFilter(value as CatalogListFilter)}
+          />
+        </>
+      ) : null}
       {error && list.length > 0 ? (
         <Text style={[styles.notice, { color: colors.warning.dark }]} accessibilityLiveRegion="polite">
           No se pudo actualizar. Mostrando la última lista cargada.
         </Text>
       ) : null}
-      {!initialLoading && hasFilters && editions.length > 0 ? (
+      {!initialLoading && !onGlobals && hasFilters && editions.length > 0 ? (
         <Text style={[styles.count, { color: colors.text.secondary }]}>
           {filtered.length} de {editions.length} catálogo{editions.length === 1 ? '' : 's'}
         </Text>
@@ -178,31 +213,31 @@ function CatalogosScreenInner() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background.default }]}>
       <FlatList
-        data={filtered}
+        data={onGlobals ? visibleGlobals : filtered}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />}
         ListHeaderComponent={header}
-        ListEmptyComponent={filteredQuickShares.length > 0 ? null : renderEmpty()}
+        ListEmptyComponent={quickSharesInList.length > 0 ? null : renderEmpty()}
         ListFooterComponent={
-          filteredQuickShares.length > 0 ? (
+          quickSharesInList.length > 0 ? (
             <View style={styles.quickShares}>
               <Pressable
                 onPress={() => setQuickSharesOpen((open) => !open)}
                 style={styles.quickSharesToggle}
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showQuickShares }}
-                accessibilityLabel={`Envíos de un producto, ${filteredQuickShares.length}`}
+                accessibilityLabel={`Envíos rápidos, ${quickSharesInList.length}`}
               >
                 <MaterialIcons name="send" size={18} color={colors.text.secondary} />
                 <Text style={[styles.quickSharesTitle, { color: colors.text.primary }]}>
-                  Envíos de un producto ({filteredQuickShares.length})
+                  Envíos rápidos ({quickSharesInList.length})
                 </Text>
                 <MaterialIcons name={showQuickShares ? 'expand-less' : 'expand-more'} size={22} color={colors.text.secondary} />
               </Pressable>
               {showQuickShares
-                ? filteredQuickShares.map((item) => (
+                ? quickSharesInList.map((item) => (
                     <CatalogListCard key={item.id} item={item} onPress={() => router.push(`/catalogo/${item.id}` as never)} />
                   ))
                 : null}
@@ -223,6 +258,8 @@ const styles = StyleSheet.create({
   header: { gap: Spacing.md, marginBottom: Spacing.lg },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   search: { flex: 1 },
+  hint: { ...Typography.bodySmall },
+  summary: { ...Typography.bodySmallStrong },
   notice: { ...Typography.metadata },
   count: { ...Typography.metadata, textAlign: 'right' },
   separator: { height: Spacing.md },

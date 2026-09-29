@@ -21,7 +21,7 @@ export type PublishedProductSearch = {
 };
 
 /**
- * Búsqueda de fichas PUBLICADAS para «Enviar un producto».
+ * Búsqueda de fichas PUBLICADAS para «Enviar productos por WhatsApp».
  *
  * Solo publicadas a propósito: la revista que abre el cliente solo muestra
  * fichas publicadas, así que enviar una en borrador le llegaría vacía. Es la

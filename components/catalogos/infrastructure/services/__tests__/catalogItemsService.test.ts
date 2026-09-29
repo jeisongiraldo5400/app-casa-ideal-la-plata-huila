@@ -6,7 +6,7 @@ const mockFrom = jest.fn((table: string) => builders[table]);
 jest.mock('@/lib/supabase', () => ({ supabase: { from: (table: string) => mockFrom(table) } }));
 
 import type { CatalogSection } from '@/lib/catalogos/types';
-import { removeCatalogItem, toggleCatalogProduct } from '../catalogItemsService';
+import { addCatalogProducts, removeCatalogItem, toggleCatalogProduct } from '../catalogItemsService';
 
 function makeBuilder(result: { data: unknown; error: unknown }): Builder {
   const builder: Builder = {};
@@ -83,5 +83,27 @@ describe('removeCatalogItem', () => {
     await removeCatalogItem('cat-1', 'i-1');
     expect(builders.catalog_items.eq).toHaveBeenCalledWith('id', 'i-1');
     expect(builders.catalog_items.eq).toHaveBeenCalledWith('catalog_id', 'cat-1');
+  });
+});
+
+describe('addCatalogProducts', () => {
+  it('crea la categoría inicial y añade todos en UNA petición, en orden y sin repetidos', async () => {
+    await addCatalogProducts('cat-1', ['p-1', 'p-2', 'p-1', 'p-3'], []);
+    expect(builders.catalog_items.insert).toHaveBeenCalledTimes(1);
+    expect(builders.catalog_items.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ catalog_id: 'cat-1', section_id: 's-nueva', reference_id: 'p-1', sort_order: 0, item_type: 'product' }),
+      expect.objectContaining({ reference_id: 'p-2', sort_order: 1 }),
+      expect.objectContaining({ reference_id: 'p-3', sort_order: 2 }),
+    ]);
+  });
+
+  it('un error del servidor se informa', async () => {
+    builders.catalog_items = makeBuilder({ data: null, error: { message: 'denegado' } });
+    await expect(addCatalogProducts('cat-1', ['p-1'], [section('s-1', 2)])).rejects.toThrow(/añadir los productos: denegado/);
+  });
+
+  it('sin productos no hace nada', async () => {
+    await addCatalogProducts('cat-1', [], []);
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });

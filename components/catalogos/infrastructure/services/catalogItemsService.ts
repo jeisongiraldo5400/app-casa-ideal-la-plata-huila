@@ -56,6 +56,35 @@ export async function toggleCatalogProduct(
   }
 }
 
+/**
+ * Añade varios productos de una vez (una sola petición, en el orden dado) a
+ * la primera categoría, que se crea si hace falta. Pensado para una edición
+ * nueva: no hay RPC de alta por lote en el servidor, pero un INSERT con
+ * varias filas pasa por la misma política `catalog_items_insert`
+ * (`can_write_catalog`) que el alta de uno en uno.
+ */
+export async function addCatalogProducts(
+  catalogId: string,
+  productIds: readonly string[],
+  sections: readonly CatalogSection[]
+): Promise<void> {
+  const unique = [...new Set(productIds)];
+  if (unique.length === 0) return;
+
+  const section = await ensureFirstSection(catalogId, sections);
+  const { error } = await supabase.from('catalog_items').insert(
+    unique.map((productId, index) => ({
+      catalog_id: catalogId,
+      section_id: section.id,
+      item_type: 'product',
+      reference_id: productId,
+      is_featured: false,
+      sort_order: section.itemCount + index,
+    }))
+  );
+  if (error) throw new Error(`No fue posible añadir los productos: ${error.message}`);
+}
+
 export async function removeCatalogItem(catalogId: string, itemId: string): Promise<void> {
   const { error } = await supabase.from('catalog_items').delete().eq('id', itemId).eq('catalog_id', catalogId);
   if (error) throw new Error(`No fue posible quitar el elemento: ${error.message}`);

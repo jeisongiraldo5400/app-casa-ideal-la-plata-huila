@@ -13,18 +13,33 @@ interface ProductPickerRowProps {
   onToggle: () => void;
   /** Abre la foto en grande; tocar la miniatura no cambia la selección. */
   onPreview?: () => void;
+  /**
+   * `catalog` (por defecto): añadir/quitar de una edición. `checkbox`: casilla
+   * para elegir varios antes de enviar («Enviar productos por WhatsApp»).
+   */
+  variant?: 'catalog' | 'checkbox';
 }
 
-export function ProductPickerRow({ item, selected, pending, onToggle, onPreview }: ProductPickerRowProps) {
+export function ProductPickerRow({ item, selected, pending, onToggle, onPreview, variant = 'catalog' }: ProductPickerRowProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const meta = [item.categoryName, item.brandName].filter(Boolean).join(' · ');
+  const checkbox = variant === 'checkbox';
+  const stateLabel = checkbox ? (selected ? 'seleccionado' : 'sin seleccionar') : selected ? 'en el catálogo' : 'no seleccionado';
+  const icon = checkbox ? (selected ? 'check-box' : 'check-box-outline-blank') : selected ? 'check-circle' : 'add-circle-outline';
+  const actionLabel = checkbox
+    ? selected
+      ? `Quitar ${item.displayName} de la selección`
+      : `Seleccionar ${item.displayName}`
+    : selected
+      ? 'Quitar del catálogo'
+      : 'Añadir al catálogo';
 
   return (
     <ListCard
       onPress={onToggle}
       disabled={pending}
-      accessibilityLabel={`${item.displayName}${item.stockQuantity === 0 ? ', agotado' : ''}, ${selected ? 'en el catálogo' : 'no seleccionado'}`}>
+      accessibilityLabel={`${item.displayName}${item.stockQuantity === 0 ? ', agotado' : ''}, ${stateLabel}`}>
       <View style={styles.row}>
         <CatalogProductThumb
           uri={item.coverImageUrl}
@@ -50,11 +65,11 @@ export function ProductPickerRow({ item, selected, pending, onToggle, onPreview 
           ) : null}
         </View>
         <IconButton
-          icon={selected ? 'check-circle' : 'add-circle-outline'}
+          icon={icon}
           color={selected ? colors.success.dark : colors.primary.main}
           onPress={onToggle}
           disabled={pending}
-          accessibilityLabel={selected ? 'Quitar del catálogo' : 'Añadir al catálogo'}
+          accessibilityLabel={actionLabel}
         />
       </View>
     </ListCard>
