@@ -97,6 +97,55 @@ describe('CustomerCreateSheet · correo electrónico', () => {
   });
 });
 
+describe('CustomerCreateSheet · teléfono 2', () => {
+  let alert: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockCreateCustomer.mockReset();
+    mockCreateCustomer.mockResolvedValue({
+      id: 'c1',
+      name: 'Ana Pérez',
+      id_number: '1080123456',
+      seller_id: null,
+      saved_offline: true,
+    });
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => alert.mockRestore());
+
+  it('muestra el campo opcional y lo envía recortado', async () => {
+    const { screen, onCreated } = renderSheet();
+    expect(screen.getByText('Teléfono 2 (opcional)')).toBeTruthy();
+    fireEvent.changeText(screen.getByPlaceholderText('Ej: 3001234567'), '3001112222');
+    fireEvent.changeText(screen.getByPlaceholderText('Otro número de contacto'), ' 310 555 0101 ');
+    fireEvent.press(screen.getByText('Crear cliente'));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(mockCreateCustomer).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: '3001112222', phoneSecondary: '310 555 0101' })
+    );
+  });
+
+  it('sin teléfono 2 envía null', async () => {
+    const { screen, onCreated } = renderSheet();
+    fireEvent.press(screen.getByText('Crear cliente'));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(mockCreateCustomer).toHaveBeenCalledWith(expect.objectContaining({ phoneSecondary: null }));
+  });
+
+  it('el mismo número en los dos campos no se acepta', async () => {
+    const { screen } = renderSheet();
+    fireEvent.changeText(screen.getByPlaceholderText('Ej: 3001234567'), '300 111 2222');
+    fireEvent.changeText(screen.getByPlaceholderText('Otro número de contacto'), '3001112222');
+    fireEvent.press(screen.getByText('Crear cliente'));
+
+    expect(await screen.findByText('Es el mismo número del teléfono 1')).toBeTruthy();
+    expect(mockCreateCustomer).not.toHaveBeenCalled();
+  });
+});
+
 describe('CustomerCreateSheet · documento repetido escrito distinto', () => {
   it('dice de quién es el documento y ofrece ver ese cliente', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);

@@ -4450,6 +4450,7 @@ export type Database = {
           p_municipio_id?: string
           p_name: string
           p_phone: string
+          p_phone_secondary?: string
           p_vereda_id?: string
         }
         Returns: Json
@@ -4880,6 +4881,7 @@ export type Database = {
           name: string
           notes: string
           phone: string
+          phone_secondary: string
           seller_avatar_url: string
           seller_email: string
           seller_id: string

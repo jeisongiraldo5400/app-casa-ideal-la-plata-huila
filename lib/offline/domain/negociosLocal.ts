@@ -4,6 +4,7 @@ export type LocalCustomerRow = {
   idNumber: string | null;
   phone: string | null;
   /** Contacto de la ficha, descargado desde la v8 del esquema local. */
+  phoneSecondary?: string | null;
   email?: string | null;
   address?: string | null;
 };
@@ -123,6 +124,7 @@ export type LocalNegocioDetail = {
     name: string;
     id_number: string | null;
     phone: string | null;
+    phone_secondary: string | null;
     email: string | null;
     address: string | null;
   };
@@ -130,6 +132,7 @@ export type LocalNegocioDetail = {
     name: string;
     id_number: string | null;
     phone: string | null;
+    phone_secondary: string | null;
     email: string | null;
     address: string | null;
   } | null;
@@ -281,6 +284,7 @@ export function mapNegocioDetailFromLocal(input: {
       name: customer?.name || 'Cliente',
       id_number: customer?.idNumber || null,
       phone: customer?.phone || null,
+      phone_secondary: customer?.phoneSecondary ?? null,
       email: customer?.email ?? null,
       address: customer?.address ?? null,
     },
@@ -289,6 +293,7 @@ export function mapNegocioDetailFromLocal(input: {
           name: codeudor.name,
           id_number: codeudor.idNumber,
           phone: codeudor.phone,
+          phone_secondary: codeudor.phoneSecondary ?? null,
           email: codeudor.email ?? null,
           address: codeudor.address ?? null,
         }

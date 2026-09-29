@@ -67,6 +67,7 @@ describe('createCustomer', () => {
       name: 'Ana',
       id_number: '123',
       phone: null,
+      phone_secondary: null,
       email: null,
       address: 'Carrera 5 # 12-30',
       municipio_id: 'm1',
@@ -81,11 +82,18 @@ describe('createCustomer', () => {
       name: 'Ana',
       id_number: '123',
       phone: '3101234567',
+      phone_secondary: null,
       email: null,
       address: null,
       municipio_id: null,
       vereda_id: null,
     });
+  });
+
+  it('envía el teléfono 2 cuando viene', async () => {
+    await createCustomer({ name: 'Ana', idNumber: '123', phone: '3101234567', phoneSecondary: '3205550101' });
+
+    expect(mockInsert.mock.calls[0][0]).toMatchObject({ phone: '3101234567', phone_secondary: '3205550101' });
   });
 
   it('nunca envía seller_id: lo decide el trigger, aunque llegue un vendedor previsto', async () => {

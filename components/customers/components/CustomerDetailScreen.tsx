@@ -5,12 +5,13 @@ import { errorMessage } from '@/lib/errorMessage';
 import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { Stack, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useCustomerDetail } from '../infrastructure/hooks/useCustomerDetail';
 import { CustomerCarteraSummary } from './CustomerCarteraSummary';
 import { CustomerContactBlock } from './CustomerContactBlock';
 import { CustomerNegociosList } from './CustomerNegociosList';
+import { CustomerPhonesSheet } from './CustomerPhonesSheet';
 import { useNegociosProducts } from '@/components/negocios/infrastructure/hooks/useNegociosProducts';
 
 interface CustomerDetailScreenProps {
@@ -23,6 +24,7 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
   const colors = getColors(isDark);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const detail = useCustomerDetail(customerId);
+  const [editingPhones, setEditingPhones] = useState(false);
   // Productos de cada negocio del cliente: una sola consulta para todos.
   const products = useNegociosProducts((detail.summary?.negocios ?? []).map((negocio) => negocio.negocio_id));
 
@@ -85,7 +87,34 @@ export function CustomerDetailScreen({ customerId }: CustomerDetailScreenProps) 
         </Text>
       ) : null}
 
-      <CustomerContactBlock customer={customer} />
+      <View>
+        <CustomerContactBlock customer={customer} />
+        {detail.canEditPhones ? (
+          <>
+            <Button
+              title="Editar teléfonos"
+              icon="edit"
+              variant="outline"
+              size="sm"
+              disabled={detail.editPhonesDisabled}
+              onPress={() => setEditingPhones(true)}
+              style={styles.claim}
+            />
+            {detail.editPhonesDisabled ? (
+              <Text style={[styles.notice, { color: colors.text.secondary }]}>
+                Necesitas conexión para editar los teléfonos.
+              </Text>
+            ) : null}
+            <CustomerPhonesSheet
+              visible={editingPhones}
+              phone={customer.phone}
+              phoneSecondary={customer.phone_secondary}
+              onClose={() => setEditingPhones(false)}
+              onSave={detail.savePhones}
+            />
+          </>
+        ) : null}
+      </View>
 
       <View>
         <SectionHeader title="Vendedor" />

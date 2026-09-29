@@ -156,6 +156,29 @@ export function invalidateLocalCustomersCache() {
   customerRowsCache = null;
 }
 
+/**
+ * Refleja en la base local los teléfonos que se acaban de guardar en el
+ * servidor, para que la ficha sin conexión no muestre los de antes hasta la
+ * próxima descarga. Si el cliente no está en el teléfono no hace nada.
+ */
+export async function updateLocalCustomerPhones(
+  customerId: string,
+  phone: string | null,
+  phoneSecondary: string | null
+): Promise<void> {
+  if (!canUseLocalDb()) return;
+  const database = getDatabase();
+  const record = await findOrNull<Customer>('customers', customerId);
+  if (!record) return;
+  await database.write(async () => {
+    await record.update((row) => {
+      row.phone = phone;
+      row.phoneSecondary = phoneSecondary;
+    });
+  });
+  invalidateLocalCustomersCache();
+}
+
 /** Filas del directorio local, para el módulo de clientes sin conexión. */
 async function readLocalCustomerRows(): Promise<LocalCustomerRow[]> {
   const generation = databaseGeneration();
@@ -172,6 +195,7 @@ async function readLocalCustomerRows(): Promise<LocalCustomerRow[]> {
     name: row.name,
     idNumber: row.idNumber,
     phone: row.phone,
+    phoneSecondary: row.phoneSecondary ?? null,
     sellerId: row.sellerId ?? null,
     email: row.email ?? null,
     address: row.address ?? null,
@@ -329,6 +353,8 @@ export async function createCustomerOffline(input: {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Segundo teléfono opcional, ya recortado (20261231240000). */
+  phoneSecondary?: string | null;
   /** Correo opcional, ya normalizado (recortado y en minúsculas). */
   email?: string | null;
   address?: string | null;
@@ -362,6 +388,7 @@ export async function createCustomerOffline(input: {
   const customerId = createIdempotencyKey();
   const idempotencyKey = createIdempotencyKey();
   const email = input.email?.trim().toLowerCase() || null;
+  const phoneSecondary = input.phoneSecondary?.trim() || null;
   await database.write(async () => {
     await database.batch(
       database.get<Customer>('customers').prepareCreate((record) => {
@@ -369,6 +396,7 @@ export async function createCustomerOffline(input: {
         record.name = input.name;
         record.idNumber = input.idNumber;
         record.phone = input.phone;
+        record.phoneSecondary = phoneSecondary;
         record.email = email;
         record.sellerId = input.sellerId ?? null;
         // La ubicación también queda en local: el asistente de negocio la usa
@@ -388,6 +416,7 @@ export async function createCustomerOffline(input: {
           name: input.name,
           idNumber: input.idNumber,
           phone: input.phone,
+          phoneSecondary,
           email,
           address: input.address ?? null,
           municipioId: input.municipioId ?? null,
@@ -669,6 +698,7 @@ export async function fetchNegocioDetailFromLocal(negocioId: string) {
       name: row.name,
       idNumber: row.idNumber,
       phone: row.phone,
+      phoneSecondary: row.phoneSecondary ?? null,
       email: row.email,
       address: row.address,
     })),

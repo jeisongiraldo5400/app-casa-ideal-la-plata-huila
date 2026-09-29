@@ -114,4 +114,32 @@ describe('createCustomerOffline: ubicación en la fila local', () => {
       expect.any(String)
     );
   });
+
+  it('guarda el teléfono 2 en la fila local y en el comando de la cola (sin señal)', async () => {
+    const created = await createCustomerOffline({
+      name: 'Ana',
+      idNumber: '123',
+      phone: '3001112222',
+      phoneSecondary: ' 3105550101 ',
+    });
+
+    await expect(fetchCustomerFromLocal(created.id)).resolves.toMatchObject({ phoneSecondary: '3105550101' });
+    expect(mockPrepareOutboxRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      'create_customer',
+      expect.objectContaining({ phone: '3001112222', phoneSecondary: '3105550101' }),
+      expect.any(String)
+    );
+  });
+
+  it('sin teléfono 2 el comando lo lleva en null', async () => {
+    await createCustomerOffline({ name: 'Ana', idNumber: '123', phone: null });
+
+    expect(mockPrepareOutboxRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      'create_customer',
+      expect.objectContaining({ phoneSecondary: null }),
+      expect.any(String)
+    );
+  });
 });

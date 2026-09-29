@@ -10,6 +10,7 @@ type NegocioLocation = {
 type CustomerMeta = {
   id_number?: string | null;
   phone?: string | null;
+  phone_secondary?: string | null;
   email?: string | null;
   address?: string | null;
 };
@@ -36,6 +37,7 @@ export function NegocioCustomerContact({
         name: customerName,
         id_number: customer?.id_number ?? null,
         phone: customer?.phone ?? null,
+        phone_secondary: customer?.phone_secondary ?? null,
         email: customer?.email ?? null,
         address: ownAddress || customer?.address?.trim() || null,
         vereda_name: negocio.vereda?.nombre ?? null,
