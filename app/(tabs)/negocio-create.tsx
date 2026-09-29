@@ -119,6 +119,7 @@ import {
 } from '@/components/customers';
 import { duplicateCustomerPrompt } from '@/components/customers/domain/duplicateCustomer';
 import { customerEmailError, normalizeCustomerEmail } from '@/components/customers/domain/customerEmail';
+import { customerPhonesError, toStoredPhone } from '@/components/customers/domain/customerPhones';
 // Traductor común: la pantalla tenía una copia propia que devolvía el texto
 // crudo de la base («duplicate key value violates…») en todos sus avisos.
 import { errorMessage } from '@/lib/errorMessage';
@@ -241,6 +242,7 @@ function NegocioCreateScreenInner() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerId, setNewCustomerId] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerPhoneSecondary, setNewCustomerPhoneSecondary] = useState('');
   const [newCustomerEmail, setNewCustomerEmail] = useState('');
   const [newCustomerDepartamentoId, setNewCustomerDepartamentoId] = useState('');
   const [newCustomerMunicipioId, setNewCustomerMunicipioId] = useState('');
@@ -332,6 +334,7 @@ function NegocioCreateScreenInner() {
     setNewCustomerName('');
     setNewCustomerId('');
     setNewCustomerPhone('');
+    setNewCustomerPhoneSecondary('');
     setNewCustomerEmail('');
     setNewCustomerDepartamentoId('');
     setNewCustomerMunicipioId('');
@@ -873,6 +876,7 @@ function NegocioCreateScreenInner() {
     setNewCustomerName('');
     setNewCustomerId('');
     setNewCustomerPhone('');
+    setNewCustomerPhoneSecondary('');
     setNewCustomerEmail('');
     setNewCustomerDepartamentoId('');
     setNewCustomerMunicipioId('');
@@ -933,12 +937,15 @@ function NegocioCreateScreenInner() {
     }
     const emailError = customerEmailError(newCustomerEmail);
     if (emailError) return Alert.alert('Correo electrónico', emailError);
+    const phonesError = customerPhonesError(newCustomerPhone, newCustomerPhoneSecondary);
+    if (phonesError) return Alert.alert('Teléfono', phonesError);
     try {
       setCreatingCustomer(true);
       const data = await createCustomer({
         name: newCustomerName.trim(),
         idNumber: newCustomerId.trim(),
-        phone: newCustomerPhone.trim() || null,
+        phone: toStoredPhone(newCustomerPhone),
+        phoneSecondary: toStoredPhone(newCustomerPhoneSecondary),
         email: normalizeCustomerEmail(newCustomerEmail),
         address: newCustomerAddress.trim() || null,
         municipioId: newCustomerMunicipioId || null,
@@ -2104,6 +2111,20 @@ function NegocioCreateScreenInner() {
                   placeholderTextColor={colors.text.secondary}
                   value={newCustomerPhone}
                   onChangeText={setNewCustomerPhone}
+                />
+              </View>
+
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+                  Teléfono 2 (opcional)
+                </Text>
+                <TextInput
+                  style={[styles.input, { borderColor: colors.divider, color: colors.text.primary }]}
+                  placeholder="Otro número de contacto"
+                  keyboardType="phone-pad"
+                  placeholderTextColor={colors.text.secondary}
+                  value={newCustomerPhoneSecondary}
+                  onChangeText={setNewCustomerPhoneSecondary}
                 />
               </View>
 

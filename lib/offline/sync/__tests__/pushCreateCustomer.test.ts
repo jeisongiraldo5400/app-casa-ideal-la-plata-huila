@@ -58,4 +58,18 @@ describe('pushOutboxItem · create_customer', () => {
 
     expect(mockRpc.mock.calls[0][1]).not.toHaveProperty('p_email');
   });
+
+  it('envía el teléfono 2 como p_phone_secondary', async () => {
+    await pushOutboxItem(outboxItem({ ...base, phoneSecondary: '310 555 0101' }));
+
+    expect(mockRpc.mock.calls[0][1]).toMatchObject({ p_phone_secondary: '310 555 0101' });
+  });
+
+  it('sin teléfono 2 (o comando viejo) no manda p_phone_secondary', async () => {
+    await pushOutboxItem(outboxItem(base));
+    await pushOutboxItem(outboxItem({ ...base, phoneSecondary: null }));
+
+    expect(mockRpc.mock.calls[0][1]).not.toHaveProperty('p_phone_secondary');
+    expect(mockRpc.mock.calls[1][1]).not.toHaveProperty('p_phone_secondary');
+  });
 });

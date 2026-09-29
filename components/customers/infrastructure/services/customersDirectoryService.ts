@@ -9,6 +9,7 @@ import {
   fetchCustomersPageFromLocal,
   fetchLocationNamesFromLocal,
   fetchProfileNamesFromLocal,
+  updateLocalCustomerPhones,
 } from '@/lib/offline/repositories/offlineRepository';
 import {
   EMPTY_CARTERA,
@@ -24,6 +25,7 @@ export type CustomerDirectoryRow = {
   name: string;
   id_number: string | null;
   phone: string | null;
+  phone_secondary: string | null;
   email: string | null;
   address: string | null;
   municipio_name: string | null;
@@ -93,6 +95,7 @@ export async function fetchCustomersPage(params: FetchCustomersParams): Promise<
         name: row.name,
         id_number: row.id_number ?? null,
         phone: row.phone ?? null,
+        phone_secondary: row.phone_secondary ?? null,
         email: row.email ?? null,
         address: row.address ?? null,
         municipio_name: row.municipio_name ?? null,
@@ -124,6 +127,7 @@ export async function fetchCustomersPage(params: FetchCustomersParams): Promise<
         name: row.name,
         id_number: row.idNumber,
         phone: row.phone,
+        phone_secondary: row.phoneSecondary ?? null,
         email: row.email ?? null,
         address: row.address ?? null,
         municipio_name: (row.municipioId && municipios.get(row.municipioId)?.nombre) || null,
@@ -179,6 +183,7 @@ export async function fetchCustomerSummary(customerId: string): Promise<Customer
         name: customer.name,
         id_number: customer.idNumber,
         phone: customer.phone,
+        phone_secondary: customer.phoneSecondary ?? null,
         email: customer.email ?? null,
         address: customer.address ?? null,
         // `notes` no viaja en el pull; es el único campo que sigue en blanco.
@@ -220,4 +225,34 @@ export async function claimCustomer(customerId: string, sellerId: string): Promi
     .maybeSingle();
   if (error) throw new Error(error.message || 'No fue posible asignarte el cliente');
   if (!data) throw new Error('Este cliente ya tiene vendedor asignado.');
+}
+
+export type CustomerPhonesInput = {
+  phone: string | null;
+  /** `null` borra el teléfono 2. */
+  phoneSecondary: string | null;
+};
+
+/**
+ * Cambia los dos teléfonos del cliente (con señal). Mismo camino que la edición
+ * del panel web: `update` directo, que la RLS `customers_update` deja solo a
+ * admin y vendedor. `updated_at` se fija aquí para que el próximo pull lo baje
+ * a los teléfonos que ya tienen el cliente descargado.
+ */
+export async function updateCustomerPhones(customerId: string, input: CustomerPhonesInput): Promise<void> {
+  const { data, error } = await supabase
+    .from('customers')
+    .update({
+      phone: input.phone,
+      phone_secondary: input.phoneSecondary,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', customerId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw asError(error, 'No fue posible guardar los teléfonos');
+  // Sin fila: la RLS no dejó editar (rol sin permiso) o el cliente ya no existe.
+  if (!data) throw new Error('No tienes permiso para editar este cliente.');
+  // La copia local es un reflejo: si falla, la próxima descarga la corrige.
+  await updateLocalCustomerPhones(customerId, input.phone, input.phoneSecondary).catch(() => undefined);
 }

@@ -4,6 +4,7 @@ import { Spacing, Typography, getColors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { formatCustomerPhones } from '../domain/customerPhones';
 import type { CustomerDirectoryRow } from '../infrastructure/services/customersDirectoryService';
 
 interface CustomerListCardProps {
@@ -17,6 +18,7 @@ export function CustomerListCard({ customer, onPress, showSeller = true }: Custo
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const location = [customer.vereda_name, customer.municipio_name].filter(Boolean).join(' · ');
+  const phones = formatCustomerPhones(customer.phone, customer.phone_secondary);
 
   return (
     <ListCard onPress={onPress} accessibilityLabel={`Abrir cliente ${customer.name}`}>
@@ -27,7 +29,7 @@ export function CustomerListCard({ customer, onPress, showSeller = true }: Custo
           </Text>
           <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
             {customer.id_number || 'Sin documento'}
-            {customer.phone ? ` · ${customer.phone}` : ''}
+            {phones ? ` · ${phones}` : ''}
           </Text>
           {location ? (
             <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>

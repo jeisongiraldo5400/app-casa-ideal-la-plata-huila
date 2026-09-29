@@ -42,6 +42,7 @@ import {
 } from '@/components/negocios/domain/negocioSellerOwner';
 import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
 import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
+import { formatCustomerPhones } from '@/components/customers/domain/customerPhones';
 import {
   pendingNegocioTitle,
   type PendingNegocioSync,
@@ -396,7 +397,7 @@ function NegocioDetailScreenInner() {
           .order('virtual_receipt_number', { ascending: false }),
         supabase
           .from('customers')
-          .select('name, id_number, phone, email, address, seller_id')
+          .select('name, id_number, phone, phone_secondary, email, address, seller_id')
           .eq('id', n.customer_id)
           .maybeSingle(),
         supabase
@@ -477,7 +478,7 @@ function NegocioDetailScreenInner() {
       if (n.codeudor_customer_id) {
         const { data: codeudor, error: codeudorError } = await supabase
           .from('customers')
-          .select('name, id_number, phone, email, address')
+          .select('name, id_number, phone, phone_secondary, email, address')
           .eq('id', n.codeudor_customer_id)
           .maybeSingle();
         if (codeudorError) throw codeudorError;
@@ -1014,12 +1015,13 @@ function NegocioDetailScreenInner() {
       status: negocio.status,
       customer_name: customerName || 'Cliente',
       customer_id_number: customerMeta.id_number,
-      customer_phone: customerMeta.phone,
+      // «Celular» del contrato: los dos teléfonos si tiene segundo.
+      customer_phone: formatCustomerPhones(customerMeta.phone, customerMeta.phone_secondary),
       customer_email: customerMeta.email,
       customer_address: customerMeta.address || negocio.direccion,
       codeudor_name: codeudorMeta.name,
       codeudor_id_number: codeudorMeta.id_number,
-      codeudor_phone: codeudorMeta.phone,
+      codeudor_phone: formatCustomerPhones(codeudorMeta.phone, codeudorMeta.phone_secondary),
       codeudor_email: codeudorMeta.email,
       codeudor_address: codeudorMeta.address,
       seller_name: sellerName,

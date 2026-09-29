@@ -172,6 +172,8 @@ export type CreateCustomerInput = CustomerLocationInput & {
   name: string;
   idNumber: string;
   phone: string | null;
+  /** Segundo teléfono, opcional (20261231240000). */
+  phoneSecondary?: string | null;
   /** Correo electrónico opcional; se guarda recortado y en minúsculas. */
   email?: string | null;
   /**
@@ -200,6 +202,7 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Create
         name: customer.name,
         id_number: customer.idNumber,
         phone: customer.phone,
+        phone_secondary: customer.phoneSecondary ?? null,
         email: customer.email,
         address: customer.address || null,
         municipio_id: customer.municipioId || null,

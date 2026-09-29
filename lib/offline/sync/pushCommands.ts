@@ -94,6 +94,9 @@ async function pushCreateCustomer(payload: CreateCustomerPayload, idempotencyKey
     p_municipio_id: payload.municipioId ?? null,
     p_vereda_id: payload.veredaId ?? null,
     ...(payload.email ? { p_email: payload.email } : {}),
+    // Igual con el segundo teléfono (20261231240000): sin él, la llamada es la
+    // de siempre y el hash de idempotencia del servidor no cambia.
+    ...(payload.phoneSecondary ? { p_phone_secondary: payload.phoneSecondary } : {}),
   });
   if (error) throw error;
   const result = data as { customer_id?: string; conflict?: boolean; existing?: { id: string; name: string } };

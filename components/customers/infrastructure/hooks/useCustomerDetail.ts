@@ -4,12 +4,17 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import type { CustomerSummary } from '@/lib/customers/customerSummary';
-import { claimCustomer, fetchCustomerSummary } from '../services/customersDirectoryService';
+import {
+  claimCustomer,
+  fetchCustomerSummary,
+  updateCustomerPhones,
+  type CustomerPhonesInput,
+} from '../services/customersDirectoryService';
 
 /** Ficha de un cliente: resumen, negocios y la acción de reclamarlo. */
 export function useCustomerDetail(customerId: string | null) {
   const { user } = useAuth();
-  const { isVendedor } = useUserRoles();
+  const { isAdmin, isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
 
   const [summary, setSummary] = useState<CustomerSummary | null>(null);
@@ -64,6 +69,20 @@ export function useCustomerDetail(customerId: string | null) {
     }
   }, [customerId, user?.id, load]);
 
+  // Editar teléfonos: los mismos roles que editan clientes (RLS
+  // `customers_update`: admin o vendedor), y solo con señal y datos del
+  // servidor; sin conexión no hay cola para esta edición.
+  const canEditPhones = Boolean(summary?.customer) && (isAdmin() || isVendedor());
+
+  const savePhones = useCallback(
+    async (input: CustomerPhonesInput) => {
+      if (!customerId) return;
+      await updateCustomerPhones(customerId, input);
+      await load();
+    },
+    [customerId, load]
+  );
+
   return {
     summary,
     loading,
@@ -73,6 +92,9 @@ export function useCustomerDetail(customerId: string | null) {
     claimDisabled: !online,
     claiming,
     claim,
+    canEditPhones,
+    editPhonesDisabled: !online || fromCache,
+    savePhones,
     reload: load,
   };
 }

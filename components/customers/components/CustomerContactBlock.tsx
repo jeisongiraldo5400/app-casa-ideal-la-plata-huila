@@ -5,12 +5,17 @@ import { MaterialIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import type { CustomerSummaryCustomer } from '@/lib/customers/customerSummary';
+import { customerPhoneList } from '../domain/customerPhones';
 
 /** Lo mínimo para llamar, escribir y ubicar al cliente. */
 export type CustomerContactInfo = Pick<
   CustomerSummaryCustomer,
   'name' | 'id_number' | 'phone' | 'email' | 'address' | 'vereda_name' | 'municipio_name' | 'departamento_name'
-> & { notes?: string | null };
+> & {
+  notes?: string | null;
+  /** Segundo teléfono, opcional (20261231240000). */
+  phone_secondary?: string | null;
+};
 
 interface CustomerContactBlockProps {
   customer: CustomerContactInfo;
@@ -22,14 +27,14 @@ interface CustomerContactBlockProps {
 }
 
 /** Solo dígitos; los teléfonos se guardan con espacios y signos. */
-function toDialable(phone: string | null): string | null {
+export function toDialable(phone: string | null): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, '');
   return digits.length >= 7 ? digits : null;
 }
 
 /** Colombia: wa.me exige indicativo, y los móviles locales son de 10 dígitos. */
-function toWhatsApp(phone: string | null): string | null {
+export function toWhatsApp(phone: string | null): string | null {
   const digits = toDialable(phone);
   if (!digits) return null;
   return digits.length === 10 ? `57${digits}` : digits;
@@ -54,9 +59,35 @@ function contactLocation(customer: CustomerContactInfo): string {
     .join(', ');
 }
 
+/** Número que sirve para la acción, con el teléfono tal como se muestra. */
+type ContactTarget = { label: string; value: string };
+
+/**
+ * Con un solo número la acción se abre directo; con dos pregunta a cuál
+ * (teléfono 1 o teléfono 2).
+ */
+function pickAndOpen(targets: ContactTarget[], title: string, toUrl: (value: string) => string, fallback: string) {
+  if (targets.length === 0) return;
+  if (targets.length === 1) {
+    void open(toUrl(targets[0].value), fallback);
+    return;
+  }
+  Alert.alert(title, '¿A qué número?', [
+    ...targets.map((target) => ({ text: target.label, onPress: () => void open(toUrl(target.value), fallback) })),
+    { text: 'Cancelar', style: 'cancel' as const },
+  ]);
+}
+
 function ContactActions({ customer, hideUnavailableWhatsApp }: { customer: CustomerContactInfo; hideUnavailableWhatsApp?: boolean }) {
-  const dialable = toDialable(customer.phone);
-  const whatsapp = toWhatsApp(customer.phone);
+  const phones = customerPhoneList(customer.phone, customer.phone_secondary);
+  const dialTargets = phones.flatMap((phone) => {
+    const value = toDialable(phone);
+    return value ? [{ label: phone, value }] : [];
+  });
+  const whatsappTargets = phones.flatMap((phone) => {
+    const value = toWhatsApp(phone);
+    return value ? [{ label: phone, value }] : [];
+  });
   const location = contactLocation(customer);
   return (
     <View style={styles.actions}>
@@ -65,18 +96,20 @@ function ContactActions({ customer, hideUnavailableWhatsApp }: { customer: Custo
         icon="phone"
         variant="outline"
         size="sm"
-        disabled={!dialable}
-        onPress={() => dialable && open(`tel:${dialable}`, 'No se pudo abrir el marcador.')}
+        disabled={dialTargets.length === 0}
+        onPress={() => pickAndOpen(dialTargets, 'Llamar', (value) => `tel:${value}`, 'No se pudo abrir el marcador.')}
         style={styles.action}
       />
-      {whatsapp || !hideUnavailableWhatsApp ? (
+      {whatsappTargets.length > 0 || !hideUnavailableWhatsApp ? (
         <Button
           title="WhatsApp"
           icon="chat"
           variant="outline"
           size="sm"
-          disabled={!whatsapp}
-          onPress={() => whatsapp && open(`https://wa.me/${whatsapp}`, 'WhatsApp no está instalado.')}
+          disabled={whatsappTargets.length === 0}
+          onPress={() =>
+            pickAndOpen(whatsappTargets, 'WhatsApp', (value) => `https://wa.me/${value}`, 'WhatsApp no está instalado.')
+          }
           style={styles.action}
         />
       ) : null}
@@ -112,6 +145,7 @@ export function CustomerContactBlock({ customer, actionsOnly }: CustomerContactB
   }
 
   const location = contactLocation(customer);
+  const phones = customerPhoneList(customer.phone, customer.phone_secondary);
 
   return (
     <Card>
@@ -122,12 +156,17 @@ export function CustomerContactBlock({ customer, actionsOnly }: CustomerContactB
         </Text>
       </View>
 
-      {customer.phone ? (
-        <View style={styles.line}>
+      {phones.map((phone, index) => (
+        <View key={phone} style={styles.line}>
           <MaterialIcons name="phone" size={18} color={colors.text.secondary} />
-          <Text style={[styles.lineText, { color: colors.text.primary }]}>{customer.phone}</Text>
+          <Text style={[styles.lineText, { color: colors.text.primary }]}>
+            {phone}
+            {phones.length > 1 ? (
+              <Text style={{ color: colors.text.secondary }}>{index === 0 ? '  · Teléfono 1' : '  · Teléfono 2'}</Text>
+            ) : null}
+          </Text>
         </View>
-      ) : null}
+      ))}
       {customer.email ? (
         <View style={styles.line}>
           <MaterialIcons name="mail-outline" size={18} color={colors.text.secondary} />

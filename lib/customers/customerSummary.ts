@@ -13,6 +13,8 @@ export type CustomerSummaryCustomer = {
   name: string;
   id_number: string | null;
   phone: string | null;
+  /** Segundo teléfono (20261231240000); null si no tiene o el servidor aún no lo envía. */
+  phone_secondary: string | null;
   email: string | null;
   address: string | null;
   notes: string | null;
@@ -143,6 +145,7 @@ export function parseCustomerSummary(raw: unknown): CustomerSummary {
           name: asText(customerRow.name) || 'Cliente',
           id_number: asText(customerRow.id_number),
           phone: asText(customerRow.phone),
+          phone_secondary: asText(customerRow.phone_secondary),
           email: asText(customerRow.email),
           address: asText(customerRow.address),
           notes: asText(customerRow.notes),

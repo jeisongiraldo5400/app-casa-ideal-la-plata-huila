@@ -13,6 +13,12 @@ describe('parseCustomerSummary', () => {
     expect(parsed.scope).toEqual({ visible_negocios: 0, hidden_negocios: 0 });
   });
 
+  it('lee el teléfono 2; un servidor sin 20261231240000 lo deja en null', () => {
+    expect(parseCustomerSummary({ customer: { id: 'c1', name: 'Ana', phone_secondary: '3105550101' } }).customer)
+      .toMatchObject({ phone_secondary: '3105550101' });
+    expect(parseCustomerSummary({ customer: { id: 'c1', name: 'Ana' } }).customer?.phone_secondary).toBeNull();
+  });
+
   it('convierte los numeric que llegan como texto', () => {
     const parsed = parseCustomerSummary({
       customer: { id: 'c1', name: 'Ana' },

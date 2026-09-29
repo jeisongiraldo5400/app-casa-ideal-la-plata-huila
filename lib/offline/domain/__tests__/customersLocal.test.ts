@@ -21,6 +21,12 @@ describe('matchesCustomerQuery', () => {
     expect(matchesCustomerQuery(rows[0], '3001')).toBe(true);
     expect(matchesCustomerQuery(rows[0], 'zzz')).toBe(false);
   });
+  it('también por el teléfono 2, escrito con espacios o guiones', () => {
+    const row: LocalCustomerRow = { ...rows[1], phoneSecondary: '310-555-0101' };
+    expect(matchesCustomerQuery(row, '3105550101')).toBe(true);
+    expect(matchesCustomerQuery(row, '310 555')).toBe(true);
+    expect(matchesCustomerQuery(rows[1], '3105550101')).toBe(false);
+  });
 });
 
 describe('filterLocalCustomers', () => {

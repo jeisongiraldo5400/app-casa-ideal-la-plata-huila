@@ -11,6 +11,8 @@ export type LocalCustomerRow = {
   name: string;
   idNumber: string | null;
   phone: string | null;
+  /** Segundo teléfono (baja en el pull desde la v8 del esquema local). */
+  phoneSecondary?: string | null;
   sellerId: string | null;
   /** Contacto y ubicación descargados desde la v8 del esquema local. */
   email?: string | null;
@@ -28,15 +30,16 @@ export type LocalCustomerQuery = {
 };
 
 /**
- * Un término vacío no filtra; con texto busca en nombre, documento y teléfono.
+ * Un término vacío no filtra; con texto busca en nombre, documento y los dos
+ * teléfonos.
  * Sin tildes, igual que con conexión: «munoz» encuentra a «MUÑOZ». Documento y
  * teléfono, además, por sus dígitos, para que los puntos no estorben.
  */
 export function matchesCustomerQuery(customer: LocalCustomerRow, term: string): boolean {
   if (!normalizeText(term)) return true;
   return (
-    matchesNormalized(term, customer.name, customer.idNumber, customer.phone) ||
-    matchesDigits(term, customer.idNumber, customer.phone)
+    matchesNormalized(term, customer.name, customer.idNumber, customer.phone, customer.phoneSecondary) ||
+    matchesDigits(term, customer.idNumber, customer.phone, customer.phoneSecondary)
   );
 }
 
