@@ -1,5 +1,5 @@
 import type { PublicCatalogListingItem, PublicCatalogProductDetail } from '../publicCatalogTypes';
-import { buildListingIndex, buildMagazineSnapshot, collectSelectedSlugs, collectSelectionIds, matchListingItems } from '../snapshot';
+import { buildListingIndex, buildMagazineSnapshot, collectSelectedSlugs, collectSelectionIds, dedupeAcrossSections, matchListingItems } from '../snapshot';
 import type { CatalogItem, CatalogSection, PrivateCatalog } from '../types';
 
 const catalog: Pick<
@@ -112,7 +112,7 @@ describe('buildMagazineSnapshot', () => {
     expect(result.blockers).toHaveLength(1);
   });
 
-  it('marca `featured` por elemento, aunque la ficha se repita', () => {
+  it('una ficha repetida sale solo en la primera sección (como el web) y conserva `featured`', () => {
     const result = buildMagazineSnapshot({
       catalog,
       sections: [section('s-1', 'Sala', [productItem('p-1', true)]), section('s-2', 'Alcoba', [productItem('p-1')])],
@@ -121,7 +121,7 @@ describe('buildMagazineSnapshot', () => {
       publishedAt: PUBLISHED_AT,
     });
     expect(result.snapshot.sections[0].products[0].featured).toBe(true);
-    expect(result.snapshot.sections[1].products[0].featured).toBe(false);
+    expect(result.snapshot.sections[1].products).toEqual([]);
     expect(result.blockers).toEqual([]);
   });
 
@@ -150,5 +150,47 @@ describe('buildMagazineSnapshot', () => {
       ['accentColor', 'coverImageUrl', 'introduction', 'publicTitle', 'showAvailability', 'showContact', 'showPrice', 'showSku', 'template'].sort()
     );
     expect(Object.keys(result.snapshot.sections[0]).sort()).toEqual(['body', 'id', 'imageUrl', 'kicker', 'products', 'title'].sort());
+  });
+});
+
+describe('categorías completas y repetidos (alineado con snapshot.server.ts del web)', () => {
+  const listingFor = (n: number): PublicCatalogListingItem => ({ ...listingItem, catalogProductId: `cp-${n}`, productId: `p-${n}`, slug: `ficha-${n}` });
+  const detailFor = (n: number) => ({ ...productDetail, id: `cp-${n}`, productId: `p-${n}`, slug: `ficha-${n}` }) as PublicCatalogProductDetail;
+  const all = Array.from({ length: 150 }, (_, index) => listingFor(index + 1));
+  const details = new Map(all.map((item, index) => [item.slug, detailFor(index + 1)]));
+
+  it('una categoría «siempre al día» entra completa en el enlace, también más allá de 100 fichas', () => {
+    const index = buildListingIndex([], [['cat-sala', all]]);
+    const { snapshot, blockers } = buildMagazineSnapshot({
+      catalog,
+      sections: [section('s-1', 'Sala', [categoryItem('cat-sala')])],
+      index,
+      detailBySlug: details,
+      publishedAt: PUBLISHED_AT,
+    });
+    expect(blockers).toEqual([]);
+    expect(snapshot.sections[0].products).toHaveLength(150);
+  });
+
+  it('un producto suelto que también viene en su categoría sale una sola vez, en la primera sección, y conserva el destacado', () => {
+    const index = buildListingIndex([listingFor(1), listingFor(2)], [['cat-sala', all.slice(0, 3)]]);
+    const { snapshot, warnings } = buildMagazineSnapshot({
+      catalog,
+      sections: [
+        section('s-1', 'Destacados', [productItem('p-2')]),
+        section('s-2', 'Sala', [categoryItem('cat-sala'), productItem('p-2', true)]),
+        section('s-3', 'Repetida', [productItem('p-1')]),
+      ],
+      index,
+      detailBySlug: details,
+      publishedAt: PUBLISHED_AT,
+    });
+    expect(snapshot.sections.map((item) => item.products.map((product) => product.productId))).toEqual([['p-2'], ['p-1', 'p-3'], []]);
+    expect(snapshot.sections[0].products[0].featured).toBe(true);
+    expect(warnings).toEqual(['La categoría «Repetida» solo repite productos de otras categorías y no aparecerá.']);
+  });
+
+  it('dedupeAcrossSections cuenta los descartados por grupo', () => {
+    expect(dedupeAcrossSections([['a', 'b'], ['b', 'c', 'a']], (value) => value)).toEqual({ groups: [['a', 'b'], ['c']], repeated: [0, 2] });
   });
 });

@@ -91,7 +91,8 @@ describe('analyzeCatalogSnapshot', () => {
     expect(mockGetPublicCatalogProductDetails).toHaveBeenCalledTimes(1);
     expect(mockGetPublicCatalogProductDetails.mock.calls[0][0]).toEqual(['sofa-lino']);
     expect(result.snapshot.sections[0].products[0].featured).toBe(true);
-    expect(result.snapshot.sections[1].products[0].featured).toBe(false);
+    // Como el web: la repetida sale solo en la primera sección.
+    expect(result.snapshot.sections[1].products).toEqual([]);
     expect(result.blockers).toEqual([]);
   });
 

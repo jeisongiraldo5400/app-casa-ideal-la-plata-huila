@@ -25,5 +25,9 @@ export const DETAIL_CONCURRENCY = 4;
 /** Categorías que se recorren en paralelo al armar el snapshot. */
 export const CATEGORY_CONCURRENCY = 2;
 
-/** Miniaturas por categoría en el detalle antes de resumir con «+N». */
-export const SECTION_THUMB_LIMIT = 8;
+/**
+ * Productos por «página» de cada categoría en el detalle: la carga inicial
+ * trae esta muestra de cada categoría completa, y «Ver más» muestra los
+ * siguientes (pidiendo la categoría entera solo cuando hace falta).
+ */
+export const SECTION_PAGE_SIZE = 10;

@@ -4,6 +4,11 @@
 export type CatalogSectionSummary = {
   title: string;
   productCount: number;
+  /**
+   * Productos que la sección tenía pero ya salen en una anterior: solo se
+   * muestran una vez. Distingue «vacía» de «solo repite otras».
+   */
+  repeatedCount?: number;
 };
 
 export type CatalogReadiness = {
@@ -27,11 +32,21 @@ export function evaluateCatalogReadiness(sections: readonly CatalogSectionSummar
       'Ninguna categoría contiene fichas de producto publicadas. Publica las fichas en «Productos».'
     );
   } else {
-    const empty = sections.filter((section) => section.productCount === 0).map((section) => section.title);
+    const empty = sections
+      .filter((section) => section.productCount === 0 && !(section.repeatedCount ?? 0))
+      .map((section) => section.title);
+    const onlyRepeated = sections
+      .filter((section) => section.productCount === 0 && (section.repeatedCount ?? 0) > 0)
+      .map((section) => section.title);
     if (empty.length === 1) {
       warnings.push(`La categoría «${empty[0]}» no tiene fichas publicadas y saldrá vacía.`);
     } else if (empty.length > 1) {
       warnings.push(`${empty.length} categorías no tienen fichas publicadas y saldrán vacías: ${empty.join(', ')}.`);
+    }
+    if (onlyRepeated.length === 1) {
+      warnings.push(`La categoría «${onlyRepeated[0]}» solo repite productos de otras categorías y no aparecerá.`);
+    } else if (onlyRepeated.length > 1) {
+      warnings.push(`${onlyRepeated.length} categorías solo repiten productos de otras y no aparecerán: ${onlyRepeated.join(', ')}.`);
     }
   }
 

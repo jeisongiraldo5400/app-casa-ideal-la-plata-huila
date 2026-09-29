@@ -37,7 +37,7 @@ function CatalogoDetailInner() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { detail, products, categories, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail } =
+  const { detail, products, categories, ownerName, loading, error, isNetworkFailure, notFound, isOwner, canShare, reload, setDetail, loadCategories } =
     useCatalogDetail(id);
   const summary = useCatalogSummary(detail);
   const removeFromList = useCatalogosStore((state) => state.removeFromList);
@@ -82,7 +82,8 @@ function CatalogoDetailInner() {
   }
 
   const productItems = detail.sections.flatMap((section) => section.items.filter((item) => item.itemType === 'product'));
-  // Cuenta también las categorías completas (su total viene con la muestra de miniaturas).
+  // Cuenta también las categorías completas (su total viene con la muestra) y
+  // no repite un producto que sale en dos categorías (como la revista).
   const publishedCount = countCatalogProducts(detail.sections, products, categories);
   const shareTo = `/catalogo/${detail.id}/compartir`;
   const scope = isOwner ? 'own' : detail.visibility === 'organization' ? 'organization' : 'shared';
@@ -140,7 +141,7 @@ function CatalogoDetailInner() {
               onAction={isOwner ? () => router.push(`/catalogo/${detail.id}/productos` as never) : undefined}
             />
           ) : (
-            <CatalogSectionsSummary sections={detail.sections} products={products} categories={categories} />
+            <CatalogSectionsSummary sections={detail.sections} products={products} categories={categories} onLoadCategories={loadCategories} />
           )}
         </View>
 
