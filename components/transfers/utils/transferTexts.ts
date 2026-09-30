@@ -129,12 +129,12 @@ export function viewNotice(
           : null;
       }
       if (userId && order.dispatchedBy?.id === userId) {
-        return `Despachaste este traslado: lo recibe un responsable de ${destination}.`;
+        return `Despachaste este traslado: lo recibe un bodeguero en ${destination}.`;
       }
       if (userId && order.carrier?.id === userId) {
-        return `Transportas este traslado: al llegar, un responsable de ${destination} confirma la recepción.`;
+        return `Transportas este traslado: al llegar, un bodeguero en ${destination} confirma la recepción.`;
       }
-      return `Lo recibe un responsable de ${destination}.`;
+      return `Lo recibe un bodeguero en ${destination}.`;
     case 'received':
       return 'Traslado recibido completo.';
     case 'closed_with_differences':

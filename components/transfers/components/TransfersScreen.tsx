@@ -80,7 +80,7 @@ export function TransfersScreen() {
         <ScreenState
           icon="lock-outline"
           title="Sin traslados asignados"
-          description="Traslados es para los responsables de las bodegas. Si deberías despachar o recibir, pide a un administrador que te asigne en Bodegas → Responsables."
+          description="Traslados es para bodegueros y administradores: el bodeguero despacha y recibe. Si deberías hacerlo, pide a un administrador el perfil de bodeguero."
         />
       );
     }

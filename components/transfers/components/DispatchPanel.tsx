@@ -107,7 +107,7 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
 
       {detail.receivers.length === 0 ? (
         <Text style={[styles.warning, { color: colors.warning.dark }]}>
-          {order.destinationWarehouse.name} no tiene responsables que puedan recibir: solo un administrador podrá confirmar la llegada.
+          {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir: solo un administrador podrá confirmar la llegada.
         </Text>
       ) : null}
 

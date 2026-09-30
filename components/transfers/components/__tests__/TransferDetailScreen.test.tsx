@@ -213,7 +213,7 @@ describe('TransferDetailScreen', () => {
     const screen = renderWith(rawDetail({ permissions: { can_receive: false } }));
     expect(
       await screen.findByText(
-        'Transportas este traslado: al llegar, un responsable de La Argentina confirma la recepción.'
+        'Transportas este traslado: al llegar, un bodeguero en La Argentina confirma la recepción.'
       )
     ).toBeTruthy();
     expect(screen.queryByText('Revisar y recibir')).toBeNull();

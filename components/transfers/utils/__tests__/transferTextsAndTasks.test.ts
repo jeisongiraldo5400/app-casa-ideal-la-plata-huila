@@ -74,7 +74,7 @@ describe('textos', () => {
 
   it('motivo del modo solo lectura: quien despachó o transporta no recibe', () => {
     const order = parseTransferSummary(rawOrder());
-    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe un responsable de La Argentina.');
+    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe un bodeguero en La Argentina.');
     expect(viewNotice(order, 'u-carrier')).toMatch(/^Transportas este traslado/);
     expect(viewNotice(parseTransferSummary(rawOrder({ status: 'received' })), 'x')).toBe('Traslado recibido completo.');
   });

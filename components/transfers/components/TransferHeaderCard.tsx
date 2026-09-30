@@ -46,7 +46,7 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
       ) : null}
       {receivers.length === 0 && order.status !== 'cancelled' ? (
         <Text style={[styles.row, { color: colors.warning.dark }]}>
-          {order.destinationWarehouse.name} no tiene responsables asignados para recibir.
+          {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir.
         </Text>
       ) : null}
     </Card>
