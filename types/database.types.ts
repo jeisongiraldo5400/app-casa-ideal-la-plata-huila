@@ -1492,6 +1492,7 @@ export type Database = {
           notes: string | null
           product_id: string
           quantity: number
+          returned_quantity: number
           requested_by_user_id: string | null
           source_delivery_order_id: string | null
           warehouse_id: string
@@ -1509,6 +1510,7 @@ export type Database = {
           notes?: string | null
           product_id: string
           quantity: number
+          returned_quantity?: number
           requested_by_user_id?: string | null
           source_delivery_order_id?: string | null
           warehouse_id: string
@@ -1526,6 +1528,7 @@ export type Database = {
           notes?: string | null
           product_id?: string
           quantity?: number
+          returned_quantity?: number
           requested_by_user_id?: string | null
           source_delivery_order_id?: string | null
           warehouse_id?: string
@@ -2080,6 +2083,70 @@ export type Database = {
           },
         ]
       }
+      inventory_entry_serials: {
+        Row: {
+          capture_method: string
+          created_at: string
+          created_by: string | null
+          id: string
+          inventory_entry_id: string
+          product_id: string
+          serial_normalized: string
+          serial_number: string
+          voided_at: string | null
+          voided_reason: string | null
+          warehouse_id: string
+        }
+        Insert: {
+          capture_method?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id: string
+          product_id: string
+          serial_normalized: string
+          serial_number: string
+          voided_at?: string | null
+          voided_reason?: string | null
+          warehouse_id: string
+        }
+        Update: {
+          capture_method?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inventory_entry_id?: string
+          product_id?: string
+          serial_normalized?: string
+          serial_number?: string
+          voided_at?: string | null
+          voided_reason?: string | null
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_entry_serials_inventory_entry_id_fkey"
+            columns: ["inventory_entry_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entry_serials_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entry_serials_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_exit_cancellations: {
         Row: {
           created_at: string
@@ -2114,6 +2181,80 @@ export type Database = {
             columns: ["inventory_exit_id"]
             isOneToOne: true
             referencedRelation: "inventory_exits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_exit_serials: {
+        Row: {
+          capture_method: string
+          created_at: string
+          created_by: string | null
+          delivery_order_return_id: string | null
+          entry_serial_id: string | null
+          id: string
+          inventory_exit_id: string
+          product_id: string
+          released_at: string | null
+          released_reason: string | null
+          serial_normalized: string
+          serial_number: string
+        }
+        Insert: {
+          capture_method?: string
+          created_at?: string
+          created_by?: string | null
+          delivery_order_return_id?: string | null
+          entry_serial_id?: string | null
+          id?: string
+          inventory_exit_id: string
+          product_id: string
+          released_at?: string | null
+          released_reason?: string | null
+          serial_normalized: string
+          serial_number: string
+        }
+        Update: {
+          capture_method?: string
+          created_at?: string
+          created_by?: string | null
+          delivery_order_return_id?: string | null
+          entry_serial_id?: string | null
+          id?: string
+          inventory_exit_id?: string
+          product_id?: string
+          released_at?: string | null
+          released_reason?: string | null
+          serial_normalized?: string
+          serial_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_exit_serials_delivery_order_return_id_fkey"
+            columns: ["delivery_order_return_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_order_returns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exit_serials_entry_serial_id_fkey"
+            columns: ["entry_serial_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_entry_serials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exit_serials_inventory_exit_id_fkey"
+            columns: ["inventory_exit_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_exits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_exit_serials_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
             referencedColumns: ["id"]
           },
         ]
@@ -3889,6 +4030,252 @@ export type Database = {
         }
         Relationships: []
       }
+      transfer_order_events: {
+        Row: {
+          client_captured_at: string | null
+          condition: string | null
+          created_at: string
+          event_type: string
+          id: string
+          item_id: string | null
+          notes: string | null
+          photo_path: string | null
+          product_id: string | null
+          quantity: number
+          transfer_order_id: string
+          user_id: string | null
+          warehouse_id: string | null
+        }
+        Insert: {
+          client_captured_at?: string | null
+          condition?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          item_id?: string | null
+          notes?: string | null
+          photo_path?: string | null
+          product_id?: string | null
+          quantity: number
+          transfer_order_id: string
+          user_id?: string | null
+          warehouse_id?: string | null
+        }
+        Update: {
+          client_captured_at?: string | null
+          condition?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          item_id?: string | null
+          notes?: string | null
+          photo_path?: string | null
+          product_id?: string | null
+          quantity?: number
+          transfer_order_id?: string
+          user_id?: string | null
+          warehouse_id?: string | null
+        }
+        Relationships: []
+      }
+      transfer_order_items: {
+        Row: {
+          created_at: string
+          damaged_quantity: number
+          dispatched_quantity: number
+          id: string
+          notes: string | null
+          product_id: string
+          quantity: number
+          received_quantity: number
+          return_pending_quantity: number
+          returned_quantity: number
+          transfer_order_id: string
+          updated_at: string
+          written_off_quantity: number
+        }
+        Insert: {
+          created_at?: string
+          damaged_quantity?: number
+          dispatched_quantity?: number
+          id?: string
+          notes?: string | null
+          product_id: string
+          quantity: number
+          received_quantity?: number
+          return_pending_quantity?: number
+          returned_quantity?: number
+          transfer_order_id: string
+          updated_at?: string
+          written_off_quantity?: number
+        }
+        Update: {
+          created_at?: string
+          damaged_quantity?: number
+          dispatched_quantity?: number
+          id?: string
+          notes?: string | null
+          product_id?: string
+          quantity?: number
+          received_quantity?: number
+          return_pending_quantity?: number
+          returned_quantity?: number
+          transfer_order_id?: string
+          updated_at?: string
+          written_off_quantity?: number
+        }
+        Relationships: []
+      }
+      transfer_order_serials: {
+        Row: {
+          dispatch_event_id: string | null
+          dispatched_at: string
+          dispatched_by: string | null
+          entry_serial_id: string | null
+          id: string
+          item_id: string
+          product_id: string
+          receive_event_id: string | null
+          received_at: string | null
+          received_by: string | null
+          resolve_event_id: string | null
+          return_event_id: string | null
+          return_requested_at: string | null
+          returned_at: string | null
+          returned_by: string | null
+          serial_normalized: string
+          serial_number: string
+          status: string
+          transfer_order_id: string
+          written_off_at: string | null
+        }
+        Insert: {
+          dispatch_event_id?: string | null
+          dispatched_at?: string
+          dispatched_by?: string | null
+          entry_serial_id?: string | null
+          id?: string
+          item_id: string
+          product_id: string
+          receive_event_id?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          resolve_event_id?: string | null
+          return_event_id?: string | null
+          return_requested_at?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+          serial_normalized: string
+          serial_number: string
+          status?: string
+          transfer_order_id: string
+          written_off_at?: string | null
+        }
+        Update: {
+          dispatch_event_id?: string | null
+          dispatched_at?: string
+          dispatched_by?: string | null
+          entry_serial_id?: string | null
+          id?: string
+          item_id?: string
+          product_id?: string
+          receive_event_id?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          resolve_event_id?: string | null
+          return_event_id?: string | null
+          return_requested_at?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+          serial_normalized?: string
+          serial_number?: string
+          status?: string
+          transfer_order_id?: string
+          written_off_at?: string | null
+        }
+        Relationships: []
+      }
+      transfer_orders: {
+        Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          carrier_user_id: string | null
+          closed_at: string | null
+          created_at: string
+          created_by: string | null
+          destination_warehouse_id: string
+          dispatch_notes: string | null
+          dispatch_photo_path: string | null
+          dispatched_at: string | null
+          dispatched_by: string | null
+          due_at: string | null
+          id: string
+          last_overdue_reminder_on: string | null
+          notes: string | null
+          order_number: string | null
+          received_at: string | null
+          source_warehouse_id: string
+          status: string
+          submit_override_reason: string | null
+          submitted_at: string | null
+          submitted_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          carrier_user_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          destination_warehouse_id: string
+          dispatch_notes?: string | null
+          dispatch_photo_path?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          due_at?: string | null
+          id?: string
+          last_overdue_reminder_on?: string | null
+          notes?: string | null
+          order_number?: string | null
+          received_at?: string | null
+          source_warehouse_id: string
+          status?: string
+          submit_override_reason?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          carrier_user_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          destination_warehouse_id?: string
+          dispatch_notes?: string | null
+          dispatch_photo_path?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          due_at?: string | null
+          id?: string
+          last_overdue_reminder_on?: string | null
+          notes?: string | null
+          order_number?: string | null
+          received_at?: string | null
+          source_warehouse_id?: string
+          status?: string
+          submit_override_reason?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -3958,6 +4345,93 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      warehouse_events: {
+        Row: {
+          available_after: number | null
+          created_at: string
+          created_by: string | null
+          delivery_order_id: string | null
+          delivery_order_item_id: string | null
+          event_type: string
+          id: string
+          product_id: string | null
+          quantity: number
+          reason: string
+          warehouse_id: string
+        }
+        Insert: {
+          available_after?: number | null
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id?: string | null
+          delivery_order_item_id?: string | null
+          event_type: string
+          id?: string
+          product_id?: string | null
+          quantity: number
+          reason: string
+          warehouse_id: string
+        }
+        Update: {
+          available_after?: number | null
+          created_at?: string
+          created_by?: string | null
+          delivery_order_id?: string | null
+          delivery_order_item_id?: string | null
+          event_type?: string
+          id?: string
+          product_id?: string | null
+          quantity?: number
+          reason?: string
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warehouse_events_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "warehouse_events_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      warehouse_members: {
+        Row: {
+          can_dispatch: boolean
+          can_receive: boolean
+          created_at: string
+          created_by: string | null
+          updated_at: string
+          user_id: string
+          warehouse_id: string
+        }
+        Insert: {
+          can_dispatch?: boolean
+          can_receive?: boolean
+          created_at?: string
+          created_by?: string | null
+          updated_at?: string
+          user_id: string
+          warehouse_id: string
+        }
+        Update: {
+          can_dispatch?: boolean
+          can_receive?: boolean
+          created_at?: string
+          created_by?: string | null
+          updated_at?: string
+          user_id?: string
+          warehouse_id?: string
+        }
+        Relationships: []
       }
       warehouse_stock: {
         Row: {
@@ -4233,6 +4707,7 @@ export type Database = {
       }
       adjust_product_stock: {
         Args: {
+          p_idempotency_key?: string
           p_new_quantity: number
           p_product_id: string
           p_reason: string
@@ -4340,6 +4815,12 @@ export type Database = {
         Args: { p_negocio_id: string }
         Returns: boolean
       }
+      can_view_transfer_order: {
+        Args: {
+          p_transfer_order_id: string
+        }
+        Returns: boolean
+      }
       can_void_negocio_pago: { Args: { p_negocio_id: string }; Returns: boolean }
       can_read_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
       can_share_catalog: { Args: { p_catalog_id: string }; Returns: boolean }
@@ -4388,6 +4869,14 @@ export type Database = {
         }
         Returns: Json
       }
+      cancel_transfer_order: {
+        Args: {
+          p_transfer_order_id: string
+          p_reason: string
+          p_idempotency_key?: string
+        }
+        Returns: Json
+      }
       cartera_today: { Args: never; Returns: string }
       claim_notification_events: {
         Args: { p_limit?: number }
@@ -4408,6 +4897,17 @@ export type Database = {
           p_failed?: boolean
         }
         Returns: undefined
+      }
+      confirm_transfer_return: {
+        Args: {
+          p_transfer_order_id: string
+          p_items: Json
+          p_notes?: string
+          p_photo_path?: string
+          p_client_captured_at?: string
+          p_idempotency_key?: string
+        }
+        Returns: Json
       }
       consume_admin_api_rate_limit: {
         Args: { p_max_requests?: number; p_window_seconds?: number }
@@ -4550,6 +5050,19 @@ export type Database = {
         }
         Returns: Json
       }
+      create_transfer_order: {
+        Args: {
+          p_source_warehouse_id: string
+          p_destination_warehouse_id: string
+          p_items: Json
+          p_notes?: string
+          p_carrier_user_id?: string
+          p_submit?: boolean
+          p_override_reason?: string
+          p_idempotency_key?: string
+        }
+        Returns: Json
+      }
       deactivate_push_device: {
         Args: { p_expo_push_token: string }
         Returns: undefined
@@ -4568,6 +5081,18 @@ export type Database = {
       }
       deliver_delivery_order: {
         Args: { p_delivery_order_id: string }
+        Returns: Json
+      }
+      dispatch_transfer_order: {
+        Args: {
+          p_transfer_order_id: string
+          p_items: Json
+          p_carrier_user_id?: string
+          p_notes?: string
+          p_photo_path?: string
+          p_client_captured_at?: string
+          p_idempotency_key?: string
+        }
         Returns: Json
       }
       edit_delivery_order_items: {
@@ -4634,6 +5159,10 @@ export type Database = {
           p_title: string
         }
         Returns: undefined
+      }
+      enqueue_transfer_overdue_reminders: {
+        Args: never
+        Returns: number
       }
       f_unaccent: { Args: { "": string }; Returns: string }
       find_customer_by_document: {
@@ -4901,6 +5430,89 @@ export type Database = {
           total_exits_to_customers: number
         }[]
       }
+      get_delivery_order_cancel_locks: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          delivery_order_id: string
+          message: string
+        }[]
+      }
+      get_delivery_order_negocio_locks: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          delivery_order_id: string
+          message: string
+        }[]
+      }
+      get_delivery_order_approval_locks: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          delivery_order_id: string
+          message: string
+        }[]
+      }
+      get_delivery_order_delete_locks: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          delivery_order_id: string
+          message: string
+        }[]
+      }
+      get_in_transit_stock: {
+        Args: {
+          p_product_id?: string
+          p_warehouse_id?: string
+        }
+        Returns: Json
+      }
+      get_my_transfer_tasks: {
+        Args: never
+        Returns: Json
+      }
+      get_my_warehouse_memberships: {
+        Args: never
+        Returns: Json
+      }
+      get_purchase_order_delete_locks: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          purchase_order_id: string
+          message: string
+        }[]
+      }
+      get_transfer_order_detail: {
+        Args: {
+          p_transfer_order_id: string
+        }
+        Returns: Json
+      }
+      get_warehouse_history: {
+        Args: {
+          p_warehouse_id: string
+          p_date_from?: string
+          p_date_to?: string
+          p_movement_types?: string[]
+          p_search?: string
+          p_user_id?: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
+      get_warehouse_delete_locks: {
+        Args: { p_warehouse_ids: string[] }
+        Returns: {
+          warehouse_id: string
+          message: string
+        }[]
+      }
+      get_product_delete_locks: {
+        Args: { p_product_ids: string[] }
+        Returns: {
+          product_id: string
+          message: string
+        }[]
+      }
       get_delivery_order_returnable_exits: {
         Args: { p_order_id: string }
         Returns: {
@@ -5049,12 +5661,19 @@ export type Database = {
         }[]
       }
       get_inventory_entries_stats: {
-        Args: never
+        Args: {
+          date_from?: string
+          date_to?: string
+          search_term?: string
+          supplier_filter?: string
+          user_filter?: string
+        }
         Returns: {
           active_entries: number
+          active_quantity: number
           cancelled_entries: number
+          cancelled_quantity: number
           total_entries: number
-          total_quantity: number
           unique_warehouses: number
         }[]
       }
@@ -5095,12 +5714,20 @@ export type Database = {
         }[]
       }
       get_inventory_exits_stats: {
-        Args: never
+        Args: {
+          date_from?: string
+          date_to?: string
+          search_term?: string
+          status_filter?: string
+          user_filter?: string
+          warehouse_filter?: string
+        }
         Returns: {
           active_exits: number
+          active_quantity: number
           cancelled_exits: number
+          cancelled_quantity: number
           total_exits: number
-          total_quantity: number
           unique_warehouses: number
         }[]
       }
@@ -5204,6 +5831,35 @@ export type Database = {
           total_quantity: number
         }[]
       }
+      get_negocio_active_remission: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          remission_id: string
+          remission_number: string | null
+          remission_status: string | null
+        }[]
+      }
+      get_negocio_contact_changes: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          changed_by: string | null
+          changed_by_name: string | null
+          changed_fields: string[]
+          created_at: string
+          delivery_order_id: string | null
+          delivery_order_number: string | null
+          id: string
+          negocio_id: string
+          new_direccion: string | null
+          new_municipio_name: string | null
+          new_notes: string | null
+          new_vereda_name: string | null
+          previous_direccion: string | null
+          previous_municipio_name: string | null
+          previous_notes: string | null
+          previous_vereda_name: string | null
+        }[]
+      }
       get_negocio_gestor_historial: {
         Args: { p_negocio_id: string }
         Returns: {
@@ -5218,6 +5874,13 @@ export type Database = {
           id: string
           motivo: string
           negocio_id: string
+        }[]
+      }
+      get_negocio_pago_cuota_labels: {
+        Args: { p_negocio_id: string }
+        Returns: {
+          cuota_label: string | null
+          pago_id: string
         }[]
       }
       get_negocio_vendedor_historial: {
@@ -5387,6 +6050,16 @@ export type Database = {
           name: string
         }[]
       }
+      get_public_catalog_categories_with_cover: {
+        Args: never
+        Returns: {
+          cover_bucket: string
+          cover_storage_path: string
+          id: string
+          name: string
+          product_count: number
+        }[]
+      }
       get_public_catalog_listing: {
         Args: {
           p_category_id?: string
@@ -5414,6 +6087,13 @@ export type Database = {
       get_public_catalog_product: {
         Args: { product_slug: string }
         Returns: Json
+      }
+      get_public_catalog_product_ids_by_categories: {
+        Args: { p_category_ids: string[] }
+        Returns: {
+          category_id: string
+          product_ids: string[]
+        }[]
       }
       get_public_catalog_products_by_ids: {
         Args: { p_product_ids: string[] }
@@ -5558,6 +6238,7 @@ export type Database = {
           created_by_name: string
           id: string
           inventory_entry_id: string
+          inventory_exit_id: string
           is_reverted: boolean
           observations: string
           order_id: string
@@ -5568,8 +6249,10 @@ export type Database = {
           quantity: number
           return_reason: string
           return_type: string
+          returned_serials: string[]
           revert_observations: string
           reverted_at: string
+          source: string
           total_count: number
           warehouse_id: string
           warehouse_name: string
@@ -5600,6 +6283,7 @@ export type Database = {
           count_faltante: number
           count_negativo: number
           count_ok: number
+          count_producto_eliminado: number
           count_sobrante: number
           devoluciones_proveedor: number
           diagnostico: string
@@ -5617,6 +6301,10 @@ export type Database = {
           total_count: number
           transferencias_entrada: number
           transferencias_salida: number
+          traslados_despachados: number
+          traslados_devueltos: number
+          traslados_recibidos: number
+          traslados_reservados: number
         }[]
       }
       get_user_activities_today: {
@@ -5713,6 +6401,35 @@ export type Database = {
           id: string
         }[]
       }
+      list_negocios_movil: {
+        Args: {
+          p_cobro?: string
+          p_days?: number
+          p_departamento_id?: string
+          p_gestor_id?: string
+          p_limit?: number
+          p_municipio_id?: string
+          p_offset?: number
+          p_order?: string
+          p_scope?: string
+          p_search?: string
+          p_status?: string
+          p_vereda_id?: string
+        }
+        Returns: Json
+      }
+      list_pending_remissions: {
+        Args: never
+        Returns: {
+          assigned_to_user_id: string
+          assigned_user_name: string
+          created_at: string
+          id: string
+          notes: string
+          order_number: string
+          zone_name: string
+        }[]
+      }
       list_cartera_payments: {
         Args: {
           p_created_by?: string
@@ -5744,35 +6461,6 @@ export type Database = {
         }
         Returns: Json
       }
-      list_negocios_movil: {
-        Args: {
-          p_cobro?: string
-          p_days?: number
-          p_departamento_id?: string
-          p_gestor_id?: string
-          p_limit?: number
-          p_municipio_id?: string
-          p_offset?: number
-          p_order?: string
-          p_scope?: string
-          p_search?: string
-          p_status?: string
-          p_vereda_id?: string
-        }
-        Returns: Json
-      }
-      list_pending_remissions: {
-        Args: never
-        Returns: {
-          assigned_to_user_id: string
-          assigned_user_name: string
-          created_at: string
-          id: string
-          notes: string
-          order_number: string
-          zone_name: string
-        }[]
-      }
       list_sellers: {
         Args: { p_limit?: number; p_search?: string }
         Returns: {
@@ -5781,6 +6469,26 @@ export type Database = {
           full_name: string
           id: string
         }[]
+      }
+      list_transfer_orders_page: {
+        Args: {
+          p_statuses?: string[]
+          p_source_warehouse_id?: string
+          p_destination_warehouse_id?: string
+          p_date_from?: string
+          p_date_to?: string
+          p_overdue_only?: boolean
+          p_search?: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
+      list_warehouse_members: {
+        Args: {
+          p_warehouse_id?: string
+        }
+        Returns: Json
       }
       log_search_event: {
         Args: {
@@ -5798,6 +6506,10 @@ export type Database = {
         Returns: undefined
       }
       mark_cuotas_en_mora: { Args: { p_negocio_id?: string }; Returns: number }
+      mark_delivery_order_delivered: {
+        Args: { p_delivery_order_id: string }
+        Returns: Json
+      }
       negocio_down_payment_schedule_first_date: {
         Args: { p_schedule: Json }
         Returns: string
@@ -5831,6 +6543,10 @@ export type Database = {
       pago_support_object_pago_id: {
         Args: { object_name: string }
         Returns: string
+      }
+      publish_catalog_to_team: {
+        Args: { p_catalog_id: string }
+        Returns: undefined
       }
       pull_mobile_scope: { Args: { p_limit?: number }; Returns: Json }
       pull_mobile_sync: {
@@ -5884,6 +6600,18 @@ export type Database = {
           voided_at: string
         }[]
       }
+      receive_transfer_order: {
+        Args: {
+          p_transfer_order_id: string
+          p_items: Json
+          p_notes?: string
+          p_photo_path?: string
+          p_client_captured_at?: string
+          p_report_missing?: boolean
+          p_idempotency_key?: string
+        }
+        Returns: Json
+      }
       register_collection_route_payment: {
         Args: {
           p_amount: number
@@ -5916,6 +6644,7 @@ export type Database = {
       register_delivery_order_return: {
         Args: {
           p_delivery_order_id: string
+          p_exit_serial_ids?: string[]
           p_idempotency_key?: string
           p_inventory_exit_id: string
           p_observations?: string
@@ -5923,31 +6652,6 @@ export type Database = {
           p_reason: string
         }
         Returns: string
-      }
-      check_exit_serial:
-        | {
-            Args: {
-              p_delivery_order_id: string
-              p_product_id: string
-              p_serial: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_delivery_order_id: string
-              p_product_id: string
-              p_serial: string
-              p_warehouse_id: string
-            }
-            Returns: Json
-          }
-      check_entry_serial: {
-        Args: {
-          p_product_id: string
-          p_serial: string
-        }
-        Returns: Json
       }
       register_inventory_entries_batch: {
         Args: {
@@ -6023,6 +6727,16 @@ export type Database = {
         }
         Returns: Json
       }
+      register_supplier_returns: {
+        Args: {
+          p_idempotency_key: string
+          p_items: Json
+          p_observations?: string
+          p_purchase_order_id: string
+          p_return_reason: string
+        }
+        Returns: Json
+      }
       reissue_private_catalog_share_link: {
         Args: {
           p_expires_at: string
@@ -6032,6 +6746,14 @@ export type Database = {
           p_token_hint: string
         }
         Returns: Json
+      }
+      reorder_catalog_items: {
+        Args: { p_catalog_id: string; p_item_ids: string[]; p_section_id: string }
+        Returns: undefined
+      }
+      reorder_catalog_sections: {
+        Args: { p_catalog_id: string; p_section_ids: string[] }
+        Returns: undefined
       }
       replace_app_user_profile_and_roles: {
         Args: {
@@ -6057,6 +6779,18 @@ export type Database = {
         }
       }
       resolve_private_catalog: { Args: { p_token_hash: string }; Returns: Json }
+      resolve_transfer_difference: {
+        Args: {
+          p_transfer_order_id: string
+          p_item_id: string
+          p_action: string
+          p_quantity: number
+          p_reason: string
+          p_serials?: Json
+          p_idempotency_key?: string
+        }
+        Returns: Json
+      }
       revert_purchase_order_return: {
         Args: {
           p_idempotency_key: string
@@ -6111,6 +6845,13 @@ export type Database = {
         Args: { p_negocio_ids: string[]; p_route_id: string }
         Returns: undefined
       }
+      set_warehouse_members: {
+        Args: {
+          p_warehouse_id: string
+          p_members: Json
+        }
+        Returns: Json
+      }
       shared_catalog_ids: { Args: never; Returns: string[] }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
@@ -6136,9 +6877,18 @@ export type Database = {
         Args: { p_route_id: string }
         Returns: undefined
       }
+      submit_transfer_order: {
+        Args: {
+          p_transfer_order_id: string
+          p_override_reason?: string
+          p_idempotency_key?: string
+        }
+        Returns: Json
+      }
       transfer_product_between_warehouses: {
         Args: {
           p_destination_warehouse_id: string
+          p_idempotency_key?: string
           p_observations: string
           p_product_id: string
           p_quantity: number
