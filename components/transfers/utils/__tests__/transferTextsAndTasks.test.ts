@@ -1,0 +1,111 @@
+import { rawDetail, rawOrder } from '../../__fixtures__/transferFixtures';
+import { parseTransferDetail, parseTransferSummary, parseTransferTasks, parseTransferWriteResult } from '../transferModel';
+import { countTasks, defaultSection, homeCardSubtitle, overdueCount, sortForList } from '../transferTasks';
+import {
+  dispatchConfirmText,
+  dueText,
+  receiveConfirmText,
+  sentLineText,
+  transferRouteText,
+  viewNotice,
+} from '../transferTexts';
+
+describe('parseo de las RPC', () => {
+  it('convierte numeric en texto a número y conserva personas y bodegas', () => {
+    const order = parseTransferSummary(rawOrder());
+    expect(order.totalQuantity).toBe(5);
+    expect(order.carrier).toEqual({ id: 'u-carrier', name: 'Darío' });
+    expect(transferRouteText(order)).toBe('Principal → La Argentina');
+  });
+
+  it('un payload corrupto no tumba la pantalla', () => {
+    const detail = parseTransferDetail(null);
+    expect(detail.items).toEqual([]);
+    expect(detail.permissions.canReceive).toBe(false);
+    expect(parseTransferSummary({ status: 'raro' }).status).toBe('draft');
+  });
+
+  it('respuesta de escritura con replayed', () => {
+    expect(
+      parseTransferWriteResult({
+        transfer_order_id: 't-1',
+        order_number: 'TR-1',
+        status: 'in_transit',
+        dispatched_quantity: '4.00',
+        released_quantity: 1,
+        replayed: true,
+      })
+    ).toEqual({
+      transferOrderId: 't-1',
+      orderNumber: 'TR-1',
+      status: 'in_transit',
+      replayed: true,
+      quantities: { dispatched_quantity: 4, released_quantity: 1 },
+    });
+  });
+});
+
+describe('textos', () => {
+  it('«Te enviaron: N × Producto — transporta X — despachado el …»', () => {
+    const detail = parseTransferDetail(rawDetail());
+    expect(sentLineText(detail.items[0], detail.order)).toBe(
+      'Te enviaron: 3 × Lavadora LG — transporta Darío — despachado el 26/09/2026 10:00 a. m.'
+    );
+  });
+
+  it('vencido en rojo: el texto lo dice', () => {
+    const order = parseTransferSummary(rawOrder({ is_overdue: true }));
+    expect(dueText(order)).toMatch(/^Vencido desde 28\/09\/2026/);
+    expect(dueText(parseTransferSummary(rawOrder({ due_at: null })))).toBeNull();
+  });
+
+  it('resúmenes de confirmación', () => {
+    const order = parseTransferSummary(rawOrder());
+    expect(dispatchConfirmText({ units: 4, lines: 2, released: 1 }, order, 'Darío')).toContain(
+      '1 unidad no sale y vuelve al disponible de Principal.'
+    );
+    expect(receiveConfirmText({ ok: 2, damaged: 1, remaining: 2, reportMissing: false }, order)).toBe(
+      'Recibes en La Argentina: 2 unidades en buen estado y 1 unidad averiada.\n2 unidades siguen en camino: puedes recibirlas después.'
+    );
+    expect(receiveConfirmText({ ok: 0, damaged: 0, remaining: 3, reportMissing: true }, order)).toMatch(
+      /faltan 3 unidades: el traslado queda con diferencias/
+    );
+  });
+
+  it('motivo del modo solo lectura: quien despachó o transporta no recibe', () => {
+    const order = parseTransferSummary(rawOrder());
+    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe un responsable de La Argentina.');
+    expect(viewNotice(order, 'u-carrier')).toMatch(/^Transportas este traslado/);
+    expect(viewNotice(parseTransferSummary(rawOrder({ status: 'received' })), 'x')).toBe('Traslado recibido completo.');
+  });
+});
+
+describe('tareas', () => {
+  const tasks = parseTransferTasks({
+    to_dispatch: [rawOrder({ id: 'a', status: 'pending_dispatch' })],
+    to_receive: [
+      rawOrder({ id: 'b', due_at: '2026-09-30T00:00:00Z' }),
+      rawOrder({ id: 'c', is_overdue: true, due_at: '2026-10-05T00:00:00Z' }),
+    ],
+    carrying: [],
+  });
+
+  it('cuenta y ordena vencidos primero', () => {
+    expect(countTasks(tasks)).toBe(3);
+    expect(tasks.toConfirmReturn).toEqual([]);
+    expect(overdueCount(tasks.toReceive)).toBe(1);
+    expect(sortForList(tasks.toReceive).map((row) => row.id)).toEqual(['c', 'b']);
+  });
+
+  it('abre «Por recibir» si hay vencidos; si no, la primera con algo', () => {
+    expect(defaultSection(tasks)).toBe('toReceive');
+    expect(defaultSection({ ...tasks, toReceive: [] })).toBe('toDispatch');
+    expect(defaultSection(null)).toBe('toDispatch');
+  });
+
+  it('subtítulo de la tarjeta de Inicio', () => {
+    expect(homeCardSubtitle(tasks)).toBe('2 por recibir · 1 vencido');
+    expect(homeCardSubtitle({ ...tasks, toReceive: [] })).toBe('1 por despachar');
+    expect(homeCardSubtitle(null)).toBe('Despachar y recibir');
+  });
+});

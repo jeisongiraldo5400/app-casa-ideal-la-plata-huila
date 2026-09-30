@@ -1,0 +1,96 @@
+/**
+ * Acceso a las RPC de órdenes de traslado (contrato: migraciones
+ * 20261231280000 / 20261231290000). El móvil solo despacha, recibe y confirma
+ * devoluciones; los traslados se crean en la web.
+ *
+ * Los errores se lanzan tal cual llegan de PostgREST: `errorMessage` deja los
+ * RAISE del servidor en español sin tocarlos («Quien despachó el traslado no
+ * puede recibirlo», etc.).
+ */
+import { supabase } from '@/lib/supabase';
+import {
+  parseTransferDetail,
+  parseTransferTasks,
+  parseTransferWriteResult,
+  parseWarehouseMemberships,
+  type TransferDetail,
+  type TransferTasks,
+  type TransferWriteResult,
+  type WarehouseMembership,
+} from '../../utils/transferModel';
+import type { DispatchPayloadItem, ReceivePayloadItem, ReturnPayloadItem } from '../../utils/transferRules';
+import type { Json } from '@/types/database.types';
+
+/** ¿El servidor todavía no tiene las RPC de traslados? (migración sin aplicar). */
+export function isTransfersUnavailableError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return String(record.code ?? '') === 'PGRST202' || /could not find the function/i.test(String(record.message ?? ''));
+}
+
+export async function fetchMyTransferTasks(): Promise<TransferTasks> {
+  const { data, error } = await supabase.rpc('get_my_transfer_tasks');
+  if (error) throw error;
+  return parseTransferTasks(data);
+}
+
+export async function fetchMyWarehouseMemberships(): Promise<WarehouseMembership[]> {
+  const { data, error } = await supabase.rpc('get_my_warehouse_memberships');
+  if (error) throw error;
+  return parseWarehouseMemberships(data);
+}
+
+export async function fetchTransferDetail(transferOrderId: string): Promise<TransferDetail> {
+  const { data, error } = await supabase.rpc('get_transfer_order_detail', { p_transfer_order_id: transferOrderId });
+  if (error) throw error;
+  if (!data) throw new Error('El traslado no existe o no tiene permiso para verlo');
+  return parseTransferDetail(data);
+}
+
+type WriteBase = { transferOrderId: string; notes: string; idempotencyKey: string };
+
+const cleanNotes = (notes: string): string | undefined => {
+  const trimmed = notes.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+export async function dispatchTransfer(
+  input: WriteBase & { items: DispatchPayloadItem[]; carrierUserId: string | null }
+): Promise<TransferWriteResult> {
+  const { data, error } = await supabase.rpc('dispatch_transfer_order', {
+    p_transfer_order_id: input.transferOrderId,
+    p_items: input.items as unknown as Json,
+    p_carrier_user_id: input.carrierUserId ?? undefined,
+    p_notes: cleanNotes(input.notes),
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw error;
+  return parseTransferWriteResult(data);
+}
+
+export async function receiveTransfer(
+  input: WriteBase & { items: ReceivePayloadItem[]; reportMissing: boolean }
+): Promise<TransferWriteResult> {
+  const { data, error } = await supabase.rpc('receive_transfer_order', {
+    p_transfer_order_id: input.transferOrderId,
+    p_items: input.items as unknown as Json,
+    p_notes: cleanNotes(input.notes),
+    p_report_missing: input.reportMissing,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw error;
+  return parseTransferWriteResult(data);
+}
+
+export async function confirmTransferReturn(
+  input: WriteBase & { items: ReturnPayloadItem[] }
+): Promise<TransferWriteResult> {
+  const { data, error } = await supabase.rpc('confirm_transfer_return', {
+    p_transfer_order_id: input.transferOrderId,
+    p_items: input.items as unknown as Json,
+    p_notes: cleanNotes(input.notes),
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw error;
+  return parseTransferWriteResult(data);
+}

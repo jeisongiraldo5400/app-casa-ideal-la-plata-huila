@@ -1,0 +1,270 @@
+/**
+ * Forma de las órdenes de traslado tal como las devuelven las RPC
+ * (`get_my_transfer_tasks`, `get_transfer_order_detail`; migraciones
+ * 20261231280000 y 20261231290000). Todas devuelven `Json`: aquí se
+ * convierten a tipos propios sin confiar en el servidor (numeric llega como
+ * número o como texto, un campo nulo no debe tumbar la pantalla).
+ */
+
+export type TransferStatus =
+  | 'draft'
+  | 'pending_dispatch'
+  | 'in_transit'
+  | 'partially_received'
+  | 'received'
+  | 'with_differences'
+  | 'closed_with_differences'
+  | 'cancelled';
+
+const STATUSES: readonly TransferStatus[] = [
+  'draft',
+  'pending_dispatch',
+  'in_transit',
+  'partially_received',
+  'received',
+  'with_differences',
+  'closed_with_differences',
+  'cancelled',
+];
+
+export type PersonRef = { id: string; name: string };
+export type WarehouseRef = { id: string; name: string };
+
+export interface TransferSummary {
+  id: string;
+  orderNumber: string;
+  status: TransferStatus;
+  sourceWarehouse: WarehouseRef;
+  destinationWarehouse: WarehouseRef;
+  carrier: PersonRef | null;
+  createdBy: PersonRef | null;
+  dispatchedBy: PersonRef | null;
+  notes: string | null;
+  createdAt: string | null;
+  dispatchedAt: string | null;
+  dueAt: string | null;
+  receivedAt: string | null;
+  itemsCount: number;
+  totalQuantity: number;
+  dispatchedQuantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+  returnedQuantity: number;
+  returnPendingQuantity: number;
+  writtenOffQuantity: number;
+  inTransitQuantity: number;
+  pendingReceiptQuantity: number;
+  isOverdue: boolean;
+}
+
+export type TransferSerialStatus = 'in_transit' | 'received' | 'return_pending' | 'returned' | 'written_off';
+
+export interface TransferSerial {
+  serialNumber: string;
+  status: TransferSerialStatus | string;
+}
+
+export interface TransferItem {
+  id: string;
+  productId: string;
+  productName: string;
+  productSku: string | null;
+  /** Reservado al enviar a despacho. */
+  quantity: number;
+  dispatchedQuantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+  returnPendingQuantity: number;
+  returnedQuantity: number;
+  writtenOffQuantity: number;
+  inTransitQuantity: number;
+  pendingReceiptQuantity: number;
+  availableAtSource: number | null;
+  notes: string | null;
+  hasSerials: boolean;
+  serials: TransferSerial[];
+}
+
+export interface TransferPermissions {
+  canDispatch: boolean;
+  canReceive: boolean;
+  canConfirmReturn: boolean;
+  isAdmin: boolean;
+}
+
+export interface TransferDetail {
+  order: TransferSummary;
+  items: TransferItem[];
+  receivers: PersonRef[];
+  permissions: TransferPermissions;
+}
+
+export interface TransferTasks {
+  toDispatch: TransferSummary[];
+  toReceive: TransferSummary[];
+  carrying: TransferSummary[];
+  toConfirmReturn: TransferSummary[];
+}
+
+export interface WarehouseMembership {
+  warehouseId: string;
+  warehouseName: string;
+  canDispatch: boolean;
+  canReceive: boolean;
+}
+
+type Obj = Record<string, unknown>;
+
+const asObj = (value: unknown): Obj =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Obj) : {};
+const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+const str = (value: unknown): string => (typeof value === 'string' ? value : value == null ? '' : String(value));
+const strOrNull = (value: unknown): string | null => {
+  const text = str(value).trim();
+  return text ? text : null;
+};
+const num = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const numOrNull = (value: unknown): number | null => (value == null ? null : num(value));
+const bool = (value: unknown): boolean => value === true;
+
+function parsePerson(value: unknown): PersonRef | null {
+  const record = asObj(value);
+  const id = strOrNull(record.id);
+  if (!id) return null;
+  return { id, name: strOrNull(record.name) ?? 'Sin nombre' };
+}
+
+function parseWarehouse(value: unknown): WarehouseRef {
+  const record = asObj(value);
+  return { id: str(record.id), name: strOrNull(record.name) ?? 'Bodega' };
+}
+
+export function parseStatus(value: unknown): TransferStatus {
+  const text = str(value) as TransferStatus;
+  return STATUSES.includes(text) ? text : 'draft';
+}
+
+export function parseTransferSummary(value: unknown): TransferSummary {
+  const r = asObj(value);
+  return {
+    id: str(r.id),
+    orderNumber: strOrNull(r.order_number) ?? 'Traslado',
+    status: parseStatus(r.status),
+    sourceWarehouse: parseWarehouse(r.source_warehouse),
+    destinationWarehouse: parseWarehouse(r.destination_warehouse),
+    carrier: parsePerson(r.carrier),
+    createdBy: parsePerson(r.created_by),
+    dispatchedBy: parsePerson(r.dispatched_by),
+    notes: strOrNull(r.notes),
+    createdAt: strOrNull(r.created_at),
+    dispatchedAt: strOrNull(r.dispatched_at),
+    dueAt: strOrNull(r.due_at),
+    receivedAt: strOrNull(r.received_at),
+    itemsCount: num(r.items_count),
+    totalQuantity: num(r.total_quantity),
+    dispatchedQuantity: num(r.dispatched_quantity),
+    receivedQuantity: num(r.received_quantity),
+    damagedQuantity: num(r.damaged_quantity),
+    returnedQuantity: num(r.returned_quantity),
+    returnPendingQuantity: num(r.return_pending_quantity),
+    writtenOffQuantity: num(r.written_off_quantity),
+    inTransitQuantity: num(r.in_transit_quantity),
+    pendingReceiptQuantity: num(r.pending_receipt_quantity),
+    isOverdue: bool(r.is_overdue),
+  };
+}
+
+export function parseTransferItem(value: unknown): TransferItem {
+  const r = asObj(value);
+  return {
+    id: str(r.id),
+    productId: str(r.product_id),
+    productName: strOrNull(r.product_name) ?? 'Producto',
+    productSku: strOrNull(r.product_sku),
+    quantity: num(r.quantity),
+    dispatchedQuantity: num(r.dispatched_quantity),
+    receivedQuantity: num(r.received_quantity),
+    damagedQuantity: num(r.damaged_quantity),
+    returnPendingQuantity: num(r.return_pending_quantity),
+    returnedQuantity: num(r.returned_quantity),
+    writtenOffQuantity: num(r.written_off_quantity),
+    inTransitQuantity: num(r.in_transit_quantity),
+    pendingReceiptQuantity: num(r.pending_receipt_quantity),
+    availableAtSource: numOrNull(r.available_at_source),
+    notes: strOrNull(r.notes),
+    hasSerials: bool(r.has_serials),
+    serials: asArray(r.serials).map((serial) => {
+      const s = asObj(serial);
+      return { serialNumber: str(s.serial_number), status: str(s.status) };
+    }),
+  };
+}
+
+export function parseTransferDetail(value: unknown): TransferDetail {
+  const r = asObj(value);
+  const permissions = asObj(r.permissions);
+  return {
+    order: parseTransferSummary(r.order),
+    items: asArray(r.items).map(parseTransferItem),
+    receivers: asArray(r.receivers)
+      .map(parsePerson)
+      .filter((person): person is PersonRef => person !== null),
+    permissions: {
+      canDispatch: bool(permissions.can_dispatch),
+      canReceive: bool(permissions.can_receive),
+      canConfirmReturn: bool(permissions.can_confirm_return),
+      isAdmin: bool(permissions.is_admin),
+    },
+  };
+}
+
+export function parseTransferTasks(value: unknown): TransferTasks {
+  const r = asObj(value);
+  const list = (key: string) => asArray(r[key]).map(parseTransferSummary);
+  return {
+    toDispatch: list('to_dispatch'),
+    toReceive: list('to_receive'),
+    carrying: list('carrying'),
+    toConfirmReturn: list('to_confirm_return'),
+  };
+}
+
+export function parseWarehouseMemberships(value: unknown): WarehouseMembership[] {
+  return asArray(value).map((row) => {
+    const r = asObj(row);
+    return {
+      warehouseId: str(r.warehouse_id),
+      warehouseName: strOrNull(r.warehouse_name) ?? 'Bodega',
+      canDispatch: bool(r.can_dispatch),
+      canReceive: bool(r.can_receive),
+    };
+  });
+}
+
+/** Respuesta mínima de las RPC que escriben (+ `replayed` en reintentos). */
+export interface TransferWriteResult {
+  transferOrderId: string;
+  orderNumber: string;
+  status: TransferStatus;
+  replayed: boolean;
+  /** Campos propios de cada RPC (dispatched_quantity, released_quantity, …). */
+  quantities: Record<string, number>;
+}
+
+export function parseTransferWriteResult(value: unknown): TransferWriteResult {
+  const r = asObj(value);
+  const quantities: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(r)) {
+    if (key.endsWith('_quantity') || key === 'quantity') quantities[key] = num(raw);
+  }
+  return {
+    transferOrderId: str(r.transfer_order_id),
+    orderNumber: strOrNull(r.order_number) ?? 'Traslado',
+    status: parseStatus(r.status),
+    replayed: bool(r.replayed),
+    quantities,
+  };
+}

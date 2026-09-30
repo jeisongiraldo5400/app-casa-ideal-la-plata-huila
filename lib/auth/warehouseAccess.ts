@@ -39,3 +39,29 @@ export function warehouseAccessFor(roleNames: readonly string[]): WarehouseAcces
 export const ASSIGNED_EXITS_ONLY_MESSAGE =
   'Solo puedes registrar salidas de las órdenes que te asignaron para recoger (las ves en «Mis órdenes»). ' +
   'Si eliges otra, la app te avisará antes de escanear.';
+
+/**
+ * Traslados (órdenes de traslado con recepción confirmada, 3.3.0).
+ *
+ * No depende solo del rol: el servidor decide por bodega. Despacha el
+ * admin/bodeguero o un responsable de despacho de la bodega origen; recibe el
+ * admin o un responsable de recibir de la bodega destino (`warehouse_members`),
+ * y el transportador ve lo que lleva. Por eso entra al módulo:
+ * - admin o bodeguero, siempre;
+ * - quien sea miembro de alguna bodega (`get_my_warehouse_memberships`);
+ * - quien tenga alguna tarea pendiente (`get_my_transfer_tasks`), p. ej. el
+ *   transportador sin bodega asignada.
+ */
+export type TransferAccessInput = {
+  roleNames: readonly string[];
+  /** Bodegas donde el usuario es responsable (despachar o recibir). */
+  membershipsCount: number;
+  /** Tareas pendientes (por despachar, recibir, transportar o confirmar). */
+  tasksCount: number;
+};
+
+export function canUseTransfersFor({ roleNames, membershipsCount, tasksCount }: TransferAccessInput): boolean {
+  const roles = new Set(roleNames.map((name) => name.trim().toLowerCase()));
+  if (roles.has('admin') || roles.has('bodeguero')) return true;
+  return membershipsCount > 0 || tasksCount > 0;
+}
