@@ -1,4 +1,5 @@
 import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
+import { homeCardSubtitle, overdueCount, useTransferTasks } from '@/components/transfers';
 import { useTheme } from '@/components/theme';
 import { ActionCard, HeroActionCard, ScreenErrorBoundary, ScreenHeader, SectionHeader, StatCard } from '@/components/ui';
 import { CATALOGOS_HABILITADOS } from '@/constants/features';
@@ -40,6 +41,10 @@ function HomeScreenInner() {
     focused,
     online,
   });
+  // Traslados: la tarjeta sale para admin/bodeguero, responsables de bodega o
+  // quien tenga tareas (el servidor decide por bodega, no solo por rol).
+  const transfers = useTransferTasks({ enabled: focused && online });
+  const transfersOverdue = transfers.tasks ? overdueCount(transfers.tasks.toReceive) : 0;
   const [now, setNow] = useState(new Date());
   const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
   // El recaudador sólo consulta y cobra: ve Negocios y Cartera, no crea negocios
@@ -147,7 +152,7 @@ function HomeScreenInner() {
           </View>
         ) : null}
 
-        {warehouse.canUseExits || warehouse.canRegisterEntries || warehouse.canSeeAllOrders ? (
+        {warehouse.canUseExits || warehouse.canRegisterEntries || warehouse.canSeeAllOrders || transfers.canUse ? (
           <View style={styles.section}>
             <SectionHeader title="Operaciones de almacén" />
             <View style={styles.actionGrid}>
@@ -162,6 +167,18 @@ function HomeScreenInner() {
               ) : null}
               {warehouse.canSeeAllOrders ? (
                 <ActionCard compact title="Todas" subtitle="Consultar órdenes" icon="list-alt" tone="info" onPress={() => navigate('/(tabs)/all-orders')} style={styles.halfCard} />
+              ) : null}
+              {transfers.canUse ? (
+                <ActionCard
+                  compact
+                  title="Traslados"
+                  subtitle={homeCardSubtitle(transfers.tasks)}
+                  subtitleTone={transfersOverdue > 0 ? 'error' : undefined}
+                  icon="swap-horiz"
+                  tone={transfersOverdue > 0 ? 'error' : 'primary'}
+                  onPress={() => navigate('/(tabs)/traslados' as never)}
+                  style={styles.fullCard}
+                />
               ) : null}
             </View>
           </View>

@@ -14,13 +14,20 @@ interface ActionCardProps {
   onPress: () => void;
   tone?: Tone;
   compact?: boolean;
+  /** Pinta el subtítulo con un color de estado (p. ej. rojo si hay algo vencido). */
+  subtitleTone?: Tone;
   style?: StyleProp<ViewStyle>;
 }
 
-export function ActionCard({ title, subtitle, icon, onPress, tone = 'primary', compact, style }: ActionCardProps) {
+export function ActionCard({ title, subtitle, icon, onPress, tone = 'primary', compact, subtitleTone, style }: ActionCardProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const accent = tone === 'primary' ? colors.primary.main : colors[tone].main;
+  const subtitleColor = !subtitleTone
+    ? colors.text.secondary
+    : subtitleTone === 'primary'
+    ? colors.primary.main
+    : colors[subtitleTone].main;
 
   return (
     <Pressable
@@ -38,7 +45,7 @@ export function ActionCard({ title, subtitle, icon, onPress, tone = 'primary', c
       </View>
       <View style={styles.copy}>
         <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={[styles.subtitle, { color: colors.text.secondary }]} numberOfLines={2}>{subtitle}</Text> : null}
+        {subtitle ? <Text style={[styles.subtitle, { color: subtitleColor }]} numberOfLines={2}>{subtitle}</Text> : null}
       </View>
       {!compact ? <MaterialIcons name="arrow-forward" size={19} color={colors.text.secondary} /> : null}
     </Pressable>
