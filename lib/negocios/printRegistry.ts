@@ -16,6 +16,8 @@ export type NegocioPrintEvent = {
   printedAt: string;
   printedByName: string | null;
   pagoId: string | null;
+  /** Anterior al registro (20261231310000): se da por impreso el original. */
+  historical?: boolean;
 };
 
 /** Mayor número de copia conocido en el teléfono, por documento. */
@@ -96,6 +98,7 @@ export function parsePrintHistory(data: unknown): NegocioPrintEvent[] {
       printedAt,
       printedByName: str(row.printed_by_name),
       pagoId: str(row.pago_id),
+      historical: row.historical === true,
     });
   }
   return events;
@@ -123,6 +126,7 @@ export function labelNextContractPrint(summary: ContractPrintSummary): string {
 export function labelContractPrintSummary(summary: ContractPrintSummary): string {
   if (summary.count <= 0 || !summary.last) return 'Contrato sin imprimir';
   const times = summary.count === 1 ? '1 vez' : `${summary.count} veces`;
+  if (summary.last.historical) return `Contrato impreso ${times} · antes del registro de impresiones`;
   const by = summary.last.printedByName ? ` por ${summary.last.printedByName}` : '';
   return `Contrato impreso ${times} · última ${formatPaymentDateTime(summary.last.printedAt)}${by}`;
 }
