@@ -49,6 +49,17 @@ jest.mock('@/hooks/useUserRoles', () => ({
   },
 }));
 
+// Traslados: el hook real consulta el servidor; aquí se controla su resultado.
+let mockTransfers: { canUse: boolean; tasks: unknown } = { canUse: false, tasks: null };
+jest.mock('@/components/transfers', () => {
+  const actual = jest.requireActual('@/components/transfers/utils/transferTasks');
+  return {
+    homeCardSubtitle: actual.homeCardSubtitle,
+    overdueCount: actual.overdueCount,
+    useTransferTasks: () => ({ ...mockTransfers, loading: false, error: null, unavailable: false, reload: jest.fn() }),
+  };
+});
+
 let mockOnline = true;
 jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => mockOnline }));
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
@@ -130,5 +141,42 @@ describe('Inicio · operaciones de almacén por rol', () => {
     const screen = render(<HomeScreen />);
     expect(screen.getByText('Sin señal')).toBeTruthy();
     expect(screen.getByText('Sin conexión: el resumen se actualiza al volver la señal.')).toBeTruthy();
+  });
+});
+
+describe('Inicio · tarjeta Traslados', () => {
+  const order = (overdue: boolean) => ({ isOverdue: overdue });
+
+  beforeEach(() => {
+    mockStats = { pendingOrders: 1, pendingDeliveryOrders: 2, loading: false, error: null };
+    mockOnline = true;
+    mockRoleNames = ['vendedor'];
+  });
+
+  it('no aparece sin acceso (ni rol, ni bodega, ni tareas)', () => {
+    mockTransfers = { canUse: false, tasks: null };
+    expect(render(<HomeScreen />).queryByText('Traslados')).toBeNull();
+  });
+
+  it('muestra cuántos hay por recibir y cuántos vencidos', () => {
+    mockTransfers = {
+      canUse: true,
+      tasks: { toDispatch: [], toReceive: [order(true), order(false)], carrying: [], toConfirmReturn: [] },
+    };
+    const screen = render(<HomeScreen />);
+    expect(screen.getByText('Traslados')).toBeTruthy();
+    const subtitle = screen.getByText('2 por recibir · 1 vencido');
+    const style = [subtitle.props.style].flat(3);
+    expect(style).toEqual(expect.arrayContaining([expect.objectContaining({ color: '#dc2626' })]));
+  });
+
+  it('sin vencidos el contador no va en rojo', () => {
+    mockTransfers = {
+      canUse: true,
+      tasks: { toDispatch: [], toReceive: [order(false)], carrying: [], toConfirmReturn: [] },
+    };
+    const subtitle = render(<HomeScreen />).getByText('1 por recibir');
+    const style = [subtitle.props.style].flat(3);
+    expect(style).not.toEqual(expect.arrayContaining([expect.objectContaining({ color: '#dc2626' })]));
   });
 });

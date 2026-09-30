@@ -138,6 +138,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="negocio/[id]" options={detailScreenOptions} />
         <Stack.Screen name="cliente/[id]" options={detailScreenOptions} />
+        <Stack.Screen name="traslado/[id]" options={detailScreenOptions} />
         {/*
           Catálogos: el módulo está oculto en esta versión (CATALOGOS_HABILITADOS
           en constants/features.ts). Las pantallas se siguen declarando porque los
