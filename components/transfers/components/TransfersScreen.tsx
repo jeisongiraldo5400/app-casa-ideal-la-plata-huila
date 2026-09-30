@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { ScreenState, SegmentedControl } from '@/components/ui';
+import { ScreenState } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -15,6 +15,7 @@ import {
   type TransferSectionKey,
 } from '../utils/transferTasks';
 import { modeParam } from '../utils/transferRules';
+import { TransferSectionPicker } from './TransferSectionPicker';
 import { TransferSummaryCard } from './TransferSummaryCard';
 
 /**
@@ -111,14 +112,15 @@ export function TransfersScreen() {
       }
     >
       {state.tasks && !state.unavailable ? (
-        <SegmentedControl
-          items={TRANSFER_SECTIONS.map((item) => ({
-            value: item.key,
-            label: item.tabLabel,
-            badge: state.tasks ? state.tasks[item.key].length : undefined,
-          }))}
+        <TransferSectionPicker
           value={active.key}
-          onChange={(value) => setSection(value as TransferSectionKey)}
+          counts={{
+            toDispatch: state.tasks.toDispatch.length,
+            toReceive: state.tasks.toReceive.length,
+            carrying: state.tasks.carrying.length,
+            toConfirmReturn: state.tasks.toConfirmReturn.length,
+          }}
+          onChange={setSection}
         />
       ) : null}
       {state.tasks && !state.unavailable ? (

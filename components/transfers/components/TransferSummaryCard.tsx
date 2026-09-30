@@ -24,7 +24,7 @@ export function TransferSummaryCard({ order, onPress }: Props) {
   const due = dueText(order);
   const pending =
     order.status === 'pending_dispatch'
-      ? `${unitsText(order.totalQuantity)} reservadas`
+      ? `${unitsText(order.totalQuantity)} ${order.totalQuantity === 1 ? 'reservada' : 'reservadas'}`
       : order.pendingReceiptQuantity > 0
       ? `${unitsText(order.pendingReceiptQuantity)} por recibir`
       : order.returnPendingQuantity > 0

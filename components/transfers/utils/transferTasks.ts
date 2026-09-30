@@ -6,8 +6,12 @@ export type TransferSectionKey = 'toDispatch' | 'toReceive' | 'carrying' | 'toCo
 
 export type TransferSection = {
   key: TransferSectionKey;
-  /** Etiqueta corta para la pestaña. */
+  /** Etiqueta corta para la tarjeta de sección. */
   tabLabel: string;
+  /** Qué se hace aquí, en pocas palabras (debajo de la etiqueta). */
+  hint: string;
+  /** Ícono de MaterialIcons. */
+  icon: 'outbox' | 'move-to-inbox' | 'local-shipping' | 'assignment-return';
   title: string;
   empty: string;
   /** Acción con la que se abre el detalle desde esta sección. */
@@ -18,6 +22,8 @@ export const TRANSFER_SECTIONS: readonly TransferSection[] = [
   {
     key: 'toDispatch',
     tabLabel: 'Despachar',
+    hint: 'Sacar de la bodega',
+    icon: 'outbox',
     title: 'Por despachar',
     empty: 'No tienes traslados por despachar.',
     mode: 'dispatch',
@@ -25,6 +31,8 @@ export const TRANSFER_SECTIONS: readonly TransferSection[] = [
   {
     key: 'toReceive',
     tabLabel: 'Recibir',
+    hint: 'Confirmar lo que llegó',
+    icon: 'move-to-inbox',
     title: 'Por recibir',
     empty: 'No tienes traslados por recibir.',
     mode: 'receive',
@@ -32,13 +40,17 @@ export const TRANSFER_SECTIONS: readonly TransferSection[] = [
   {
     key: 'carrying',
     tabLabel: 'Transporto',
+    hint: 'Los llevo yo',
+    icon: 'local-shipping',
     title: 'Que transporto',
     empty: 'No llevas ningún traslado.',
     mode: null,
   },
   {
     key: 'toConfirmReturn',
-    tabLabel: 'Devolución',
+    tabLabel: 'Devoluciones',
+    hint: 'Vuelven al origen',
+    icon: 'assignment-return',
     title: 'Devoluciones por confirmar',
     empty: 'No hay devoluciones por confirmar.',
     mode: 'return',

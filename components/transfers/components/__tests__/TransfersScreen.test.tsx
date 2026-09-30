@@ -77,6 +77,22 @@ describe('TransfersScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/traslado/d-1?modo=despachar');
   });
 
+  it('muestra las cuatro secciones con nombre completo y qué se hace en cada una', async () => {
+    (fetchMyTransferTasks as jest.Mock).mockResolvedValue(tasks());
+    const screen = render(<TransfersScreen />);
+    await screen.findByText('Por recibir');
+    for (const [label, hint] of [
+      ['Despachar', 'Sacar de la bodega'],
+      ['Recibir', 'Confirmar lo que llegó'],
+      ['Transporto', 'Los llevo yo'],
+      ['Devoluciones', 'Vuelven al origen'],
+    ]) {
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.getByText(hint)).toBeTruthy();
+    }
+    expect(screen.getByLabelText('Recibir: Confirmar lo que llegó. 2 pendientes')).toBeTruthy();
+  });
+
   it('sin tareas ni bodega ni rol: explica cómo obtener acceso', async () => {
     (fetchMyTransferTasks as jest.Mock).mockResolvedValue(parseTransferTasks({}));
     const screen = render(<TransfersScreen />);
