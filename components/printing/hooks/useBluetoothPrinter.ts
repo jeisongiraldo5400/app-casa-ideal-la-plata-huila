@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import type { NegocioReceiptData } from '@/lib/negocioReceiptHtml';
+import type { PrintCopyInfo } from '@/lib/printCopy';
 import { buildNegocioTicket, type NegocioTicketData } from '../domain/buildNegocioTicket';
 import { buildPaymentTicket, buildTestTicket } from '../domain/buildPaymentTicket';
 import type { TicketLine } from '../domain/ticketLayout';
@@ -10,6 +11,25 @@ import {
   printTicket as sendTicket,
 } from '../services/printerService';
 import { usePrinterStore, type SavedPrinter } from '../store/printerStore';
+
+/**
+ * Registro de la impresión (`recordNegocioPrint`): se pide justo antes de
+ * mandar el ticket, para que el papel lleve su número de copia. Sin impresora
+ * guardada también se pide al abrir el selector: lo normal es que la persona
+ * elija una e imprima.
+ */
+export type PrintTicketOptions = {
+  resolveCopy?: () => Promise<PrintCopyInfo | null>;
+};
+
+async function resolveCopySafely(options?: PrintTicketOptions): Promise<PrintCopyInfo | null> {
+  if (!options?.resolveCopy) return null;
+  try {
+    return await options.resolveCopy();
+  } catch {
+    return null;
+  }
+}
 
 export function useBluetoothPrinter() {
   const savedPrinter = usePrinterStore((state) => state.savedPrinter);
@@ -45,14 +65,15 @@ export function useBluetoothPrinter() {
   );
 
   const printPaymentIfReady = useCallback(
-    async (data: NegocioReceiptData): Promise<boolean> => {
+    async (data: NegocioReceiptData, options?: PrintTicketOptions): Promise<boolean> => {
       await hydrate();
       const printer = usePrinterStore.getState().savedPrinter;
       if (!printer) return false;
 
       setPrinting(true);
       try {
-        await sendTicket(printer.address, buildPaymentTicket(data));
+        const copy = await resolveCopySafely(options);
+        await sendTicket(printer.address, buildPaymentTicket({ ...data, copy: copy ?? data.copy }));
         return true;
       } catch {
         return false;
@@ -64,15 +85,17 @@ export function useBluetoothPrinter() {
   );
 
   const printPayment = useCallback(
-    async (data: NegocioReceiptData) => {
-      await printLines(buildPaymentTicket(data));
+    async (data: NegocioReceiptData, options?: PrintTicketOptions) => {
+      const copy = await resolveCopySafely(options);
+      await printLines(buildPaymentTicket({ ...data, copy: copy ?? data.copy }));
     },
     [printLines]
   );
 
   const printNegocio = useCallback(
-    async (data: NegocioTicketData) => {
-      await printLines(buildNegocioTicket(data));
+    async (data: NegocioTicketData, options?: PrintTicketOptions) => {
+      const copy = await resolveCopySafely(options);
+      await printLines(buildNegocioTicket({ ...data, copy: copy ?? data.copy }));
     },
     [printLines]
   );

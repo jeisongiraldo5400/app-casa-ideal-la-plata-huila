@@ -36,6 +36,7 @@ const TYPE_LABELS: Record<SyncQueueEntry['type'], string> = {
   select_route_stop: 'Ruta',
   upload_negocio_signature: 'Firma del negocio',
   create_negocio: 'Negocio nuevo',
+  register_print: 'Impresión',
 };
 
 function statusLabel(entry: SyncQueueEntry) {

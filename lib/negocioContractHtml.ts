@@ -2,6 +2,7 @@ import { bogotaDateValue } from '@/lib/localDate';
 import { formatCOP } from '@/lib/creditCalculator';
 import { parseDownPaymentSchedule, type DownPaymentEntry } from '@/lib/negocios/negocioCreditRules';
 import { CASA_IDEAL_LOGO_DATA_URI } from '@/lib/casaIdealLogo';
+import { isReprint, printCopyDetail, printCopyLabel, type PrintCopyInfo } from '@/lib/printCopy';
 import {
   formatNegocioCodigo,
   labelCuotaNumero,
@@ -72,6 +73,11 @@ export type NegocioContractData = {
     unit_price: number;
     subtotal: number;
   }>;
+  /**
+   * Número de copia que asignó `register_negocio_print`. Desde la n.º 2 el
+   * contrato lleva «COPIA N.º X», marca de agua y quién la imprimió.
+   */
+  copy?: PrintCopyInfo | null;
 };
 
 function esc(s: string | null | undefined) {
@@ -303,6 +309,8 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       : `<div class="sig"><div class="sig-space"></div><div class="sig-line"></div><b>${esc(label)}</b><small>${esc(name) || '—'}${document ? ` · C.C. ${esc(document)}` : ''}</small></div>`;
 
   const formattedDate = esc(fmtDate(data.deal_date));
+  const copyLabel = printCopyLabel(data.copy);
+  const copyFooter = isReprint(data.copy) ? ` · ${esc(copyLabel)}: ${esc(printCopyDetail(data.copy))}` : '';
   const location = esc(data.location) || '—';
   const firstDueDate = esc(fmtDate(data.first_due_date)) || '—';
   const downPaymentSchedule = parseDownPaymentSchedule(data.down_payment_schedule, data);
@@ -399,15 +407,18 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   .promissory p { margin: 2px 0; text-align: justify; }
   .line { display: inline-block; border-bottom: 1px solid #55789d; min-width: 110px; height: 12px; vertical-align: bottom; }
   .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; color: #6b7e94; font-size: ${tier.footer}px; }
+  .copy-mark { display: inline-block; margin-right: 8px; padding: 1px 6px; border: 1.5px solid #a13c2f; border-radius: 3px; font-size: 11px; letter-spacing: 1px; vertical-align: middle; }
+  .copy-watermark { position: fixed; top: 42%; left: 0; right: 0; text-align: center; transform: rotate(-28deg); color: rgba(161, 60, 47, 0.08); font-size: 120px; font-weight: 800; letter-spacing: 12px; pointer-events: none; z-index: -1; }
 </style>
 </head>
 <body>
-  <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${bogotaDateValue()}</div>
+  ${copyLabel ? `<div class="copy-watermark" aria-hidden="true">COPIA</div>` : ''}
+  <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${bogotaDateValue()}${copyFooter}</div>
   <header class="brand">
     <img class="logo" src="${CASA_IDEAL_LOGO_DATA_URI}" alt="${COMPANY.name} - ${COMPANY.tagline}" />
     <div class="company"><b>NIT ${COMPANY.nit}</b><br/>${COMPANY.owner}<br/>${COMPANY.address}<br/>Cel. ${COMPANY.phone}</div>
   </header>
-  <div class="title"><h2>Solicitud de crédito</h2><div class="number">N.º ${formatNegocioCodigo(data.numero)}</div></div>
+  <div class="title"><h2>Solicitud de crédito</h2><div class="number">${copyLabel ? `<span class="copy-mark">${copyLabel}</span>` : ''}N.º ${formatNegocioCodigo(data.numero)}</div></div>
   <div class="meta">
     <div><b>FECHA</b><br/>${formattedDate}</div>
     <div><b>LUGAR</b><br/>${location}</div>

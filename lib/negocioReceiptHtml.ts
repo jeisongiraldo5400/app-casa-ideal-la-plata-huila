@@ -3,6 +3,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { COMPANY } from '@/lib/negocioContractHtml';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
+import { isReprint, printCopyDetail, printCopyLabel, type PrintCopyInfo } from '@/lib/printCopy';
 
 export type NegocioReceiptData = {
   receiptNumber: string;
@@ -36,6 +37,8 @@ export type NegocioReceiptData = {
    * leyenda de pendiente. Al confirmarse el pago, la leyenda desaparece.
    */
   pendingConfirmation?: boolean | null;
+  /** Número de copia (`register_negocio_print`); desde la n.º 2 sale «COPIA N.º X». */
+  copy?: PrintCopyInfo | null;
 };
 
 /** Leyenda del recibo de un pago que todavía no confirmó el servidor. */
@@ -107,6 +110,8 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 .status-void { background: #fdecea; color: #b42318; border: 1px solid #f5c2bd; }
 .status-pending { background: #fff4e5; color: #9a5b00; border: 1px solid #f3d19e; }
 .void-banner { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: #fdecea; color: #b42318; font-weight: 700; text-align: center; }
+.copy-banner { margin: 0 0 14px; padding: 8px 12px; border: 1px dashed #a13c2f; border-radius: 8px; color: #a13c2f; font-size: 12px; text-align: center; }
+.copy-banner b { letter-spacing: 1px; }
 .amount { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-radius: 10px; background: #195ba6; background: linear-gradient(135deg, #195ba6, #173b67); color: #fff; }
 .amount span { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; opacity: 0.9; }
 .amount strong { font-size: 28px; letter-spacing: 0.3px; white-space: nowrap; }
@@ -140,6 +145,7 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .title h1 { color: #000; font-size: 14px; }
   .status, .status-ok, .status-void, .status-pending { padding: 1px 6px; background: none; color: #000; border: 1px solid #000; font-size: 8px; }
   .void-banner { margin: 0 0 6px; padding: 3px; background: none; color: #000; border: 1px solid #000; border-radius: 3px; font-size: 9px; }
+  .copy-banner { margin: 0 0 6px; padding: 3px; color: #000; border: 1px dashed #000; border-radius: 3px; font-size: 8px; }
   .amount, .is-voided .amount { padding: 6px 0; border-radius: 0; background: none; color: #000; border-top: 1px solid #000; border-bottom: 1px solid #000; }
   .amount span { font-size: 9px; opacity: 1; }
   .amount strong { font-size: 16px; }
@@ -192,6 +198,7 @@ export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
   const customerIdField = customerIdNumber ? `
   ${field('C.C.', esc(customerIdNumber), true)}` : '';
   const pendingConfirmation = isPendingConfirmationReceipt(data);
+  const copyLabel = printCopyLabel(data.copy);
   // Aviso de pago sin confirmar. Reutiliza `.balance` (recuadro ya existente):
   // RECEIPT_CSS no se toca porque debe seguir idéntico al del web.
   const pendingBanner = pendingConfirmation
@@ -203,7 +210,7 @@ export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Recibo ${esc(data.receiptNumber)}</title><style>${RECEIPT_CSS}</style></head><body>
 <main class="receipt${isVoided ? ' is-voided' : ''}">
-${isVoided ? '<div class="watermark" aria-hidden="true">ANULADO</div>' : ''}
+${isVoided ? '<div class="watermark" aria-hidden="true">ANULADO</div>' : copyLabel ? '<div class="watermark" aria-hidden="true">COPIA</div>' : ''}
 <header class="brand">
   <img class="logo" src="${CASA_IDEAL_LOGO_DATA_URI}" alt="${esc(COMPANY.name)} - ${esc(COMPANY.tagline)}" />
   <div class="company"><b>NIT ${esc(COMPANY.nit)}</b><br />${esc(COMPANY.address)}<br />Cel. ${esc(COMPANY.phone)}</div>
@@ -213,6 +220,7 @@ ${isVoided ? '<div class="watermark" aria-hidden="true">ANULADO</div>' : ''}
   <span class="status status-${status.tone}">${esc(status.label)}</span>
 </section>
 ${isVoided ? '<p class="void-banner">RECIBO ANULADO · Este comprobante no es soporte de pago.</p>' : ''}
+${isReprint(data.copy) ? `<p class="copy-banner"><b>${esc(copyLabel)}</b> · ${esc(printCopyDetail(data.copy))}</p>` : ''}
 ${pendingBanner}
 <section class="amount"><span>${prontoPago ? 'Total pagado' : 'Valor recibido'}</span><strong>${formatCOP(data.amount)}</strong></section>
 <section class="fields">

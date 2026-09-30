@@ -377,10 +377,15 @@ describe('CarteraPagosView (Cartera › Pagos)', () => {
     expect(screen.getAllByLabelText('Compartir recibo en PDF')).toHaveLength(1);
     fireEvent.press(screen.getByLabelText('Compartir recibo en PDF'));
     expect(mockShareReceipt).toHaveBeenCalledWith(
-      expect.objectContaining({ receiptNumber: 'RV-1', amount: 50000, remainingBalance: 100000, registeredBy: 'Gestor' })
+      expect.objectContaining({ receiptNumber: 'RV-1', amount: 50000, remainingBalance: 100000, registeredBy: 'Gestor' }),
+      // La fila identifica el pago para registrar la impresión.
+      expect.objectContaining({ negocio_id: 'n1', payment_id: 'p1' })
     );
     fireEvent.press(screen.getByLabelText('Reimprimir recibo'));
-    expect(mockPrintReceipt).toHaveBeenCalledWith(expect.objectContaining({ receiptNumber: 'RV-1' }));
+    expect(mockPrintReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ receiptNumber: 'RV-1' }),
+      expect.objectContaining({ payment_id: 'p1' })
+    );
     fireEvent.press(screen.getByLabelText('Ver soporte del pago'));
     expect(mockOpenSupport).toHaveBeenCalledWith('pagos/p1.jpg');
   });

@@ -14,6 +14,7 @@ import type {
   CreateNegocioPayload,
   UploadNegocioSignaturePayload,
   RegisterPagoPayload,
+  RegisterPrintPayload,
   RouteIdPayload,
   SelectStopPayload,
   UpdateRouteStopPayload,
@@ -64,6 +65,8 @@ export async function pushOutboxItem(item: SyncOutboxItem): Promise<PushResult> 
         return await pushUploadNegocioSignature(payload as UploadNegocioSignaturePayload);
       case 'create_negocio':
         return await pushCreateNegocio(payload as CreateNegocioPayload, item.idempotencyKey);
+      case 'register_print':
+        return await pushRegisterPrint(payload as RegisterPrintPayload);
       default:
         return { outcome: 'fail', message: `Comando desconocido: ${item.type}` };
     }
@@ -209,4 +212,24 @@ async function pushAttachSupport(payload: AttachPagoSupportPayload): Promise<Pus
   });
   await deleteLocalPagoSupportFile(upload.localUri);
   return { outcome: 'done' };
+}
+
+/**
+ * Impresión hecha sin señal: se guarda con el número que ya salió en el papel.
+ * `p_client_event_id` hace idempotente el reintento.
+ */
+async function pushRegisterPrint(payload: RegisterPrintPayload): Promise<PushResult> {
+  const { data, error } = await supabase.rpc('register_negocio_print' as never, {
+    p_negocio_id: payload.negocioId,
+    p_document: payload.document,
+    p_format: payload.format,
+    p_channel: 'movil',
+    p_pago_id: payload.pagoId,
+    p_pago_idempotency_key: payload.pagoIdempotencyKey,
+    p_client_event_id: payload.clientEventId,
+    p_printed_at: payload.printedAt,
+    p_copy_number: payload.copyNumber,
+  } as never);
+  if (error) throw error;
+  return { outcome: 'done', result: data };
 }

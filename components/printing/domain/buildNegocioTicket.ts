@@ -1,5 +1,7 @@
 import { formatNegocioCodigo, labelNegocioStatus } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule, type DownPaymentEntry } from '@/lib/negocios/negocioCreditRules';
+import type { PrintCopyInfo } from '@/lib/printCopy';
+import { copyTicketLines } from './copyTicketLines';
 import {
   formatTicketMoney,
   padRow,
@@ -32,6 +34,8 @@ export type NegocioTicketData = {
   installmentAmount: number;
   frequency: string;
   items: NegocioTicketItem[];
+  /** Número de copia (`register_negocio_print`); desde la n.º 2 sale la marca. */
+  copy?: PrintCopyInfo | null;
 };
 
 function frequencyLabel(frequency: string): string {
@@ -45,6 +49,7 @@ export function buildNegocioTicket(data: NegocioTicketData): TicketLine[] {
     { type: 'text', text: 'CASA IDEAL', align: 'center', bold: true, size: 2 },
     { type: 'text', text: 'Ticket de negocio', align: 'center' },
     { type: 'separator' },
+    ...copyTicketLines(data.copy),
     ...textLines(`Negocio: ${formatNegocioCodigo(data.numero)}`),
     ...textLines(`Estado: ${labelNegocioStatus(data.status)}`),
     ...textLines(`Fecha: ${data.dealDate}`),

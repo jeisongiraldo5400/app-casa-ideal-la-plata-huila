@@ -333,3 +333,43 @@ describe('printerTransport', () => {
     expect(iosClassicOnlyHint([classic], 'android')).toBe(false);
   });
 });
+
+describe('marca de copia en los tickets', () => {
+  const copy = { number: 2, printedAt: '2026-09-30T15:15:00Z', printedBy: 'Ana' };
+  const texts = (lines: { type: string; text?: string }[]) =>
+    lines.filter((line) => line.type === 'text').map((line) => line.text ?? '');
+
+  it('el recibo reimpreso dice COPIA N.º 2 y quién lo imprimió', () => {
+    const lines = texts(buildPaymentTicket({ ...receipt, copy }));
+    expect(lines).toContain('*** COPIA N.º 2 ***');
+    expect(lines.some((line) => line.startsWith('Impresa el 30/09/2026'))).toBe(true);
+    expect(lines.join('\n')).toContain('Ana');
+  });
+
+  it('el original no lleva marca', () => {
+    const lines = texts(buildPaymentTicket({ ...receipt, copy: { ...copy, number: 1 } }));
+    expect(lines.join('\n')).not.toContain('COPIA');
+  });
+
+  it('el ticket del negocio reimpreso también', () => {
+    const lines = texts(
+      buildNegocioTicket({
+        numero: 20260202,
+        dealDate: '2026-09-29',
+        status: 'activo',
+        customerName: 'Cliente',
+        productsSubtotal: 100,
+        interestAmount: 0,
+        totalCredit: 100,
+        downPayment: 0,
+        financedAmount: 100,
+        installmentsCount: 1,
+        installmentAmount: 100,
+        frequency: 'mensual',
+        items: [],
+        copy,
+      })
+    );
+    expect(lines.slice(0, 5)).toContain('*** COPIA N.º 2 ***');
+  });
+});

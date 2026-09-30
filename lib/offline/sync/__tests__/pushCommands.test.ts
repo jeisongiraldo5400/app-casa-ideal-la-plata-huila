@@ -178,3 +178,45 @@ describe('pushOutboxItem · cierre de ruta', () => {
     expect(mockRpc.mock.calls[1][1]).toEqual({ p_route_id: 'r1', p_cancel: true });
   });
 });
+
+describe('pushOutboxItem · impresión sin señal', () => {
+  const print = {
+    negocioId: 'neg-1',
+    document: 'recibo',
+    format: 'ticket',
+    pagoId: null,
+    pagoIdempotencyKey: 'k-pago',
+    clientEventId: 'evt-1',
+    printedAt: '2026-09-30T10:00:00.000Z',
+    copyNumber: 1,
+    lane: 'negocio:neg-1',
+  };
+
+  beforeEach(() => {
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: { copy_number: 1 }, error: null });
+  });
+
+  it('manda el número que salió en el papel y la hora del teléfono', async () => {
+    const result = await pushOutboxItem(outboxItem('register_print', print));
+    expect(result.outcome).toBe('done');
+    expect(mockRpc).toHaveBeenCalledWith('register_negocio_print', {
+      p_negocio_id: 'neg-1',
+      p_document: 'recibo',
+      p_format: 'ticket',
+      p_channel: 'movil',
+      p_pago_id: null,
+      p_pago_idempotency_key: 'k-pago',
+      p_client_event_id: 'evt-1',
+      p_printed_at: '2026-09-30T10:00:00.000Z',
+      p_copy_number: 1,
+    });
+  });
+
+  it('un rechazo del servidor queda como fallo del comando', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'No tiene permiso sobre este negocio', code: '42501' } });
+    const result = await pushOutboxItem(outboxItem('register_print', print));
+    expect(result.outcome).not.toBe('done');
+    expect(result.outcome).not.toBe('network');
+  });
+});

@@ -386,8 +386,8 @@ export function CarteraPagosView() {
             onPress={() => router.push(`/negocio/${item.negocio_id}`)}
             showRegisteredBy={showRegisteredBy}
             actions={{
-              onShareReceipt: (data) => void receiptActions.shareReceipt(data),
-              onPrintReceipt: (data) => void receiptActions.printReceipt(data),
+              onShareReceipt: (data, row) => void receiptActions.shareReceipt(data, row),
+              onPrintReceipt: (data, row) => void receiptActions.printReceipt(data, row),
               onOpenSupport: (path) => void receiptActions.openSupport(path),
               printing: receiptActions.printing,
             }}

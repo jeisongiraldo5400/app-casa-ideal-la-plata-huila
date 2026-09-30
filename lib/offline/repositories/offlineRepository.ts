@@ -51,8 +51,11 @@ import {
   type LocalNegocioListItem,
 } from '../domain/negociosLocal';
 import {
+  enqueueOutbox,
+  listActiveOutbox,
   listReviewableOutbox,
   markOutboxDiscarded,
+  outboxLane,
   parseOutboxPayload,
   prepareOutboxRecord,
 } from '../sync/outbox';
@@ -79,6 +82,7 @@ import {
   type OptimisticSnapshot,
   type OutboxCommandType,
   type RegisterPagoPayload,
+  type RegisterPrintPayload,
   type RouteSnapshot,
   type StopSnapshot,
 } from '../sync/types';
@@ -1126,7 +1130,47 @@ export async function registerPagoOffline(input: {
 
   void refreshPendingCount();
   void runSync('mutation');
-  return { pagoLocalId, pendingReceipt: true, supportWarning, routeStopApplied: Boolean(routeStopId) };
+  return {
+    pagoLocalId,
+    pendingReceipt: true,
+    supportWarning,
+    routeStopApplied: Boolean(routeStopId),
+    // El recibo impreso de este pago viaja en su mismo carril y se identifica
+    // con esta llave hasta que el servidor le asigne id.
+    idempotencyKey,
+    lane,
+  };
+}
+
+/**
+ * Encola una impresión hecha sin señal (ver RegisterPrintPayload). Sin base
+ * local devuelve false: el papel ya salió, solo se pierde el registro.
+ */
+export async function queuePrintOffline(payload: RegisterPrintPayload): Promise<boolean> {
+  if (!canUseLocalDb()) return false;
+  await enqueueOutbox(getDatabase(), 'register_print', payload);
+  void refreshPendingCount();
+  void runSync('mutation');
+  return true;
+}
+
+/**
+ * Comando en cola de un pago hecho sin señal, por el id local de su fila: el
+ * registro de impresiones necesita su carril y su llave de idempotencia.
+ */
+export async function findPendingPagoCommand(
+  pagoLocalId: string
+): Promise<{ idempotencyKey: string; lane: string } | null> {
+  if (!canUseLocalDb() || !pagoLocalId) return null;
+  const items = await listActiveOutbox(getDatabase());
+  for (const item of items) {
+    if (item.type !== 'register_pago' && item.type !== 'register_route_pago') continue;
+    const payload = parseOutboxPayload<Record<string, unknown>>(item);
+    if (payload.pagoLocalId === pagoLocalId) {
+      return { idempotencyKey: item.idempotencyKey, lane: outboxLane(item) };
+    }
+  }
+  return null;
 }
 
 async function findNextPendingStop(routeId: string, excludeStopId: string) {
@@ -1562,6 +1606,9 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
         break;
       case 'upload_negocio_signature':
         summary = `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
+        break;
+      case 'register_print':
+        summary = `Impresión de ${payload.document === 'recibo' ? 'recibo' : 'contrato'} · ${negocioLabel}`;
         break;
       case 'create_negocio':
         // El número lo asigna el servidor: hasta entonces se identifica por el

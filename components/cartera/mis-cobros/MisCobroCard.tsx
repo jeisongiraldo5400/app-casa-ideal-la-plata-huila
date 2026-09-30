@@ -15,8 +15,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 /** Acciones del recibo; sin ellas la tarjeta solo abre el negocio. */
 export type MisCobroCardActions = {
-  onShareReceipt: (data: NegocioReceiptData) => void;
-  onPrintReceipt: (data: NegocioReceiptData) => void;
+  /** `row` identifica el pago para registrar la impresión. */
+  onShareReceipt: (data: NegocioReceiptData, row: MisCobroRow) => void;
+  onPrintReceipt: (data: NegocioReceiptData, row: MisCobroRow) => void;
   onOpenSupport: (path: string) => void;
   printing?: boolean;
 };
@@ -102,7 +103,7 @@ export function MisCobroCard({ row, onPress, showRegisteredBy = false, actions }
                 accessibilityRole="button"
                 accessibilityLabel="Compartir recibo en PDF"
                 hitSlop={8}
-                onPress={() => actions.onShareReceipt(receipt)}>
+                onPress={() => actions.onShareReceipt(receipt, row)}>
                 <MaterialIcons name="picture-as-pdf" size={22} color={colors.primary.main} />
               </Pressable>
               <Pressable
@@ -110,7 +111,7 @@ export function MisCobroCard({ row, onPress, showRegisteredBy = false, actions }
                 accessibilityLabel="Reimprimir recibo"
                 hitSlop={8}
                 disabled={actions.printing}
-                onPress={() => actions.onPrintReceipt(receipt)}>
+                onPress={() => actions.onPrintReceipt(receipt, row)}>
                 <MaterialIcons name="print" size={22} color={colors.primary.main} />
               </Pressable>
             </>

@@ -11,6 +11,7 @@ import {
 } from '@/lib/negocioReceiptHtml';
 import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
+import { copyTicketLines } from './copyTicketLines';
 import {
   formatTicketMoney,
   padRow,
@@ -34,6 +35,8 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
   if (data.status === 'anulado') {
     lines.push({ type: 'text', text: 'RECIBO ANULADO', align: 'center', bold: true });
   }
+
+  lines.push(...copyTicketLines(data.copy));
 
   // Pago tomado sin señal: el cliente se lleva el recibo, así que en el papel
   // debe verse que todavía falta la confirmación del servidor.

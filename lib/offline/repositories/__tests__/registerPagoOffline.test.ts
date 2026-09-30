@@ -136,7 +136,15 @@ describe('registerPagoOffline', () => {
   it('guarda el pago con método y sitio app_movil, aplica FIFO y encola el comando', async () => {
     const result = await registerPagoOffline({ ...baseInput, idempotencyKey: 'idem-pantalla' });
 
-    expect(result).toEqual({ pagoLocalId: 'key-1', pendingReceipt: true, supportWarning: null, routeStopApplied: false });
+    // Llave y carril del pago: el recibo impreso se registra detrás de él.
+    expect(result).toEqual({
+      pagoLocalId: 'key-1',
+      pendingReceipt: true,
+      supportWarning: null,
+      routeStopApplied: false,
+      idempotencyKey: 'idem-pantalla',
+      lane: 'negocio:neg-1',
+    });
     expect(mockBatch).toHaveBeenCalledTimes(1);
     const ops = mockBatch.mock.calls[0] as Op[];
 

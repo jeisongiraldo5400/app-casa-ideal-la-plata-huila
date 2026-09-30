@@ -103,3 +103,20 @@ describe('creador y vendedor del negocio', () => {
     expect(html).toContain('Firma del vendedor del negocio');
   });
 });
+
+describe('marca de copia', () => {
+  const copy = { number: 3, printedAt: '2026-09-30T15:15:00Z', printedBy: 'Brayan' };
+
+  it('el original no lleva marca', () => {
+    const html = buildNegocioContractHtml({ ...base, copy: { ...copy, number: 1 } });
+    expect(html).not.toContain('class="copy-mark"');
+    expect(html).not.toContain('class="copy-watermark"');
+  });
+
+  it('la reimpresión lleva COPIA N.º X junto al número, marca de agua y pie', () => {
+    const html = buildNegocioContractHtml({ ...base, copy });
+    expect(html).toContain('<span class="copy-mark">COPIA N.º 3</span>N.º');
+    expect(html).toContain('<div class="copy-watermark" aria-hidden="true">COPIA</div>');
+    expect(html).toMatch(/· COPIA N\.º 3: Impresa el 30\/09\/2026 .* por Brayan<\/div>/);
+  });
+});

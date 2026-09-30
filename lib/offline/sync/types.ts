@@ -19,7 +19,9 @@ export type OutboxCommandType =
   // Negocio creado sin señal: primero viajan sus firmas y después el RPC
   // `create_negocio` tal cual se habría enviado con red.
   | 'upload_negocio_signature'
-  | 'create_negocio';
+  | 'create_negocio'
+  // Contrato o recibo impreso sin señal (`register_negocio_print`).
+  | 'register_print';
 
 /**
  * Estado previo de las filas locales modificadas de forma optimista. Permite
@@ -154,6 +156,23 @@ export type CreateNegocioPayload = OutboxPayloadBase & {
 };
 
 /**
+ * Impresión hecha sin señal. El papel ya salió con `copyNumber`; el servidor
+ * guarda ese mismo número. El recibo de un pago todavía en la cola viaja en el
+ * carril de ese pago (`lane`) para llegar después de él, con su llave de
+ * idempotencia en lugar del id.
+ */
+export type RegisterPrintPayload = OutboxPayloadBase & {
+  negocioId: string;
+  document: 'contrato' | 'recibo';
+  format: 'pdf' | 'ticket';
+  pagoId: string | null;
+  pagoIdempotencyKey: string | null;
+  clientEventId: string;
+  printedAt: string;
+  copyNumber: number;
+};
+
+/**
  * Deriva el carril de un comando. Los comandos con `lane` explícito lo
  * conservan (p. ej. el soporte de un pago comparte carril con su pago).
  */
@@ -169,6 +188,7 @@ export function laneForCommand(type: OutboxCommandType, payload: Record<string, 
     // Firmas y negocio comparten carril para que las firmas suban primero.
     case 'upload_negocio_signature':
     case 'create_negocio':
+    case 'register_print':
       return `negocio:${String(payload.negocioId || '')}`;
     case 'register_route_pago':
       return routeId ? `route:${routeId}` : `negocio:${String(payload.negocioId || '')}`;

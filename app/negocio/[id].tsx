@@ -24,6 +24,15 @@ import { IconSize, Spacing, Typography, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/creditCalculator';
 import { formatPaymentDateTime } from '@/lib/localDate';
+import {
+  labelContractPrintSummary,
+  summarizeContractPrints,
+  type ContractPrintSummary,
+} from '@/lib/negocios/printRegistry';
+import {
+  fetchNegocioPrintHistory,
+  recordNegocioPrint,
+} from '@/components/negocios/infrastructure/services/negocioPrintService';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
 import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE } from '@/lib/negocioContractHtml';
@@ -194,6 +203,20 @@ function NegocioDetailScreenInner() {
   const { isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
+  /** Impresiones del contrato según el servidor; null sin señal o sin leer aún. */
+  const [contractPrints, setContractPrints] = useState<ContractPrintSummary | null>(null);
+  const refreshPrintHistory = useCallback(async () => {
+    if (!id || !useSyncStore.getState().online) return;
+    try {
+      setContractPrints(summarizeContractPrints(await fetchNegocioPrintHistory(id)));
+    } catch {
+      // Solo informativo; también siembra la numeración de copias sin señal.
+    }
+  }, [id]);
+  useEffect(() => {
+    setContractPrints(null);
+    if (online) void refreshPrintHistory();
+  }, [id, online, refreshPrintHistory]);
   // Cobro en ruta: la parada solo cuenta el primer cobro y solo si sigue
   // siendo la actual; sin parada, se ofrece vincularla (ver routeStopPago).
   const routeStop = useRouteStopPago({ negocioId: id, routeStopIdParam: routeStopId, online, reloadKey: negocio });
@@ -678,8 +701,22 @@ function NegocioDetailScreenInner() {
     prontoPago?: { discountAmount: number; discountReason: string | null; expectedTotal: number };
     /** El pago salió de la cola sin conexión: el recibo lleva la leyenda. */
     pendingConfirmation?: boolean;
+    /** Id del pago en el servidor, para registrar la impresión. */
+    pagoId?: string | null;
+    /** Pago hecho sin señal: su llave y su carril en la cola. */
+    pendingPago?: { idempotencyKey: string; lane: string } | null;
   }) => {
     if (!negocio) return false;
+    const negocioId = negocio.id;
+    const resolveCopy = () =>
+      recordNegocioPrint({
+        negocioId,
+        document: 'recibo',
+        format: 'ticket',
+        pagoId: input.pagoId ?? null,
+        pendingPago: input.pendingPago ?? null,
+        printedByName: registeredByName,
+      });
     return printPaymentIfReady({
       receiptNumber: input.receiptNumber,
       status: 'emitido',
@@ -704,7 +741,7 @@ function NegocioDetailScreenInner() {
             expectedTotal: input.prontoPago.expectedTotal,
           }
         : {}),
-    });
+    }, { resolveCopy });
   };
 
   /** Pide al motor de sincronización traer lo que cambió en el servidor. */
@@ -754,6 +791,7 @@ function NegocioDetailScreenInner() {
       physicalReceiptNumber,
       paymentMethodName,
       prontoPago: { discountAmount, discountReason, expectedTotal },
+      pagoId,
     });
     const prontoPagoBody = countedInRoute
       ? 'El negocio quedó saldado y la parada se completó.'
@@ -924,6 +962,7 @@ function NegocioDetailScreenInner() {
           amount,
           physicalReceiptNumber,
           paymentMethodName: paymentMethodLabel,
+          pagoId: pagoId || null,
         });
 
         const successBody = countedInRoute
@@ -976,6 +1015,7 @@ function NegocioDetailScreenInner() {
           paymentMethodName: paymentMethodLabel,
           // El recibo sale con la leyenda «PENDIENTE DE CONFIRMACIÓN».
           pendingConfirmation: true,
+          pendingPago: { idempotencyKey: offlineResult.idempotencyKey, lane: offlineResult.lane },
         });
         const offlineBody = `Se sincronizará cuando haya red. El recibo queda pendiente de confirmación.${
           offlineResult.routeStopApplied ? ' La parada quedó atendida.' : ''
@@ -1003,6 +1043,13 @@ function NegocioDetailScreenInner() {
 
   const sharePdf = async () => {
     if (!negocio) return;
+    const copy = await recordNegocioPrint({
+      negocioId: negocio.id,
+      document: 'contrato',
+      format: 'pdf',
+      printedByName: registeredByName,
+    });
+    void refreshPrintHistory();
     const html = buildNegocioContractHtml({
       numero: negocio.numero,
       deal_date: negocio.deal_date,
@@ -1056,6 +1103,7 @@ function NegocioDetailScreenInner() {
         paid_amount: Number(c.paid_amount || 0),
         status: c.status,
       })),
+      copy,
     });
 
     try {
@@ -1104,8 +1152,20 @@ function NegocioDetailScreenInner() {
     pendingConfirmation: Boolean(pago.pending_confirmation),
   });
 
+  /** Qué recibo se imprime: un pago en cola se identifica por su fila local. */
+  const recordReceiptPrint = (pago: any, format: 'pdf' | 'ticket') =>
+    recordNegocioPrint({
+      negocioId: negocio!.id,
+      document: 'recibo',
+      format,
+      pagoId: pago.pending_confirmation ? null : pago.id,
+      pendingPagoLocalId: pago.pending_confirmation ? pago.id : null,
+      printedByName: registeredByName,
+    });
+
   const shareReceipt = async (pago: any) => {
     if (!negocio) return;
+    const copy = await recordReceiptPrint(pago, 'pdf');
     // Saldo que quedó tras ese pago, no el saldo actual del negocio.
     const remainingBalance = remainingAfterPago(cuotas, pagos, pago);
     const html = buildNegocioReceiptHtml({
@@ -1123,6 +1183,7 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
       ...pagoReceiptExtras(pago),
+      copy,
     });
     try {
       const Print = require('expo-print');
@@ -1154,7 +1215,7 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
       ...pagoReceiptExtras(pago),
-    });
+    }, { resolveCopy: () => recordReceiptPrint(pago, 'ticket') });
   };
 
   /**
@@ -1190,6 +1251,7 @@ function NegocioDetailScreenInner() {
 
   const printNegocioTicket = async () => {
     if (!negocio) return;
+    const negocioId = negocio.id;
     await printNegocio({
       numero: negocio.numero,
       dealDate: negocio.deal_date,
@@ -1212,7 +1274,11 @@ function NegocioDetailScreenInner() {
         description: item.description || 'Producto',
         subtotal: Number(item.subtotal),
       })),
+    }, {
+      resolveCopy: () =>
+        recordNegocioPrint({ negocioId, document: 'contrato', format: 'ticket', printedByName: registeredByName }),
     });
+    void refreshPrintHistory();
   };
 
   /** Descarta firmas subidas para un intento que ya no se reintentará. */
@@ -1692,6 +1758,11 @@ function NegocioDetailScreenInner() {
               {negocio?.created_at ? (
                 <Text testID="negocio-created-at" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={1}>
                   Creado el: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{formatPaymentDateTime(negocio.created_at)}</Text>
+                </Text>
+              ) : null}
+              {contractPrints ? (
+                <Text testID="negocio-contract-prints" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={2}>
+                  {labelContractPrintSummary(contractPrints)}
                 </Text>
               ) : null}
               {soldForOwnerNotice ? (
