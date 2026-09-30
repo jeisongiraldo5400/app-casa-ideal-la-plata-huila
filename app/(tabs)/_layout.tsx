@@ -199,6 +199,14 @@ export default function TabLayout() {
           headerLeft: () => <BackButton />,
         }}
       />
+      <Tabs.Screen
+        name="traslados"
+        options={{
+          href: null,
+          title: 'Traslados',
+          headerLeft: () => <BackButton />,
+        }}
+      />
       {/*
         Catálogos: visible desde el 2026-09-22 (CATALOGOS_HABILITADOS en
         constants/features.ts). Las dos pantallas llevan `href: null` para no
