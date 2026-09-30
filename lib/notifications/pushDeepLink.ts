@@ -12,6 +12,10 @@
  * basta con tocarla para ver el detalle. Es lo más cercano al registro concreto
  * sin inventar pantallas nuevas.
  *
+ * Los traslados (transfer_dispatched / transfer_received / transfer_differences
+ * / transfer_overdue; `data.kind = 'transfer_order'`, migración 20261231290000)
+ * abren su detalle: la pantalla elige sola si toca recibir, despachar o solo ver.
+ *
  * Los recordatorios de cobro con varios negocios abren Cartera filtrada por la
  * fecha de vencimiento. Las pestañas conservan su estado, así que la ruta lleva
  * un `n` distinto por aviso: Cartera vuelve a aplicar el filtro aunque ya
@@ -67,6 +71,10 @@ export function buildPushDeepLink(
   // edición, donde se ven sus enlaces y cuántas veces se abrió cada uno.
   if (kind === "catalogo") {
     return id ? `/catalogo/${encodeURIComponent(id)}` : null;
+  }
+
+  if (kind === "transfer_order") {
+    return id ? `/traslado/${encodeURIComponent(id)}` : null;
   }
 
   if (kind === "cartera_vencimientos") {

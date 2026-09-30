@@ -1,6 +1,20 @@
 import { buildPushDeepLink } from '../pushDeepLink';
 
 describe('buildPushDeepLink', () => {
+  // Órdenes de traslado (3.3.0): los cuatro avisos traen el mismo `data`.
+  it.each(['in_transit', 'received', 'with_differences', 'partially_received'])(
+    'un aviso de traslado (%s) abre su detalle',
+    (status) => {
+      expect(
+        buildPushDeepLink({ kind: 'transfer_order', id: 'tr-1', order_number: 'TR-2026-0001', status, overdue: true } as never)
+      ).toBe('/traslado/tr-1');
+    }
+  );
+
+  it('un aviso de traslado sin id no lleva a ninguna parte', () => {
+    expect(buildPushDeepLink({ kind: 'transfer_order', order_number: 'TR-2026-0001' })).toBeNull();
+  });
+
   // Pedido del usuario (2026-09-24): avisar al vendedor cuando su cliente abre
   // el catálogo (migración 20261127120000).
   it('un catálogo abierto lleva a esa edición', () => {
