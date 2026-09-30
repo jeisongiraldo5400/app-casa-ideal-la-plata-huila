@@ -1,5 +1,6 @@
 import {
   labelContractPrintSummary,
+  labelNextContractPrint,
   mergeHistoryIntoCache,
   nextOfflineCopyNumber,
   parsePrintHistory,
@@ -56,5 +57,12 @@ describe('printRegistry', () => {
     ]);
     const label = labelContractPrintSummary(summarizeContractPrints(events));
     expect(label).toMatch(/^Contrato impreso 2 veces · última 30\/09\/2026 .* por Ana$/);
+  });
+
+  it('dice si la próxima impresión del contrato sale original o copia', () => {
+    expect(labelNextContractPrint({ count: 0, last: null })).toBe('La próxima impresión sale como original');
+    expect(labelNextContractPrint(summarizeContractPrints(parsePrintHistory([
+      { id: 'e1', document: 'contrato', format: 'pdf', channel: 'web', copy_number: 1, printed_at: '2026-09-30T15:00:00Z' },
+    ])))).toBe('La próxima impresión sale como COPIA N.º 2');
   });
 });

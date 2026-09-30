@@ -109,6 +109,16 @@ export function summarizeContractPrints(events: NegocioPrintEvent[]): ContractPr
   return { count: contracts.length, last: contracts[0] ?? null };
 }
 
+/**
+ * Qué saldrá en la próxima impresión del contrato (mismo criterio que el botón
+ * de la web): «original» la primera vez, «COPIA N.º X» después.
+ */
+export function labelNextContractPrint(summary: ContractPrintSummary): string {
+  return summary.count > 0
+    ? `La próxima impresión sale como COPIA N.º ${summary.count + 1}`
+    : 'La próxima impresión sale como original';
+}
+
 /** «Contrato impreso 2 veces · última 30/09/2026 10:15 a. m. por Ana» o «Contrato sin imprimir». */
 export function labelContractPrintSummary(summary: ContractPrintSummary): string {
   if (summary.count <= 0 || !summary.last) return 'Contrato sin imprimir';

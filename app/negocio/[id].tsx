@@ -26,6 +26,7 @@ import { formatCOP } from '@/lib/creditCalculator';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import {
   labelContractPrintSummary,
+  labelNextContractPrint,
   summarizeContractPrints,
   type ContractPrintSummary,
 } from '@/lib/negocios/printRegistry';
@@ -1761,8 +1762,12 @@ function NegocioDetailScreenInner() {
                 </Text>
               ) : null}
               {contractPrints ? (
-                <Text testID="negocio-contract-prints" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={2}>
+                <Text testID="negocio-contract-prints" style={[styles.helper, { color: colors.text.secondary }]} numberOfLines={3}>
                   {labelContractPrintSummary(contractPrints)}
+                  {'\n'}
+                  <Text style={{ color: contractPrints.count > 0 ? colors.warning.dark : colors.text.secondary, fontWeight: '600' }}>
+                    {labelNextContractPrint(contractPrints)}
+                  </Text>
                 </Text>
               ) : null}
               {soldForOwnerNotice ? (
@@ -1970,7 +1975,11 @@ function NegocioDetailScreenInner() {
               icon="picture-as-pdf"
               iconOnly
               onPress={() => void sharePdf()}
-              accessibilityLabel="Compartir contrato en PDF"
+              accessibilityLabel={
+                contractPrints && contractPrints.count > 0
+                  ? `Compartir contrato en PDF, copia n.º ${contractPrints.count + 1}`
+                  : 'Compartir contrato en PDF'
+              }
               style={styles.secondaryAction}
             />
           ) : null}
@@ -1982,7 +1991,11 @@ function NegocioDetailScreenInner() {
               iconOnly
               onPress={() => void printNegocioTicket()}
               loading={printingTicket}
-              accessibilityLabel="Imprimir negocio"
+              accessibilityLabel={
+                contractPrints && contractPrints.count > 0
+                  ? `Imprimir negocio, copia n.º ${contractPrints.count + 1}`
+                  : 'Imprimir negocio'
+              }
               style={styles.secondaryAction}
             />
           ) : null}
