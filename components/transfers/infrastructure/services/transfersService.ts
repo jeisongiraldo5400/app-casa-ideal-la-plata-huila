@@ -10,10 +10,12 @@
 import { supabase } from '@/lib/supabase';
 import {
   parseTransferDetail,
+  parseTransferListPage,
   parseTransferTasks,
   parseTransferWriteResult,
   parseWarehouseMemberships,
   type TransferDetail,
+  type TransferListPage,
   type TransferTasks,
   type TransferWriteResult,
   type WarehouseMembership,
@@ -38,6 +40,27 @@ export async function fetchMyWarehouseMemberships(): Promise<WarehouseMembership
   const { data, error } = await supabase.rpc('get_my_warehouse_memberships');
   if (error) throw error;
   return parseWarehouseMemberships(data);
+}
+
+/**
+ * Historial de traslados, igual que la lista de la web
+ * (`list_transfer_orders_page`): el servidor filtra por permisos, estado y
+ * búsqueda (número o producto) y pagina.
+ */
+export async function fetchTransferOrdersPage(input: {
+  statuses: readonly string[] | null;
+  search: string;
+  page: number;
+  pageSize: number;
+}): Promise<TransferListPage> {
+  const { data, error } = await supabase.rpc('list_transfer_orders_page', {
+    p_statuses: input.statuses ? [...input.statuses] : undefined,
+    p_search: input.search.trim(),
+    p_page: input.page,
+    p_page_size: input.pageSize,
+  });
+  if (error) throw error;
+  return parseTransferListPage(data);
 }
 
 export async function fetchTransferDetail(transferOrderId: string): Promise<TransferDetail> {

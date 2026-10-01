@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme';
-import { ScreenState } from '@/components/ui';
+import { ScreenState, SegmentedControl } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
@@ -15,6 +15,7 @@ import {
   type TransferSectionKey,
 } from '../utils/transferTasks';
 import { modeParam } from '../utils/transferRules';
+import { TransferHistoryView } from './TransferHistoryView';
 import { TransferSectionPicker } from './TransferSectionPicker';
 import { TransferSummaryCard } from './TransferSummaryCard';
 
@@ -31,6 +32,9 @@ export function TransfersScreen() {
   const online = useNetworkStatus();
   const state = useTransferTasks({ enabled: focused && online });
   const [section, setSection] = useState<TransferSectionKey | null>(null);
+  /** «Pendientes» (lo que me toca hacer) o «Historial» (todos, como en la web). */
+  const [view, setView] = useState<'tasks' | 'history'>('tasks');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   // La primera vez que llegan las tareas se abre la primera sección con algo pendiente.
   useEffect(() => {
@@ -108,10 +112,26 @@ export function TransfersScreen() {
       style={[styles.container, { backgroundColor: colors.background.default }]}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={state.loading && Boolean(state.tasks)} onRefresh={() => void state.reload()} />
+        <RefreshControl
+          refreshing={view === 'tasks' && state.loading && Boolean(state.tasks)}
+          onRefresh={() => (view === 'history' ? setHistoryRefresh((n) => n + 1) : void state.reload())}
+        />
       }
     >
-      {state.tasks && !state.unavailable ? (
+      {state.tasks && !state.unavailable && state.canUse ? (
+        <SegmentedControl
+          items={[
+            { value: 'tasks', label: 'Pendientes', icon: 'pending-actions' },
+            { value: 'history', label: 'Historial', icon: 'history' },
+          ]}
+          value={view}
+          onChange={(value) => setView(value as 'tasks' | 'history')}
+        />
+      ) : null}
+      {view === 'history' && state.tasks && !state.unavailable && state.canUse ? (
+        <TransferHistoryView enabled={focused && online} refreshKey={historyRefresh} />
+      ) : null}
+      {view === 'tasks' && state.tasks && !state.unavailable ? (
         <TransferSectionPicker
           value={active.key}
           counts={{
@@ -123,7 +143,7 @@ export function TransfersScreen() {
           onChange={setSection}
         />
       ) : null}
-      {state.tasks && !state.unavailable ? (
+      {view === 'tasks' && state.tasks && !state.unavailable ? (
         <View style={styles.titleRow}>
           <Text style={[styles.title, { color: colors.text.primary }]}>{active.title}</Text>
           {overdue > 0 ? (
@@ -141,7 +161,7 @@ export function TransfersScreen() {
       {state.tasks && state.error ? (
         <Text style={[styles.offline, { color: colors.error.main }]}>{state.error}</Text>
       ) : null}
-      {body()}
+      {view === 'tasks' || !state.canUse || !state.tasks || state.unavailable ? body() : null}
     </ScrollView>
   );
 }

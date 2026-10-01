@@ -1,9 +1,13 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
 import { TransfersScreen } from '../TransfersScreen';
-import { fetchMyTransferTasks, fetchMyWarehouseMemberships } from '../../infrastructure/services/transfersService';
-import { parseTransferTasks } from '../../utils/transferModel';
+import {
+  fetchMyTransferTasks,
+  fetchMyWarehouseMemberships,
+  fetchTransferOrdersPage,
+} from '../../infrastructure/services/transfersService';
+import { parseTransferListPage, parseTransferTasks } from '../../utils/transferModel';
 import { rawOrder } from '../../__fixtures__/transferFixtures';
 
 jest.mock('@/components/theme', () => ({ useTheme: () => ({ isDark: false }) }));
@@ -32,6 +36,7 @@ jest.mock('@/hooks/useUserRoles', () => ({
 jest.mock('../../infrastructure/services/transfersService', () => ({
   fetchMyTransferTasks: jest.fn(),
   fetchMyWarehouseMemberships: jest.fn(async () => []),
+  fetchTransferOrdersPage: jest.fn(),
   isTransfersUnavailableError: (error: { code?: string }) => error?.code === 'PGRST202',
 }));
 
@@ -91,6 +96,40 @@ describe('TransfersScreen', () => {
       expect(screen.getByText(hint)).toBeTruthy();
     }
     expect(screen.getByLabelText('Recibir: Confirmar lo que llegó. 2 pendientes')).toBeTruthy();
+  });
+
+  it('«Historial» lista todos los traslados como la web, con quién recibió, y filtra por estado', async () => {
+    (fetchMyTransferTasks as jest.Mock).mockResolvedValue(tasks());
+    (fetchTransferOrdersPage as jest.Mock).mockResolvedValue(
+      parseTransferListPage({
+        total_count: 1,
+        rows: [
+          rawOrder({
+            id: 'h-1',
+            order_number: 'TR-2026-0001',
+            status: 'received',
+            received_at: '2026-09-29T23:33:00Z',
+            received_by_names: ['Luis Bodega'],
+          }),
+        ],
+      })
+    );
+    const screen = render(<TransfersScreen />);
+    await screen.findByText('Por recibir');
+    fireEvent.press(screen.getByText('Historial'));
+
+    expect(await screen.findByText('TR-2026-0001')).toBeTruthy();
+    expect(screen.getByText(/Luis Bodega/)).toBeTruthy();
+    expect(fetchTransferOrdersPage).toHaveBeenLastCalledWith({ statuses: null, search: '', page: 1, pageSize: 20 });
+
+    fireEvent.press(screen.getByText('Recibidos'));
+    await act(async () => undefined);
+    expect(fetchTransferOrdersPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ statuses: ['received'], page: 1 })
+    );
+
+    fireEvent.press(screen.getByLabelText(/Traslado TR-2026-0001/));
+    expect(mockNavigate).toHaveBeenCalledWith('/traslado/h-1');
   });
 
   it('sin tareas ni bodega ni rol: explica cómo obtener acceso', async () => {

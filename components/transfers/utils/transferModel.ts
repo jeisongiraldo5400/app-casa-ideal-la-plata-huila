@@ -276,3 +276,18 @@ export function parseTransferWriteResult(value: unknown): TransferWriteResult {
     quantities,
   };
 }
+
+/** Página de `list_transfer_orders_page` (historial: lo mismo que la lista de la web). */
+export interface TransferListPage {
+  totalCount: number;
+  rows: TransferSummary[];
+}
+
+export function parseTransferListPage(value: unknown): TransferListPage {
+  const r = asObj(value);
+  return {
+    totalCount: num(r.total_count),
+    rows: Array.isArray(r.rows) ? r.rows.map(parseTransferSummary) : [],
+  };
+}
+
