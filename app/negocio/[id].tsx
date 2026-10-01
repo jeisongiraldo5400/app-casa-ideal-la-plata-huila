@@ -70,6 +70,7 @@ import { useAuth } from '@/components/auth/infrastructure/hooks/useAuth';
 import { displayProfileName, fetchProfileNames } from '@/lib/profileNames';
 import { getCachedProfileName, setCachedProfileName } from '@/lib/offline/security/secureKeys';
 import { SignatureGallery } from '@/components/negocios/components/SignatureGallery';
+import { NegocioCustomerPhotosView } from '@/components/negocios/components/NegocioCustomerPhotosView';
 import { RegisterPaymentSheet, type PagoSupportSource } from '@/components/negocios/components/RegisterPaymentSheet';
 import {
   isNewLocalSignature,
@@ -1923,6 +1924,16 @@ function NegocioDetailScreenInner() {
           <View style={styles.section}>
             <SectionHeader title="Firmas" />
             <SignatureGallery signatures={readOnlySignatures} />
+          </View>
+        ) : null}
+
+        {online && !fromLocal && (negocio?.customer_photo_path || negocio?.customer_id_photo_path) ? (
+          <View style={styles.section}>
+            <NegocioCustomerPhotosView
+              customerPhotoPath={negocio.customer_photo_path}
+              idPhotoPath={negocio.customer_id_photo_path}
+              online={online && !fromLocal}
+            />
           </View>
         ) : null}
 

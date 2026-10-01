@@ -34,7 +34,7 @@ const TYPE_LABELS: Record<SyncQueueEntry['type'], string> = {
   start_route: 'Ruta',
   finish_route: 'Ruta',
   select_route_stop: 'Ruta',
-  upload_negocio_signature: 'Firma del negocio',
+  upload_negocio_signature: 'Firma o foto del negocio',
   create_negocio: 'Negocio nuevo',
   register_print: 'Impresión',
 };

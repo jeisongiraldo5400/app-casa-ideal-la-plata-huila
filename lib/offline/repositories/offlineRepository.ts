@@ -1605,7 +1605,12 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
         summary = 'Selección de parada';
         break;
       case 'upload_negocio_signature':
-        summary = `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
+        summary =
+          payload.role === 'foto_cliente'
+            ? `Foto del cliente · ${negocioLabel}`
+            : payload.role === 'foto_cedula'
+              ? `Foto de la cédula · ${negocioLabel}`
+              : `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
         break;
       case 'register_print':
         summary = `Impresión de ${payload.document === 'recibo' ? 'recibo' : 'contrato'} · ${negocioLabel}`;

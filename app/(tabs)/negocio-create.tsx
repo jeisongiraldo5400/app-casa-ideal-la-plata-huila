@@ -34,6 +34,8 @@ import {
   type NegocioItem,
 } from '@/components/negocios/infrastructure/store/negociosStore';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
+import { NegocioCustomerPhotosSection } from '@/components/negocios/components/NegocioCustomerPhotosSection';
+import type { NegocioPhotoDraft } from '@/lib/negocioPhotos';
 import {
   negocioSaveBlockedBySignature,
   sellerSignatureRequiredError,
@@ -236,6 +238,9 @@ function NegocioCreateScreenInner() {
   const [signature, setSignature] = useState('');
   const [sellerSignature, setSellerSignature] = useState('');
   const [guarantorSignature, setGuarantorSignature] = useState('');
+  /** Fotos opcionales del cliente (persona y cédula). */
+  const [customerPhoto, setCustomerPhoto] = useState<NegocioPhotoDraft | null>(null);
+  const [customerIdPhoto, setCustomerIdPhoto] = useState<NegocioPhotoDraft | null>(null);
 
   // Modal para crear nuevo cliente
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
@@ -330,6 +335,8 @@ function NegocioCreateScreenInner() {
     setSignature('');
     setSellerSignature('');
     setGuarantorSignature('');
+    setCustomerPhoto(null);
+    setCustomerIdPhoto(null);
     setShowNewCustomerModal(false);
     setNewCustomerName('');
     setNewCustomerId('');
@@ -1052,6 +1059,8 @@ function NegocioCreateScreenInner() {
         customer_signature_data_url: signature || '',
         guarantor_signature_data_url: guarantorSignature || undefined,
         seller_signature_data_url: sellerSignature || undefined,
+        customer_photo: customerPhoto,
+        customer_id_photo: customerIdPhoto,
         activate,
         // Para poder pintar el negocio pendiente sin volver a preguntar.
         customer_name: customer.name,
@@ -1895,6 +1904,12 @@ function NegocioCreateScreenInner() {
               }
               value={sellerSignature}
               onChange={setSellerSignature}
+            />
+            <NegocioCustomerPhotosSection
+              customerPhoto={customerPhoto}
+              idPhoto={customerIdPhoto}
+              onChange={(kind, photo) => (kind === 'cedula' ? setCustomerIdPhoto(photo) : setCustomerPhoto(photo))}
+              disabled={saving}
             />
             {creditSettings?.legal_text ? (
               <Text style={{ color: colors.text.secondary, fontSize: 12, marginTop: 8 }}>

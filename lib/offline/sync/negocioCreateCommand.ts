@@ -9,10 +9,19 @@ import {
   negocioSignaturePath,
   uploadNegocioSignature,
 } from '@/lib/uploadSignature';
+import {
+  NEGOCIO_PHOTO_BUCKET,
+  NEGOCIO_PHOTO_ROLE,
+  negocioPhotoExtension,
+  negocioPhotoFields,
+  uploadNegocioPhoto,
+  type NegocioPhotoKind,
+} from '@/lib/negocioPhotos';
 import { getDatabase } from '../database';
 import { FileUpload, Negocio, Profile, SyncOutboxItem } from '../models';
 import {
   persistNegocioSignatureFile,
+  persistNegocioPhotoFile,
   deleteLocalPagoSupportFile,
   localFileExists,
 } from '../security/localFiles';
@@ -41,6 +50,18 @@ type SignatureInput = {
   value: string | null | undefined;
 };
 
+/** Foto opcional del cliente (persona o cédula) con su ruta ya decidida. */
+export type NegocioPhotoInput = {
+  kind: NegocioPhotoKind;
+  /** Archivo en el teléfono (`file:`/`content:`). */
+  uri: string;
+  mimeType: string;
+  /** `<usuario>/<uuid>.<ext>` en `negocios-fotos`. */
+  storagePath: string;
+  /** Un intento con red ya la subió: solo viaja la ruta. */
+  uploaded?: boolean;
+};
+
 export type EnqueueNegocioCreateInput = {
   negocioId: string;
   idempotencyKey: string;
@@ -54,6 +75,8 @@ export type EnqueueNegocioCreateInput = {
   negocio: Record<string, unknown>;
   items: Record<string, unknown>[];
   signatures: SignatureInput[];
+  /** Fotos opcionales del cliente; sin ellas el negocio sale como siempre. */
+  photos?: NegocioPhotoInput[];
   /** Datos para pintar el negocio pendiente en el teléfono. */
   local: {
     dealDate: string | null;
@@ -81,8 +104,9 @@ export type EnqueueNegocioCreateInput = {
 /**
  * Deja listo en el teléfono un negocio creado sin señal:
  *
- *   1. guarda cada firma nueva en el almacenamiento privado de la app y encola
- *      su subida a Storage (`upload_negocio_signature`);
+ *   1. guarda cada firma nueva (y cada foto del cliente) en el almacenamiento
+ *      privado de la app y encola su subida a Storage
+ *      (`upload_negocio_signature`; las fotos llevan `bucket: negocios-fotos`);
  *   2. encola el RPC `create_negocio` con los MISMOS argumentos que se habrían
  *      enviado con red, incluidas las rutas de esas firmas (decididas ya, para
  *      que el hash de idempotencia del servidor no cambie entre reintentos);
@@ -98,9 +122,12 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
 
   // Paso 1 fuera de la transacción: escribir ficheros es E/S lenta.
   const pending: {
-    role: NegocioSignatureRole;
+    role: UploadNegocioSignaturePayload['role'];
     localUri: string;
     storagePath: string;
+    bucket: string;
+    mime: string;
+    fileName: string;
   }[] = [];
   const signatureUrls: Partial<Record<NegocioSignatureRole, string | null>> = {};
   for (const signature of input.signatures) {
@@ -123,7 +150,33 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
       suffix: fileLocalId,
     });
     signatureUrls[signature.role] = storagePath;
-    pending.push({ role: signature.role, localUri, storagePath });
+    pending.push({
+      role: signature.role,
+      localUri,
+      storagePath,
+      bucket: NEGOCIO_SIGNATURE_BUCKET,
+      mime: 'image/png',
+      fileName: `firma-${signature.role}.png`,
+    });
+  }
+
+  // Fotos del cliente: misma mecánica que las firmas, con la ruta fijada
+  // desde que se tomó la foto.
+  const photoPaths: Partial<Record<NegocioPhotoKind, string>> = {};
+  for (const photo of input.photos ?? []) {
+    photoPaths[photo.kind] = photo.storagePath;
+    if (photo.uploaded) continue;
+    const ext = negocioPhotoExtension(photo.mimeType) || 'jpg';
+    const fileLocalId = createIdempotencyKey();
+    const localUri = await persistNegocioPhotoFile(photo.uri, fileLocalId, ext);
+    pending.push({
+      role: NEGOCIO_PHOTO_ROLE[photo.kind],
+      localUri,
+      storagePath: photo.storagePath,
+      bucket: NEGOCIO_PHOTO_BUCKET,
+      mime: photo.mimeType,
+      fileName: `foto-${photo.kind}.${ext}`,
+    });
   }
 
   const negocio = {
@@ -131,6 +184,7 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
     customer_signature_url: signatureUrls.cliente ?? null,
     guarantor_signature_url: signatureUrls.fiador ?? null,
     seller_signature_url: signatureUrls.vendedor ?? null,
+    ...negocioPhotoFields(photoPaths),
   };
   const payload: CreateNegocioPayload = {
     lane,
@@ -148,9 +202,9 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
     for (const item of pending) {
       const upload = database.get<FileUpload>('file_uploads').prepareCreate((record) => {
         record.localUri = item.localUri;
-        record.mime = 'image/png';
-        record.fileName = `firma-${item.role}.png`;
-        record.bucket = NEGOCIO_SIGNATURE_BUCKET;
+        record.mime = item.mime;
+        record.fileName = item.fileName;
+        record.bucket = item.bucket;
         record.negocioId = input.negocioId;
         record.pagoLocalId = null;
         record.pagoServerId = null;
@@ -164,6 +218,8 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
         negocioId: input.negocioId,
         role: item.role,
         storagePath: item.storagePath,
+        // Las firmas conservan la forma de siempre; solo las fotos lo llevan.
+        ...(item.bucket === NEGOCIO_PHOTO_BUCKET ? { bucket: item.bucket } : {}),
       };
       operations.push(prepareOutboxRecord(database, 'upload_negocio_signature', signaturePayload));
     }
@@ -205,18 +261,29 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
   return { negocioId: input.negocioId, queuedSignatures: pending.length };
 }
 
-/** Sube una firma guardada en el teléfono a su ruta ya decidida. */
+/**
+ * Sube una firma (o una foto del cliente) guardada en el teléfono a su ruta ya
+ * decidida. El bucket sale de la fila del archivo: los comandos encolados
+ * antes de existir las fotos son siempre firmas.
+ */
 export async function pushUploadNegocioSignature(payload: UploadNegocioSignaturePayload) {
   const database = getDatabase();
+  const isPhoto = isNegocioPhotoRole(payload.role);
   let upload: FileUpload;
   try {
     upload = await database.get<FileUpload>('file_uploads').find(payload.fileUploadId);
   } catch {
-    return { outcome: 'fail' as const, message: 'No se encontró la firma guardada en el teléfono' };
+    return {
+      outcome: 'fail' as const,
+      message: isPhoto ? 'No se encontró la foto guardada en el teléfono' : 'No se encontró la firma guardada en el teléfono',
+    };
   }
   if (upload.status === 'done') return { outcome: 'done' as const };
   if (upload.status === 'failed') {
-    return { outcome: 'fail' as const, message: upload.lastError || 'La firma fue descartada' };
+    return {
+      outcome: 'fail' as const,
+      message: upload.lastError || (isPhoto ? 'La foto fue descartada' : 'La firma fue descartada'),
+    };
   }
   // Sin el archivo, `fetch(file://…)` falla con «Network request failed» y la
   // cola creería que no hay señal para siempre.
@@ -224,14 +291,23 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
     return { outcome: 'fail' as const, message: missingSignatureMessage(payload.role) };
   }
 
-  await uploadNegocioSignature(upload.localUri, {
-    negocioId: payload.negocioId,
-    role: payload.role,
-    path: payload.storagePath,
-    // La ruta es fija: si un intento anterior llegó a subir el archivo, el
-    // reintento debe poder pisarlo en vez de fallar por «ya existe».
-    upsert: true,
-  });
+  if ((payload.bucket || upload.bucket) === NEGOCIO_PHOTO_BUCKET) {
+    // Sin `upsert` (el bucket no deja editar): «ya existe» cuenta como subida.
+    await uploadNegocioPhoto(upload.localUri, {
+      path: payload.storagePath,
+      mimeType: upload.mime || 'image/jpeg',
+      kind: payload.role === 'foto_cedula' ? 'cedula' : 'cliente',
+    });
+  } else {
+    await uploadNegocioSignature(upload.localUri, {
+      negocioId: payload.negocioId,
+      role: payload.role as NegocioSignatureRole,
+      path: payload.storagePath,
+      // La ruta es fija: si un intento anterior llegó a subir el archivo, el
+      // reintento debe poder pisarlo en vez de fallar por «ya existe».
+      upsert: true,
+    });
+  }
   await database.write(async () => {
     await upload.update((record) => {
       record.status = 'done';
@@ -241,20 +317,43 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
   return { outcome: 'done' as const };
 }
 
-/** Rol de la firma a partir del nombre de archivo (`firma-<rol>.png`). */
+function isNegocioPhotoRole(role: string | null | undefined): boolean {
+  return role === 'foto_cliente' || role === 'foto_cedula';
+}
+
+/**
+ * Rol del archivo a partir de su nombre: `firma-<rol>.png` para las firmas,
+ * `foto-<cliente|cedula>.<ext>` para las fotos del cliente.
+ */
 function signatureRole(upload: FileUpload): string {
+  const photo = upload.fileName?.match(/^foto-([a-z]+)/)?.[1];
+  if (photo) return `foto_${photo}`;
   return upload.fileName?.match(/^firma-([a-z]+)/)?.[1] || 'cliente';
 }
 
-/** Texto cuando la firma guardada sin señal ya no está en el teléfono. */
+/** «la firma del cliente», «la foto de la cédula»… */
+export function negocioFileLabel(role: string): string {
+  if (role === 'foto_cliente') return 'la foto del cliente';
+  if (role === 'foto_cedula') return 'la foto de la cédula';
+  return `la firma del ${role}`;
+}
+
+/** Texto cuando la firma (o foto) guardada sin señal ya no está en el teléfono. */
 export function missingSignatureMessage(role: string): string {
+  if (isNegocioPhotoRole(role)) {
+    return `Hay que volver a tomar ${negocioFileLabel(role)}: ya no está guardada en el teléfono. Descarte este negocio y créelo de nuevo.`;
+  }
   return `Hay que volver a firmar: la firma del ${role} ya no está guardada en el teléfono. Descarte este negocio y créelo de nuevo.`;
 }
 
+/** Firmas y fotos del cliente del negocio: viajan y se tratan igual. */
 async function negocioSignatureUploads(database: Database, negocioId: string) {
   return database
     .get<FileUpload>('file_uploads')
-    .query(Q.where('negocio_id', negocioId), Q.where('bucket', NEGOCIO_SIGNATURE_BUCKET))
+    .query(
+      Q.where('negocio_id', negocioId),
+      Q.where('bucket', Q.oneOf([NEGOCIO_SIGNATURE_BUCKET, NEGOCIO_PHOTO_BUCKET]))
+    )
     .fetch();
 }
 
@@ -426,7 +525,7 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
     const upload = signatures.failed[0];
     return {
       outcome: 'fail' as const,
-      message: `La firma del ${signatureRole(upload)} no se pudo subir: ${
+      message: `${capitalize(negocioFileLabel(signatureRole(upload)))} no se pudo subir: ${
         syncErrorText(upload.lastError) || 'se descartó'
       }`,
     };
@@ -434,7 +533,7 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
   if (signatures.pending) {
     // Comparte carril con sus firmas, así que en la práctica no se llega aquí;
     // la comprobación evita crear un negocio cuya firma no está en Storage.
-    return { outcome: 'retry' as const, message: 'Las firmas del negocio aún no se han subido' };
+    return { outcome: 'retry' as const, message: 'Las firmas o fotos del negocio aún no se han subido' };
   }
 
   const { data, error } = await supabase.rpc('create_negocio', {
@@ -734,6 +833,10 @@ export async function prepareDiscardNegocioSignature(
   } catch {
     // La fila ya no existe: nada que marcar.
   }
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function resetForRetry(now: number) {

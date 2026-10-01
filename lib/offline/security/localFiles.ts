@@ -3,6 +3,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 const SUPPORT_DIRECTORY_NAME = 'pago-soportes';
 /** Firmas de negocios creados sin señal, a la espera de subir a Storage. */
 const SIGNATURE_DIRECTORY_NAME = 'negocio-firmas';
+/** Fotos del cliente (persona y cédula) de negocios creados sin señal. */
+const PHOTO_DIRECTORY_NAME = 'negocio-fotos';
 
 function supportDirectoryFor(base: string) {
   return `${base}${SUPPORT_DIRECTORY_NAME}`;
@@ -10,6 +12,25 @@ function supportDirectoryFor(base: string) {
 
 function signatureDirectoryFor(base: string) {
   return `${base}${SIGNATURE_DIRECTORY_NAME}`;
+}
+
+function photoDirectoryFor(base: string) {
+  return `${base}${PHOTO_DIRECTORY_NAME}`;
+}
+
+/**
+ * Copia la foto del cliente (que el selector deja en la caché, donde el
+ * sistema puede borrarla) al almacenamiento privado de la app, hasta que se
+ * suba. Devuelve la ruta local.
+ */
+export async function persistNegocioPhotoFile(sourceUri: string, localId: string, ext: string): Promise<string> {
+  const base = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+  if (!base) throw new Error('No hay almacenamiento local disponible para la foto');
+  const directory = photoDirectoryFor(base);
+  const destination = `${directory}/${localId}.${safePagoSupportFileName(ext)}`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+  await FileSystem.copyAsync({ from: sourceUri, to: destination });
+  return destination;
 }
 
 export function getNegocioSignatureDirectory() {
@@ -88,9 +109,15 @@ export async function clearLocalPagoSupportFiles() {
     (base): base is string => Boolean(base)
   );
   await Promise.all(
-    // También las firmas pendientes: al borrar los datos locales no puede
-    // quedar en el teléfono la firma de un cliente.
-    [...new Set([...bases.map(supportDirectoryFor), ...bases.map(signatureDirectoryFor)])].map(
+    // También las firmas y fotos pendientes: al borrar los datos locales no
+    // puede quedar en el teléfono la firma ni la cédula de un cliente.
+    [
+      ...new Set([
+        ...bases.map(supportDirectoryFor),
+        ...bases.map(signatureDirectoryFor),
+        ...bases.map(photoDirectoryFor),
+      ]),
+    ].map(
       (directory) => FileSystem.deleteAsync(directory, { idempotent: true }).catch(() => undefined)
     )
   );

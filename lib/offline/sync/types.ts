@@ -1,3 +1,5 @@
+import type { NegocioPhotoRole } from '@/lib/negocioPhotos';
+
 export type SyncStatus = 'synced' | 'pending' | 'conflict' | 'error' | 'rejected';
 
 /**
@@ -132,9 +134,15 @@ export type NegocioSignatureRole = 'cliente' | 'fiador' | 'vendedor';
 export type UploadNegocioSignaturePayload = OutboxPayloadBase & {
   fileUploadId: string;
   negocioId: string;
-  role: NegocioSignatureRole;
-  /** Ruta definitiva dentro del bucket de firmas. */
+  /** Firma (`cliente`/`fiador`/`vendedor`) o foto del cliente (`foto_*`). */
+  role: NegocioSignatureRole | NegocioPhotoRole;
+  /** Ruta definitiva dentro del bucket. */
   storagePath: string;
+  /**
+   * Bucket de destino. Los comandos encolados antes de las fotos del cliente
+   * no lo traen: son firmas (`negocios-firmas`).
+   */
+  bucket?: string;
 };
 
 /**

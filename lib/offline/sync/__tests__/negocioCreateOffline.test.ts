@@ -1,11 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '../../store/syncStore';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
+import { uploadNegocioPhoto } from '@/lib/negocioPhotos';
+import { deleteLocalPagoSupportFile, localFileExists } from '../../security/localFiles';
 import {
   enqueueNegocioCreateOffline,
   prepareRejectedNegocio,
   pushCreateNegocio,
   pushUploadNegocioSignature,
+  type NegocioPhotoInput,
 } from '../negocioCreateCommand';
 import { PreparedChanges } from '../reconcile';
 import type { CreateNegocioPayload } from '../types';
@@ -33,7 +36,15 @@ jest.mock('@/lib/uploadSignature', () => {
   return { ...actual, uploadNegocioSignature: jest.fn(async () => 'ruta/subida.png') };
 });
 
+jest.mock('@/lib/negocioPhotos', () => {
+  const actual = jest.requireActual('@/lib/negocioPhotos');
+  return { ...actual, uploadNegocioPhoto: jest.fn(async (_uri: string, opts: { path: string }) => opts.path) };
+});
+
 jest.mock('../../security/localFiles', () => ({
+  persistNegocioPhotoFile: jest.fn(async (_source: string, localId: string, ext: string) =>
+    `file:///fotos/${localId}.${ext}`
+  ),
   persistNegocioSignatureFile: jest.fn(async (_source: string, localId: string, role: string) =>
     `file:///firmas/${localId}-${role}.png`
   ),
@@ -115,8 +126,9 @@ const NEGOCIO_ARGS = {
   total_credit: 1200000,
 };
 
-async function enqueue() {
+async function enqueue(photos?: NegocioPhotoInput[]) {
   return enqueueNegocioCreateOffline({
+    photos,
     negocioId: 'neg-local-1',
     idempotencyKey: 'idem-1',
     negocio: NEGOCIO_ARGS,
@@ -297,5 +309,175 @@ describe('negocio creado sin señal', () => {
     expect(negocio.rejectedAt).toEqual(expect.any(Number));
     // Las firmas que no llegaron a subir se descartan con él.
     expect(mockDb.__table('file_uploads').map((row) => row.status)).toEqual(['failed', 'failed']);
+  });
+});
+
+const FOTOS: NegocioPhotoInput[] = [
+  { kind: 'cliente', uri: 'file:///cache/cliente.jpg', mimeType: 'image/jpeg', storagePath: 'u1/foto-1.jpg' },
+  { kind: 'cedula', uri: 'file:///cache/cedula.png', mimeType: 'image/png', storagePath: 'u1/foto-2.png' },
+];
+
+function outboxPayloads(type: string) {
+  return mockDb
+    .__table('sync_outbox')
+    .filter((row) => row.type === type)
+    .map((row) => JSON.parse(row.payloadJson));
+}
+
+describe('negocio creado sin señal · fotos del cliente', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb.__reset();
+    useSyncStore.setState({ userId: 'u1', online: false });
+    (supabase.rpc as jest.Mock).mockResolvedValue({ data: 'neg-local-1', error: null });
+    (localFileExists as jest.Mock).mockResolvedValue(true);
+  });
+
+  it('sin fotos: ni rutas de foto en el negocio ni `bucket` en las firmas (forma de siempre)', async () => {
+    await enqueue();
+
+    const payload = queuedPayload();
+    expect(payload.negocio).not.toHaveProperty('customer_photo_path');
+    expect(payload.negocio).not.toHaveProperty('customer_id_photo_path');
+    for (const firma of outboxPayloads('upload_negocio_signature')) expect(firma).not.toHaveProperty('bucket');
+  });
+
+  it('encola las fotos antes del negocio, en su carril, y el negocio ya lleva sus rutas', async () => {
+    await enqueue(FOTOS);
+
+    const outbox = mockDb.__table('sync_outbox');
+    expect(outbox.map((row) => row.type)).toEqual([
+      'upload_negocio_signature',
+      'upload_negocio_signature',
+      'upload_negocio_signature',
+      'upload_negocio_signature',
+      'create_negocio',
+    ]);
+    expect(new Set(outbox.map((row) => JSON.parse(row.payloadJson).lane))).toEqual(new Set(['negocio:neg-local-1']));
+    const fotos = outboxPayloads('upload_negocio_signature').filter((row) => row.bucket === 'negocios-fotos');
+    expect(fotos.map((row) => [row.role, row.storagePath])).toEqual([
+      ['foto_cliente', 'u1/foto-1.jpg'],
+      ['foto_cedula', 'u1/foto-2.png'],
+    ]);
+    const uploads = mockDb.__table('file_uploads').filter((row) => row.bucket === 'negocios-fotos');
+    expect(uploads.map((row) => [row.fileName, row.mime])).toEqual([
+      ['foto-cliente.jpg', 'image/jpeg'],
+      ['foto-cedula.png', 'image/png'],
+    ]);
+    expect(uploads[0].localUri).toMatch(/^file:\/\/\/fotos\//);
+    expect(queuedPayload().negocio).toMatchObject({
+      customer_photo_path: 'u1/foto-1.jpg',
+      customer_id_photo_path: 'u1/foto-2.png',
+    });
+  });
+
+  it('una foto ya subida con red solo aporta su ruta (no se vuelve a subir)', async () => {
+    await enqueue([{ ...FOTOS[0], uploaded: true }]);
+
+    expect(mockDb.__table('file_uploads').filter((row) => row.bucket === 'negocios-fotos')).toHaveLength(0);
+    expect(queuedPayload().negocio.customer_photo_path).toBe('u1/foto-1.jpg');
+  });
+
+  it('sube la foto a negocios-fotos (no como firma) y borra el archivo local', async () => {
+    await enqueue(FOTOS);
+    const foto = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'foto_cedula');
+
+    const result = await pushUploadNegocioSignature(foto);
+
+    expect(result.outcome).toBe('done');
+    expect(uploadNegocioPhoto).toHaveBeenCalledWith(expect.stringContaining('file:///fotos/'), {
+      path: 'u1/foto-2.png',
+      mimeType: 'image/png',
+      kind: 'cedula',
+    });
+    expect(uploadNegocioSignature).not.toHaveBeenCalled();
+    expect(deleteLocalPagoSupportFile).toHaveBeenCalledWith(expect.stringContaining('file:///fotos/'));
+  });
+
+  it('un comando de firma encolado antes de las fotos (sin `bucket`) se sigue subiendo como firma', async () => {
+    const upload = mockDb.get('file_uploads').prepareCreate((record: Record<string, unknown>) => {
+      record.localUri = 'file:///firmas/vieja-cliente.png';
+      record.mime = 'image/png';
+      record.fileName = 'firma-cliente.png';
+      record.bucket = 'negocios-firmas';
+      record.negocioId = 'neg-viejo';
+      record.status = 'pending';
+    });
+
+    const result = await pushUploadNegocioSignature({
+      lane: 'negocio:neg-viejo',
+      fileUploadId: upload.id,
+      negocioId: 'neg-viejo',
+      role: 'cliente',
+      storagePath: 'u1/neg-viejo/cliente-x.png',
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(uploadNegocioSignature).toHaveBeenCalledWith('file:///firmas/vieja-cliente.png', {
+      negocioId: 'neg-viejo',
+      role: 'cliente',
+      path: 'u1/neg-viejo/cliente-x.png',
+      upsert: true,
+    });
+    expect(uploadNegocioPhoto).not.toHaveBeenCalled();
+  });
+
+  it('el negocio espera a que suban sus fotos', async () => {
+    await enqueue(FOTOS);
+    for (const upload of mockDb.__table('file_uploads')) {
+      if (upload.bucket === 'negocios-firmas') upload.status = 'done';
+    }
+
+    const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
+
+    expect(result.outcome).toBe('retry');
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it('con firmas y fotos arriba, envía el RPC con las rutas de las fotos', async () => {
+    await enqueue(FOTOS);
+    for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
+
+    await pushCreateNegocio(queuedPayload(), 'idem-1');
+
+    expect((supabase.rpc as jest.Mock).mock.calls[0][1].p_negocio).toMatchObject({
+      customer_photo_path: 'u1/foto-1.jpg',
+      customer_id_photo_path: 'u1/foto-2.png',
+    });
+  });
+
+  it('una foto fallida bloquea el negocio y dice cuál', async () => {
+    await enqueue(FOTOS);
+    for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
+    const cedula = mockDb.__table('file_uploads').find((row) => row.fileName === 'foto-cedula.png')!;
+    cedula.status = 'failed';
+    cedula.lastError = 'Bucket not found';
+
+    const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
+
+    expect(result).toEqual({ outcome: 'fail', message: 'La foto de la cédula no se pudo subir: Bucket not found' });
+  });
+
+  it('si la foto ya no está en el teléfono, pide volver a tomarla', async () => {
+    await enqueue(FOTOS);
+    (localFileExists as jest.Mock).mockResolvedValue(false);
+    const foto = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'foto_cliente');
+
+    const result = await pushUploadNegocioSignature(foto);
+
+    expect(result).toEqual({
+      outcome: 'fail',
+      message: expect.stringMatching(/^Hay que volver a tomar la foto del cliente/),
+    });
+  });
+
+  it('el rechazo del negocio marca también sus fotos pendientes', async () => {
+    await enqueue(FOTOS);
+    const changes = new PreparedChanges();
+
+    await prepareRejectedNegocio(mockDb as never, queuedPayload(), 'Stock insuficiente', changes);
+    changes.build();
+
+    expect(mockDb.__table('file_uploads').map((row) => row.status)).toEqual(['failed', 'failed', 'failed', 'failed']);
   });
 });

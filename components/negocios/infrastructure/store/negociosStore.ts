@@ -24,6 +24,17 @@ import {
 } from '@/lib/uploadSignature';
 import { sellerSignatureRequiredError } from '@/lib/negocioSignatureRules';
 import {
+  NEGOCIO_PHOTO_LABEL,
+  negocioPhotoEntries,
+  negocioPhotoFields,
+  negocioPhotoPath,
+  removeNegocioPhotos,
+  uploadNegocioPhoto,
+  validateNegocioPhoto,
+  type NegocioPhotoDraft,
+  type NegocioPhotoKind,
+} from '@/lib/negocioPhotos';
+import {
   downPaymentScheduleError,
   downPaymentScheduleTotal,
   financedAfterDownPayments,
@@ -92,6 +103,9 @@ interface NegociosState {
     customer_signature_data_url: string;
     guarantor_signature_data_url?: string;
     seller_signature_data_url?: string;
+    /** Fotos opcionales: nunca impiden crear el negocio si faltan. */
+    customer_photo?: NegocioPhotoDraft | null;
+    customer_id_photo?: NegocioPhotoDraft | null;
     activate: boolean;
     /** Nombre del cliente y del vendedor, para pintar el negocio pendiente sin red. */
     customer_name?: string;
@@ -145,6 +159,11 @@ interface PendingCreateRequest {
     guarantor: string | null;
     seller: string | null;
   }>;
+  /**
+   * Rutas de fotos del cliente que ya quedaron en Storage: un reintento (o el
+   * paso a la cola sin señal) no las vuelve a subir.
+   */
+  uploadedPhotoPaths?: Set<string>;
   /**
    * Snapshot de fórmula fijado en el primer intento. `calculated_at` cambia en
    * cada cálculo y el servidor hashea `p_negocio` completo contra la
@@ -200,6 +219,8 @@ function createRequestFingerprint(input: CreateNegocioInput): string {
     customer_signature_source: input.customer_signature_data_url || null,
     guarantor_signature_source: input.guarantor_signature_data_url || null,
     seller_signature_source: input.seller_signature_data_url || null,
+    customer_photo_id: input.customer_photo?.id || null,
+    customer_id_photo_id: input.customer_id_photo?.id || null,
   });
 }
 
@@ -292,6 +313,17 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       input.seller_signature_data_url
     );
     if (signatureError) throw new Error(signatureError);
+    const photos = negocioPhotoEntries({ cliente: input.customer_photo, cedula: input.customer_id_photo });
+    for (const { kind, photo } of photos) {
+      const photoError = validateNegocioPhoto(photo);
+      if (photoError) throw new Error(`${NEGOCIO_PHOTO_LABEL[kind]}: ${photoError}`);
+    }
+    // Ruta fija desde que se tomó la foto (uuid propio), dentro de la carpeta
+    // del usuario: con y sin señal viaja la misma en `p_negocio`.
+    const photoUploads = photos.map(({ kind, photo }) => ({ kind, photo, path: negocioPhotoPath(userId, photo) }));
+    const photoPaths: Partial<Record<NegocioPhotoKind, string>> = Object.fromEntries(
+      photoUploads.map(({ kind, path }) => [kind, path])
+    );
 
     const settings = get().creditSettings;
     if (!settings) throw new Error('La configuración de crédito aún no está disponible');
@@ -420,6 +452,13 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
           { role: 'fiador', value: activeRequest.signatureUrls?.guarantor || input.guarantor_signature_data_url },
           { role: 'vendedor', value: activeRequest.signatureUrls?.seller || input.seller_signature_data_url },
         ],
+        photos: photoUploads.map(({ kind, photo, path }) => ({
+          kind,
+          uri: photo.uri,
+          mimeType: photo.mimeType,
+          storagePath: path,
+          uploaded: Boolean(activeRequest.uploadedPhotoPaths?.has(path)),
+        })),
         local: {
           dealDate: input.deal_date,
           totalCredit: calc.totalCredit,
@@ -478,6 +517,16 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       }
     }
 
+    // Fotos del cliente: si una falla, el negocio no se crea y el error lo
+    // dice; la petición (y su clave de idempotencia) se conserva, así que el
+    // reintento no vuelve a subir las que ya quedaron arriba.
+    request.uploadedPhotoPaths ??= new Set();
+    for (const { kind, photo, path } of photoUploads) {
+      if (request.uploadedPhotoPaths.has(path)) continue;
+      await uploadNegocioPhoto(photo.uri, { path, mimeType: photo.mimeType, kind });
+      request.uploadedPhotoPaths.add(path);
+    }
+
     const { data: negocioId, error } = await supabase.rpc('create_negocio', {
       p_negocio_id: request.draftId,
       p_idempotency_key: request.idempotencyKey,
@@ -487,6 +536,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         customer_signature_url: request.signatureUrls.customer,
         guarantor_signature_url: request.signatureUrls.guarantor,
         seller_signature_url: request.signatureUrls.seller,
+        ...negocioPhotoFields(photoPaths),
       } as unknown as Json,
       p_items: itemsArgs as unknown as Json,
     });
@@ -514,8 +564,12 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         await removeNegocioSignatures(uploaded).catch((cleanupError) => {
           console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
         });
+        await removeNegocioPhotos([...request.uploadedPhotoPaths]).catch((cleanupError) => {
+          console.error('No se pudieron limpiar fotos huérfanas', cleanupError);
+        });
         request.signatureUrls = undefined;
         request.signaturePromise = undefined;
+        request.uploadedPhotoPaths = undefined;
         pendingCreateRequests.delete(requestFingerprint);
         throw toUserError(error, 'No se pudo crear el negocio');
       }
