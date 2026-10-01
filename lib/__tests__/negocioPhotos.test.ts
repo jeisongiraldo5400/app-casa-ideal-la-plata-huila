@@ -44,6 +44,13 @@ describe('negocioPhotos', () => {
     });
   });
 
+  it('un error 5xx o sin código no es definitivo', async () => {
+    mockUpload.mockResolvedValue({ error: { statusCode: '503', message: 'Service Unavailable' } });
+    await expect(
+      uploadNegocioPhoto('file:///a.jpg', { path: 'u1/a.jpg', mimeType: 'image/jpeg' })
+    ).rejects.toMatchObject({ definitive: false });
+  });
+
   it('«ya existe» cuenta como subida (reintento tras perder la respuesta)', async () => {
     mockUpload.mockResolvedValue({ error: { statusCode: '409', message: 'The resource already exists' } });
     await expect(uploadNegocioPhoto('file:///a.jpg', { path: 'u1/a.jpg', mimeType: 'image/jpeg' })).resolves.toBe('u1/a.jpg');
@@ -53,6 +60,7 @@ describe('negocioPhotos', () => {
     mockUpload.mockResolvedValue({ error: { statusCode: '403', message: 'new row violates row-level security policy' } });
     const promise = uploadNegocioPhoto('file:///a.jpg', { path: 'u1/a.jpg', mimeType: 'image/jpeg', kind: 'cedula' });
     await expect(promise).rejects.toBeInstanceOf(NegocioPhotoUploadError);
+    await expect(promise).rejects.toMatchObject({ definitive: true });
     await expect(promise).rejects.toThrow('No se pudo subir la foto de la cédula: new row violates row-level security policy');
   });
 });

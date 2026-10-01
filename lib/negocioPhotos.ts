@@ -97,10 +97,26 @@ export function negocioPhotoFields(paths: Partial<Record<NegocioPhotoKind, strin
 
 /** Falló la subida de una foto: el negocio no se creó. */
 export class NegocioPhotoUploadError extends Error {
-  constructor(kind: NegocioPhotoKind | null, detail: string) {
+  /** Reintentar no lo arregla (archivo ilegible, tipo/tamaño o permiso rechazado). */
+  readonly definitive: boolean;
+  readonly detail: string;
+  constructor(kind: NegocioPhotoKind | null, detail: string, options: { definitive?: boolean } = {}) {
     super(`No se pudo subir la ${kind === 'cedula' ? 'foto de la cédula' : 'foto del cliente'}: ${detail}`);
     this.name = 'NegocioPhotoUploadError';
+    this.definitive = Boolean(options.definitive);
+    this.detail = detail;
   }
+}
+
+/**
+ * Error de Storage que no cambiará al reintentar: 4xx salvo 408 (tiempo) y
+ * 429 (demasiadas peticiones). Sin código no se da por definitivo.
+ */
+function isDefinitiveStorageError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as { statusCode?: unknown; status?: unknown };
+  const status = Number(record.statusCode ?? record.status);
+  return Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
 /** ¿El archivo ya existe? (la subida anterior llegó pero se perdió la respuesta). */
@@ -126,9 +142,13 @@ export async function uploadNegocioPhoto(
 ): Promise<string> {
   const kind = opts.kind ?? null;
   const response = await fetch(localUri);
-  if (!response.ok) throw new NegocioPhotoUploadError(kind, 'no se pudo leer la foto en el teléfono');
+  if (!response.ok) {
+    throw new NegocioPhotoUploadError(kind, 'no se pudo leer la foto en el teléfono', { definitive: true });
+  }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > NEGOCIO_PHOTO_MAX_BYTES) throw new NegocioPhotoUploadError(kind, 'supera 5 MB');
+  if (bytes.byteLength > NEGOCIO_PHOTO_MAX_BYTES) {
+    throw new NegocioPhotoUploadError(kind, 'supera 5 MB', { definitive: true });
+  }
 
   const { error } = await supabase.storage.from(NEGOCIO_PHOTO_BUCKET).upload(opts.path, bytes, {
     contentType: negocioPhotoContentType(opts.mimeType),
@@ -136,7 +156,9 @@ export async function uploadNegocioPhoto(
     cacheControl: '3600',
   });
   if (error && !isAlreadyUploadedError(error)) {
-    throw new NegocioPhotoUploadError(kind, error.message || 'error desconocido');
+    throw new NegocioPhotoUploadError(kind, error.message || 'error desconocido', {
+      definitive: isDefinitiveStorageError(error),
+    });
   }
   return opts.path;
 }
@@ -149,10 +171,16 @@ export async function getNegocioPhotoSignedUrl(path: string): Promise<string> {
   return data.signedUrl;
 }
 
-/** Limpia fotos huérfanas (el negocio no se creó). Best effort. */
+/**
+ * Intenta limpiar fotos huérfanas (el negocio no se creó). El bucket no tiene
+ * política de borrado, así que normalmente no hace nada: nunca lanza ni avisa.
+ */
 export async function removeNegocioPhotos(paths: (string | null | undefined)[]): Promise<void> {
   const list = paths.filter((path): path is string => Boolean(path));
   if (!list.length) return;
-  const { error } = await supabase.storage.from(NEGOCIO_PHOTO_BUCKET).remove(list);
-  if (error) throw new Error(`No se pudieron limpiar las fotos: ${error.message}`);
+  try {
+    await supabase.storage.from(NEGOCIO_PHOTO_BUCKET).remove(list);
+  } catch {
+    // Best effort: una foto huérfana en la carpeta del usuario no hace daño.
+  }
 }

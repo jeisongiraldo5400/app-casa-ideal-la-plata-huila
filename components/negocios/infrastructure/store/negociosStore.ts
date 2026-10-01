@@ -564,9 +564,8 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
         await removeNegocioSignatures(uploaded).catch((cleanupError) => {
           console.error('No se pudieron limpiar firmas huérfanas', cleanupError);
         });
-        await removeNegocioPhotos([...request.uploadedPhotoPaths]).catch((cleanupError) => {
-          console.error('No se pudieron limpiar fotos huérfanas', cleanupError);
-        });
+        // Best effort y en silencio: el bucket no deja borrar.
+        await removeNegocioPhotos([...request.uploadedPhotoPaths]);
         request.signatureUrls = undefined;
         request.signaturePromise = undefined;
         request.uploadedPhotoPaths = undefined;

@@ -161,6 +161,14 @@ export type CreateNegocioPayload = OutboxPayloadBase & {
   customerId: string;
   customerName: string;
   totalCredit: number;
+  /**
+   * Momento en que el RPC salió por primera vez desde la cola. Desde entonces
+   * `p_negocio` puede estar fijado en el servidor (hash de idempotencia) y ya
+   * no se le puede quitar una foto opcional que no subió.
+   */
+  rpcSentAt?: number;
+  /** Fotos opcionales que no se pudieron subir y se quitaron del negocio. */
+  skippedPhotos?: string[];
 };
 
 /**

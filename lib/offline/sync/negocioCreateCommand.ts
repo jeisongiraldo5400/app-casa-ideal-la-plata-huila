@@ -11,8 +11,11 @@ import {
 } from '@/lib/uploadSignature';
 import {
   NEGOCIO_PHOTO_BUCKET,
+  NEGOCIO_PHOTO_FIELD,
   NEGOCIO_PHOTO_ROLE,
+  NegocioPhotoUploadError,
   negocioPhotoExtension,
+  validateNegocioPhoto,
   negocioPhotoFields,
   uploadNegocioPhoto,
   type NegocioPhotoKind,
@@ -267,23 +270,19 @@ export async function enqueueNegocioCreateOffline(input: EnqueueNegocioCreateInp
  * antes de existir las fotos son siempre firmas.
  */
 export async function pushUploadNegocioSignature(payload: UploadNegocioSignaturePayload) {
+  if (isNegocioPhotoRole(payload.role) || payload.bucket === NEGOCIO_PHOTO_BUCKET) {
+    return pushUploadNegocioPhoto(payload);
+  }
   const database = getDatabase();
-  const isPhoto = isNegocioPhotoRole(payload.role);
   let upload: FileUpload;
   try {
     upload = await database.get<FileUpload>('file_uploads').find(payload.fileUploadId);
   } catch {
-    return {
-      outcome: 'fail' as const,
-      message: isPhoto ? 'No se encontró la foto guardada en el teléfono' : 'No se encontró la firma guardada en el teléfono',
-    };
+    return { outcome: 'fail' as const, message: 'No se encontró la firma guardada en el teléfono' };
   }
   if (upload.status === 'done') return { outcome: 'done' as const };
   if (upload.status === 'failed') {
-    return {
-      outcome: 'fail' as const,
-      message: upload.lastError || (isPhoto ? 'La foto fue descartada' : 'La firma fue descartada'),
-    };
+    return { outcome: 'fail' as const, message: upload.lastError || 'La firma fue descartada' };
   }
   // Sin el archivo, `fetch(file://…)` falla con «Network request failed» y la
   // cola creería que no hay señal para siempre.
@@ -291,23 +290,14 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
     return { outcome: 'fail' as const, message: missingSignatureMessage(payload.role) };
   }
 
-  if ((payload.bucket || upload.bucket) === NEGOCIO_PHOTO_BUCKET) {
-    // Sin `upsert` (el bucket no deja editar): «ya existe» cuenta como subida.
-    await uploadNegocioPhoto(upload.localUri, {
-      path: payload.storagePath,
-      mimeType: upload.mime || 'image/jpeg',
-      kind: payload.role === 'foto_cedula' ? 'cedula' : 'cliente',
-    });
-  } else {
-    await uploadNegocioSignature(upload.localUri, {
-      negocioId: payload.negocioId,
-      role: payload.role as NegocioSignatureRole,
-      path: payload.storagePath,
-      // La ruta es fija: si un intento anterior llegó a subir el archivo, el
-      // reintento debe poder pisarlo en vez de fallar por «ya existe».
-      upsert: true,
-    });
-  }
+  await uploadNegocioSignature(upload.localUri, {
+    negocioId: payload.negocioId,
+    role: payload.role as NegocioSignatureRole,
+    path: payload.storagePath,
+    // La ruta es fija: si un intento anterior llegó a subir el archivo, el
+    // reintento debe poder pisarlo en vez de fallar por «ya existe».
+    upsert: true,
+  });
   await database.write(async () => {
     await upload.update((record) => {
       record.status = 'done';
@@ -315,6 +305,143 @@ export async function pushUploadNegocioSignature(payload: UploadNegocioSignature
   });
   await deleteLocalPagoSupportFile(upload.localUri);
   return { outcome: 'done' as const };
+}
+
+/**
+ * Sube una foto del cliente guardada sin señal. Las fotos son OPCIONALES: si
+ * falla de forma definitiva (archivo perdido, tipo/tamaño o permiso
+ * rechazado) y el negocio aún no salió hacia el servidor, se quita del
+ * negocio y este se sincroniza sin ella, con un aviso. Los errores de red o
+ * pasajeros se relanzan y la cola reintenta como siempre.
+ */
+async function pushUploadNegocioPhoto(payload: UploadNegocioSignaturePayload) {
+  const database = getDatabase();
+  const label = negocioFileLabel(payload.role);
+  let upload: FileUpload | null = null;
+  try {
+    upload = await database.get<FileUpload>('file_uploads').find(payload.fileUploadId);
+  } catch {
+    upload = null;
+  }
+  if (upload?.status === 'done') return { outcome: 'done' as const };
+
+  let reason: string | null = null;
+  if (!upload) reason = 'ya no está guardada en el teléfono';
+  else if (upload.status === 'failed') reason = syncErrorText(upload.lastError) || 'se descartó';
+  else if (!(await localFileExists(upload.localUri))) reason = 'ya no está guardada en el teléfono';
+  else {
+    const invalid = validateNegocioPhoto({ mimeType: upload.mime, size: null });
+    if (invalid) reason = invalid;
+  }
+
+  if (!reason && upload) {
+    try {
+      // Sin `upsert` (el bucket no deja editar): «ya existe» cuenta como subida.
+      await uploadNegocioPhoto(upload.localUri, {
+        path: payload.storagePath,
+        mimeType: upload.mime || 'image/jpeg',
+        kind: payload.role === 'foto_cedula' ? 'cedula' : 'cliente',
+      });
+    } catch (error) {
+      if (!(error instanceof NegocioPhotoUploadError) || !error.definitive) throw error;
+      reason = error.detail;
+    }
+  }
+
+  if (reason) {
+    const note = await skipOptionalPhoto(database, payload, upload, reason);
+    if (note) return { outcome: 'done' as const, note };
+    // El negocio ya salió con esta ruta: se conserva el comportamiento estricto.
+    return {
+      outcome: 'fail' as const,
+      message: reason === 'ya no está guardada en el teléfono' ? missingSignatureMessage(payload.role) : `${capitalize(label)}: ${reason}`,
+    };
+  }
+
+  const uploaded = upload as FileUpload;
+  await database.write(async () => {
+    await uploaded.update((record) => {
+      record.status = 'done';
+    });
+  });
+  await deleteLocalPagoSupportFile(uploaded.localUri);
+  return { outcome: 'done' as const };
+}
+
+/** Comando `create_negocio` todavía abierto de este negocio. */
+async function findOpenCreateNegocio(database: Database, negocioId: string): Promise<SyncOutboxItem | null> {
+  const items = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(Q.where('type', 'create_negocio'), Q.where('status', Q.oneOf(['pending', 'syncing', 'error', 'failed', 'conflict'])))
+    .fetch();
+  return (
+    items
+      .filter((item) => parseOutboxPayload<CreateNegocioPayload>(item).negocioId === negocioId)
+      .sort((a, b) => b.queuedAt - a.queuedAt)[0] ?? null
+  );
+}
+
+/**
+ * Quita una foto opcional que no pudo subir del negocio encolado (si su RPC
+ * todavía no salió nunca: después, `p_negocio` ya puede estar fijado en el
+ * servidor) y borra su archivo y su fila. Devuelve el aviso, o null si no se
+ * pudo quitar.
+ */
+async function skipOptionalPhoto(
+  database: Database,
+  photo: Pick<UploadNegocioSignaturePayload, 'negocioId' | 'role' | 'fileUploadId'>,
+  upload: FileUpload | null,
+  reason: string
+): Promise<string | null> {
+  const item = await findOpenCreateNegocio(database, photo.negocioId);
+  if (!item) return null;
+  const queued = parseOutboxPayload<CreateNegocioPayload>(item);
+  if (queued.rpcSentAt) return null;
+  const field = NEGOCIO_PHOTO_FIELD[photo.role === 'foto_cedula' ? 'cedula' : 'cliente'];
+  const { [field]: _removed, ...negocio } = (queued.negocio || {}) as Record<string, unknown>;
+  const next: CreateNegocioPayload = {
+    ...queued,
+    negocio,
+    skippedPhotos: [...new Set([...(queued.skippedPhotos ?? []), field])],
+  };
+  const note = `${capitalize(negocioFileLabel(photo.role))} no se pudo subir (${reason}); el negocio se sincroniza sin ella.`;
+  const photoCommands = await database
+    .get<SyncOutboxItem>('sync_outbox')
+    .query(
+      Q.where('type', 'upload_negocio_signature'),
+      Q.where('status', Q.oneOf(['pending', 'error', 'failed', 'conflict']))
+    )
+    .fetch();
+  await database.write(async () => {
+    const operations: Model[] = [
+      item.prepareUpdate((row) => {
+        row.payloadJson = JSON.stringify(next);
+      }),
+    ];
+    for (const command of photoCommands) {
+      if (parseOutboxPayload<UploadNegocioSignaturePayload>(command).fileUploadId !== photo.fileUploadId) continue;
+      operations.push(
+        command.prepareUpdate((row) => {
+          row.status = 'done';
+          row.lastError = note;
+        })
+      );
+    }
+    if (upload) operations.push(upload.prepareDestroyPermanently());
+    await database.batch(...operations);
+  });
+  if (upload) void deleteLocalPagoSupportFile(upload.localUri);
+  return note;
+}
+
+/** Aviso del negocio confirmado sin alguna foto opcional. */
+function skippedPhotosNote(payload: CreateNegocioPayload): string | null {
+  const skipped = payload.skippedPhotos ?? [];
+  if (!skipped.length) return null;
+  const labels = skipped.map((field) =>
+    field === NEGOCIO_PHOTO_FIELD.cedula ? 'la foto de la cédula' : 'la foto del cliente'
+  );
+  return `Se sincronizó sin ${labels.join(' ni ')}: no se pudo subir.`;
 }
 
 function isNegocioPhotoRole(role: string | null | undefined): boolean {
@@ -498,8 +625,9 @@ export async function negocioLaneFor(
  * Reenvía el RPC tal cual se encoló. El servidor recibe el mismo
  * `p_negocio_id` y la misma `p_idempotency_key`, así que repetirlo no duplica.
  */
-export async function pushCreateNegocio(payload: CreateNegocioPayload, idempotencyKey: string) {
+export async function pushCreateNegocio(queuedPayload: CreateNegocioPayload, idempotencyKey: string) {
   const database = getDatabase();
+  let payload = queuedPayload;
   const negocio = (payload.negocio || {}) as Record<string, unknown>;
   const customerIds = [
     typeof negocio.customer_id === 'string' ? negocio.customer_id : null,
@@ -518,7 +646,25 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
       message: 'El cliente del negocio todavía no se ha subido al servidor',
     };
   }
-  const signatures = await signatureState(database, payload.negocioId);
+  let signatures = await signatureState(database, payload.negocioId);
+  // Una foto opcional fallida no bloquea un negocio que aún no salió: se quita.
+  let skipped = false;
+  for (const upload of signatures.failed) {
+    const role = signatureRole(upload);
+    if (!isNegocioPhotoRole(role)) continue;
+    const note = await skipOptionalPhoto(
+      database,
+      { negocioId: payload.negocioId, role: role as UploadNegocioSignaturePayload['role'], fileUploadId: upload.id },
+      upload,
+      syncErrorText(upload.lastError) || 'se descartó'
+    );
+    if (note) skipped = true;
+  }
+  if (skipped) {
+    const item = await findOpenCreateNegocio(database, payload.negocioId);
+    if (item) payload = parseOutboxPayload<CreateNegocioPayload>(item);
+    signatures = await signatureState(database, payload.negocioId);
+  }
   if (signatures.failed.length) {
     // Una firma que no pudo subirse bloquea el negocio: se dice cuál y por qué
     // en vez de esperar medio día a que «se suba».
@@ -534,6 +680,23 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
     // Comparte carril con sus firmas, así que en la práctica no se llega aquí;
     // la comprobación evita crear un negocio cuya firma no está en Storage.
     return { outcome: 'retry' as const, message: 'Las firmas o fotos del negocio aún no se han subido' };
+  }
+
+  // Desde aquí `p_negocio` puede quedar fijado en el servidor: se anota para
+  // no volver a quitarle una foto. Va fuera de `negocio`, así que no cambia lo
+  // que se envía.
+  if (!payload.rpcSentAt) {
+    const item = await findOpenCreateNegocio(database, payload.negocioId);
+    if (item) {
+      const current = parseOutboxPayload<CreateNegocioPayload>(item);
+      payload = { ...current, rpcSentAt: Date.now() };
+      const marked = payload;
+      await database.write(async () => {
+        await item.update((row) => {
+          row.payloadJson = JSON.stringify(marked);
+        });
+      });
+    }
   }
 
   const { data, error } = await supabase.rpc('create_negocio', {
@@ -561,10 +724,11 @@ export async function pushCreateNegocio(payload: CreateNegocioPayload, idempoten
   // extra: si falla, el negocio igual queda confirmado.
   const confirmed = await fetchConfirmedNegocio(negocioId);
   const owner = await sellerOwnerChange(database, payload, confirmed.sellerId);
+  const note = [owner?.note, skippedPhotosNote(payload)].filter(Boolean).join(' ');
   return {
     outcome: 'done' as const,
     result: { negocioId, ...confirmed, ...(owner ? { sellerName: owner.sellerName } : {}) },
-    ...(owner ? { note: owner.note } : {}),
+    ...(note ? { note } : {}),
   };
 }
 
@@ -746,6 +910,8 @@ export async function prepareRetryNegocio(
     (upload) => upload.status !== 'done'
   );
   for (const upload of uploads) {
+    // Una foto opcional perdida no impide reintentar: al subir se quitará.
+    if (isNegocioPhotoRole(signatureRole(upload)) && !payload.rpcSentAt) continue;
     if (!(await localFileExists(upload.localUri))) return missingSignatureMessage(signatureRole(upload));
   }
   const uploadIds = new Set(uploads.map((upload) => upload.id));
@@ -796,10 +962,11 @@ export async function prepareRetryNegocioSignature(
   } catch {
     upload = null;
   }
-  if (!upload || (upload.status !== 'done' && !(await localFileExists(upload.localUri)))) {
+  const optionalPhoto = isNegocioPhotoRole(payload.role);
+  if (!optionalPhoto && (!upload || (upload.status !== 'done' && !(await localFileExists(upload.localUri))))) {
     return missingSignatureMessage(payload.role || 'cliente');
   }
-  if (upload.status !== 'done') {
+  if (upload && upload.status !== 'done') {
     changes.update(upload, (row) => {
       row.status = 'pending';
       row.lastError = null;

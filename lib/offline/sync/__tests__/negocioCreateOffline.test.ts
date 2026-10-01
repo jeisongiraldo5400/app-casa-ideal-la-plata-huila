@@ -1,11 +1,12 @@
 import { supabase } from '@/lib/supabase';
 import { useSyncStore } from '../../store/syncStore';
 import { uploadNegocioSignature } from '@/lib/uploadSignature';
-import { uploadNegocioPhoto } from '@/lib/negocioPhotos';
+import { NegocioPhotoUploadError, uploadNegocioPhoto } from '@/lib/negocioPhotos';
 import { deleteLocalPagoSupportFile, localFileExists } from '../../security/localFiles';
 import {
   enqueueNegocioCreateOffline,
   prepareRejectedNegocio,
+  prepareRetryNegocio,
   pushCreateNegocio,
   pushUploadNegocioSignature,
   type NegocioPhotoInput,
@@ -446,7 +447,12 @@ describe('negocio creado sin señal · fotos del cliente', () => {
     });
   });
 
-  it('una foto fallida bloquea el negocio y dice cuál', async () => {
+  function markSent() {
+    const item = mockDb.__table('sync_outbox').find((row) => row.type === 'create_negocio')!;
+    item.payloadJson = JSON.stringify({ ...JSON.parse(item.payloadJson), rpcSentAt: 1 });
+  }
+
+  it('una foto fallida de un negocio que aún no salió se quita: el negocio se envía sin ella y avisa', async () => {
     await enqueue(FOTOS);
     for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
     const cedula = mockDb.__table('file_uploads').find((row) => row.fileName === 'foto-cedula.png')!;
@@ -455,11 +461,52 @@ describe('negocio creado sin señal · fotos del cliente', () => {
 
     const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
 
-    expect(result).toEqual({ outcome: 'fail', message: 'La foto de la cédula no se pudo subir: Bucket not found' });
+    expect(result.outcome).toBe('done');
+    expect(result.outcome === 'done' && result.note).toMatch(/sin la foto de la cédula/);
+    const sent = (supabase.rpc as jest.Mock).mock.calls[0][1].p_negocio;
+    expect(sent).not.toHaveProperty('customer_id_photo_path');
+    expect(sent.customer_photo_path).toBe('u1/foto-1.jpg');
+    expect(sent).not.toHaveProperty('rpcSentAt');
+    expect(mockDb.__table('file_uploads').some((row) => row.fileName === 'foto-cedula.png')).toBe(false);
+    expect(deleteLocalPagoSupportFile).toHaveBeenCalledWith(cedula.localUri);
+    // Desde el envío queda marcado: ya no se le quitan fotos.
+    expect(queuedPayload().rpcSentAt).toEqual(expect.any(Number));
   });
 
-  it('si la foto ya no está en el teléfono, pide volver a tomarla', async () => {
+  it('si el negocio ya salió hacia el servidor, la foto fallida sigue bloqueando (estricto)', async () => {
     await enqueue(FOTOS);
+    markSent();
+    for (const upload of mockDb.__table('file_uploads')) upload.status = 'done';
+    const cedula = mockDb.__table('file_uploads').find((row) => row.fileName === 'foto-cedula.png')!;
+    cedula.status = 'failed';
+    cedula.lastError = 'Bucket not found';
+
+    const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
+
+    expect(result).toEqual({ outcome: 'fail', message: 'La foto de la cédula no se pudo subir: Bucket not found' });
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it('foto perdida del teléfono antes de enviar el negocio: se omite con aviso, sin bloquear', async () => {
+    await enqueue(FOTOS);
+    (localFileExists as jest.Mock).mockResolvedValue(false);
+    const foto = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'foto_cliente');
+
+    const result = await pushUploadNegocioSignature(foto);
+
+    expect(result).toEqual({
+      outcome: 'done',
+      note: 'La foto del cliente no se pudo subir (ya no está guardada en el teléfono); el negocio se sincroniza sin ella.',
+    });
+    expect(queuedPayload().negocio).not.toHaveProperty('customer_photo_path');
+    expect(queuedPayload().negocio.customer_id_photo_path).toBe('u1/foto-2.png');
+    expect(queuedPayload().skippedPhotos).toEqual(['customer_photo_path']);
+    expect(uploadNegocioPhoto).not.toHaveBeenCalled();
+  });
+
+  it('foto perdida cuando el negocio ya salió: pide volver a tomarla (estricto)', async () => {
+    await enqueue(FOTOS);
+    markSent();
     (localFileExists as jest.Mock).mockResolvedValue(false);
     const foto = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'foto_cliente');
 
@@ -469,6 +516,46 @@ describe('negocio creado sin señal · fotos del cliente', () => {
       outcome: 'fail',
       message: expect.stringMatching(/^Hay que volver a tomar la foto del cliente/),
     });
+    expect(queuedPayload().negocio.customer_photo_path).toBe('u1/foto-1.jpg');
+  });
+
+  it('un rechazo definitivo de Storage (403) también se omite; un error de red se reintenta', async () => {
+    await enqueue(FOTOS);
+    const [cliente, cedula] = outboxPayloads('upload_negocio_signature').filter((row) => row.bucket === 'negocios-fotos');
+    (uploadNegocioPhoto as jest.Mock)
+      .mockRejectedValueOnce(new NegocioPhotoUploadError('cliente', 'new row violates row-level security policy', { definitive: true }))
+      .mockRejectedValueOnce(new NegocioPhotoUploadError('cedula', 'Network request failed'));
+
+    const skipped = await pushUploadNegocioSignature(cliente);
+    expect(skipped.outcome).toBe('done');
+    expect(skipped.outcome === 'done' && skipped.note).toMatch(/row-level security/);
+
+    await expect(pushUploadNegocioSignature(cedula)).rejects.toThrow(/Network request failed/);
+    expect(queuedPayload().negocio.customer_id_photo_path).toBe('u1/foto-2.png');
+  });
+
+  it('«Reintentar» un negocio rechazado no se bloquea por una foto perdida (sí por una firma)', async () => {
+    await enqueue(FOTOS);
+    for (const upload of mockDb.__table('file_uploads')) {
+      upload.status = upload.bucket === 'negocios-firmas' ? 'done' : 'failed';
+    }
+    (localFileExists as jest.Mock).mockResolvedValue(false);
+    const item = mockDb.__table('sync_outbox').find((row) => row.type === 'create_negocio')!;
+
+    const blocked = await prepareRetryNegocio(mockDb as never, item as never, new PreparedChanges());
+
+    expect(blocked).toBeNull();
+  });
+
+  it('las firmas siguen siendo estrictas: una firma perdida no se omite', async () => {
+    await enqueue(FOTOS);
+    (localFileExists as jest.Mock).mockResolvedValue(false);
+    const firma = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'cliente');
+
+    const result = await pushUploadNegocioSignature(firma);
+
+    expect(result).toEqual({ outcome: 'fail', message: expect.stringMatching(/^Hay que volver a firmar/) });
+    expect(queuedPayload().negocio.customer_signature_url).toEqual(expect.any(String));
   });
 
   it('el rechazo del negocio marca también sus fotos pendientes', async () => {
