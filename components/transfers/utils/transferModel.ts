@@ -39,6 +39,10 @@ export interface TransferSummary {
   carrier: PersonRef | null;
   createdBy: PersonRef | null;
   dispatchedBy: PersonRef | null;
+  /** Todos los que recibieron alguna parte, en orden (20261231340000). */
+  receivedByNames: string[];
+  /** Hora de la última recepción (receivedAt solo se llena al recibir todo). */
+  lastReceivedAt: string | null;
   notes: string | null;
   createdAt: string | null;
   dispatchedAt: string | null;
@@ -158,6 +162,10 @@ export function parseTransferSummary(value: unknown): TransferSummary {
     carrier: parsePerson(r.carrier),
     createdBy: parsePerson(r.created_by),
     dispatchedBy: parsePerson(r.dispatched_by),
+    receivedByNames: Array.isArray(r.received_by_names)
+      ? r.received_by_names.filter((name): name is string => typeof name === 'string' && name.length > 0)
+      : [],
+    lastReceivedAt: strOrNull(r.last_received_at),
     notes: strOrNull(r.notes),
     createdAt: strOrNull(r.created_at),
     dispatchedAt: strOrNull(r.dispatched_at),

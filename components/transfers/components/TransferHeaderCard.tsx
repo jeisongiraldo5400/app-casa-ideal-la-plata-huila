@@ -25,7 +25,12 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
   if (order.dispatchedAt) {
     rows.push(['Despachado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
   }
-  if (receivers.length) rows.push(['Reciben', receivers.map((person) => person.name).join(', ')]);
+  // Quién recibió (20261231340000). Antes de recibir no se listan todos los
+  // bodegueros: desde 20261231320000 puede recibir cualquiera.
+  if (order.receivedByNames.length) {
+    const at = order.receivedAt ?? order.lastReceivedAt;
+    rows.push(['Recibido', `${at ? `${formatTransferDate(at)} · ` : ''}${order.receivedByNames.join(', ')}`]);
+  }
   if (order.notes) rows.push(['Notas', order.notes]);
 
   return (
