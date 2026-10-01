@@ -14,6 +14,7 @@ import { ReceivePanel } from './ReceivePanel';
 import { ReturnPanel } from './ReturnPanel';
 import { TransferHeaderCard } from './TransferHeaderCard';
 import { TransferItemsView } from './TransferItemsView';
+import { TransferPhotosView } from './TransferPhotosView';
 
 type Props = {
   transferOrderId: string | null;
@@ -104,6 +105,7 @@ export function TransferDetailScreen({ transferOrderId, preferredMode = null }: 
         {error ? <Text style={[styles.banner, { color: colors.error.main }]}>{error}</Text> : null}
 
         <TransferHeaderCard detail={detail} />
+        <TransferPhotosView events={detail.events} />
 
         {modes.length > 1 ? (
           <SegmentedControl

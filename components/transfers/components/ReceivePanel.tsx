@@ -6,12 +6,20 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 import { useTransferDraft } from '../infrastructure/hooks/useTransferDraft';
 import { useTransferSubmit } from '../infrastructure/hooks/useTransferSubmit';
 import { receiveTransfer } from '../infrastructure/services/transfersService';
+import { uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
+import {
+  optionalPhotoPath,
+  transferPhotoPath,
+  withDamagedPhotoPaths,
+  type TransferPhotoDraft,
+} from '../utils/transferPhotos';
 import type { TransferDetail } from '../utils/transferModel';
 import {
   lineNeedsSerials,
   maxReceive,
   receiveAllOk,
   validateReceive,
+  type ReceiveDraft,
   type ReceiveLineDraft,
   type ReceivePayloadItem,
   type ReceiveSummary,
@@ -20,6 +28,7 @@ import { receiveConfirmText, sentLineText, unitsText } from '../utils/transferTe
 import { ConfirmTransferSheet } from './ConfirmTransferSheet';
 import { QuantityStepper } from './QuantityStepper';
 import { SerialsTextField } from './SerialsTextField';
+import { TransferPhotoField } from './TransferPhotoField';
 
 type Props = {
   detail: TransferDetail;
@@ -30,6 +39,16 @@ type Props = {
 type Review = { items: ReceivePayloadItem[]; summary: ReceiveSummary };
 
 const EMPTY_LINE: ReceiveLineDraft = { ok: 0, damaged: 0, okSerialsText: '', damagedSerialsText: '' };
+
+/** Fotos de avería que viajan: solo las de líneas con unidades averiadas en esta recepción. */
+function damagedPhotosToSend(draft: ReceiveDraft, items: ReceivePayloadItem[]): Record<string, TransferPhotoDraft> {
+  const photos: Record<string, TransferPhotoDraft> = {};
+  for (const item of items) {
+    const photo = draft.lines[item.item_id]?.damagedPhoto;
+    if (item.condition === 'damaged' && photo) photos[item.item_id] = photo;
+  }
+  return photos;
+}
 
 /**
  * Recibir: por línea cuánto llegó bien y cuánto averiado (≤ en tránsito),
@@ -67,12 +86,33 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
 
   const confirm = async () => {
     if (!review) return;
-    const { reportMissing, notes } = draft;
+    const { reportMissing, notes, photo } = draft;
+    const linePhotos = damagedPhotosToSend(draft, review.items);
+    const pathsByItem: Record<string, string> = {};
+    for (const [itemId, linePhoto] of Object.entries(linePhotos)) pathsByItem[itemId] = transferPhotoPath(order.id, linePhoto);
+    const items = withDamagedPhotoPaths(review.items, pathsByItem);
+    const photoPath = optionalPhotoPath(order.id, photo);
+    const pending = [...(photo ? [photo] : []), ...Object.values(linePhotos)];
     const result = await submit.run(
       'transfer_receive',
-      { id: order.id, items: review.items, reportMissing, notes: notes.trim() },
+      { id: order.id, items, reportMissing, notes: notes.trim(), photoPath },
       (idempotencyKey) =>
-        receiveTransfer({ transferOrderId: order.id, items: review.items, reportMissing, notes, idempotencyKey })
+        receiveTransfer({ transferOrderId: order.id, items, reportMissing, notes, photoPath, idempotencyKey }),
+      pending.length
+        ? async () => {
+            // Cada foto que sube queda marcada: si otra falla, el reintento no la repite.
+            let next = draft;
+            await uploadPendingTransferPhotos(order.id, pending, (uploaded) => {
+              if (next.photo?.id === uploaded.id) next = { ...next, photo: uploaded };
+              const lines = { ...next.lines };
+              for (const [itemId, line] of Object.entries(lines)) {
+                if (line.damagedPhoto?.id === uploaded.id) lines[itemId] = { ...line, damagedPhoto: uploaded };
+              }
+              next = { ...next, lines };
+              setDraft(next);
+            });
+          }
+        : undefined
     );
     if (!result) return;
     setReview(null);
@@ -148,6 +188,14 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
                 editable={!submit.submitting}
               />
             ) : null}
+            {line.damaged > 0 ? (
+              <TransferPhotoField
+                label="Foto de la avería (opcional)"
+                photo={line.damagedPhoto ?? null}
+                onChange={(damagedPhoto) => updateLine(item.id, { damagedPhoto })}
+                disabled={submit.submitting}
+              />
+            ) : null}
             {needsSerials && line.ok + line.damaged === 0 ? (
               <Text style={[styles.meta, { color: colors.text.secondary }]}>
                 Se despachó con seriales: al recibir escribe el serial de cada unidad.
@@ -184,6 +232,13 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
         style={styles.notes}
       />
 
+      <TransferPhotoField
+        label="Foto de lo que llegó (opcional)"
+        photo={draft.photo}
+        onChange={(photo) => setDraft({ ...draft, photo })}
+        disabled={submit.submitting}
+      />
+
       {formError ? <Text style={[styles.error, { color: colors.error.main }]}>{formError}</Text> : null}
       {submit.error && !review ? <Text style={[styles.error, { color: colors.error.main }]}>{submit.error}</Text> : null}
 
@@ -192,7 +247,13 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
       <ConfirmTransferSheet
         visible={review !== null}
         title={`Recibir ${order.orderNumber}`}
-        summary={review ? receiveConfirmText(review.summary, order) + (submit.error ? `\n\n${submit.error}` : '') : ''}
+        summary={
+          review
+            ? receiveConfirmText(review.summary, order) +
+              photosText(draft, review.items) +
+              (submit.error ? `\n\n${submit.error}` : '')
+            : ''
+        }
         confirmLabel="Confirmar recepción"
         submitting={submit.submitting}
         disabled={!online}
@@ -201,6 +262,11 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
       />
     </View>
   );
+}
+
+function photosText(draft: ReceiveDraft, items: ReceivePayloadItem[]): string {
+  const count = (draft.photo ? 1 : 0) + Object.keys(damagedPhotosToSend(draft, items)).length;
+  return count ? `\n\nFotos adjuntas: ${count}.` : '';
 }
 
 const styles = StyleSheet.create({

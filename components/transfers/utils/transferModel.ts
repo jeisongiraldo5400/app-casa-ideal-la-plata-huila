@@ -96,9 +96,23 @@ export interface TransferPermissions {
   isAdmin: boolean;
 }
 
+/** Evento del historial del traslado (`events` del detalle). */
+export interface TransferEvent {
+  id: string;
+  eventType: string;
+  itemId: string | null;
+  productName: string | null;
+  quantity: number;
+  condition: 'ok' | 'damaged' | null;
+  photoPath: string | null;
+  userName: string | null;
+  createdAt: string | null;
+}
+
 export interface TransferDetail {
   order: TransferSummary;
   items: TransferItem[];
+  events: TransferEvent[];
   receivers: PersonRef[];
   permissions: TransferPermissions;
 }
@@ -211,12 +225,29 @@ export function parseTransferItem(value: unknown): TransferItem {
   };
 }
 
+export function parseTransferEvent(value: unknown): TransferEvent {
+  const r = asObj(value);
+  const condition = str(r.condition);
+  return {
+    id: str(r.id),
+    eventType: str(r.event_type),
+    itemId: strOrNull(r.item_id),
+    productName: strOrNull(r.product_name),
+    quantity: num(r.quantity),
+    condition: condition === 'ok' || condition === 'damaged' ? condition : null,
+    photoPath: strOrNull(r.photo_path),
+    userName: strOrNull(r.user_name),
+    createdAt: strOrNull(r.created_at),
+  };
+}
+
 export function parseTransferDetail(value: unknown): TransferDetail {
   const r = asObj(value);
   const permissions = asObj(r.permissions);
   return {
     order: parseTransferSummary(r.order),
     items: asArray(r.items).map(parseTransferItem),
+    events: asArray(r.events).map(parseTransferEvent),
     receivers: asArray(r.receivers)
       .map(parsePerson)
       .filter((person): person is PersonRef => person !== null),

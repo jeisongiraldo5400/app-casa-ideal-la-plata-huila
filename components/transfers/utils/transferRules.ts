@@ -10,6 +10,7 @@
  */
 import { normalizeSerial } from '@/components/inventory-flow/serials';
 import type { TransferDetail, TransferItem, TransferStatus } from './transferModel';
+import type { TransferPhotoDraft } from './transferPhotos';
 
 // ---------------------------------------------------------------------------
 // Cantidades
@@ -126,14 +127,25 @@ export type DispatchDraft = {
   /** '' = conservar el transportador del traslado. */
   carrierId: string;
   notes: string;
+  /** Foto general opcional de la carga. */
+  photo: TransferPhotoDraft | null;
 };
 
-export type ReceiveLineDraft = { ok: number; damaged: number; okSerialsText: string; damagedSerialsText: string };
+export type ReceiveLineDraft = {
+  ok: number;
+  damaged: number;
+  okSerialsText: string;
+  damagedSerialsText: string;
+  /** Foto opcional de la avería (solo se envía si `damaged > 0`). */
+  damagedPhoto?: TransferPhotoDraft | null;
+};
 export type ReceiveDraft = {
   kind: 'receive';
   lines: Record<string, ReceiveLineDraft>;
   reportMissing: boolean;
   notes: string;
+  /** Foto general opcional de lo que llegó. */
+  photo: TransferPhotoDraft | null;
 };
 
 export type ReturnLineDraft = { quantity: number; serialsText: string };
@@ -145,7 +157,7 @@ export type TransferDraft = DispatchDraft | ReceiveDraft | ReturnDraft;
 export function initialDispatchDraft(detail: TransferDetail): DispatchDraft {
   const lines: Record<string, DispatchLineDraft> = {};
   for (const item of detail.items) lines[item.id] = { quantity: maxDispatch(item), serialsText: '' };
-  return { kind: 'dispatch', lines, carrierId: '', notes: '' };
+  return { kind: 'dispatch', lines, carrierId: '', notes: '', photo: null };
 }
 
 /** Recibir arranca en cero: quien recibe cuenta lo que llegó (no se da por hecho). */
@@ -154,7 +166,7 @@ export function initialReceiveDraft(detail: TransferDetail): ReceiveDraft {
   for (const item of detail.items) {
     if (maxReceive(item) > 0) lines[item.id] = { ok: 0, damaged: 0, okSerialsText: '', damagedSerialsText: '' };
   }
-  return { kind: 'receive', lines, reportMissing: false, notes: '' };
+  return { kind: 'receive', lines, reportMissing: false, notes: '', photo: null };
 }
 
 export function initialReturnDraft(detail: TransferDetail): ReturnDraft {
@@ -214,6 +226,8 @@ export type ReceivePayloadItem = {
   quantity: number;
   condition: 'ok' | 'damaged';
   serials?: string[];
+  /** Foto de la avería (migración 20261231350000); solo en `damaged`. */
+  photo_path?: string;
 };
 export type ReturnPayloadItem = { item_id: string; quantity: number; serials?: string[] };
 

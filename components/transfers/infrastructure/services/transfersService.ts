@@ -71,6 +71,8 @@ export async function fetchTransferDetail(transferOrderId: string): Promise<Tran
 }
 
 type WriteBase = { transferOrderId: string; notes: string; idempotencyKey: string };
+/** Ruta ya subida a `transfer-photos` (opcional, 20261231350000). */
+type PhotoInput = { photoPath?: string | null };
 
 const cleanNotes = (notes: string): string | undefined => {
   const trimmed = notes.trim();
@@ -78,13 +80,14 @@ const cleanNotes = (notes: string): string | undefined => {
 };
 
 export async function dispatchTransfer(
-  input: WriteBase & { items: DispatchPayloadItem[]; carrierUserId: string | null }
+  input: WriteBase & PhotoInput & { items: DispatchPayloadItem[]; carrierUserId: string | null }
 ): Promise<TransferWriteResult> {
   const { data, error } = await supabase.rpc('dispatch_transfer_order', {
     p_transfer_order_id: input.transferOrderId,
     p_items: input.items as unknown as Json,
     p_carrier_user_id: input.carrierUserId ?? undefined,
     p_notes: cleanNotes(input.notes),
+    p_photo_path: input.photoPath ?? undefined,
     p_idempotency_key: input.idempotencyKey,
   });
   if (error) throw error;
@@ -92,12 +95,13 @@ export async function dispatchTransfer(
 }
 
 export async function receiveTransfer(
-  input: WriteBase & { items: ReceivePayloadItem[]; reportMissing: boolean }
+  input: WriteBase & PhotoInput & { items: ReceivePayloadItem[]; reportMissing: boolean }
 ): Promise<TransferWriteResult> {
   const { data, error } = await supabase.rpc('receive_transfer_order', {
     p_transfer_order_id: input.transferOrderId,
     p_items: input.items as unknown as Json,
     p_notes: cleanNotes(input.notes),
+    p_photo_path: input.photoPath ?? undefined,
     p_report_missing: input.reportMissing,
     p_idempotency_key: input.idempotencyKey,
   });

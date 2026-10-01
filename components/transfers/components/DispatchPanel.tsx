@@ -8,12 +8,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTransferDraft } from '../infrastructure/hooks/useTransferDraft';
 import { useTransferSubmit } from '../infrastructure/hooks/useTransferSubmit';
 import { dispatchTransfer } from '../infrastructure/services/transfersService';
+import { uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
+import { optionalPhotoPath } from '../utils/transferPhotos';
 import type { TransferDetail } from '../utils/transferModel';
 import { maxDispatch, validateDispatch, type DispatchSummary, type DispatchPayloadItem } from '../utils/transferRules';
 import { dispatchConfirmText, unitsText } from '../utils/transferTexts';
 import { ConfirmTransferSheet } from './ConfirmTransferSheet';
 import { QuantityStepper } from './QuantityStepper';
 import { SerialsTextField } from './SerialsTextField';
+import { TransferPhotoField } from './TransferPhotoField';
 
 type Props = {
   detail: TransferDetail;
@@ -83,11 +86,16 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
     if (!review) return;
     const carrierUserId = draft.carrierId || null;
     const notes = draft.notes;
+    const photo = draft.photo;
+    const photoPath = optionalPhotoPath(order.id, photo);
     const result = await submit.run(
       'transfer_dispatch',
-      { id: order.id, items: review.items, carrierUserId, notes: notes.trim() },
+      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath },
       (idempotencyKey) =>
-        dispatchTransfer({ transferOrderId: order.id, items: review.items, carrierUserId, notes, idempotencyKey })
+        dispatchTransfer({ transferOrderId: order.id, items: review.items, carrierUserId, notes, photoPath, idempotencyKey }),
+      photo
+        ? () => uploadPendingTransferPhotos(order.id, [photo], (uploaded) => setDraft({ ...draft, photo: uploaded }))
+        : undefined
     );
     if (!result) return;
     setReview(null);
@@ -173,6 +181,13 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         style={styles.notes}
       />
 
+      <TransferPhotoField
+        label="Foto de la carga (opcional)"
+        photo={draft.photo}
+        onChange={(photo) => setDraft({ ...draft, photo })}
+        disabled={submit.submitting}
+      />
+
       {formError ? <Text style={[styles.error, { color: colors.error.main }]}>{formError}</Text> : null}
       {submit.error && !review ? <Text style={[styles.error, { color: colors.error.main }]}>{submit.error}</Text> : null}
 
@@ -188,7 +203,9 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         title={`Despachar ${order.orderNumber}`}
         summary={
           review
-            ? dispatchConfirmText(review.summary, order, carrierName) + (submit.error ? `\n\n${submit.error}` : '')
+            ? dispatchConfirmText(review.summary, order, carrierName) +
+              (draft.photo ? '\n\nCon foto de la carga.' : '') +
+              (submit.error ? `\n\n${submit.error}` : '')
             : ''
         }
         confirmLabel="Confirmar despacho"

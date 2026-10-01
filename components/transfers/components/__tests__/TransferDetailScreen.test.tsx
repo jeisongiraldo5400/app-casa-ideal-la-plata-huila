@@ -97,6 +97,7 @@ describe('TransferDetailScreen', () => {
       ],
       carrierUserId: null,
       notes: '',
+      photoPath: null,
       idempotencyKey: 'key-1',
     });
     expect(await screen.findByText('TR-2026-0001 despachado: 4 unidades en camino a La Argentina.')).toBeTruthy();
@@ -143,6 +144,7 @@ describe('TransferDetailScreen', () => {
       ],
       reportMissing: false,
       notes: '',
+      photoPath: null,
       idempotencyKey: 'key-1',
     });
     expect(screen.getByText(/Quien despachó el traslado no puede recibirlo/)).toBeTruthy();

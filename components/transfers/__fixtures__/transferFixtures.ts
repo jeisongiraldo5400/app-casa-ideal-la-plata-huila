@@ -68,6 +68,7 @@ export function rawDetail(options: {
   items?: RawItem[];
   permissions?: Record<string, boolean>;
   receivers?: { id: string; name: string }[];
+  events?: Record<string, unknown>[];
 } = {}) {
   return {
     order: rawOrder(options.order),
@@ -84,7 +85,7 @@ export function rawDetail(options: {
         pending_receipt_quantity: 2,
       }),
     ],
-    events: [],
+    events: options.events ?? [],
     receivers: options.receivers ?? [{ id: 'u-recv', name: 'Recibe' }],
     permissions: {
       can_edit: false,
