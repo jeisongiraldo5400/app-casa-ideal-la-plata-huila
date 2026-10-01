@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import {
   TransferPhotoUploadError,
+  deleteTransferPhotos,
   getTransferPhotoSignedUrl,
   uploadPendingTransferPhotos,
   uploadTransferPhoto,
@@ -9,10 +10,11 @@ import { dispatchTransfer, receiveTransfer } from '../transfersService';
 
 const mockUpload = jest.fn();
 const mockSigned = jest.fn();
+const mockRemove = jest.fn();
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     rpc: jest.fn(),
-    storage: { from: jest.fn(() => ({ upload: mockUpload, createSignedUrl: mockSigned })) },
+    storage: { from: jest.fn(() => ({ upload: mockUpload, createSignedUrl: mockSigned, remove: mockRemove })) },
   },
 }));
 
@@ -42,6 +44,21 @@ describe('transferPhotosService', () => {
 
     mockUpload.mockResolvedValue({ data: null, error: { statusCode: '409', message: 'The resource already exists' } });
     await expect(uploadTransferPhoto('t-1', photo('abc'))).resolves.toBe('t-1/abc.jpg');
+  });
+
+  it('borra solo las fotos ya subidas y nunca lanza', async () => {
+    mockRemove.mockResolvedValue({ data: [], error: null });
+    await deleteTransferPhotos('t-1', [photo('a', true), photo('b')]);
+    expect(mockRemove).toHaveBeenCalledWith(['t-1/a.jpg']);
+
+    mockRemove.mockClear();
+    await deleteTransferPhotos('t-1', [photo('b')]);
+    expect(mockRemove).not.toHaveBeenCalled();
+
+    mockRemove.mockRejectedValueOnce(new Error('Network request failed'));
+    await expect(deleteTransferPhotos('t-1', [photo('a', true)])).resolves.toBeUndefined();
+    mockRemove.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+    await expect(deleteTransferPhotos('t-1', [photo('a', true)])).resolves.toBeUndefined();
   });
 
   it('un error de Storage lanza TransferPhotoUploadError', async () => {

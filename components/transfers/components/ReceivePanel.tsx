@@ -6,8 +6,9 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 import { useTransferDraft } from '../infrastructure/hooks/useTransferDraft';
 import { useTransferSubmit } from '../infrastructure/hooks/useTransferSubmit';
 import { receiveTransfer } from '../infrastructure/services/transfersService';
-import { uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
+import { deleteTransferPhotos, uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
 import {
+  droppedUploadedPhotos,
   optionalPhotoPath,
   transferPhotoPath,
   withDamagedPhotoPaths,
@@ -115,6 +116,15 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
         : undefined
     );
     if (!result) return;
+    // Una foto de avería que subió en un intento anterior y luego la línea
+    // quedó sin averías no la cita el traslado: se borra.
+    void deleteTransferPhotos(
+      order.id,
+      droppedUploadedPhotos(
+        Object.values(draft.lines).map((line) => line.damagedPhoto),
+        pending
+      )
+    );
     setReview(null);
     clearDraft();
     const received = review.summary.ok + review.summary.damaged;
@@ -192,7 +202,10 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
               <TransferPhotoField
                 label="Foto de la avería (opcional)"
                 photo={line.damagedPhoto ?? null}
-                onChange={(damagedPhoto) => updateLine(item.id, { damagedPhoto })}
+                onChange={(damagedPhoto) => {
+                  void deleteTransferPhotos(order.id, droppedUploadedPhotos([line.damagedPhoto], [damagedPhoto]));
+                  updateLine(item.id, { damagedPhoto });
+                }}
                 disabled={submit.submitting}
               />
             ) : null}
@@ -235,7 +248,10 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
       <TransferPhotoField
         label="Foto de lo que llegó (opcional)"
         photo={draft.photo}
-        onChange={(photo) => setDraft({ ...draft, photo })}
+        onChange={(photo) => {
+          void deleteTransferPhotos(order.id, droppedUploadedPhotos([draft.photo], [photo]));
+          setDraft({ ...draft, photo });
+        }}
         disabled={submit.submitting}
       />
 

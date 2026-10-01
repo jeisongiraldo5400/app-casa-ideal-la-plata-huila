@@ -55,6 +55,15 @@ export function transferPhotoPath(transferOrderId: string, photo: Pick<TransferP
 export const optionalPhotoPath = (transferOrderId: string, photo: TransferPhotoDraft | null | undefined): string | null =>
   photo ? transferPhotoPath(transferOrderId, photo) : null;
 
+/** Fotos ya subidas de `before` que no siguen en `after` (se quitaron o se cambiaron). */
+export function droppedUploadedPhotos(
+  before: (TransferPhotoDraft | null | undefined)[],
+  after: (TransferPhotoDraft | null | undefined)[]
+): TransferPhotoDraft[] {
+  const kept = new Set(after.filter(Boolean).map((photo) => photo!.id));
+  return before.filter((photo): photo is TransferPhotoDraft => !!photo?.uploaded && !kept.has(photo.id));
+}
+
 /** Pone `photo_path` en los elementos «averiada» de las líneas que tienen foto de avería. */
 export function withDamagedPhotoPaths<T extends { item_id: string; condition: 'ok' | 'damaged' }>(
   items: T[],

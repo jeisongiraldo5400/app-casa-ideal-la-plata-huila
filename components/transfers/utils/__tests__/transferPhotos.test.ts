@@ -1,5 +1,6 @@
 import { parseTransferDetail } from '../transferModel';
 import {
+  droppedUploadedPhotos,
   eventPhotos,
   optionalPhotoPath,
   transferPhotoPath,
@@ -57,5 +58,17 @@ describe('transferPhotos', () => {
       { path: 't-1/carga.jpg', label: 'Despacho', createdAt: null, userName: 'Ana' },
       { path: 't-1/golpe.jpg', label: 'Recepción · Nevera Haceb (averiada)', createdAt: null, userName: null },
     ]);
+  });
+});
+
+describe('droppedUploadedPhotos', () => {
+  const photo = (id: string, uploaded: boolean) => ({ id, uri: `file:///${id}.jpg`, mimeType: 'image/jpeg', size: 1, uploaded });
+
+  it('devuelve solo las subidas que se quitaron o se cambiaron', () => {
+    expect(droppedUploadedPhotos([photo('a', true)], [null]).map((p) => p.id)).toEqual(['a']);
+    expect(droppedUploadedPhotos([photo('a', true)], [photo('b', false)]).map((p) => p.id)).toEqual(['a']);
+    expect(droppedUploadedPhotos([photo('a', true)], [photo('a', true)])).toEqual([]);
+    expect(droppedUploadedPhotos([photo('a', false)], [null])).toEqual([]);
+    expect(droppedUploadedPhotos([null, undefined], [])).toEqual([]);
   });
 });

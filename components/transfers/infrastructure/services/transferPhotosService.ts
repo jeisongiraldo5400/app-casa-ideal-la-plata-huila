@@ -1,8 +1,11 @@
 /**
  * Storage de las fotos de traslados (bucket privado `transfer-photos`,
- * migración 20261231350000). Sube y lee quien puede ver el traslado; nadie
- * edita ni borra desde el cliente, por eso se sube sin `upsert`.
+ * migración 20261231350000). Sube y lee quien puede ver el traslado; se sube
+ * sin `upsert`. Desde 20261231380000 quien subió una foto puede borrarla
+ * mientras ningún traslado la cite: así se limpian las que se quitan o se
+ * cambian tras una subida (el servidor rechaza borrar las que ya quedaron).
  */
+import { logHandledError } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
 import {
   TRANSFER_PHOTO_BUCKET,
@@ -91,5 +94,21 @@ export async function uploadPendingTransferPhotos(
     if (photo.uploaded) continue;
     await uploadTransferPhoto(transferOrderId, photo);
     onUploaded({ ...photo, uploaded: true });
+  }
+}
+
+/**
+ * Borra, sin bloquear, las fotos ya subidas que el borrador dejó de usar. Si
+ * falla (sin señal, o la foto ya quedó citada por el traslado) no pasa nada:
+ * la foto se conserva.
+ */
+export async function deleteTransferPhotos(transferOrderId: string, photos: TransferPhotoDraft[]): Promise<void> {
+  const paths = photos.filter((photo) => photo.uploaded).map((photo) => transferPhotoPath(transferOrderId, photo));
+  if (paths.length === 0) return;
+  try {
+    const { error } = await supabase.storage.from(TRANSFER_PHOTO_BUCKET).remove(paths);
+    if (error) logHandledError('Traslados: borrar fotos sin usar', error);
+  } catch (error) {
+    logHandledError('Traslados: borrar fotos sin usar', error);
   }
 }

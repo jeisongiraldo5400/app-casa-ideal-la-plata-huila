@@ -8,8 +8,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTransferDraft } from '../infrastructure/hooks/useTransferDraft';
 import { useTransferSubmit } from '../infrastructure/hooks/useTransferSubmit';
 import { dispatchTransfer } from '../infrastructure/services/transfersService';
-import { uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
-import { optionalPhotoPath } from '../utils/transferPhotos';
+import { deleteTransferPhotos, uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
+import { droppedUploadedPhotos, optionalPhotoPath } from '../utils/transferPhotos';
 import type { TransferDetail } from '../utils/transferModel';
 import { maxDispatch, validateDispatch, type DispatchSummary, type DispatchPayloadItem } from '../utils/transferRules';
 import { dispatchConfirmText, unitsText } from '../utils/transferTexts';
@@ -184,7 +184,10 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
       <TransferPhotoField
         label="Foto de la carga (opcional)"
         photo={draft.photo}
-        onChange={(photo) => setDraft({ ...draft, photo })}
+        onChange={(photo) => {
+          void deleteTransferPhotos(order.id, droppedUploadedPhotos([draft.photo], [photo]));
+          setDraft({ ...draft, photo });
+        }}
         disabled={submit.submitting}
       />
 
