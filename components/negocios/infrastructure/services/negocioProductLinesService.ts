@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { receiptProductsFromItems, type NegocioReceiptProduct } from '@/lib/negocioReceiptHtml';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { canUseLocalDb, fetchNegociosProductsFromLocal } from '@/lib/offline/repositories/offlineRepository';
 import {
@@ -48,5 +50,43 @@ export async function fetchNegociosProducts(negocioIds: readonly string[]): Prom
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalDb()) throw error;
     return groupNegocioProducts(await fetchNegociosProductsFromLocal(negocioIds));
+  }
+}
+
+/**
+ * Productos de un negocio para su recibo de pago (cantidad, nombre, precio
+ * unitario y subtotal, como el contrato). Con señal salen del servidor; sin señal, o si el
+ * servidor no responde, de lo descargado en el teléfono. Nunca lanza: si no
+ * hay de dónde leerlos, el recibo sale sin la sección de productos.
+ */
+export async function fetchNegocioReceiptProducts(negocioId: string): Promise<NegocioReceiptProduct[]> {
+  const fromLocal = async () => {
+    if (!canUseLocalDb()) return [];
+    const rows = await fetchNegociosProductsFromLocal([negocioId]).catch(() => []);
+    return receiptProductsFromItems(
+      rows.map((row) => ({
+        quantity: row.quantity,
+        description: row.description,
+        product: { name: row.productName },
+        unit_price: row.unitPrice ?? null,
+        subtotal: row.subtotal ?? null,
+      }))
+    );
+  };
+  if (!useSyncStore.getState().online) return fromLocal();
+  try {
+    const { data, error } = await supabase
+      .from('negocio_items')
+      .select('quantity, description, unit_price, subtotal, product:products(name)')
+      .eq('negocio_id', negocioId)
+      .is('deleted_at', null)
+      .order('created_at');
+    if (error) throw error;
+    const products = receiptProductsFromItems((data ?? []) as unknown as ItemRow[]);
+    // Un negocio creado sin señal todavía no está en el servidor.
+    return products.length > 0 ? products : await fromLocal();
+  } catch (error) {
+    if (!isNetworkError(error)) console.warn('[recibo] no se pudieron leer los productos del negocio', error);
+    return fromLocal();
   }
 }

@@ -2,10 +2,14 @@ import {
   PENDING_CONFIRMATION_RECEIPT_LEGEND,
   PENDING_CONFIRMATION_RECEIPT_NOTE,
   PRONTO_PAGO_RECEIPT_LEGEND,
+  formatReceiptQuantity,
   isPendingConfirmationReceipt,
   isProntoPagoReceipt,
   prontoPagoReceiptAmounts,
   receiptCustomerIdNumber,
+  receiptProducts,
+  receiptProductsHavePrices,
+  receiptProductsTotal,
   receiptRegisteredBy,
   type NegocioReceiptData,
 } from '@/lib/negocioReceiptHtml';
@@ -13,6 +17,8 @@ import { formatNegocioCodigo } from '@/lib/negocioLabels';
 import { formatPaymentDateTime } from '@/lib/localDate';
 import { copyTicketLines } from './copyTicketLines';
 import {
+  TICKET_WIDTH,
+  clip,
   formatTicketMoney,
   padRow,
   textLines,
@@ -62,6 +68,27 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...(prontoPago && discountReason ? textLines(`Motivo descuento: ${discountReason}`) : []),
     { type: 'separator' },
   );
+  // Productos del negocio, como en el ticket del negocio: «2x Nombre» con el
+  // subtotal a la derecha (el nombre se recorta al ancho del papel) y el total.
+  // Sin precios descargados sale solo la cantidad y el nombre.
+  const products = receiptProducts(data);
+  if (products.length > 0) {
+    const withPrices = receiptProductsHavePrices(products);
+    lines.push(
+      { type: 'text', text: 'Productos', bold: true },
+      ...products.map((product): TicketLine => {
+        const label = `${formatReceiptQuantity(product.quantity)}x ${product.name}`;
+        return {
+          type: 'text',
+          text: withPrices ? padRow(label, formatTicketMoney(Number(product.subtotal))) : clip(label, TICKET_WIDTH),
+        };
+      }),
+      ...(withPrices
+        ? [{ type: 'text', text: padRow('Total productos', formatTicketMoney(receiptProductsTotal(products))), bold: true } as TicketLine]
+        : []),
+      { type: 'separator' },
+    );
+  }
   if (prontoPago) {
     lines.push(
       { type: 'text', text: padRow('Total pendiente', formatTicketMoney(pronto.expectedTotal)) },

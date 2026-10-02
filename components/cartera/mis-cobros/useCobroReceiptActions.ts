@@ -9,6 +9,7 @@ import { openPagoSupport } from '@/lib/uploadPagoSupport';
 import { errorMessage } from '@/lib/errorMessage';
 import type { MisCobroRow } from '@/lib/cartera/misCobros';
 import { recordNegocioPrint } from '@/components/negocios/infrastructure/services/negocioPrintService';
+import { fetchNegocioReceiptProducts } from '@/components/negocios/infrastructure/services/negocioProductLinesService';
 
 /** Pago ya confirmado por el servidor (solo esos tienen recibo en «Cobros»). */
 type CobroPrintTarget = Pick<MisCobroRow, 'negocio_id' | 'payment_id'>;
@@ -25,8 +26,13 @@ export function useCobroReceiptActions() {
 
   const shareReceipt = useCallback(async (data: NegocioReceiptData, target: CobroPrintTarget) => {
     try {
-      const copy = await recordCobroPrint(target, 'pdf');
-      const html = buildNegocioReceiptHtml({ ...data, copy });
+      // Los productos del negocio no vienen en la fila del cobro: se leen al
+      // imprimir (servidor o teléfono), a la vez que se registra la copia.
+      const [copy, products] = await Promise.all([
+        recordCobroPrint(target, 'pdf'),
+        fetchNegocioReceiptProducts(target.negocio_id),
+      ]);
+      const html = buildNegocioReceiptHtml({ ...data, products, copy });
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: data.receiptNumber });
@@ -38,7 +44,8 @@ export function useCobroReceiptActions() {
 
   const printReceipt = useCallback(
     async (data: NegocioReceiptData, target: CobroPrintTarget) => {
-      await printPayment(data, { resolveCopy: () => recordCobroPrint(target, 'ticket') });
+      const products = await fetchNegocioReceiptProducts(target.negocio_id);
+      await printPayment({ ...data, products }, { resolveCopy: () => recordCobroPrint(target, 'ticket') });
     },
     [printPayment]
   );

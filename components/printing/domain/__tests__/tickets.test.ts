@@ -224,6 +224,43 @@ describe('buildPaymentTicket', () => {
     });
   });
 
+  describe('productos del negocio', () => {
+    const textsOf = (data: NegocioReceiptData) =>
+      buildPaymentTicket(data)
+        .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+        .map((line) => line.text);
+    const longName = 'Nevera Haceb 260 L No Frost con dispensador de agua';
+
+    it('lista «cantidad x nombre» con el subtotal a la derecha y el total, antes del valor recibido', () => {
+      const texts = textsOf({
+        ...receipt,
+        products: [
+          { quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 },
+          { quantity: 1, name: longName, unitPrice: 1500000, subtotal: 1500000 },
+        ],
+      });
+      const start = texts.indexOf('Productos');
+      expect(start).toBeGreaterThan(-1);
+      expect(texts[start + 1]).toBe(padRow('2x Colchón doble', formatTicketMoney(1200000)));
+      expect(texts[start + 2]).toBe(padRow(`1x ${longName}`, formatTicketMoney(1500000)));
+      expect(texts[start + 3]).toBe(padRow('Total productos', formatTicketMoney(2700000)));
+      for (const text of texts.slice(start, start + 4)) expect(text.length).toBeLessThanOrEqual(TICKET_WIDTH);
+      expect(texts.findIndex((text) => text.startsWith('Valor recibido'))).toBeGreaterThan(start + 3);
+    });
+
+    it('sin precios descargados imprime solo cantidad y nombre, sin total', () => {
+      const texts = textsOf({ ...receipt, products: [{ quantity: 1, name: longName }] });
+      const start = texts.indexOf('Productos');
+      expect(texts[start + 1]).toBe(clip(`1x ${longName}`, TICKET_WIDTH));
+      expect(texts.some((text) => text.startsWith('Total productos'))).toBe(false);
+    });
+
+    it('sin productos no imprime la sección', () => {
+      expect(textsOf(receipt)).not.toContain('Productos');
+      expect(textsOf({ ...receipt, products: [] })).not.toContain('Productos');
+    });
+  });
+
   it('termina con avance de papel porque la PT-210 no corta', () => {
     const ticket = buildPaymentTicket(receipt);
     expect(ticket[ticket.length - 1]).toEqual({ type: 'spacer', lines: 4 });
