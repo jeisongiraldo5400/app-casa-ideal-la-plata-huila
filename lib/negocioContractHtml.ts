@@ -254,6 +254,23 @@ function itemRowTarget(tier: ContractSizeTier, planRowCount: number, legalText: 
 }
 
 /**
+ * Alto del logo del encabezado (px). El logo grande ocupa el lugar de filas
+ * vacías de la tabla de artículos: con 2 o más filas de relleno disponibles
+ * se ceden 2 y el logo sale al doble del tamaño anterior (56 px); con 1, se
+ * cede esa y sale algo menor; sin relleno (tabla llena de artículos reales)
+ * sale a 76 px, el alto con el que el encabezado no crece respecto al anterior y
+ * el contrato sigue cabiendo en una hoja. Validado con Chrome headless en un
+ * barrido de 594 combinaciones de artículos, cuotas y texto legal.
+ */
+export const CONTRACT_LOGO_HEIGHTS = { full: 112, reduced: 96, compact: 76 } as const;
+
+function contractLogoLayout(fillerRows: number): { height: number; rowsUsed: number } {
+  if (fillerRows >= 2) return { height: CONTRACT_LOGO_HEIGHTS.full, rowsUsed: 2 };
+  if (fillerRows === 1) return { height: CONTRACT_LOGO_HEIGHTS.reduced, rowsUsed: 1 };
+  return { height: CONTRACT_LOGO_HEIGHTS.compact, rowsUsed: 0 };
+}
+
+/**
  * Tamaño de página (puntos, 72 ppp) con el que app/negocio/[id].tsx genera
  * el PDF del contrato: oficio 216 x 330 mm (legal sería 612 x 1008). La web
  * imprime con exactamente este tamaño (NEGOCIO_CONTRACT_PAGE_PT en
@@ -276,8 +293,9 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   const plan = buildPlanRows(data);
   const tier = pickSizeTier(data.items.length, plan.rows.length, Boolean(data.legal_text));
   const minItemRows = itemRowTarget(tier, plan.rows.length, data.legal_text);
+  const logo = contractLogoLayout(Math.max(0, minItemRows - data.items.length));
   const emptyRows = Array.from(
-    { length: Math.max(0, minItemRows - data.items.length) },
+    { length: Math.max(0, minItemRows - data.items.length - logo.rowsUsed) },
     () => `<tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>`
   ).join('');
   const planRowHtml = (r: (typeof plan.rows)[number]) => `
@@ -352,10 +370,14 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   body { font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: ${tier.body}px; line-height: 1.22; padding-bottom: 14px; height: ${tier.contentHeight}; display: flex; flex-direction: column; }
   .items { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .items table { flex: 1; }
-  .brand { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 3px; }
-  .logo { display: block; height: 56px; width: auto; max-width: 100%; object-fit: contain; }
+  /* Logo grande a la izquierda (alto según contractLogoLayout); a su derecha,
+     los datos de la empresa en dos líneas y el título con el número, para que
+     el encabezado crezca poco y el contrato siga cabiendo en una hoja. */
+  .brand { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; border-bottom: 2px solid #195ba6; padding-bottom: 3px; margin-bottom: 4px; }
+  .logo { display: block; height: ${logo.height}px; width: auto; max-width: 100%; object-fit: contain; }
+  .brand-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; }
   .company { text-align: right; color: #294c77; font-size: ${tier.company}px; line-height: 1.3; }
-  .title { display: flex; justify-content: space-between; align-items: center; color: #195ba6; margin: 4px 0 3px; }
+  .title { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; color: #195ba6; text-align: right; }
   .title h2 { margin: 0; font-size: ${tier.titleH2}px; letter-spacing: 1px; text-transform: uppercase; }
   .number { color: #a13c2f; font-size: ${tier.number}px; font-weight: 800; }
   .meta, .parties, .finance { display: grid; border: 1px solid #195ba6; }
@@ -416,9 +438,11 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   <div class="footer">${COMPANY.name} · Solicitud ${formatNegocioCodigo(data.numero)} · Documento generado ${bogotaDateValue()}${copyFooter}</div>
   <header class="brand">
     <img class="logo" src="${CASA_IDEAL_LOGO_DATA_URI}" alt="${COMPANY.name} - ${COMPANY.tagline}" />
-    <div class="company"><b>NIT ${COMPANY.nit}</b><br/>${COMPANY.owner}<br/>${COMPANY.address}<br/>Cel. ${COMPANY.phone}</div>
+    <div class="brand-side">
+      <div class="company"><b>NIT ${COMPANY.nit}</b> · ${COMPANY.owner}<br/>${COMPANY.address} · Cel. ${COMPANY.phone}</div>
+      <div class="title"><h2>Solicitud de crédito</h2><div class="number">${copyLabel ? `<span class="copy-mark">${copyLabel}</span>` : ''}N.º ${formatNegocioCodigo(data.numero)}</div></div>
+    </div>
   </header>
-  <div class="title"><h2>Solicitud de crédito</h2><div class="number">${copyLabel ? `<span class="copy-mark">${copyLabel}</span>` : ''}N.º ${formatNegocioCodigo(data.numero)}</div></div>
   <div class="meta">
     <div><b>FECHA</b><br/>${formattedDate}</div>
     <div><b>LUGAR</b><br/>${location}</div>

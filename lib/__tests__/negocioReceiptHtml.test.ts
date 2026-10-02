@@ -149,3 +149,14 @@ describe('buildNegocioReceiptHtml', () => {
     });
   });
 });
+
+describe('logo del recibo', () => {
+  it('va centrado y grande: todo el ancho útil hasta 400 px en pantalla y 70 mm impreso, sin deformarse', () => {
+    const html = buildNegocioReceiptHtml(sample);
+    expect(html).toContain('.brand { display: flex; flex-direction: column; align-items: center;');
+    expect(html).toContain('.logo { display: block; width: 100%; max-width: 400px; height: auto; object-fit: contain; }');
+    expect(html).toContain('  .logo { max-width: 70mm; filter: grayscale(1); }');
+    // Ya no lleva los altos fijos anteriores (52 px en pantalla, 30 px impreso).
+    expect(html).not.toMatch(/\.logo \{[^}]*height: \d+px/);
+  });
+});

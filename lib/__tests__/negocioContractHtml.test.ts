@@ -1,4 +1,9 @@
-import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE, type NegocioContractData } from '../negocioContractHtml';
+import {
+  buildNegocioContractHtml,
+  CONTRACT_LOGO_HEIGHTS,
+  NEGOCIO_CONTRACT_PDF_SIZE,
+  type NegocioContractData,
+} from '../negocioContractHtml';
 
 const base: NegocioContractData = {
   numero: 2026021,
@@ -118,5 +123,41 @@ describe('marca de copia', () => {
     expect(html).toContain('<span class="copy-mark">COPIA N.º 3</span>N.º');
     expect(html).toContain('<div class="copy-watermark" aria-hidden="true">COPIA</div>');
     expect(html).toMatch(/· COPIA N\.º 3: Impresa el 30\/09\/2026 .* por Brayan<\/div>/);
+  });
+});
+
+describe('logo grande en el encabezado', () => {
+  const logoHeight = (html: string) => Number(html.match(/\.logo \{ display: block; height: (\d+)px;/)?.[1]);
+  const emptyRows = (html: string) => html.split('<tr class="empty">').length - 1;
+  const withItems = (data: NegocioContractData, count: number): NegocioContractData => ({
+    ...data,
+    items: Array.from({ length: count }, (_, i) => ({ quantity: 1, description: `Artículo ${i + 1}`, unit_price: 1, subtotal: 1 })),
+  });
+
+  it('con filas de relleno de sobra sale al doble del anterior (112 px) y cede 2 filas vacías', () => {
+    const html = buildNegocioContractHtml(base);
+    expect(logoHeight(html)).toBe(CONTRACT_LOGO_HEIGHTS.full);
+    expect(CONTRACT_LOGO_HEIGHTS.full).toBe(112);
+    // 3 cuotas → 16 filas de artículos: 1 real + 15 de relleno, de las que el logo ocupa 2.
+    expect(emptyRows(html)).toBe(13);
+  });
+
+  it('con una sola fila de relleno cede esa y sale a 96 px', () => {
+    // Nivel compacto con plan a dos columnas: 7 filas, 6 artículos reales.
+    const html = buildNegocioContractHtml(withItems(heavy, 6));
+    expect(logoHeight(html)).toBe(CONTRACT_LOGO_HEIGHTS.reduced);
+    expect(emptyRows(html)).toBe(0);
+  });
+
+  it('con la tabla llena de artículos sale a 76 px, sin hacer crecer el encabezado', () => {
+    const html = buildNegocioContractHtml(heavy);
+    expect(logoHeight(html)).toBe(CONTRACT_LOGO_HEIGHTS.compact);
+    expect(CONTRACT_LOGO_HEIGHTS.compact).toBeGreaterThan(56);
+    expect(emptyRows(html)).toBe(0);
+  });
+
+  it('el título y el número van junto al logo, con los datos de la empresa', () => {
+    const html = buildNegocioContractHtml(base);
+    expect(html).toMatch(/<header class="brand">\s*<img class="logo"[^>]*>\s*<div class="brand-side">\s*<div class="company">[\s\S]*?<div class="title"><h2>Solicitud de crédito<\/h2>/);
   });
 });

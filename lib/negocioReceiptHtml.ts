@@ -92,6 +92,9 @@ const esc = (value: string | null | undefined) => String(value ?? '')
 /**
  * Estilos del recibo virtual. Deben ser idénticos a los de
  * frontend/src/lib/negocioReceiptHtml.ts (lo verifica un test de paridad en la web).
+ * El logo va centrado y a todo el ancho útil, hasta 400 px en pantalla y
+ * 70 mm impreso (unas tres veces el tamaño anterior); como depende del ancho,
+ * en papel angosto se encoge sin desbordar y conserva la proporción.
  */
 const RECEIPT_CSS = `
 @page { size: letter; margin: 14mm; }
@@ -99,9 +102,9 @@ const RECEIPT_CSS = `
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 13px; line-height: 1.4; }
 .receipt { position: relative; overflow: hidden; max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #d5dfeb; border-top: 6px solid #195ba6; border-radius: 12px; padding: 22px 28px 18px; }
-.brand { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #e3eaf3; }
-.logo { display: block; height: 52px; width: auto; max-width: 60%; object-fit: contain; }
-.company { text-align: right; color: #294c77; font-size: 11px; line-height: 1.45; }
+.brand { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid #e3eaf3; }
+.logo { display: block; width: 100%; max-width: 400px; height: auto; object-fit: contain; }
+.company { text-align: center; color: #294c77; font-size: 11px; line-height: 1.45; }
 .title { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 18px 0 14px; }
 .eyebrow { color: #5f6b7a; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
 .title h1 { margin: 2px 0 0; color: #173b67; font-size: 22px; letter-spacing: 0.3px; overflow-wrap: anywhere; }
@@ -137,8 +140,8 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 @media print {
   body { padding: 0; background: #fff; color: #000; font-size: 11px; }
   .receipt { max-width: 95mm; margin: 0 auto; border: 1px solid #000; border-radius: 6px; padding: 10px 12px 8px; }
-  .brand { padding-bottom: 6px; border-bottom: 1px solid #000; }
-  .logo { height: 30px; filter: grayscale(1); }
+  .brand { gap: 4px; padding-bottom: 6px; border-bottom: 1px solid #000; }
+  .logo { max-width: 70mm; filter: grayscale(1); }
   .company { color: #000; font-size: 8px; }
   .title { margin: 8px 0 6px; }
   .eyebrow { color: #000; font-size: 8px; }
