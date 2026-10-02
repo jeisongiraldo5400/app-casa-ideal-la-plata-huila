@@ -4,11 +4,13 @@ import { Spacing, Typography, getColors } from '@/constants/theme';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { TransferDetail } from '../utils/transferModel';
+import { RECEIVABLE } from '../utils/transferRules';
 import {
   TRANSFER_STATUS_LABEL,
   TRANSFER_STATUS_TONE,
   dueText,
   formatTransferDate,
+  receiversText,
   transferRouteText,
 } from '../utils/transferTexts';
 
@@ -25,8 +27,11 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
   if (order.dispatchedAt) {
     rows.push(['Despachado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
   }
-  // Quién recibió (20261231340000). Antes de recibir no se listan todos los
-  // bodegueros: desde 20261231320000 puede recibir cualquiera.
+  // Quiénes pueden recibir (20261231450000): los habilitados al despachar o,
+  // en traslados viejos, la regla anterior.
+  const canReceive = receiversText(detail);
+  if (canReceive) rows.push(['Pueden recibir', canReceive]);
+  // Quién recibió (20261231340000).
   if (order.receivedByNames.length) {
     const at = order.receivedAt ?? order.lastReceivedAt;
     rows.push(['Recibido', `${at ? `${formatTransferDate(at)} · ` : ''}${order.receivedByNames.join(', ')}`]);
@@ -49,7 +54,8 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
       {due ? (
         <Text style={[styles.due, { color: order.isOverdue ? colors.error.main : colors.text.secondary }]}>{due}</Text>
       ) : null}
-      {receivers.length === 0 && order.status !== 'cancelled' ? (
+      {/* Antes de despachar no aplica: quién recibe se elige al despachar. */}
+      {receivers.length === 0 && RECEIVABLE.includes(order.status) ? (
         <Text style={[styles.row, { color: colors.warning.dark }]}>
           {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir.
         </Text>

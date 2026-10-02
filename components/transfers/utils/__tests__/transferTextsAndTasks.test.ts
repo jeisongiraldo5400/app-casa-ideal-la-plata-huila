@@ -61,9 +61,13 @@ describe('textos', () => {
 
   it('resúmenes de confirmación', () => {
     const order = parseTransferSummary(rawOrder());
-    expect(dispatchConfirmText({ units: 4, lines: 2, released: 1 }, order, 'Darío')).toContain(
-      '1 unidad no sale y vuelve al disponible de Principal.'
+    const dispatchText = dispatchConfirmText(
+      { units: 4, lines: 2, released: 1, receiverIds: ['u-1', 'u-2'], receiverNames: ['Ana', 'Beto'] },
+      order,
+      'Darío'
     );
+    expect(dispatchText).toContain('1 unidad no sale y vuelve al disponible de Principal.');
+    expect(dispatchText).toContain('Pueden recibir en La Argentina: Ana, Beto. Les llegará un aviso.');
     expect(receiveConfirmText({ ok: 2, damaged: 1, remaining: 2, reportMissing: false }, order)).toBe(
       'Recibes en La Argentina: 2 unidades en buen estado y 1 unidad averiada.\n2 unidades siguen en camino: puedes recibirlas después.'
     );

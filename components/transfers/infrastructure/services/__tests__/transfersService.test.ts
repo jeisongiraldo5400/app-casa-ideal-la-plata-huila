@@ -32,15 +32,18 @@ describe('transfersService', () => {
     const detail = await fetchTransferDetail('t-1');
     expect(rpc).toHaveBeenLastCalledWith('get_transfer_order_detail', { p_transfer_order_id: 't-1' });
     expect(detail.items).toHaveLength(2);
+    expect(detail.receiversAssigned).toBe(false);
+    expect(detail.receiverOptions).toEqual([]);
   });
 
-  it('despacho: envía líneas, transportador, notas y la clave', async () => {
+  it('despacho: envía líneas, transportador, notas, receptores y la clave', async () => {
     rpc.mockResolvedValueOnce({ data: { transfer_order_id: 't-1', order_number: 'TR-1', status: 'in_transit' }, error: null });
     await dispatchTransfer({
       transferOrderId: 't-1',
       items: [{ item_id: 'i-1', quantity: 2 }],
       carrierUserId: 'u-9',
       notes: '  ',
+      receiverIds: ['u-recv'],
       idempotencyKey: 'k',
     });
     expect(rpc).toHaveBeenCalledWith('dispatch_transfer_order', {
@@ -49,6 +52,7 @@ describe('transfersService', () => {
       p_carrier_user_id: 'u-9',
       p_notes: undefined,
       p_idempotency_key: 'k',
+      p_receiver_ids: ['u-recv'],
     });
   });
 

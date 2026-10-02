@@ -1,3 +1,4 @@
+import { kickNotificationDispatch } from '@/components/notifications/infrastructure/services/dispatchNotifications';
 import { useTheme } from '@/components/theme';
 import { Button, Card, Input, OptionPickerField, SectionHeader } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
@@ -11,10 +12,19 @@ import { dispatchTransfer } from '../infrastructure/services/transfersService';
 import { deleteTransferPhotos, uploadPendingTransferPhotos } from '../infrastructure/services/transferPhotosService';
 import { droppedUploadedPhotos, optionalPhotoPath } from '../utils/transferPhotos';
 import type { TransferDetail } from '../utils/transferModel';
-import { maxDispatch, validateDispatch, type DispatchSummary, type DispatchPayloadItem } from '../utils/transferRules';
+import {
+  effectiveCarrierId,
+  maxDispatch,
+  receiverChoices,
+  selectedReceivers,
+  validateDispatch,
+  type DispatchSummary,
+  type DispatchPayloadItem,
+} from '../utils/transferRules';
 import { dispatchConfirmText, unitsText } from '../utils/transferTexts';
 import { ConfirmTransferSheet } from './ConfirmTransferSheet';
 import { QuantityStepper } from './QuantityStepper';
+import { ReceiverPickerField } from './ReceiverPickerField';
 import { SerialsTextField } from './SerialsTextField';
 import { TransferPhotoField } from './TransferPhotoField';
 
@@ -62,6 +72,8 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
   const carrierName = draft.carrierId
     ? people.find((person) => person.id === draft.carrierId)?.full_name ?? null
     : order.carrier?.name ?? null;
+  const receiverOptions = receiverChoices(detail, effectiveCarrierId(detail, draft));
+  const chosenReceivers = selectedReceivers(detail, draft);
 
   const updateLine = (itemId: string, patch: Partial<{ quantity: number; serialsText: string }>) => {
     const current = draft.lines[itemId] ?? { quantity: 0, serialsText: '' };
@@ -85,19 +97,30 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
   const confirm = async () => {
     if (!review) return;
     const carrierUserId = draft.carrierId || null;
+    const receiverIds = review.summary.receiverIds;
     const notes = draft.notes;
     const photo = draft.photo;
     const photoPath = optionalPhotoPath(order.id, photo);
     const result = await submit.run(
       'transfer_dispatch',
-      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath },
+      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath, receiverIds },
       (idempotencyKey) =>
-        dispatchTransfer({ transferOrderId: order.id, items: review.items, carrierUserId, notes, photoPath, idempotencyKey }),
+        dispatchTransfer({
+          transferOrderId: order.id,
+          items: review.items,
+          carrierUserId,
+          notes,
+          photoPath,
+          receiverIds,
+          idempotencyKey,
+        }),
       photo
         ? () => uploadPendingTransferPhotos(order.id, [photo], (uploaded) => setDraft({ ...draft, photo: uploaded }))
         : undefined
     );
     if (!result) return;
+    // El aviso «en camino» ya está en cola; el empujón solo lo adelanta.
+    kickNotificationDispatch();
     setReview(null);
     clearDraft();
     onDone(
@@ -112,12 +135,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
       <Text style={[styles.help, { color: colors.text.secondary }]}>
         Marca cuántas unidades salen de {order.sourceWarehouse.name}. Lo que no salga vuelve al disponible.
       </Text>
-
-      {detail.receivers.length === 0 ? (
-        <Text style={[styles.warning, { color: colors.warning.dark }]}>
-          {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir: solo un administrador podrá confirmar la llegada.
-        </Text>
-      ) : null}
 
       {detail.items.map((item) => {
         const line = draft.lines[item.id] ?? { quantity: 0, serialsText: '' };
@@ -162,14 +179,34 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         );
       })}
 
-      <OptionPickerField
-        value={draft.carrierId}
-        onValueChange={(carrierId) => setDraft({ ...draft, carrierId })}
-        options={carrierOptions}
-        placeholder={order.carrier ? `Transporta: ${order.carrier.name}` : 'Sin transportador'}
-        modalTitle="¿Quién transporta?"
-        colors={colors}
-        disabled={submit.submitting || !online}
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.text.primary }]}>Transportador (opcional)</Text>
+        <OptionPickerField
+          value={draft.carrierId}
+          onValueChange={(carrierId) =>
+            // Quien transporta no puede recibir: sale de la lista si estaba.
+            setDraft({ ...draft, carrierId, receiverIds: draft.receiverIds.filter((id) => id !== carrierId) })
+          }
+          options={carrierOptions}
+          // El transportador se elige aquí (ya no al crear); un traslado viejo
+          // que ya lo traía lo muestra como elegido.
+          placeholder={order.carrier ? `Transporta: ${order.carrier.name}` : 'Sin transportador'}
+          modalTitle="¿Quién transporta?"
+          colors={colors}
+          disabled={submit.submitting || !online}
+        />
+        <Text style={[styles.help, { color: colors.text.secondary }]}>Quien lleva la mercancía no podrá recibirla.</Text>
+      </View>
+
+      <ReceiverPickerField
+        destinationName={order.destinationWarehouse.name}
+        options={receiverOptions}
+        selectedIds={chosenReceivers.map((receiver) => receiver.id)}
+        onChange={(receiverIds) => {
+          setDraft({ ...draft, receiverIds });
+          if (formError) setFormError(null);
+        }}
+        disabled={submit.submitting}
       />
 
       <Input
@@ -223,8 +260,9 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
 
 const styles = StyleSheet.create({
   container: { gap: Spacing.md },
+  field: { gap: Spacing.xs },
+  label: { ...Typography.bodySmallStrong },
   help: { ...Typography.caption },
-  warning: { ...Typography.bodySmallStrong },
   card: { gap: Spacing.sm },
   product: { ...Typography.bodyStrong },
   meta: { ...Typography.caption },

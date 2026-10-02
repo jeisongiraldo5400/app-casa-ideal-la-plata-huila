@@ -68,6 +68,8 @@ export function rawDetail(options: {
   items?: RawItem[];
   permissions?: Record<string, boolean>;
   receivers?: { id: string; name: string }[];
+  receiversAssigned?: boolean;
+  receiverOptions?: Record<string, unknown>[];
   events?: Record<string, unknown>[];
 } = {}) {
   return {
@@ -87,6 +89,8 @@ export function rawDetail(options: {
     ],
     events: options.events ?? [],
     receivers: options.receivers ?? [{ id: 'u-recv', name: 'Recibe' }],
+    receivers_assigned: options.receiversAssigned ?? false,
+    receiver_options: options.receiverOptions ?? [],
     permissions: {
       can_edit: false,
       can_submit: false,
@@ -126,6 +130,18 @@ export function rawPendingDispatchDetail(permissions: Record<string, boolean> = 
         pending_receipt_quantity: 0,
       }),
     ],
+    receiverOptions: RAW_RECEIVER_OPTIONS,
     permissions,
   });
 }
+
+/**
+ * Opciones para habilitar receptores al despachar (20261231450000): la
+ * encargada del destino, otro bodeguero, el transportador y quien consulta.
+ */
+export const RAW_RECEIVER_OPTIONS = [
+  { id: 'u-recv', name: 'Recibe', is_manager: true, is_admin: false, is_me: false },
+  { id: 'u-otro', name: 'Otro Bodeguero', is_manager: false, is_admin: false, is_me: false },
+  { id: 'u-carrier', name: 'Darío', is_manager: true, is_admin: false, is_me: false },
+  { id: 'u-disp', name: 'Bodeguero', is_manager: true, is_admin: false, is_me: true },
+];

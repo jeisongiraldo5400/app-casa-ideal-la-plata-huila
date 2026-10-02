@@ -1,7 +1,7 @@
 /** Textos de los traslados en la app (puros; se prueban sin React). */
 import { formatPaymentDateTime } from '@/lib/localDate';
 import type { StatusTone } from '@/components/ui/StatusChip';
-import type { TransferItem, TransferStatus, TransferSummary } from './transferModel';
+import type { TransferDetail, TransferItem, TransferStatus, TransferSummary } from './transferModel';
 import type { DispatchSummary, ReceiveSummary, ReturnSummary, TransferMode } from './transferRules';
 
 export const TRANSFER_STATUS_LABEL: Record<TransferStatus, string> = {
@@ -76,6 +76,11 @@ export function dispatchConfirmText(summary: DispatchSummary, order: TransferSum
     parts.push(`${unitsText(summary.released)} no ${summary.released === 1 ? 'sale' : 'salen'} y ${summary.released === 1 ? 'vuelve' : 'vuelven'} al disponible de ${order.sourceWarehouse.name}.`);
   }
   parts.push(carrierName ? `Transporta: ${carrierName}.` : 'Sin transportador asignado.');
+  if (summary.receiverNames.length) {
+    parts.push(
+      `Pueden recibir en ${order.destinationWarehouse.name}: ${summary.receiverNames.join(', ')}. Les llegará un aviso.`
+    );
+  }
   parts.push('Solo se despacha una vez: lo que no marques ahora no podrá salir en este traslado.');
   return parts.join('\n');
 }
@@ -144,4 +149,11 @@ export function viewNotice(
     default:
       return null;
   }
+}
+
+/** «Pueden recibir» del detalle; null antes de despachar (20261231450000). */
+export function receiversText(detail: TransferDetail): string | null {
+  if (!detail.order.dispatchedAt) return null;
+  if (detail.receiversAssigned) return detail.receivers.map((receiver) => receiver.name).join(', ');
+  return 'Cualquier bodeguero (salvo quien despachó o transporta)';
 }

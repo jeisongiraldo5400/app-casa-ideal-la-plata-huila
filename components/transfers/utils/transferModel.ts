@@ -1,7 +1,7 @@
 /**
  * Forma de las órdenes de traslado tal como las devuelven las RPC
  * (`get_my_transfer_tasks`, `get_transfer_order_detail`; migraciones
- * 20261231280000 y 20261231290000). Todas devuelven `Json`: aquí se
+ * 20261231280000, 20261231290000 y 20261231450000). Todas devuelven `Json`: aquí se
  * convierten a tipos propios sin confiar en el servidor (numeric llega como
  * número o como texto, un campo nulo no debe tumbar la pantalla).
  */
@@ -109,11 +109,24 @@ export interface TransferEvent {
   createdAt: string | null;
 }
 
+/** Persona que se puede habilitar para recibir al despachar (20261231450000). */
+export interface ReceiverOption extends PersonRef {
+  /** Encargado (Responsable) de la bodega destino: se preselecciona. */
+  isManager: boolean;
+  isAdmin: boolean;
+  /** Quien consulta: si despacha, no puede quedar como receptor. */
+  isMe: boolean;
+}
+
 export interface TransferDetail {
   order: TransferSummary;
   items: TransferItem[];
   events: TransferEvent[];
+  /** Habilitados al despachar si `receiversAssigned`; si no, todos los bodegueros (regla anterior). */
   receivers: PersonRef[];
+  receiversAssigned: boolean;
+  /** Solo llega a quien puede despachar. */
+  receiverOptions: ReceiverOption[];
   permissions: TransferPermissions;
 }
 
@@ -241,6 +254,13 @@ export function parseTransferEvent(value: unknown): TransferEvent {
   };
 }
 
+function parseReceiverOption(value: unknown): ReceiverOption | null {
+  const person = parsePerson(value);
+  if (!person) return null;
+  const r = asObj(value);
+  return { ...person, isManager: bool(r.is_manager), isAdmin: bool(r.is_admin), isMe: bool(r.is_me) };
+}
+
 export function parseTransferDetail(value: unknown): TransferDetail {
   const r = asObj(value);
   const permissions = asObj(r.permissions);
@@ -251,6 +271,10 @@ export function parseTransferDetail(value: unknown): TransferDetail {
     receivers: asArray(r.receivers)
       .map(parsePerson)
       .filter((person): person is PersonRef => person !== null),
+    receiversAssigned: bool(r.receivers_assigned),
+    receiverOptions: asArray(r.receiver_options)
+      .map(parseReceiverOption)
+      .filter((option): option is ReceiverOption => option !== null),
     permissions: {
       canDispatch: bool(permissions.can_dispatch),
       canReceive: bool(permissions.can_receive),
