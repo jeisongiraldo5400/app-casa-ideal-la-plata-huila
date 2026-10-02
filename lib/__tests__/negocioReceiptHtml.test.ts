@@ -1,8 +1,10 @@
 import {
   buildNegocioReceiptHtml,
+  receiptProductsFromItems,
   PENDING_CONFIRMATION_RECEIPT_LEGEND,
   PENDING_CONFIRMATION_RECEIPT_NOTE,
 } from '../negocioReceiptHtml';
+import { formatCOP } from '../creditCalculator';
 
 const sample = {
   receiptNumber: 'RV-2026-1',
@@ -147,6 +149,85 @@ describe('buildNegocioReceiptHtml', () => {
       expect(html).not.toContain('Descuento pronto pago');
       expect(html).not.toContain('Pronto pago');
     });
+  });
+});
+
+describe('buildNegocioReceiptHtml: productos del negocio', () => {
+  const products = [
+    { quantity: 2, name: 'Colchón doble', unitPrice: 600_000, subtotal: 1_200_000 },
+    { quantity: 1, name: 'Nevera <Haceb>', unitPrice: 1_500_000, subtotal: 1_500_000 },
+  ];
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ quantity: 1, name: `Producto ${i + 1}`, unitPrice: 10_000, subtotal: 10_000 }));
+  const sectionOf = (html: string) =>
+    html.slice(html.indexOf('<section class="products'), html.indexOf('<section class="balance">'));
+
+  it('muestra cantidad, producto, precio unitario, subtotal y total, después de los datos del pago y antes del saldo', () => {
+    const html = buildNegocioReceiptHtml({ ...sample, products });
+    const section = sectionOf(html);
+    expect(section).toContain('<span class="products-title">Productos (2)</span>');
+    // Sin tabla: un producto por línea.
+    expect(section).not.toContain('<table');
+    expect(section).toContain(
+      `<li><span class="pq">2</span><span class="pn">Colchón doble</span><span class="pp">${formatCOP(600_000)} c/u</span><span class="ps">${formatCOP(1_200_000)}</span></li>`
+    );
+    expect(section).toContain('<span class="pn">Nevera &lt;Haceb&gt;</span>');
+    expect(section).toContain(
+      `<div class="products-total"><span>Total productos</span><strong>${formatCOP(2_700_000)}</strong></div>`
+    );
+    expect(html.indexOf('<section class="fields">')).toBeLessThan(html.indexOf('<section class="products'));
+  });
+
+  it('sin precios conocidos muestra solo cantidad y producto, sin inventar total', () => {
+    const section = sectionOf(
+      buildNegocioReceiptHtml({ ...sample, products: [{ quantity: 1, name: 'Base' }, { ...products[0] }] })
+    );
+    expect(section).toContain('<li><span class="pq">1</span><span class="pn">Base</span></li>');
+    expect(section).not.toContain('c/u');
+    expect(section).not.toContain('Total productos');
+    expect(section).not.toContain('$');
+  });
+
+  it('sin productos (o lista vacía) no aparece la sección', () => {
+    expect(buildNegocioReceiptHtml(sample)).not.toContain('<section class="products');
+    expect(buildNegocioReceiptHtml({ ...sample, products: [] })).not.toContain('<section class="products');
+    expect(buildNegocioReceiptHtml({ ...sample, products: null })).not.toContain('<section class="products');
+  });
+
+  it('con muchos productos se compacta (letra menor), siempre un producto por línea', () => {
+    const lines = (html: string) => sectionOf(html).split('<li>').length - 1;
+    const four = buildNegocioReceiptHtml({ ...sample, products: many(4) });
+    expect(four).toContain('<section class="products"><span');
+    expect(lines(four)).toBe(4);
+    const fifteen = buildNegocioReceiptHtml({ ...sample, products: many(15) });
+    expect(fifteen).toContain('<section class="products is-compact"><span class="products-title">Productos (15)</span>');
+    expect(lines(fifteen)).toBe(15);
+    expect(fifteen).toContain(`<strong>${formatCOP(150_000)}</strong>`);
+    const thirty = buildNegocioReceiptHtml({ ...sample, products: many(30) });
+    expect(thirty).toContain('<section class="products is-dense">');
+    expect(lines(thirty)).toBe(30);
+  });
+
+  it('no cambia los estilos: el CSS es el mismo con o sin productos', () => {
+    const css = (html: string) => html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+    expect(css(buildNegocioReceiptHtml({ ...sample, products }))).toBe(css(buildNegocioReceiptHtml(sample)));
+    // La hoja horizontal es solo de la web.
+    expect(buildNegocioReceiptHtml({ ...sample, products })).not.toContain('landscape');
+  });
+
+  it('arma las líneas con los valores del contrato (descripción primero)', () => {
+    expect(
+      receiptProductsFromItems([
+        { quantity: 1, description: 'Colchón doble', product: { name: 'COLCHON D' }, unit_price: '600000', subtotal: 600000 },
+        { quantity: '2', description: '', product: { name: 'Nevera' }, unit_price: 100, subtotal: 200 },
+        { quantity: 1, description: null },
+      ])
+    ).toEqual([
+      { quantity: 1, name: 'Colchón doble', unitPrice: 600_000, subtotal: 600_000 },
+      { quantity: 2, name: 'Nevera', unitPrice: 100, subtotal: 200 },
+      { quantity: 1, name: 'Producto', unitPrice: null, subtotal: null },
+    ]);
+    expect(receiptProductsFromItems(null)).toEqual([]);
   });
 });
 

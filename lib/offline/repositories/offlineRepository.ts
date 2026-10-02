@@ -1707,6 +1707,9 @@ export type LocalNegocioProductRow = {
   productSku: string | null;
   description: string | null;
   quantity: number;
+  /** Precio unitario y subtotal del ítem (para el recibo); null si no se descargaron. */
+  unitPrice?: number | null;
+  subtotal?: number | null;
 };
 
 /** Productos de varios negocios a la vez (ficha del cliente sin señal). */
@@ -1722,5 +1725,7 @@ export async function fetchNegociosProductsFromLocal(negocioIds: readonly string
     productSku: row.productSku,
     description: row.description,
     quantity: Number(row.quantity) || 0,
+    unitPrice: row.unitPrice ?? null,
+    subtotal: row.subtotal ?? null,
   }));
 }

@@ -37,9 +37,91 @@ export type NegocioReceiptData = {
    * leyenda de pendiente. Al confirmarse el pago, la leyenda desaparece.
    */
   pendingConfirmation?: boolean | null;
+  /**
+   * Productos del negocio (cantidad, nombre, precio unitario y subtotal). Vacío o sin
+   * valor no se imprime la sección: recibos de negocios sin productos cargados.
+   */
+  products?: NegocioReceiptProduct[] | null;
   /** Número de copia (`register_negocio_print`); desde la n.º 2 sale «COPIA N.º X». */
   copy?: PrintCopyInfo | null;
 };
+
+/** Producto del negocio tal como sale en el recibo: cantidad y nombre. */
+export type NegocioReceiptProduct = {
+  quantity: number;
+  name: string;
+  /** Precio unitario del ítem (`negocio_items.unit_price`); null si no se conoce. */
+  unitPrice?: number | null;
+  /** Subtotal del ítem (`negocio_items.subtotal`); null si no se conoce. */
+  subtotal?: number | null;
+};
+
+/** Desde cuántos productos la lista se compacta (dos tablas, letra menor). */
+export const RECEIPT_PRODUCTS_COMPACT_FROM = 5;
+/** Desde cuántos productos se aprieta todavía más (tres tablas) para no pasar de una hoja. */
+export const RECEIPT_PRODUCTS_DENSE_FROM = 17;
+
+/**
+ * Líneas del recibo a partir de los ítems del negocio, con los mismos valores
+ * que el contrato: nombre (la descripción del ítem; si falta, el nombre del
+ * producto), cantidad, precio unitario y subtotal. Un ítem sin precios (datos
+ * viejos del teléfono) queda con `unitPrice`/`subtotal` en null.
+ */
+export function receiptProductsFromItems(
+  items:
+    | readonly {
+        quantity: number | string | null;
+        description?: string | null;
+        product?: { name?: string | null } | null;
+        unit_price?: number | string | null;
+        subtotal?: number | string | null;
+      }[]
+    | null
+    | undefined
+): NegocioReceiptProduct[] {
+  const money = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return (items ?? []).map((item) => ({
+    quantity: Number(item.quantity) || 0,
+    name: String(item.description ?? '').trim() || String(item.product?.name ?? '').trim() || 'Producto',
+    unitPrice: money(item.unit_price),
+    subtotal: money(item.subtotal),
+  }));
+}
+
+/** «2», o «1.50» si la cantidad no es entera. */
+export function formatReceiptQuantity(quantity: number) {
+  const value = Number(quantity) || 0;
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+/** Productos que se imprimen (sin nombre no se cuentan). */
+export function receiptProducts(data: Pick<NegocioReceiptData, 'products'>): NegocioReceiptProduct[] {
+  return (data.products ?? []).filter((product) => String(product?.name ?? '').trim());
+}
+
+/**
+ * Los precios salen solo si todos los productos los traen: no se inventan
+ * precios ni se suma un total incompleto.
+ */
+export function receiptProductsHavePrices(products: readonly NegocioReceiptProduct[]) {
+  return (
+    products.length > 0 &&
+    products.every(
+      (product) =>
+        product.unitPrice !== null && product.unitPrice !== undefined && Number.isFinite(Number(product.unitPrice)) &&
+        product.subtotal !== null && product.subtotal !== undefined && Number.isFinite(Number(product.subtotal))
+    )
+  );
+}
+
+/** Total de los productos: suma de los subtotales (como «Valor artículos» del contrato). */
+export function receiptProductsTotal(products: readonly NegocioReceiptProduct[]) {
+  return Math.round(products.reduce((sum, product) => sum + (Number(product.subtotal) || 0), 0) * 100) / 100;
+}
 
 /** Leyenda del recibo de un pago que todavía no confirmó el servidor. */
 export const PENDING_CONFIRMATION_RECEIPT_LEGEND = 'PENDIENTE DE CONFIRMACIÓN';
@@ -93,8 +175,10 @@ const esc = (value: string | null | undefined) => String(value ?? '')
  * Estilos del recibo virtual. Deben ser idénticos a los de
  * frontend/src/lib/negocioReceiptHtml.ts (lo verifica un test de paridad en la web).
  * El logo va centrado y a todo el ancho útil, hasta 400 px en pantalla y
- * 70 mm impreso (unas tres veces el tamaño anterior); como depende del ancho,
- * en papel angosto se encoge sin desbordar y conserva la proporción.
+ * 70 mm impreso, con el NIT y la dirección pegados debajo (la imagen trae
+ * aire transparente abajo: se compensa con margen negativo). La impresión
+ * horizontal es solo de la web (WEB_LANDSCAPE_PRINT_CSS): el PDF del iPhone
+ * se arma en hoja vertical.
  */
 const RECEIPT_CSS = `
 @page { size: letter; margin: 14mm; }
@@ -102,9 +186,9 @@ const RECEIPT_CSS = `
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 13px; line-height: 1.4; }
 .receipt { position: relative; overflow: hidden; max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #d5dfeb; border-top: 6px solid #195ba6; border-radius: 12px; padding: 22px 28px 18px; }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid #e3eaf3; }
+.brand { display: flex; flex-direction: column; align-items: center; gap: 0; padding-bottom: 12px; border-bottom: 1px solid #e3eaf3; }
 .logo { display: block; width: 100%; max-width: 400px; height: auto; object-fit: contain; }
-.company { text-align: center; color: #294c77; font-size: 11px; line-height: 1.45; }
+.company { margin-top: -22px; text-align: center; color: #294c77; font-size: 11px; line-height: 1.45; }
 .title { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 18px 0 14px; }
 .eyebrow { color: #5f6b7a; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
 .title h1 { margin: 2px 0 0; color: #173b67; font-size: 22px; letter-spacing: 0.3px; overflow-wrap: anywhere; }
@@ -125,6 +209,18 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 .field.wide { grid-column: 1 / -1; }
 .field span { display: block; color: #5f6b7a; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
 .field strong { display: block; margin-top: 2px; color: #17243b; font-size: 13.5px; overflow-wrap: anywhere; }
+.products { margin-top: 12px; }
+.products-title { display: block; color: #5f6b7a; font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
+.products-list { list-style: none; margin: 3px 0 0; padding: 0; }
+.products-list li { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; border-bottom: 1px dashed #e3eaf3; font-size: 11px; line-height: 1.3; break-inside: avoid; }
+.products-list .pq { flex: none; min-width: 2.4em; color: #173b67; font-weight: 700; }
+.products-list .pq::after { content: " ×"; font-weight: 400; }
+.products-list .pn { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.products-list .pp { flex: none; color: #5f6b7a; white-space: nowrap; }
+.products-list .ps { flex: none; min-width: 6.5em; font-weight: 700; text-align: right; white-space: nowrap; }
+.products-total { display: flex; justify-content: space-between; gap: 12px; padding-top: 5px; color: #173b67; font-size: 11.5px; font-weight: 700; }
+.products.is-compact li { padding: 1px 0; font-size: 10px; }
+.products.is-dense li { padding: 1px 0; font-size: 9.5px; }
 .balance { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 16px; border: 1px solid #d5dfeb; border-radius: 10px; background: #f6f9fd; }
 .balance span { color: #294c77; font-weight: 700; }
 .balance strong { color: #173b67; font-size: 18px; white-space: nowrap; }
@@ -140,9 +236,9 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 @media print {
   body { padding: 0; background: #fff; color: #000; font-size: 11px; }
   .receipt { max-width: 95mm; margin: 0 auto; border: 1px solid #000; border-radius: 6px; padding: 10px 12px 8px; }
-  .brand { gap: 4px; padding-bottom: 6px; border-bottom: 1px solid #000; }
+  .brand { gap: 0; padding-bottom: 6px; border-bottom: 1px solid #000; }
   .logo { max-width: 70mm; filter: grayscale(1); }
-  .company { color: #000; font-size: 8px; }
+  .company { margin-top: -5mm; color: #000; font-size: 8px; }
   .title { margin: 8px 0 6px; }
   .eyebrow { color: #000; font-size: 8px; }
   .title h1 { color: #000; font-size: 14px; }
@@ -156,6 +252,14 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .field { padding: 3px 0; border-bottom: 1px dotted #999; }
   .field span { color: #333; font-size: 7px; }
   .field strong { color: #000; font-size: 10px; }
+  .products { margin-top: 4px; }
+  .products-title { color: #333; font-size: 6.5px; }
+  .products-list { margin-top: 1px; }
+  .products-list li { padding: 0.5px 0; border-bottom: 1px dotted #999; color: #000; font-size: 7.5px; }
+  .products-list .pq, .products-list .pp { color: #000; }
+  .products.is-compact li { font-size: 7px; }
+  .products.is-dense li { font-size: 6.5px; }
+  .products-total { padding-top: 2px; color: #000; font-size: 8px; }
   .balance { margin-top: 6px; padding: 5px 8px; border: 1px solid #000; border-radius: 3px; background: none; }
   .balance span, .balance strong { color: #000; }
   .balance strong { font-size: 12px; }
@@ -163,6 +267,33 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .watermark { color: rgba(0, 0, 0, 0.08); font-size: 48px; letter-spacing: 4px; }
 }
 `;
+
+/**
+ * Sección «Productos»: cantidad, producto, precio unitario, subtotal y total.
+ * Un producto por línea (sin tabla), en letra pequeña para que quepan
+ * muchos. En la horizontal de la web, con muchos productos, la lista se
+ * reparte en 2 o 3 columnas para no pasar de una hoja. Sin productos no sale
+ * nada.
+ */
+function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products'>) {
+  const list = receiptProducts(data);
+  if (list.length === 0) return '';
+  const withPrices = receiptProductsHavePrices(list);
+  const dense = list.length >= RECEIPT_PRODUCTS_DENSE_FROM;
+  const compact = !dense && list.length >= RECEIPT_PRODUCTS_COMPACT_FROM;
+  // Un producto por línea, uno debajo del otro: «2 × Nombre  $ x c/u  $ total».
+  const line = (product: NegocioReceiptProduct) =>
+    `<li><span class="pq">${esc(formatReceiptQuantity(product.quantity))}</span><span class="pn">${esc(product.name.trim())}</span>${
+      withPrices
+        ? `<span class="pp">${esc(formatCOP(Number(product.unitPrice)))} c/u</span><span class="ps">${esc(formatCOP(Number(product.subtotal)))}</span>`
+        : ''
+    }</li>`;
+  const total = withPrices
+    ? `<div class="products-total"><span>Total productos</span><strong>${esc(formatCOP(receiptProductsTotal(list)))}</strong></div>`
+    : '';
+  return `<section class="products${dense ? ' is-dense' : compact ? ' is-compact' : ''}"><span class="products-title">Productos (${list.length})</span><ul class="products-list">${list.map(line).join('')}</ul>${total}</section>
+`;
+}
 
 const STATUS_STYLES: Record<string, { label: string; tone: string }> = {
   emitido: { label: 'Emitido', tone: 'ok' },
@@ -235,7 +366,7 @@ ${pendingBanner}
   ${field('Recibo físico', esc(data.physicalReceiptNumber) || 'No aplica')}
   ${field('Registrado por', esc(receiptRegisteredBy(data)))}
 </section>
-<section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(remainingBalance)}</strong></section>
+${receiptProductsHtml(data)}<section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(remainingBalance)}</strong></section>
 <footer class="foot">${pendingConfirmation ? `${esc(PENDING_CONFIRMATION_RECEIPT_NOTE)}<br />` : ''}${prontoPago && !isVoided ? `${esc(PRONTO_PAGO_RECEIPT_LEGEND)}<br />` : ''}${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>
 </main></body></html>`;
 }

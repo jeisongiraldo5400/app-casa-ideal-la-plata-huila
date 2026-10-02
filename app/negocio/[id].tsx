@@ -37,7 +37,7 @@ import {
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
 import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE } from '@/lib/negocioContractHtml';
-import { buildNegocioReceiptHtml } from '@/lib/negocioReceiptHtml';
+import { buildNegocioReceiptHtml, receiptProductsFromItems } from '@/lib/negocioReceiptHtml';
 import { LETTER_PDF_SIZE, pdfPrintOptions } from '@/lib/pdfPrintOptions';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
@@ -644,6 +644,9 @@ function NegocioDetailScreenInner() {
   }, [pendingCount, lastSyncedAt, fromLocal, load]);
 
   const pendingBalance = useMemo(() => computeRemainingBalance(cuotas), [cuotas]);
+  // Los recibos (PDF y ticket) llevan los productos ya cargados en el detalle:
+  // con señal salen del servidor y sin señal de lo descargado en el teléfono.
+  const receiptProducts = useMemo(() => receiptProductsFromItems(items), [items]);
   const serverPagoPermissions = useNegocioPagoPermissions({
     negocioId: negocio?.id,
     enabled: online && !fromLocal,
@@ -735,6 +738,7 @@ function NegocioDetailScreenInner() {
       // Este recibo se emite justo después de cobrar desde la app.
       paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
       remainingBalance: input.prontoPago ? 0 : Math.max(pendingBalance - input.amount, 0),
+      products: receiptProducts,
       ...(input.prontoPago
         ? {
             paymentKind: 'pronto_pago',
@@ -1185,6 +1189,7 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
       ...pagoReceiptExtras(pago),
+      products: receiptProducts,
       copy,
     });
     try {
@@ -1217,6 +1222,7 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(pago.payment_site),
       remainingBalance,
       ...pagoReceiptExtras(pago),
+      products: receiptProducts,
     }, { resolveCopy: () => recordReceiptPrint(pago, 'ticket') });
   };
 
