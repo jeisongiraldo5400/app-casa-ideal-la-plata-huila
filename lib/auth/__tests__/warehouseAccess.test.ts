@@ -1,4 +1,4 @@
-import { canUseTransfersFor, warehouseAccessFor } from '../warehouseAccess';
+import { canUseTransfersFor, canUseWarehousesFor, warehouseAccessFor } from '../warehouseAccess';
 
 describe('warehouseAccessFor', () => {
   it('admin y bodeguero: entradas, compras y cualquier salida', () => {
@@ -56,5 +56,21 @@ describe('canUseTransfersFor', () => {
 
   it('sin rol de almacén, sin bodega y sin tareas no entra', () => {
     expect(canUseTransfersFor({ roleNames: ['vendedor', 'recaudador'], membershipsCount: 0, tasksCount: 0 })).toBe(false);
+  });
+});
+
+describe('canUseWarehousesFor', () => {
+  it('admin entra siempre, aunque no sea responsable de ninguna bodega', () => {
+    expect(canUseWarehousesFor({ roleNames: [' Admin '], membershipsCount: 0 })).toBe(true);
+  });
+
+  it('cualquier otro usuario entra solo si es responsable de alguna bodega', () => {
+    expect(canUseWarehousesFor({ roleNames: ['vendedor'], membershipsCount: 1 })).toBe(true);
+    expect(canUseWarehousesFor({ roleNames: [], membershipsCount: 2 })).toBe(true);
+  });
+
+  it('bodeguero sin bodega asignada no ve Bodegas', () => {
+    expect(canUseWarehousesFor({ roleNames: ['bodeguero'], membershipsCount: 0 })).toBe(false);
+    expect(canUseWarehousesFor({ roleNames: ['vendedor', 'recaudador'], membershipsCount: 0 })).toBe(false);
   });
 });

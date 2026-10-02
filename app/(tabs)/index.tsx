@@ -9,6 +9,7 @@ import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
+import { canUseWarehousesFor } from '@/lib/auth/warehouseAccess';
 import { isOfflineError } from '@/lib/errorMessage';
 import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
@@ -30,7 +31,7 @@ function HomeScreenInner() {
   // algo pasa aunque la pantalla destino tarde en traer sus datos.
   const navigate = useNavigateWithLoading();
   const { user } = useAuth();
-  const { isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
+  const { roles, isAdmin, isVendedor, isGestorCobro, isRecaudador, canAccessCatalogs } = useUserRoles();
   const warehouse = useWarehouseAccess();
   const focused = useIsFocused();
   const online = useNetworkStatus();
@@ -45,6 +46,12 @@ function HomeScreenInner() {
   // quien tenga tareas (el servidor decide por bodega, no solo por rol).
   const transfers = useTransferTasks({ enabled: focused && online });
   const transfersOverdue = transfers.tasks ? overdueCount(transfers.tasks.toReceive) : 0;
+  // Bodegas: admin, o quien sea Responsable de alguna (las membresías ya las
+  // trae useTransferTasks con get_my_warehouse_memberships).
+  const canUseWarehouses = canUseWarehousesFor({
+    roleNames: roles.map((userRole) => userRole.role?.nombre ?? ''),
+    membershipsCount: transfers.memberships.length,
+  });
   const [now, setNow] = useState(new Date());
   const canCreateNegocio = isAdmin() || isVendedor() || isGestorCobro();
   // El recaudador sólo consulta y cobra: ve Negocios y Cartera, no crea negocios
@@ -152,7 +159,7 @@ function HomeScreenInner() {
           </View>
         ) : null}
 
-        {warehouse.canUseExits || warehouse.canRegisterEntries || warehouse.canSeeAllOrders || transfers.canUse ? (
+        {warehouse.canUseExits || warehouse.canRegisterEntries || warehouse.canSeeAllOrders || transfers.canUse || canUseWarehouses ? (
           <View style={styles.section}>
             <SectionHeader title="Operaciones de almacén" />
             <View style={styles.actionGrid}>
@@ -177,6 +184,17 @@ function HomeScreenInner() {
                   icon="swap-horiz"
                   tone={transfersOverdue > 0 ? 'error' : 'primary'}
                   onPress={() => navigate('/(tabs)/traslados' as never)}
+                  style={styles.fullCard}
+                />
+              ) : null}
+              {canUseWarehouses ? (
+                <ActionCard
+                  compact
+                  title="Bodegas"
+                  subtitle="Existencias, en camino e historial"
+                  icon="warehouse"
+                  tone="info"
+                  onPress={() => navigate('/(tabs)/bodegas' as never)}
                   style={styles.fullCard}
                 />
               ) : null}

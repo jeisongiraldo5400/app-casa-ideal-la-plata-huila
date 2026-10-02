@@ -5486,6 +5486,15 @@ export type Database = {
         }
         Returns: Json
       }
+      get_warehouse_stock: {
+        Args: {
+          p_warehouse_id: string
+          p_search?: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
       get_warehouse_history: {
         Args: {
           p_warehouse_id: string
@@ -6482,6 +6491,10 @@ export type Database = {
           p_page?: number
           p_page_size?: number
         }
+        Returns: Json
+      }
+      list_my_warehouses: {
+        Args: never
         Returns: Json
       }
       list_warehouse_members: {

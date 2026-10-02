@@ -98,4 +98,25 @@ describe('buildPushDeepLink', () => {
     expect(buildPushDeepLink(undefined)).toBeNull();
     expect(buildPushDeepLink({ kind: 42, id: {} } as never)).toBeNull();
   });
+  it('warehouse_stock_reserved (kind delivery_order) abre la orden de entrega filtrada por su número', () => {
+    // Payload del aviso «Se separó stock de tu bodega» (migración 20261231390000).
+    expect(
+      buildPushDeepLink(
+        {
+          kind: 'delivery_order',
+          id: 'do-1',
+          order_number: 'OE-2026-0042',
+          negocio_id: 'n-1',
+          warehouse_id: 'w-1',
+        } as never,
+        { nonce: 'aviso-1' }
+      )
+    ).toBe('/(tabs)/all-orders?tab=delivery&q=OE-2026-0042&n=aviso-1');
+  });
+
+  it('transfer_pending_dispatch (kind transfer_order) abre el detalle del traslado', () => {
+    expect(
+      buildPushDeepLink({ kind: 'transfer_order', id: 't-9', order_number: 'TR-2026-0009' })
+    ).toBe('/traslado/t-9');
+  });
 });

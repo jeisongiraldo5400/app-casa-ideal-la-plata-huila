@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
 import HomeScreen from '../index';
@@ -19,6 +19,9 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), navigate: jest.fn() }),
   useFocusEffect: jest.fn(),
 }));
+
+const mockNavigate = jest.fn();
+jest.mock('@/hooks/useNavigateWithLoading', () => ({ useNavigateWithLoading: () => mockNavigate }));
 
 jest.mock('@/components/theme', () => ({
   useTheme: () => ({ isDark: false }),
@@ -50,13 +53,20 @@ jest.mock('@/hooks/useUserRoles', () => ({
 }));
 
 // Traslados: el hook real consulta el servidor; aquí se controla su resultado.
-let mockTransfers: { canUse: boolean; tasks: unknown } = { canUse: false, tasks: null };
+let mockTransfers: { canUse: boolean; tasks: unknown; memberships?: unknown[] } = { canUse: false, tasks: null };
 jest.mock('@/components/transfers', () => {
   const actual = jest.requireActual('@/components/transfers/utils/transferTasks');
   return {
     homeCardSubtitle: actual.homeCardSubtitle,
     overdueCount: actual.overdueCount,
-    useTransferTasks: () => ({ ...mockTransfers, loading: false, error: null, unavailable: false, reload: jest.fn() }),
+    useTransferTasks: () => ({
+      memberships: [],
+      ...mockTransfers,
+      loading: false,
+      error: null,
+      unavailable: false,
+      reload: jest.fn(),
+    }),
   };
 });
 
@@ -178,5 +188,33 @@ describe('Inicio · tarjeta Traslados', () => {
     const subtitle = render(<HomeScreen />).getByText('1 por recibir');
     const style = [subtitle.props.style].flat(3);
     expect(style).not.toEqual(expect.arrayContaining([expect.objectContaining({ color: '#dc2626' })]));
+  });
+});
+
+describe('Inicio · tarjeta Bodegas', () => {
+  const membership = { warehouseId: 'w-1', warehouseName: 'Principal', canDispatch: true, canReceive: true };
+
+  beforeEach(() => {
+    mockStats = { pendingOrders: 1, pendingDeliveryOrders: 2, loading: false, error: null };
+    mockOnline = true;
+    mockTransfers = { canUse: false, tasks: null, memberships: [] };
+  });
+
+  it('el admin la ve aunque no sea responsable de ninguna bodega', () => {
+    mockRoleNames = ['admin'];
+    const screen = render(<HomeScreen />);
+    fireEvent.press(screen.getByText('Bodegas'));
+    expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/bodegas');
+  });
+
+  it('el responsable de una bodega la ve', () => {
+    mockRoleNames = ['vendedor'];
+    mockTransfers = { canUse: true, tasks: null, memberships: [membership] };
+    expect(render(<HomeScreen />).getByText('Bodegas')).toBeTruthy();
+  });
+
+  it('el bodeguero sin bodega asignada no la ve', () => {
+    mockRoleNames = ['bodeguero'];
+    expect(render(<HomeScreen />).queryByText('Bodegas')).toBeNull();
   });
 });

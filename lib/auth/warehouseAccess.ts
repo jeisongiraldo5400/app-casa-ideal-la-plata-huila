@@ -65,3 +65,20 @@ export function canUseTransfersFor({ roleNames, membershipsCount, tasksCount }: 
   if (roles.has('admin') || roles.has('bodeguero')) return true;
   return membershipsCount > 0 || tasksCount > 0;
 }
+
+/**
+ * Bodegas (3.4.0; migración 20261231390000): el encargado de una bodega es su
+ * Responsable (`warehouse_members`). El admin ve todas; cualquier otro usuario
+ * —también el bodeguero— solo las bodegas de las que es Responsable, así que
+ * un bodeguero sin bodega asignada no ve ninguna y no se le muestra la tarjeta.
+ */
+export type WarehousesAccessInput = {
+  roleNames: readonly string[];
+  /** Bodegas de las que es Responsable (`get_my_warehouse_memberships` o `list_my_warehouses`). */
+  membershipsCount: number;
+};
+
+export function canUseWarehousesFor({ roleNames, membershipsCount }: WarehousesAccessInput): boolean {
+  const roles = new Set(roleNames.map((name) => name.trim().toLowerCase()));
+  return roles.has('admin') || membershipsCount > 0;
+}
