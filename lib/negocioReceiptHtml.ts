@@ -94,11 +94,12 @@ const esc = (value: string | null | undefined) => String(value ?? '')
  * frontend/src/lib/negocioReceiptHtml.ts (lo verifica un test de paridad en la web).
  * El logo va centrado y a todo el ancho útil, hasta 400 px en pantalla y
  * 70 mm impreso, con el NIT y la dirección pegados debajo (la imagen trae
- * aire transparente abajo: se compensa con margen negativo). Se imprime en
- * horizontal (carta apaisada) a todo el ancho, con los datos en 4 columnas.
+ * aire transparente abajo: se compensa con margen negativo). La impresión
+ * horizontal es solo de la web (WEB_LANDSCAPE_PRINT_CSS): el PDF del iPhone
+ * se arma en hoja vertical.
  */
 const RECEIPT_CSS = `
-@page { size: letter landscape; margin: 10mm; }
+@page { size: letter; margin: 14mm; }
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, Helvetica, sans-serif; color: #17243b; font-size: 13px; line-height: 1.4; }
@@ -140,7 +141,7 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 }
 @media print {
   body { padding: 0; background: #fff; color: #000; font-size: 11px; }
-  .receipt { max-width: none; margin: 0 auto; border: 1px solid #000; border-radius: 6px; padding: 10px 14px 8px; }
+  .receipt { max-width: 95mm; margin: 0 auto; border: 1px solid #000; border-radius: 6px; padding: 10px 12px 8px; }
   .brand { gap: 0; padding-bottom: 6px; border-bottom: 1px solid #000; }
   .logo { max-width: 70mm; filter: grayscale(1); }
   .company { margin-top: -5mm; color: #000; font-size: 8px; }
@@ -153,8 +154,7 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .amount, .is-voided .amount { padding: 6px 0; border-radius: 0; background: none; color: #000; border-top: 1px solid #000; border-bottom: 1px solid #000; }
   .amount span { font-size: 9px; opacity: 1; }
   .amount strong { font-size: 16px; }
-  .fields { grid-template-columns: repeat(4, 1fr); gap: 0 12px; margin-top: 4px; }
-  .field.wide { grid-column: span 2; }
+  .fields { gap: 0 12px; margin-top: 4px; }
   .field { padding: 3px 0; border-bottom: 1px dotted #999; }
   .field span { color: #333; font-size: 7px; }
   .field strong { color: #000; font-size: 10px; }
