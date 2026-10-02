@@ -5092,6 +5092,7 @@ export type Database = {
           p_photo_path?: string
           p_client_captured_at?: string
           p_idempotency_key?: string
+          p_receiver_ids?: string[]
         }
         Returns: Json
       }

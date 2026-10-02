@@ -1,6 +1,6 @@
 /**
  * Acceso a las RPC de órdenes de traslado (contrato: migraciones
- * 20261231280000 / 20261231290000). El móvil solo despacha, recibe y confirma
+ * 20261231280000 / 20261231290000 / 20261231450000). El móvil solo despacha, recibe y confirma
  * devoluciones; los traslados se crean en la web.
  *
  * Los errores se lanzan tal cual llegan de PostgREST: `errorMessage` deja los
@@ -80,7 +80,13 @@ const cleanNotes = (notes: string): string | undefined => {
 };
 
 export async function dispatchTransfer(
-  input: WriteBase & PhotoInput & { items: DispatchPayloadItem[]; carrierUserId: string | null }
+  input: WriteBase &
+    PhotoInput & {
+      items: DispatchPayloadItem[];
+      carrierUserId: string | null;
+      /** Quiénes pueden recibir en el destino (≥ 1; 20261231450000). */
+      receiverIds: string[];
+    }
 ): Promise<TransferWriteResult> {
   const { data, error } = await supabase.rpc('dispatch_transfer_order', {
     p_transfer_order_id: input.transferOrderId,
@@ -89,6 +95,7 @@ export async function dispatchTransfer(
     p_notes: cleanNotes(input.notes),
     p_photo_path: input.photoPath ?? undefined,
     p_idempotency_key: input.idempotencyKey,
+    p_receiver_ids: input.receiverIds,
   });
   if (error) throw error;
   return parseTransferWriteResult(data);
