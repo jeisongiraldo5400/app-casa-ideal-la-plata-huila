@@ -43,7 +43,7 @@ describe('useCobroReceiptActions', () => {
     await act(() => result.current.shareReceipt(data, target));
     expect(mockFetchProducts).toHaveBeenCalledWith('n1');
     const html = mockPrintToFile.mock.calls[0][0].html;
-    expect(html).toContain('<tr><td class="q">2</td><td>Colchón doble</td>');
+    expect(html).toContain('<li><span class="pq">2</span><span class="pn">Colchón doble</span>');
     expect(html).toContain('<span>Total productos</span>');
   });
 

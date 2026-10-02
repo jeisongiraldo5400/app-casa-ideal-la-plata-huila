@@ -209,19 +209,18 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 .field.wide { grid-column: 1 / -1; }
 .field span { display: block; color: #5f6b7a; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
 .field strong { display: block; margin-top: 2px; color: #17243b; font-size: 13.5px; overflow-wrap: anywhere; }
-.products { margin-top: 14px; }
-.products-title { display: block; color: #5f6b7a; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
-.products-parts { display: grid; grid-template-columns: 1fr; align-items: start; gap: 0 24px; margin-top: 4px; }
-.products-part { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.products-part + .products-part thead { display: none; }
-.products-part th { padding: 4px 0; border-bottom: 1px solid #d5dfeb; color: #5f6b7a; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-align: left; text-transform: uppercase; }
-.products-part td { padding: 4px 0; border-bottom: 1px dashed #d5dfeb; font-size: 13px; vertical-align: top; overflow-wrap: anywhere; }
-.products-part .q { width: 12%; color: #173b67; font-weight: 700; text-align: center; }
-.products-part .m { width: 22%; padding-left: 6px; text-align: right; white-space: nowrap; }
-.products-total { display: flex; justify-content: space-between; gap: 12px; padding-top: 6px; color: #173b67; font-weight: 700; }
-.products.is-compact td { padding: 2px 0; font-size: 12px; }
-.products.is-dense td { padding: 1px 0; font-size: 11px; }
-.products.is-compact .m, .products.is-dense .m { padding-left: 4px; }
+.products { margin-top: 12px; }
+.products-title { display: block; color: #5f6b7a; font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
+.products-list { list-style: none; margin: 3px 0 0; padding: 0; }
+.products-list li { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; border-bottom: 1px dashed #e3eaf3; font-size: 11px; line-height: 1.3; break-inside: avoid; }
+.products-list .pq { flex: none; min-width: 2.4em; color: #173b67; font-weight: 700; }
+.products-list .pq::after { content: " ×"; font-weight: 400; }
+.products-list .pn { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.products-list .pp { flex: none; color: #5f6b7a; white-space: nowrap; }
+.products-list .ps { flex: none; min-width: 6.5em; font-weight: 700; text-align: right; white-space: nowrap; }
+.products-total { display: flex; justify-content: space-between; gap: 12px; padding-top: 5px; color: #173b67; font-size: 11.5px; font-weight: 700; }
+.products.is-compact li { padding: 1px 0; font-size: 10px; }
+.products.is-dense li { padding: 1px 0; font-size: 9.5px; }
 .balance { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 16px; border: 1px solid #d5dfeb; border-radius: 10px; background: #f6f9fd; }
 .balance span { color: #294c77; font-weight: 700; }
 .balance strong { color: #173b67; font-size: 18px; white-space: nowrap; }
@@ -254,14 +253,13 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
   .field span { color: #333; font-size: 7px; }
   .field strong { color: #000; font-size: 10px; }
   .products { margin-top: 4px; }
-  .products-title { color: #333; font-size: 7px; }
-  .products-parts { margin-top: 1px; }
-  .products-part th { padding: 1px 0; border-bottom: 1px solid #000; color: #333; font-size: 7px; }
-  .products-part td { padding: 1px 0; border-bottom: 1px dotted #999; color: #000; font-size: 9px; }
-  .products-part .q { color: #000; }
-  .products.is-compact td { padding: 0; font-size: 8px; }
-  .products.is-dense td { padding: 0; font-size: 7px; }
-  .products-total { padding-top: 2px; color: #000; font-size: 9px; }
+  .products-title { color: #333; font-size: 6.5px; }
+  .products-list { margin-top: 1px; }
+  .products-list li { padding: 0.5px 0; border-bottom: 1px dotted #999; color: #000; font-size: 7.5px; }
+  .products-list .pq, .products-list .pp { color: #000; }
+  .products.is-compact li { font-size: 7px; }
+  .products.is-dense li { font-size: 6.5px; }
+  .products-total { padding-top: 2px; color: #000; font-size: 8px; }
   .balance { margin-top: 6px; padding: 5px 8px; border: 1px solid #000; border-radius: 3px; background: none; }
   .balance span, .balance strong { color: #000; }
   .balance strong { font-size: 12px; }
@@ -272,9 +270,10 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 
 /**
  * Sección «Productos»: cantidad, producto, precio unitario, subtotal y total.
- * Con muchos productos la lista se parte en tablas (2 o 3) que en pantalla y
- * en hoja vertical van una debajo de otra (letra menor) y en la horizontal de
- * la web lado a lado, para no pasar de una hoja. Sin productos no sale nada.
+ * Un producto por línea (sin tabla), en letra pequeña para que quepan
+ * muchos. En la horizontal de la web, con muchos productos, la lista se
+ * reparte en 2 o 3 columnas para no pasar de una hoja. Sin productos no sale
+ * nada.
  */
 function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products'>) {
   const list = receiptProducts(data);
@@ -282,25 +281,17 @@ function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products'>) {
   const withPrices = receiptProductsHavePrices(list);
   const dense = list.length >= RECEIPT_PRODUCTS_DENSE_FROM;
   const compact = !dense && list.length >= RECEIPT_PRODUCTS_COMPACT_FROM;
-  const partCount = dense ? 3 : compact ? 2 : 1;
-  const perPart = Math.ceil(list.length / partCount);
-  const head = `<thead><tr><th class="q">Cant.</th><th>Producto</th>${
-    withPrices ? '<th class="m">Vr. unitario</th><th class="m">Subtotal</th>' : ''
-  }</tr></thead>`;
-  const row = (product: NegocioReceiptProduct) =>
-    `<tr><td class="q">${esc(formatReceiptQuantity(product.quantity))}</td><td>${esc(product.name.trim())}</td>${
+  // Un producto por línea, uno debajo del otro: «2 × Nombre  $ x c/u  $ total».
+  const line = (product: NegocioReceiptProduct) =>
+    `<li><span class="pq">${esc(formatReceiptQuantity(product.quantity))}</span><span class="pn">${esc(product.name.trim())}</span>${
       withPrices
-        ? `<td class="m">${esc(formatCOP(Number(product.unitPrice)))}</td><td class="m">${esc(formatCOP(Number(product.subtotal)))}</td>`
+        ? `<span class="pp">${esc(formatCOP(Number(product.unitPrice)))} c/u</span><span class="ps">${esc(formatCOP(Number(product.subtotal)))}</span>`
         : ''
-    }</tr>`;
-  const parts = Array.from({ length: partCount }, (_, index) => list.slice(index * perPart, (index + 1) * perPart))
-    .filter((part) => part.length > 0)
-    .map((part) => `<table class="products-part">${head}<tbody>${part.map(row).join('')}</tbody></table>`)
-    .join('');
+    }</li>`;
   const total = withPrices
     ? `<div class="products-total"><span>Total productos</span><strong>${esc(formatCOP(receiptProductsTotal(list)))}</strong></div>`
     : '';
-  return `<section class="products${dense ? ' is-dense' : compact ? ' is-compact' : ''}"><span class="products-title">Productos (${list.length})</span><div class="products-parts">${parts}</div>${total}</section>
+  return `<section class="products${dense ? ' is-dense' : compact ? ' is-compact' : ''}"><span class="products-title">Productos (${list.length})</span><ul class="products-list">${list.map(line).join('')}</ul>${total}</section>
 `;
 }
 

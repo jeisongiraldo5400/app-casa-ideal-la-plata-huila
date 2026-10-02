@@ -166,13 +166,12 @@ describe('buildNegocioReceiptHtml: productos del negocio', () => {
     const html = buildNegocioReceiptHtml({ ...sample, products });
     const section = sectionOf(html);
     expect(section).toContain('<span class="products-title">Productos (2)</span>');
+    // Sin tabla: un producto por línea.
+    expect(section).not.toContain('<table');
     expect(section).toContain(
-      '<thead><tr><th class="q">Cant.</th><th>Producto</th><th class="m">Vr. unitario</th><th class="m">Subtotal</th></tr></thead>'
+      `<li><span class="pq">2</span><span class="pn">Colchón doble</span><span class="pp">${formatCOP(600_000)} c/u</span><span class="ps">${formatCOP(1_200_000)}</span></li>`
     );
-    expect(section).toContain(
-      `<tr><td class="q">2</td><td>Colchón doble</td><td class="m">${formatCOP(600_000)}</td><td class="m">${formatCOP(1_200_000)}</td></tr>`
-    );
-    expect(section).toContain('<td>Nevera &lt;Haceb&gt;</td>');
+    expect(section).toContain('<span class="pn">Nevera &lt;Haceb&gt;</span>');
     expect(section).toContain(
       `<div class="products-total"><span>Total productos</span><strong>${formatCOP(2_700_000)}</strong></div>`
     );
@@ -183,8 +182,8 @@ describe('buildNegocioReceiptHtml: productos del negocio', () => {
     const section = sectionOf(
       buildNegocioReceiptHtml({ ...sample, products: [{ quantity: 1, name: 'Base' }, { ...products[0] }] })
     );
-    expect(section).toContain('<tr><td class="q">1</td><td>Base</td></tr>');
-    expect(section).not.toContain('Vr. unitario');
+    expect(section).toContain('<li><span class="pq">1</span><span class="pn">Base</span></li>');
+    expect(section).not.toContain('c/u');
     expect(section).not.toContain('Total productos');
     expect(section).not.toContain('$');
   });
@@ -195,18 +194,18 @@ describe('buildNegocioReceiptHtml: productos del negocio', () => {
     expect(buildNegocioReceiptHtml({ ...sample, products: null })).not.toContain('<section class="products');
   });
 
-  it('con muchos productos se compacta: varias tablas y letra menor en vez de desbordar', () => {
-    const tables = (html: string) => sectionOf(html).split('<table class="products-part">').length - 1;
+  it('con muchos productos se compacta (letra menor), siempre un producto por línea', () => {
+    const lines = (html: string) => sectionOf(html).split('<li>').length - 1;
     const four = buildNegocioReceiptHtml({ ...sample, products: many(4) });
     expect(four).toContain('<section class="products"><span');
-    expect(tables(four)).toBe(1);
+    expect(lines(four)).toBe(4);
     const fifteen = buildNegocioReceiptHtml({ ...sample, products: many(15) });
     expect(fifteen).toContain('<section class="products is-compact"><span class="products-title">Productos (15)</span>');
-    expect(tables(fifteen)).toBe(2);
+    expect(lines(fifteen)).toBe(15);
     expect(fifteen).toContain(`<strong>${formatCOP(150_000)}</strong>`);
     const thirty = buildNegocioReceiptHtml({ ...sample, products: many(30) });
     expect(thirty).toContain('<section class="products is-dense">');
-    expect(tables(thirty)).toBe(3);
+    expect(lines(thirty)).toBe(30);
   });
 
   it('no cambia los estilos: el CSS es el mismo con o sin productos', () => {
