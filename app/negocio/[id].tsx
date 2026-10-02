@@ -53,6 +53,12 @@ import {
 import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
 import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
 import { formatCustomerPhones } from '@/components/customers/domain/customerPhones';
+import { shareWithCustomerWhatsApp } from '@/components/negocios/infrastructure/services/negocioWhatsAppShare';
+import {
+  buildNegocioWhatsAppMessage,
+  buildReceiptWhatsAppMessage,
+  nextPendingCuota,
+} from '@/lib/negocios/negocioWhatsApp';
 import {
   pendingNegocioTitle,
   type PendingNegocioSync,
@@ -1047,7 +1053,7 @@ function NegocioDetailScreenInner() {
     }
   };
 
-  const sharePdf = async () => {
+  const shareContractPdf = async () => {
     if (!negocio) return;
     const copy = await recordNegocioPrint({
       negocioId: negocio.id,
@@ -1147,6 +1153,28 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  /**
+   * Botón «PDF» del contrato: con celular del cliente, primero WhatsApp a su
+   * chat (con el resumen del negocio) y el PDF como segunda opción.
+   */
+  const sharePdf = () => {
+    if (!negocio) return;
+    shareWithCustomerWhatsApp({
+      title: 'Compartir contrato',
+      customerName,
+      phone: customerMeta.phone,
+      phoneSecondary: customerMeta.phone_secondary,
+      message: buildNegocioWhatsAppMessage({
+        numero: negocio.numero,
+        customerName,
+        totalCredit: Number(negocio.total_credit),
+        pendingBalance,
+        nextCuota: nextPendingCuota(cuotas),
+      }),
+      sharePdf: shareContractPdf,
+    });
+  };
+
   /** Campos del pronto pago para el recibo y el ticket de un pago existente. */
   const pagoReceiptExtras = (pago: any) => ({
     paymentKind: pago.payment_kind ?? null,
@@ -1169,7 +1197,7 @@ function NegocioDetailScreenInner() {
       printedByName: registeredByName,
     });
 
-  const shareReceipt = async (pago: any) => {
+  const shareReceiptPdf = async (pago: any) => {
     if (!negocio) return;
     const copy = await recordReceiptPrint(pago, 'pdf');
     // Saldo que quedó tras ese pago, no el saldo actual del negocio.
@@ -1202,6 +1230,27 @@ function NegocioDetailScreenInner() {
     } catch (error: any) {
       Alert.alert('Error', errorMessage(error, 'No se pudo compartir el recibo'));
     }
+  };
+
+  /** Botón «PDF» de un recibo: igual que el contrato, WhatsApp primero. */
+  const shareReceipt = (pago: any) => {
+    if (!negocio) return;
+    shareWithCustomerWhatsApp({
+      title: 'Compartir recibo',
+      customerName,
+      phone: customerMeta.phone,
+      phoneSecondary: customerMeta.phone_secondary,
+      message: buildReceiptWhatsAppMessage({
+        customerName,
+        receiptNumber: pago.virtual_receipt_number,
+        negocioNumero: negocio.numero,
+        amount: Number(pago.amount),
+        paidAt: pago.paid_at,
+        remainingBalance: remainingAfterPago(cuotas, pagos, pago),
+        pendingConfirmation: Boolean(pago.pending_confirmation),
+      }),
+      sharePdf: () => shareReceiptPdf(pago),
+    });
   };
 
   const printReceipt = async (pago: any) => {
@@ -1888,7 +1937,7 @@ function NegocioDetailScreenInner() {
                       Alert.alert('Error', error?.message || 'No se pudo abrir el soporte')
                     );
                   }}
-                  onShare={() => void shareReceipt(pago)}
+                  onShare={() => shareReceipt(pago)}
                   onPrint={() => void printReceipt(pago)}
                   onVoid={
                     canOfferVoidPago({ canVoid: canVoidPagos, online, fromLocal, pago })
@@ -1991,7 +2040,7 @@ function NegocioDetailScreenInner() {
               variant="outline"
               icon="picture-as-pdf"
               iconOnly
-              onPress={() => void sharePdf()}
+              onPress={sharePdf}
               accessibilityLabel={
                 contractPrints && contractPrints.count > 0
                   ? `Compartir contrato en PDF, copia n.º ${contractPrints.count + 1}`
