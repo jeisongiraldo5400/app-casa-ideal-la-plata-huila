@@ -143,3 +143,18 @@ describe('CatalogSectionsSummary: todos los productos', () => {
     expect(screen.getAllByLabelText(/^Ver foto de Producto/)).toHaveLength(10);
   });
 });
+
+describe('CatalogSectionsSummary: agotados', () => {
+  it('marca «Agotado» solo en los productos sin existencias, sin mostrar la cantidad', () => {
+    const agotado = { ...listing(1), stockQuantity: 0 };
+    const conStock = { ...listing(2), stockQuantity: 7 };
+    const products = new Map([[agotado.productId, agotado], [conStock.productId, conStock]]);
+    const sections = [withItems('s1', 'Sala', [looseProduct('p-1'), looseProduct('p-2')])];
+    const screen = render(<CatalogSectionsSummary sections={sections} products={products} categories={EMPTY} />);
+
+    expect(screen.getAllByText('Agotado')).toHaveLength(1);
+    expect(screen.getByLabelText('Producto 1, agotado')).toBeTruthy();
+    expect(screen.getByLabelText('Producto 2')).toBeTruthy();
+    expect(screen.queryByText('7')).toBeNull();
+  });
+});

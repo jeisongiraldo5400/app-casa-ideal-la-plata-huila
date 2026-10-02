@@ -122,7 +122,16 @@ export function CatalogSectionsSummary({ sections, products, categories, onLoadC
                           accessibilityLabel={product.displayName}
                           onPress={() => setPreview({ title: product.displayName, coverUrl: product.coverImageUrl, slug: product.slug })}
                         />
-                        <Text style={[styles.rowName, { color: colors.text.primary }]} numberOfLines={2}>{product.displayName}</Text>
+                        <View style={styles.rowText}>
+                          <Text
+                            style={[styles.rowName, { color: colors.text.primary }]}
+                            numberOfLines={2}
+                            accessibilityLabel={`${product.displayName}${product.stockQuantity === 0 ? ', agotado' : ''}`}>
+                            {product.displayName}
+                          </Text>
+                          {/* Como el selector: solo la señal de agotado, nunca la cantidad. */}
+                          {product.stockQuantity === 0 ? <StatusChip label="Agotado" tone="error" /> : null}
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -172,7 +181,8 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   rows: { gap: Spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 48 },
-  rowName: { ...Typography.bodySmall, flex: 1 },
+  rowText: { flex: 1, gap: Spacing.xs, alignItems: 'flex-start' },
+  rowName: { ...Typography.bodySmall, alignSelf: 'stretch' },
   empty: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   emptyText: { ...Typography.caption },
   warning: { ...Typography.caption },
