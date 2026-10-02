@@ -471,7 +471,8 @@ export function validateReturn(
 
 export type TransferMode = 'dispatch' | 'receive' | 'return' | 'view';
 
-const RECEIVABLE: readonly TransferStatus[] = ['in_transit', 'partially_received', 'with_differences'];
+/** Estados con unidades en camino hacia el destino. */
+export const RECEIVABLE: readonly TransferStatus[] = ['in_transit', 'partially_received', 'with_differences'];
 
 /** Acciones que el usuario puede hacer ahora sobre el traslado (según estado y `permissions`). */
 export function availableModes(detail: TransferDetail): TransferMode[] {

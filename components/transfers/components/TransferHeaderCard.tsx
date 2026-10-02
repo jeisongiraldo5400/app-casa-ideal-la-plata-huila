@@ -4,6 +4,7 @@ import { Spacing, Typography, getColors } from '@/constants/theme';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { TransferDetail } from '../utils/transferModel';
+import { RECEIVABLE } from '../utils/transferRules';
 import {
   TRANSFER_STATUS_LABEL,
   TRANSFER_STATUS_TONE,
@@ -53,7 +54,8 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
       {due ? (
         <Text style={[styles.due, { color: order.isOverdue ? colors.error.main : colors.text.secondary }]}>{due}</Text>
       ) : null}
-      {receivers.length === 0 && order.status !== 'cancelled' ? (
+      {/* Antes de despachar no aplica: quién recibe se elige al despachar. */}
+      {receivers.length === 0 && RECEIVABLE.includes(order.status) ? (
         <Text style={[styles.row, { color: colors.warning.dark }]}>
           {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir.
         </Text>

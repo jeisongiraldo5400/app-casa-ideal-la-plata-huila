@@ -112,6 +112,18 @@ describe('TransferDetailScreen', () => {
     expect(kickNotificationDispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('por despachar sin receptores no avisa «sin bodegueros»: quién recibe se elige al despachar', async () => {
+    const raw = { ...rawPendingDispatchDetail(), receivers: [] };
+    const screen = renderWith(raw);
+    await screen.findByText('Revisar y despachar');
+    expect(screen.queryByText(/no tiene bodegueros activos que puedan recibir/)).toBeNull();
+  });
+
+  it('en camino sin nadie que pueda recibir sí lo avisa en la cabecera', async () => {
+    const screen = renderWith(rawDetail({ receivers: [] }));
+    expect(await screen.findByText('La Argentina no tiene bodegueros activos que puedan recibir.')).toBeTruthy();
+  });
+
   it('despachar: elegir receptores con búsqueda; sin ninguno no deja revisar', async () => {
     (dispatchTransfer as jest.Mock).mockResolvedValue({
       transferOrderId: 't-1',
@@ -123,7 +135,9 @@ describe('TransferDetailScreen', () => {
     const screen = renderWith(rawPendingDispatchDetail());
     await screen.findByText('Revisar y despachar');
     expect(screen.getByText('¿Quiénes pueden recibir en La Argentina?')).toBeTruthy();
-    expect(screen.getByText('Transporta: Darío (asignado al crear)')).toBeTruthy();
+    // Un traslado viejo con transportador lo trae elegido (ya no «asignado al crear»).
+    expect(screen.getAllByText('Transporta: Darío').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/asignado al crear/)).toBeNull();
 
     fireEvent.press(screen.getByLabelText('Elegir quiénes pueden recibir en La Argentina'));
     // Ni quien despacha (is_me) ni el transportador aparecen.

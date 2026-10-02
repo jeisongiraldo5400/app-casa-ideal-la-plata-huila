@@ -136,12 +136,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         Marca cuántas unidades salen de {order.sourceWarehouse.name}. Lo que no salga vuelve al disponible.
       </Text>
 
-      {detail.receivers.length === 0 ? (
-        <Text style={[styles.warning, { color: colors.warning.dark }]}>
-          {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir: solo un administrador podrá confirmar la llegada.
-        </Text>
-      ) : null}
-
       {detail.items.map((item) => {
         const line = draft.lines[item.id] ?? { quantity: 0, serialsText: '' };
         const max = maxDispatch(item);
@@ -194,7 +188,9 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
             setDraft({ ...draft, carrierId, receiverIds: draft.receiverIds.filter((id) => id !== carrierId) })
           }
           options={carrierOptions}
-          placeholder={order.carrier ? `Transporta: ${order.carrier.name} (asignado al crear)` : 'Sin transportador'}
+          // El transportador se elige aquí (ya no al crear); un traslado viejo
+          // que ya lo traía lo muestra como elegido.
+          placeholder={order.carrier ? `Transporta: ${order.carrier.name}` : 'Sin transportador'}
           modalTitle="¿Quién transporta?"
           colors={colors}
           disabled={submit.submitting || !online}
@@ -267,7 +263,6 @@ const styles = StyleSheet.create({
   field: { gap: Spacing.xs },
   label: { ...Typography.bodySmallStrong },
   help: { ...Typography.caption },
-  warning: { ...Typography.bodySmallStrong },
   card: { gap: Spacing.sm },
   product: { ...Typography.bodyStrong },
   meta: { ...Typography.caption },
