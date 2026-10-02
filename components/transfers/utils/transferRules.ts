@@ -1,5 +1,5 @@
 /**
- * Reglas puras de despacho, recepción y devolución de traslados (sin React ni
+ * Reglas puras de «sacar productos» (dispatch), recepción y devolución de traslados (sin React ni
  * Supabase). Replican lo que valida el servidor para avisar antes de enviar;
  * la última palabra la tienen las RPC.
  *
@@ -25,7 +25,7 @@ export function inTransitOf(item: TransferItem): number {
   );
 }
 
-/** Máximo a despachar: lo reservado al enviar a despacho. */
+/** Máximo a sacar: lo separado al crear el traslado. */
 export function maxDispatch(item: TransferItem): number {
   return nonNegative(item.quantity);
 }
@@ -124,8 +124,6 @@ export type DispatchLineDraft = { quantity: number; serialsText: string };
 export type DispatchDraft = {
   kind: 'dispatch';
   lines: Record<string, DispatchLineDraft>;
-  /** '' = conservar el transportador del traslado. */
-  carrierId: string;
   notes: string;
   /** Foto general opcional de la carga. */
   photo: TransferPhotoDraft | null;
@@ -153,12 +151,13 @@ export type ReturnDraft = { kind: 'return'; lines: Record<string, ReturnLineDraf
 
 export type TransferDraft = DispatchDraft | ReceiveDraft | ReturnDraft;
 
-/** Despachar arranca con todo lo reservado: lo normal es que salga completo. */
+/** Sacar arranca con todo lo separado: lo normal es que salga completo. */
 export function initialDispatchDraft(detail: TransferDetail): DispatchDraft {
   const lines: Record<string, DispatchLineDraft> = {};
   for (const item of detail.items) lines[item.id] = { quantity: maxDispatch(item), serialsText: '' };
   // Quién recibe lo asigna el admin al crear (20261231470000): no se elige aquí.
-  return { kind: 'dispatch', lines, carrierId: '', notes: '', photo: null };
+  // Ya no se pide transportador (queda NULL en el servidor).
+  return { kind: 'dispatch', lines, notes: '', photo: null };
 }
 
 /** Recibir arranca en cero: quien recibe cuenta lo que llegó (no se da por hecho). */
@@ -259,7 +258,7 @@ export function validateDispatch(
       continue;
     }
     if (quantity > max) {
-      lineErrors[item.id] = `No puedes despachar ${quantity}: el traslado reservó ${max}.`;
+      lineErrors[item.id] = `No puedes sacar ${quantity}: el traslado reservó ${max}.`;
       continue;
     }
     released += max - quantity;
@@ -280,7 +279,7 @@ export function validateDispatch(
     return {
       ok: false,
       lineErrors,
-      message: 'Marca al menos una unidad para despachar (o pide en la web que cancelen el traslado).',
+      message: 'Marca al menos una unidad para sacar (o pide en la web que cancelen el traslado).',
     };
   }
   return { ok: true, items, summary: { units, lines: items.length, released } };
@@ -441,12 +440,13 @@ export function initialMode(detail: TransferDetail, preferred?: TransferMode | n
 /** `?modo=` de la ruta → modo. */
 export function parseModeParam(value: unknown): TransferMode | null {
   const text = Array.isArray(value) ? value[0] : value;
-  if (text === 'despachar') return 'dispatch';
+  // «despachar»: enlaces de versiones anteriores.
+  if (text === 'sacar' || text === 'despachar') return 'dispatch';
   if (text === 'recibir') return 'receive';
   if (text === 'devolucion') return 'return';
   return null;
 }
 
 export function modeParam(mode: Exclude<TransferMode, 'view'>): string {
-  return mode === 'dispatch' ? 'despachar' : mode === 'receive' ? 'recibir' : 'devolucion';
+  return mode === 'dispatch' ? 'sacar' : mode === 'receive' ? 'recibir' : 'devolucion';
 }

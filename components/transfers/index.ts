@@ -1,6 +1,6 @@
 /**
  * Traslados (órdenes de traslado con recepción confirmada, 3.3.0): el móvil
- * despacha, recibe y confirma devoluciones marcando cantidades (sin escáner).
+ * saca productos, recibe y confirma devoluciones marcando cantidades (sin escáner).
  * Los traslados se crean en la web.
  */
 export { TransfersScreen } from './components/TransfersScreen';

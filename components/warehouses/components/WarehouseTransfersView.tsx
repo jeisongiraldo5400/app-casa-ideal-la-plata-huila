@@ -13,7 +13,7 @@ type Props = { warehouseId: string; enabled: boolean; online: boolean };
 
 /**
  * Pestaña «En camino»: traslados que vienen hacia la bodega (en tránsito,
- * recibidos en parte o con diferencias) y los que esperan despacho desde
+ * recibidos en parte o con diferencias) y los que esperan salir desde
  * ella. Tocar uno abre su detalle en Traslados.
  */
 export function WarehouseTransfersView({ warehouseId, enabled, online }: Props) {
@@ -69,7 +69,7 @@ export function WarehouseTransfersView({ warehouseId, enabled, online }: Props) 
     return (
       <>
         {section('Llegan a esta bodega', state.data.incoming, 'No hay traslados en camino hacia esta bodega.')}
-        {section('Por despachar desde aquí', state.data.pendingDispatch, 'No hay traslados esperando despacho.')}
+        {section('Por sacar desde aquí', state.data.pendingDispatch, 'No hay productos por sacar.')}
       </>
     );
   };

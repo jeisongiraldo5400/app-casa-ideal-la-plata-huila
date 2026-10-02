@@ -8,7 +8,7 @@ export interface DashboardStats {
    * `null` = no se pudo consultar (o no aplica al rol). Antes estos campos eran
    * `number` y un fallo del RPC se pintaba como «0 pendientes»: en ruta, sin
    * señal, el usuario leía un cero inventado y daba por hecho que no tenía nada
-   * por despachar.
+   * por sacar.
    */
   pendingOrders: number | null;
   pendingDeliveryOrders: number | null;

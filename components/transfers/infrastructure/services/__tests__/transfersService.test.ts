@@ -37,24 +37,24 @@ describe('transfersService', () => {
     expect(detail).not.toHaveProperty('receiverOptions');
   });
 
-  it('despacho: envía líneas, transportador, notas y la clave (sin receptores)', async () => {
+  it('sacar productos: envía líneas, notas y la clave (sin receptores ni transportador)', async () => {
     rpc.mockResolvedValueOnce({ data: { transfer_order_id: 't-1', order_number: 'TR-1', status: 'in_transit' }, error: null });
     await dispatchTransfer({
       transferOrderId: 't-1',
       items: [{ item_id: 'i-1', quantity: 2 }],
-      carrierUserId: 'u-9',
       notes: '  ',
       idempotencyKey: 'k',
     });
     expect(rpc).toHaveBeenCalledWith('dispatch_transfer_order', {
       p_transfer_order_id: 't-1',
       p_items: [{ item_id: 'i-1', quantity: 2 }],
-      p_carrier_user_id: 'u-9',
       p_notes: undefined,
       p_idempotency_key: 'k',
     });
     // Quién recibe lo asigna el admin al crear (20261231470000).
     expect(rpc.mock.calls[0][1]).not.toHaveProperty('p_receiver_ids');
+    // Ya no se pide transportador al sacar: el servidor lo deja en NULL.
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('p_carrier_user_id');
   });
 
   it('recepción con faltante y devolución', async () => {

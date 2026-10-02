@@ -66,35 +66,37 @@ describe('TransfersScreen', () => {
     expect(screen.getAllByText('Vencido')).toHaveLength(1);
     const numbers = screen.getAllByText(/^TR-2026-000[23]$/).map((node) => node.props.children);
     expect(numbers).toEqual(['TR-2026-0003', 'TR-2026-0002']);
-    // Badges: despachar 1, recibir 2, transporto 0, devolución 0
+    // Badges: sacar 1, recibir 2, devolución 0
     expect(screen.getByText('2')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText(/Traslado TR-2026-0003/));
     expect(mockNavigate).toHaveBeenCalledWith('/traslado/r-2?modo=recibir');
   });
 
-  it('cambia a «Por despachar» y abre el detalle en modo despachar', async () => {
+  it('cambia a «Por sacar» y abre el detalle en el paso «Sacar productos»', async () => {
     (fetchMyTransferTasks as jest.Mock).mockResolvedValue(tasks());
     const screen = render(<TransfersScreen />);
     await screen.findByText('Por recibir');
-    fireEvent.press(screen.getByText('Despachar'));
+    fireEvent.press(screen.getByText('Sacar'));
+    expect(screen.getAllByText('Por sacar').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByLabelText(/Traslado TR-2026-0010/));
-    expect(mockNavigate).toHaveBeenCalledWith('/traslado/d-1?modo=despachar');
+    expect(mockNavigate).toHaveBeenCalledWith('/traslado/d-1?modo=sacar');
   });
 
-  it('muestra las cuatro secciones con nombre completo y qué se hace en cada una', async () => {
+  it('muestra las tres secciones con nombre completo y qué se hace en cada una (sin «Transporto»)', async () => {
     (fetchMyTransferTasks as jest.Mock).mockResolvedValue(tasks());
     const screen = render(<TransfersScreen />);
     await screen.findByText('Por recibir');
     for (const [label, hint] of [
-      ['Despachar', 'Sacar de la bodega'],
+      ['Sacar', 'Sacar productos de la bodega'],
       ['Recibir', 'Confirmar lo que llegó'],
-      ['Transporto', 'Los llevo yo'],
       ['Devoluciones', 'Vuelven al origen'],
     ]) {
       expect(screen.getByText(label)).toBeTruthy();
       expect(screen.getByText(hint)).toBeTruthy();
     }
+    expect(screen.queryByText('Transporto')).toBeNull();
+    expect(screen.queryByText(/despach/i)).toBeNull();
     expect(screen.getByLabelText('Recibir: Confirmar lo que llegó. 2 pendientes')).toBeTruthy();
   });
 

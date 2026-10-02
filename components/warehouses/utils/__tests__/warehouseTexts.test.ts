@@ -8,10 +8,10 @@ describe('warehouseTexts', () => {
     expect(stockSummaryText({ totalProducts: 0, totalUnits: 0 })).toBe('0 productos · 0 unidades');
   });
 
-  it('en camino y por despachar solo cuando hay', () => {
+  it('en camino y por sacar solo cuando hay', () => {
     expect(incomingText({ incomingTransfers: 2 })).toBe('2 en camino');
     expect(incomingText({ incomingTransfers: 0 })).toBeNull();
-    expect(pendingDispatchText({ pendingDispatch: 1 })).toBe('1 por despachar');
+    expect(pendingDispatchText({ pendingDispatch: 1 })).toBe('1 por sacar');
     expect(pendingDispatchText({ pendingDispatch: 0 })).toBeNull();
   });
 

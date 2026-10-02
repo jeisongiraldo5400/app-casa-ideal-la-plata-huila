@@ -1,11 +1,11 @@
 /**
  * Acceso a las RPC de órdenes de traslado (contrato: migraciones
- * 20261231280000 / 20261231290000 / 20261231450000 / 20261231470000). El móvil solo despacha, recibe y confirma
+ * 20261231280000 / 20261231290000 / 20261231450000 / 20261231470000). El móvil solo saca productos (dispatch), recibe y confirma
  * devoluciones; los traslados se crean en la web.
  *
  * Los errores se lanzan tal cual llegan de PostgREST: `errorMessage` deja los
- * RAISE del servidor en español sin tocarlos («Quien despachó el traslado no
- * puede recibirlo», etc.).
+ * RAISE del servidor en español sin tocarlos («El traslado TR-… lo saca X: solo esa
+ * persona o un administrador puede sacarlo», etc.).
  */
 import { supabase } from '@/lib/supabase';
 import {
@@ -83,17 +83,16 @@ export async function dispatchTransfer(
   input: WriteBase &
     PhotoInput & {
       items: DispatchPayloadItem[];
-      carrierUserId: string | null;
     }
 ): Promise<TransferWriteResult> {
   const { data, error } = await supabase.rpc('dispatch_transfer_order', {
     p_transfer_order_id: input.transferOrderId,
     p_items: input.items as unknown as Json,
-    p_carrier_user_id: input.carrierUserId ?? undefined,
     p_notes: cleanNotes(input.notes),
     p_photo_path: input.photoPath ?? undefined,
     p_idempotency_key: input.idempotencyKey,
-    // Sin p_receiver_ids: quién recibe lo asigna el admin al crear (20261231470000).
+    // Sin p_receiver_ids ni p_carrier_user_id: quién recibe lo asigna el admin al
+    // crear (20261231470000) y ya no se pide transportador.
   });
   if (error) throw error;
   return parseTransferWriteResult(data);

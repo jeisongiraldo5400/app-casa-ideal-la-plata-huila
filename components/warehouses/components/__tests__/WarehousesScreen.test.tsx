@@ -41,7 +41,7 @@ describe('WarehousesScreen', () => {
     ).toBeTruthy();
   });
 
-  it('con datos: nombre, ciudad, existencias, en camino, por despachar y encargados; abre el detalle', async () => {
+  it('con datos: nombre, ciudad, existencias, en camino, por sacar y encargados; abre el detalle', async () => {
     (fetchMyWarehouses as jest.Mock).mockResolvedValue(
       parseMyWarehouses({
         is_admin: false,
@@ -68,7 +68,7 @@ describe('WarehousesScreen', () => {
     expect(screen.getByText('Pitalito · Cra 4 # 5-10')).toBeTruthy();
     expect(screen.getByText('12 productos · 340 unidades')).toBeTruthy();
     expect(screen.getByText('2 en camino')).toBeTruthy();
-    expect(screen.getByText('1 por despachar')).toBeTruthy();
+    expect(screen.getByText('1 por sacar')).toBeTruthy();
     expect(screen.getByText('Encargados: Ana Bodega, Luis Pérez')).toBeTruthy();
     expect(screen.getByText('1 producto · 1 unidad')).toBeTruthy();
     expect(screen.getByText('Sin encargado asignado')).toBeTruthy();

@@ -55,7 +55,7 @@ describe('transferPhotos', () => {
     );
     expect(detail.events).toHaveLength(4);
     expect(eventPhotos(detail.events)).toEqual([
-      { path: 't-1/carga.jpg', label: 'Despacho', createdAt: null, userName: 'Ana' },
+      { path: 't-1/carga.jpg', label: 'Salida', createdAt: null, userName: 'Ana' },
       { path: 't-1/golpe.jpg', label: 'Recepción · Nevera Haceb (averiada)', createdAt: null, userName: null },
     ]);
   });

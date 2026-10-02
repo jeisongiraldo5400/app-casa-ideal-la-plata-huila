@@ -2,7 +2,11 @@
 import type { TransferSummary, TransferTasks } from './transferModel';
 import type { TransferMode } from './transferRules';
 
-export type TransferSectionKey = 'toDispatch' | 'toReceive' | 'carrying' | 'toConfirmReturn';
+/**
+ * «carrying» (traslados que transporto) ya no es sección: desde 2026-10-02 no
+ * se pide transportador al sacar. El servidor lo sigue mandando para los viejos.
+ */
+export type TransferSectionKey = 'toDispatch' | 'toReceive' | 'toConfirmReturn';
 
 export type TransferSection = {
   key: TransferSectionKey;
@@ -11,7 +15,7 @@ export type TransferSection = {
   /** Qué se hace aquí, en pocas palabras (debajo de la etiqueta). */
   hint: string;
   /** Ícono de MaterialIcons. */
-  icon: 'outbox' | 'move-to-inbox' | 'local-shipping' | 'assignment-return';
+  icon: 'outbox' | 'move-to-inbox' | 'assignment-return';
   title: string;
   empty: string;
   /** Acción con la que se abre el detalle desde esta sección. */
@@ -21,11 +25,11 @@ export type TransferSection = {
 export const TRANSFER_SECTIONS: readonly TransferSection[] = [
   {
     key: 'toDispatch',
-    tabLabel: 'Despachar',
-    hint: 'Sacar de la bodega',
+    tabLabel: 'Sacar',
+    hint: 'Sacar productos de la bodega',
     icon: 'outbox',
-    title: 'Por despachar',
-    empty: 'No tienes traslados por despachar.',
+    title: 'Por sacar',
+    empty: 'No tienes productos por sacar.',
     mode: 'dispatch',
   },
   {
@@ -36,15 +40,6 @@ export const TRANSFER_SECTIONS: readonly TransferSection[] = [
     title: 'Por recibir',
     empty: 'No tienes traslados por recibir.',
     mode: 'receive',
-  },
-  {
-    key: 'carrying',
-    tabLabel: 'Transporto',
-    hint: 'Los llevo yo',
-    icon: 'local-shipping',
-    title: 'Que transporto',
-    empty: 'No llevas ningún traslado.',
-    mode: null,
   },
   {
     key: 'toConfirmReturn',
@@ -58,7 +53,7 @@ export const TRANSFER_SECTIONS: readonly TransferSection[] = [
 ];
 
 export function countTasks(tasks: TransferTasks): number {
-  return tasks.toDispatch.length + tasks.toReceive.length + tasks.carrying.length + tasks.toConfirmReturn.length;
+  return tasks.toDispatch.length + tasks.toReceive.length + tasks.toConfirmReturn.length;
 }
 
 export function overdueCount(rows: readonly TransferSummary[]): number {
@@ -67,7 +62,7 @@ export function overdueCount(rows: readonly TransferSummary[]): number {
 
 /**
  * Sección inicial: «Por recibir» si hay algo vencido ahí; si no, la primera
- * con algo pendiente (en el orden de las pestañas); si no hay nada, «Por despachar».
+ * con algo pendiente (en el orden de las pestañas); si no hay nada, «Por sacar».
  */
 export function defaultSection(tasks: TransferTasks | null): TransferSectionKey {
   if (!tasks) return 'toDispatch';
@@ -88,12 +83,12 @@ export function sortForList(rows: readonly TransferSummary[]): TransferSummary[]
 
 /** Texto del contador de Inicio. */
 export function homeCardSubtitle(tasks: TransferTasks | null): string {
-  if (!tasks) return 'Despachar y recibir';
+  if (!tasks) return 'Sacar y recibir';
   const toReceive = tasks.toReceive.length;
   const overdue = overdueCount(tasks.toReceive);
   if (toReceive === 0) {
     const toDispatch = tasks.toDispatch.length;
-    return toDispatch > 0 ? `${toDispatch} por despachar` : 'Nada por recibir';
+    return toDispatch > 0 ? `${toDispatch} por sacar` : 'Nada por recibir';
   }
   return overdue > 0 ? `${toReceive} por recibir · ${overdue} vencido${overdue === 1 ? '' : 's'}` : `${toReceive} por recibir`;
 }

@@ -1,10 +1,8 @@
 import { kickNotificationDispatch } from '@/components/notifications/infrastructure/services/dispatchNotifications';
 import { useTheme } from '@/components/theme';
-import { Button, Card, Input, OptionPickerField, SectionHeader } from '@/components/ui';
+import { Button, Card, Input, SectionHeader } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
-import { logHandledError } from '@/lib/errorMessage';
-import { fetchSellerOptions, type SellerOption } from '@/lib/users/sellersService';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTransferDraft } from '../infrastructure/hooks/useTransferDraft';
 import { useTransferSubmit } from '../infrastructure/hooks/useTransferSubmit';
@@ -32,7 +30,13 @@ type Props = {
 
 type Review = { items: DispatchPayloadItem[]; summary: DispatchSummary };
 
-/** Despachar: cantidad por línea (≤ reservada), transportador, notas y seriales opcionales. */
+/**
+ * Paso «Sacar productos» (antes «despachar»; la RPC sigue siendo
+ * dispatch_transfer_order): solo la persona asignada «Saca» o un admin (lo
+ * decide el servidor en `permissions.can_dispatch`). Las cantidades vienen
+ * llenas con lo separado y se bajan si sale menos; seriales, foto y nota son
+ * opcionales. Ya no se pide transportador (queda NULL en el servidor).
+ */
 export function DispatchPanel({ detail, online, onDone }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
@@ -43,31 +47,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [serialsOpen, setSerialsOpen] = useState<Record<string, boolean>>({});
-  const [people, setPeople] = useState<SellerOption[]>([]);
-
-  useEffect(() => {
-    if (!online) return;
-    let active = true;
-    fetchSellerOptions()
-      .then((options) => {
-        if (active) setPeople(options);
-      })
-      .catch((error) => logHandledError('Traslados: transportadores', error));
-    return () => {
-      active = false;
-    };
-  }, [online]);
-
-  const carrierOptions = useMemo(
-    () =>
-      people
-        .filter((person) => person.id !== order.carrier?.id)
-        .map((person) => ({ value: person.id, label: person.full_name })),
-    [order.carrier?.id, people]
-  );
-  const carrierName = draft.carrierId
-    ? people.find((person) => person.id === draft.carrierId)?.full_name ?? null
-    : order.carrier?.name ?? null;
 
   const updateLine = (itemId: string, patch: Partial<{ quantity: number; serialsText: string }>) => {
     const current = draft.lines[itemId] ?? { quantity: 0, serialsText: '' };
@@ -90,18 +69,16 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
 
   const confirm = async () => {
     if (!review) return;
-    const carrierUserId = draft.carrierId || null;
     const notes = draft.notes;
     const photo = draft.photo;
     const photoPath = optionalPhotoPath(order.id, photo);
     const result = await submit.run(
       'transfer_dispatch',
-      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath },
+      { id: order.id, items: review.items, notes: notes.trim(), photoPath },
       (idempotencyKey) =>
         dispatchTransfer({
           transferOrderId: order.id,
           items: review.items,
-          carrierUserId,
           notes,
           photoPath,
           idempotencyKey,
@@ -111,21 +88,23 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         : undefined
     );
     if (!result) return;
-    // El aviso «en camino» ya está en cola; el empujón solo lo adelanta.
+    // El aviso a quien recibe ya está en cola; el empujón solo lo adelanta.
     kickNotificationDispatch();
     setReview(null);
     clearDraft();
     onDone(
-      `${result.orderNumber} despachado: ${unitsText(review.summary.units)} en camino a ${order.destinationWarehouse.name}.` +
+      `${result.orderNumber}: sacaste ${unitsText(review.summary.units)}, en camino a ${order.destinationWarehouse.name}.` +
+        (order.receiver ? ` Le avisamos a ${order.receiver.name}.` : '') +
         (result.replayed ? ' (Ya estaba registrado; no se repitió.)' : '')
     );
   };
 
   return (
     <View style={styles.container}>
-      <SectionHeader title="Despachar" hint={`${detail.items.length} producto${detail.items.length === 1 ? '' : 's'}`} />
+      <SectionHeader title="Productos por sacar" hint={`${detail.items.length} producto${detail.items.length === 1 ? '' : 's'}`} />
       <Text style={[styles.help, { color: colors.text.secondary }]}>
-        Marca cuántas unidades salen de {order.sourceWarehouse.name}. Lo que no salga vuelve al disponible.
+        Ya están las cantidades separadas para sacar de {order.sourceWarehouse.name}. Si sale menos, bájalas: lo que
+        no salga vuelve al disponible.
       </Text>
 
       {detail.items.map((item) => {
@@ -140,7 +119,7 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
               {item.notes ? ` · ${item.notes}` : ''}
             </Text>
             <QuantityStepper
-              label="A despachar"
+              label="A sacar"
               productName={item.productName}
               value={line.quantity}
               max={max}
@@ -171,28 +150,13 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         );
       })}
 
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.text.primary }]}>Transportador (opcional)</Text>
-        <OptionPickerField
-          value={draft.carrierId}
-          onValueChange={(carrierId) => setDraft({ ...draft, carrierId })}
-          options={carrierOptions}
-          // El transportador se elige aquí (ya no al crear); un traslado viejo
-          // que ya lo traía lo muestra como elegido.
-          placeholder={order.carrier ? `Transporta: ${order.carrier.name}` : 'Sin transportador'}
-          modalTitle="¿Quién transporta?"
-          colors={colors}
-          disabled={submit.submitting || !online}
-        />
-      </View>
-
       {/* Quién recibe lo asigna el admin al crear el traslado (20261231470000). */}
       <Text style={[styles.label, { color: order.receiver ? colors.text.primary : colors.warning.dark }]}>
         {receiverLineText(order.receiver)}
       </Text>
 
       <Input
-        label="Notas del despacho (opcional)"
+        label="Nota (opcional)"
         value={draft.notes}
         onChangeText={(notes) => setDraft({ ...draft, notes })}
         multiline
@@ -201,7 +165,7 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
       />
 
       <TransferPhotoField
-        label="Foto de la carga (opcional)"
+        label="Foto (opcional)"
         photo={draft.photo}
         onChange={(photo) => {
           void deleteTransferPhotos(order.id, droppedUploadedPhotos([draft.photo], [photo]));
@@ -214,23 +178,23 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
       {submit.error && !review ? <Text style={[styles.error, { color: colors.error.main }]}>{submit.error}</Text> : null}
 
       <Button
-        title="Revisar y despachar"
-        icon="local-shipping"
+        title="Sacar productos"
+        icon="outbox"
         onPress={openReview}
         disabled={!online || submit.submitting}
       />
 
       <ConfirmTransferSheet
         visible={review !== null}
-        title={`Despachar ${order.orderNumber}`}
+        title={`¿Sacar los productos de ${order.orderNumber}?`}
         summary={
           review
-            ? dispatchConfirmText(review.summary, order, carrierName) +
-              (draft.photo ? '\n\nCon foto de la carga.' : '') +
+            ? dispatchConfirmText(review.summary, order) +
+              (draft.photo ? '\n\nCon foto.' : '') +
               (submit.error ? `\n\n${submit.error}` : '')
             : ''
         }
-        confirmLabel="Confirmar despacho"
+        confirmLabel="Sí, sacar productos"
         submitting={submit.submitting}
         disabled={!online}
         onConfirm={() => void confirm()}
@@ -242,7 +206,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
 
 const styles = StyleSheet.create({
   container: { gap: Spacing.md },
-  field: { gap: Spacing.xs },
   label: { ...Typography.bodySmallStrong },
   help: { ...Typography.caption },
   card: { gap: Spacing.sm },

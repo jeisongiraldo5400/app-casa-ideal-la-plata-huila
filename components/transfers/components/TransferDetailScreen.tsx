@@ -24,7 +24,8 @@ type Props = {
 
 /**
  * Detalle de un traslado. Abre el modo según el estado y `permissions` del
- * servidor: despachar, recibir o confirmar devolución; si no hay acción, solo
+ * servidor: sacar productos (solo quien «Saca» o un admin), recibir (solo
+ * quien «Recibe» o un admin) o confirmar devolución; si no hay acción, solo
  * lectura con el motivo. Sin señal no deja confirmar, pero lo marcado se
  * conserva en memoria.
  */

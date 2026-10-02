@@ -20,8 +20,7 @@ import { TransferSectionPicker } from './TransferSectionPicker';
 import { TransferSummaryCard } from './TransferSummaryCard';
 
 /**
- * Lista «Traslados»: Por despachar / Por recibir / Que transporto /
- * Devoluciones por confirmar, con contadores y los vencidos en rojo (arriba).
+ * Lista «Traslados»: Por sacar / Por recibir / Devoluciones por confirmar, con contadores y los vencidos en rojo (arriba).
  * Los traslados se crean en la web; aquí solo se atienden.
  */
 export function TransfersScreen() {
@@ -85,7 +84,7 @@ export function TransfersScreen() {
         <ScreenState
           icon="lock-outline"
           title="Sin traslados asignados"
-          description="Traslados es para bodegueros y administradores: el bodeguero despacha y recibe. Si deberías hacerlo, pide a un administrador el perfil de bodeguero."
+          description="Traslados es para bodegueros y administradores: el bodeguero saca los productos y los recibe. Si deberías hacerlo, pide a un administrador el perfil de bodeguero."
         />
       );
     }
@@ -137,7 +136,6 @@ export function TransfersScreen() {
           counts={{
             toDispatch: state.tasks.toDispatch.length,
             toReceive: state.tasks.toReceive.length,
-            carrying: state.tasks.carrying.length,
             toConfirmReturn: state.tasks.toConfirmReturn.length,
           }}
           onChange={setSection}
@@ -155,7 +153,7 @@ export function TransfersScreen() {
       ) : null}
       {state.tasks && !online ? (
         <Text style={[styles.offline, { color: colors.warning.dark }]}>
-          Sin señal: la lista puede estar desactualizada y no podrás confirmar despachos ni recepciones.
+          Sin señal: la lista puede estar desactualizada y no podrás sacar productos ni recibir.
         </Text>
       ) : null}
       {state.tasks && state.error ? (

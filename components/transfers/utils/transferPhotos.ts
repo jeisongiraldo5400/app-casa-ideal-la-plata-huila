@@ -82,7 +82,7 @@ export function withDamagedPhotoPaths<T extends { item_id: string; condition: 'o
 export type TransferEventPhoto = { path: string; label: string; createdAt: string | null; userName: string | null };
 
 const ACTION_LABEL: Record<string, string> = {
-  dispatch: 'Despacho',
+  dispatch: 'Salida',
   receive: 'Recepción',
   return_to_origin: 'Devolución',
   return_requested: 'Devolución',
@@ -92,7 +92,7 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 /**
- * Una miniatura por archivo: la foto general de un despacho o recepción se
+ * Una miniatura por archivo: la foto general de una salida o recepción se
  * repite en el evento de cada línea, así que se agrupa por ruta. Si la ruta
  * solo aparece en una línea, se nombra el producto (p. ej. la foto de avería).
  */

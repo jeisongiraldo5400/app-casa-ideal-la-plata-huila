@@ -15,7 +15,7 @@ export type WarehouseTransfersState = {
   reload: () => Promise<void>;
 };
 
-/** Traslados en camino hacia la bodega y por despachar desde ella. */
+/** Traslados en camino hacia la bodega y por sacar desde ella. */
 export function useWarehouseTransfers({ warehouseId, enabled }: Options): WarehouseTransfersState {
   const [data, setData] = useState<WarehouseTransfers | null>(null);
   const [loading, setLoading] = useState(false);

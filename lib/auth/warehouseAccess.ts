@@ -43,10 +43,9 @@ export const ASSIGNED_EXITS_ONLY_MESSAGE =
 /**
  * Traslados (órdenes de traslado con recepción confirmada, 3.3.0).
  *
- * No depende solo del rol: el servidor decide por bodega. Despacha el
- * admin/bodeguero o un responsable de despacho de la bodega origen; recibe el
- * admin o un responsable de recibir de la bodega destino (`warehouse_members`),
- * y el transportador ve lo que lleva. Por eso entra al módulo:
+ * No depende solo del rol: el servidor decide por traslado (20261231470000):
+ * saca los productos la persona asignada «Saca» y recibe la asignada «Recibe»
+ * (o un admin); el transportador de traslados viejos ve lo que lleva. Por eso entra al módulo:
  * - admin o bodeguero, siempre;
  * - quien sea miembro de alguna bodega (`get_my_warehouse_memberships`);
  * - quien tenga alguna tarea pendiente (`get_my_transfer_tasks`), p. ej. el
@@ -54,9 +53,9 @@ export const ASSIGNED_EXITS_ONLY_MESSAGE =
  */
 export type TransferAccessInput = {
   roleNames: readonly string[];
-  /** Bodegas donde el usuario es responsable (despachar o recibir). */
+  /** Bodegas donde el usuario es responsable (sacar o recibir). */
   membershipsCount: number;
-  /** Tareas pendientes (por despachar, recibir, transportar o confirmar). */
+  /** Tareas pendientes (por sacar, recibir, transportar o confirmar). */
   tasksCount: number;
 };
 

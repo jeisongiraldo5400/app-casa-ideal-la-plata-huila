@@ -19,7 +19,7 @@ export interface WarehouseSummary {
   /** Traslados que vienen hacia la bodega (en tránsito, recibidos en parte o con diferencias). */
   incomingTransfers: number;
   incomingUnits: number;
-  /** Traslados que salen de la bodega y esperan despacho. */
+  /** Traslados que salen de la bodega y esperan que saquen los productos. */
   pendingDispatch: number;
   /** ¿El usuario es Responsable de la bodega? (el admin ve todas aunque no lo sea). */
   isManager: boolean;

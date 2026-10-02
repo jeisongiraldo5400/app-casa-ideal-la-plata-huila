@@ -46,7 +46,7 @@ export const WAREHOUSE_MOVEMENT_LABEL: Record<WarehouseMovementType, string> = {
   transfer_out: 'Traslado directo enviado',
   transfer_reservation: 'Separado para traslado',
   transfer_release: 'Liberado de traslado',
-  transfer_dispatch: 'Traslado despachado',
+  transfer_dispatch: 'Traslado: sacado',
   transfer_receipt: 'Traslado recibido',
   transfer_return: 'Devuelto de traslado',
   transfer_write_off: 'Baja en traslado',
@@ -81,7 +81,7 @@ export const WAREHOUSE_MOVEMENT_TONE: Record<WarehouseMovementType, StatusTone> 
 /**
  * Tipos que no mueven existencias físicas: separar/liberar (órdenes y
  * traslados), los cambios de la bodega y la baja de un traslado (las unidades
- * ya habían salido con el despacho). Su cantidad no va en verde/rojo.
+ * ya habían salido al sacarlas). Su cantidad no va en verde/rojo.
  */
 const NON_PHYSICAL_TYPES: ReadonlySet<WarehouseMovementType> = new Set<WarehouseMovementType>([
   'reservation',

@@ -15,7 +15,7 @@ type Props = {
   onClose: () => void;
 };
 
-/** Resumen antes de confirmar un despacho, una recepción o una devolución. */
+/** Resumen antes de confirmar la salida de productos, una recepción o una devolución. */
 export function ConfirmTransferSheet({ visible, title, summary, confirmLabel, submitting, disabled, onConfirm, onClose }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);

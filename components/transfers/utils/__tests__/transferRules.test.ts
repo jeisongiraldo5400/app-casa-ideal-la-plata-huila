@@ -12,6 +12,7 @@ import {
   maxDispatch,
   maxReceive,
   maxReturn,
+  modeParam,
   parseModeParam,
   parseSerialsText,
   receiveAllOk,
@@ -94,7 +95,7 @@ describe('seriales escritos a mano', () => {
   });
 });
 
-describe('despacho', () => {
+describe('sacar productos', () => {
   const detail = parseTransferDetail(rawPendingDispatchDetail());
 
   it('arranca con todo lo reservado y arma la carga de la RPC', () => {
@@ -112,8 +113,10 @@ describe('despacho', () => {
 
   it('no elige receptores: quién recibe viene asignado en el traslado', () => {
     expect(initialDispatchDraft(detail)).not.toHaveProperty('receiverIds');
+    // Ya no se pide transportador.
+    expect(initialDispatchDraft(detail)).not.toHaveProperty('carrierId');
     expect(detail.order.receiver).toEqual({ id: 'u-recv', name: 'Recibe' });
-    // Sin receptor asignado también se puede despachar (lo recibe un admin).
+    // Sin receptor asignado también se pueden sacar (lo recibe un admin).
     const unassigned = parseTransferDetail({
       ...rawPendingDispatchDetail(),
       order: { ...rawPendingDispatchDetail().order, receiver: null },
@@ -280,7 +283,10 @@ describe('modo del detalle según estado y permisos', () => {
   });
 
   it('?modo= de la ruta', () => {
+    expect(parseModeParam('sacar')).toBe('dispatch');
+    // Enlaces de versiones anteriores.
     expect(parseModeParam('despachar')).toBe('dispatch');
+    expect(modeParam('dispatch')).toBe('sacar');
     expect(parseModeParam(['recibir'])).toBe('receive');
     expect(parseModeParam('devolucion')).toBe('return');
     expect(parseModeParam('otro')).toBeNull();

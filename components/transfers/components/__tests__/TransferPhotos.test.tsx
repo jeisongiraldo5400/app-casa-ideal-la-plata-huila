@@ -60,23 +60,23 @@ describe('Fotos de traslados', () => {
     global.fetch = jest.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) })) as unknown as typeof fetch;
   });
 
-  it('despachar: la foto es opcional, se sube y viaja como p_photo_path', async () => {
+  it('sacar productos: la foto es opcional, se sube y viaja como p_photo_path', async () => {
     pick.mockResolvedValue(photo('carga'));
     mockUpload.mockResolvedValue({ data: {}, error: null });
     (dispatchTransfer as jest.Mock).mockResolvedValue(okResult);
     const screen = renderWith(rawPendingDispatchDetail());
-    await screen.findByText('Foto de la carga (opcional)');
+    await screen.findByText('Foto (opcional)');
 
     await act(async () => {
       fireEvent.press(screen.getByText('Tomar foto'));
     });
     expect(pick).toHaveBeenCalledWith('camera');
-    expect(screen.getByLabelText('Foto de la carga (opcional): foto adjunta')).toBeTruthy();
+    expect(screen.getByLabelText('Foto (opcional): foto adjunta')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Revisar y despachar'));
-    expect(screen.getByText(/Con foto de la carga\./)).toBeTruthy();
+    fireEvent.press(screen.getByText('Sacar productos'));
+    expect(screen.getByText(/Con foto\./)).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
 
     expect(mockUpload).toHaveBeenCalledWith('t-1/carga.jpg', expect.any(Uint8Array), expect.objectContaining({ upsert: false }));
@@ -92,29 +92,29 @@ describe('Fotos de traslados', () => {
       .mockRejectedValueOnce(new TypeError('Network request failed'))
       .mockResolvedValueOnce(okResult);
     const screen = renderWith(rawPendingDispatchDetail());
-    await screen.findByText('Foto de la carga (opcional)');
+    await screen.findByText('Foto (opcional)');
     await act(async () => {
       fireEvent.press(screen.getByText('Galería'));
     });
     expect(pick).toHaveBeenCalledWith('gallery');
-    fireEvent.press(screen.getByText('Revisar y despachar'));
+    fireEvent.press(screen.getByText('Sacar productos'));
 
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
     expect(dispatchTransfer).not.toHaveBeenCalled();
     expect(screen.getByText(/No se pudo subir la foto \(permiso denegado\)\. No se registró nada/)).toBeTruthy();
 
     // Segundo intento: sube, pero la RPC se queda sin red.
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
     expect(mockUpload).toHaveBeenCalledTimes(2);
     expect(dispatchTransfer).toHaveBeenCalledTimes(1);
 
     // Tercer intento: ya no sube y la huella (y la clave) es la misma.
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
     expect(mockUpload).toHaveBeenCalledTimes(2);
     expect(dispatchTransfer).toHaveBeenCalledTimes(2);
@@ -174,12 +174,12 @@ describe('Fotos de traslados', () => {
         ],
       })
     );
-    await screen.findByText('Despacho');
+    await screen.findByText('Salida');
     expect(screen.getByText('Recepción · Nevera Haceb (averiada)')).toBeTruthy();
     await waitFor(() => expect(mockSigned).toHaveBeenCalledTimes(2));
     expect(mockSigned).toHaveBeenCalledWith('t-1/carga.jpg', 3600);
-    await waitFor(() => expect(screen.getByLabelText('Ampliar foto: Despacho').props.accessibilityState?.disabled).toBeFalsy());
-    fireEvent.press(screen.getByLabelText('Ampliar foto: Despacho'));
+    await waitFor(() => expect(screen.getByLabelText('Ampliar foto: Salida').props.accessibilityState?.disabled).toBeFalsy());
+    fireEvent.press(screen.getByLabelText('Ampliar foto: Salida'));
     expect(screen.getByLabelText('Cerrar foto')).toBeTruthy();
   });
 });

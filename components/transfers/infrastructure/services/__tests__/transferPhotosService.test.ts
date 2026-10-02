@@ -89,7 +89,6 @@ describe('transferPhotosService', () => {
     await dispatchTransfer({
       transferOrderId: 't-1',
       items: [{ item_id: 'i-1', quantity: 1 }],
-      carrierUserId: null,
       notes: '',
       photoPath: 't-1/carga.jpg',
       idempotencyKey: 'k',

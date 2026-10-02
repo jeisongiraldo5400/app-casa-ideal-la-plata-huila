@@ -11,7 +11,7 @@ export const photoUploadMessage = (detail: string) =>
 
 /**
  * Envía una escritura de traslado con clave de idempotencia y deja el error
- * del servidor en español tal cual (quien despachó no puede recibir, etc.).
+ * del servidor en español tal cual (solo quien saca puede sacar, etc.).
  *
  * `prepare` corre antes (subir fotos): si falla, la RPC no se llama. Las
  * fotos tienen ruta fija desde que se toman, así que la huella —y con ella la

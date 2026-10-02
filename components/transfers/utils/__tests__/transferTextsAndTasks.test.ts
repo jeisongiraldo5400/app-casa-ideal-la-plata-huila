@@ -48,10 +48,13 @@ describe('parseo de las RPC', () => {
 });
 
 describe('textos', () => {
-  it('«Te enviaron: N × Producto — transporta X — despachado el …»', () => {
+  it('«Te enviaron: N × Producto — sacado el …» (transporta solo en traslados viejos)', () => {
     const detail = parseTransferDetail(rawDetail());
     expect(sentLineText(detail.items[0], detail.order)).toBe(
-      'Te enviaron: 3 × Lavadora LG — transporta Darío — despachado el 26/09/2026 10:00 a. m.'
+      'Te enviaron: 3 × Lavadora LG — transporta Darío — sacado el 26/09/2026 10:00 a. m.'
+    );
+    expect(sentLineText(detail.items[0], { ...detail.order, carrier: null })).toBe(
+      'Te enviaron: 3 × Lavadora LG — sacado el 26/09/2026 10:00 a. m.'
     );
   });
 
@@ -63,15 +66,13 @@ describe('textos', () => {
 
   it('resúmenes de confirmación', () => {
     const order = parseTransferSummary(rawOrder());
-    const dispatchText = dispatchConfirmText(
-      { units: 4, lines: 2, released: 1 },
-      order,
-      'Darío'
-    );
+    const dispatchText = dispatchConfirmText({ units: 4, lines: 2, released: 1 }, order);
+    expect(dispatchText).toContain('Vas a sacar 4 unidades (2 productos) de Principal → La Argentina.');
     expect(dispatchText).toContain('1 unidad no sale y vuelve al disponible de Principal.');
+    expect(dispatchText).not.toMatch(/despach|Transporta|transportador/i);
     expect(dispatchText).toContain('Recibe: Recibe. Le llegará un aviso.');
     expect(
-      dispatchConfirmText({ units: 1, lines: 1, released: 0 }, parseTransferSummary(rawOrder({ receiver: null })), null)
+      dispatchConfirmText({ units: 1, lines: 1, released: 0 }, parseTransferSummary(rawOrder({ receiver: null })))
     ).toContain('Sin receptor asignado: solo un administrador podrá recibirlo.');
     expect(receiveConfirmText({ ok: 2, damaged: 1, remaining: 2, reportMissing: false }, order)).toBe(
       'Recibes en La Argentina: 2 unidades en buen estado y 1 unidad averiada.\n2 unidades siguen en camino: puedes recibirlas después.'
@@ -81,9 +82,15 @@ describe('textos', () => {
     );
   });
 
-  it('motivo del modo solo lectura: quien despachó o transporta no recibe', () => {
+  it('motivo del modo solo lectura: quien sacó o transporta no recibe', () => {
     const order = parseTransferSummary(rawOrder());
-    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe Recibe en La Argentina.');
+    expect(viewNotice(order, 'u-disp')).toBe('Sacaste los productos de este traslado: lo recibe Recibe en La Argentina.');
+    expect(viewNotice(parseTransferSummary(rawOrder({ status: 'pending_dispatch' })), 'x')).toBe(
+      'Por sacar: los productos los saca Bodeguero en Principal.'
+    );
+    expect(viewNotice(parseTransferSummary(rawOrder({ status: 'pending_dispatch', dispatcher: null })), 'x')).toMatch(
+      /^Por sacar en Principal: falta asignar quién saca/
+    );
     expect(viewNotice(parseTransferSummary(rawOrder({ receiver: null })), 'x')).toBe(
       'Lo recibe un administrador en La Argentina.'
     );
@@ -93,10 +100,10 @@ describe('textos', () => {
 });
 
 describe('asignados', () => {
-  it('«Despacha: X · Recibe: Y», o sin asignar', () => {
-    expect(assignmentText(parseTransferSummary(rawOrder()))).toBe('Despacha: Bodeguero · Recibe: Recibe');
+  it('«Saca: X · Recibe: Y», o sin asignar', () => {
+    expect(assignmentText(parseTransferSummary(rawOrder()))).toBe('Saca: Bodeguero · Recibe: Recibe');
     expect(assignmentText(parseTransferSummary(rawOrder({ dispatcher: null, receiver: null })))).toBe(
-      'Despacha: sin asignar · Recibe: sin asignar'
+      'Saca: sin asignar · Recibe: sin asignar'
     );
     expect(receiverLineText({ id: 'u-1', name: 'Ana' })).toBe('Recibe: Ana');
     expect(receiverLineText(null)).toBe('Sin receptor asignado: solo un administrador podrá recibirlo');
@@ -128,7 +135,7 @@ describe('tareas', () => {
 
   it('subtítulo de la tarjeta de Inicio', () => {
     expect(homeCardSubtitle(tasks)).toBe('2 por recibir · 1 vencido');
-    expect(homeCardSubtitle({ ...tasks, toReceive: [] })).toBe('1 por despachar');
-    expect(homeCardSubtitle(null)).toBe('Despachar y recibir');
+    expect(homeCardSubtitle({ ...tasks, toReceive: [] })).toBe('1 por sacar');
+    expect(homeCardSubtitle(null)).toBe('Sacar y recibir');
   });
 });

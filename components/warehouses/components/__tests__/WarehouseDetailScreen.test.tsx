@@ -72,7 +72,7 @@ describe('WarehouseDetailScreen', () => {
     expect(await screen.findByText('Sin permiso para ver esta bodega')).toBeTruthy();
   });
 
-  it('En camino: llegan y por despachar; tocar uno abre el traslado', async () => {
+  it('En camino: llegan y por sacar; tocar uno abre el traslado', async () => {
     (fetchWarehouseStock as jest.Mock).mockResolvedValue(parseWarehouseStockPage({ total_count: 0, rows: [] }));
     (fetchWarehouseTransfers as jest.Mock).mockResolvedValue({
       incoming: parseTransferListPage({ total_count: 1, rows: [rawOrder({ id: 'in-1', order_number: 'TR-2026-0005' })] }),
@@ -86,7 +86,7 @@ describe('WarehouseDetailScreen', () => {
     fireEvent.press(screen.getByText('En camino'));
 
     expect(await screen.findByText('Llegan a esta bodega (1)')).toBeTruthy();
-    expect(screen.getByText('Por despachar desde aquí (1)')).toBeTruthy();
+    expect(screen.getByText('Por sacar desde aquí (1)')).toBeTruthy();
     expect(fetchWarehouseTransfers).toHaveBeenCalledWith('w-1');
     fireEvent.press(screen.getByLabelText(/Traslado TR-2026-0006/));
     expect(mockNavigate).toHaveBeenCalledWith('/traslado/pd-1');

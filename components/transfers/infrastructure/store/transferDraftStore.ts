@@ -1,5 +1,5 @@
 /**
- * Borradores de despacho / recepción / devolución, SOLO en memoria.
+ * Borradores de salida / recepción / devolución, SOLO en memoria.
  *
  * Primera versión con señal (como salidas y entradas): no hay cola offline,
  * pero si la red se cae a mitad del conteo lo marcado no se pierde al salir y

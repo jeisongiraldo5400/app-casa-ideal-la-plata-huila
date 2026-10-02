@@ -3,7 +3,7 @@ import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 
-/** Detalle de un traslado: despachar, recibir o confirmar devolución según estado y permisos. */
+/** Detalle de un traslado: sacar productos, recibir o confirmar devolución según estado y permisos. */
 export default function TrasladoDetalleScreen() {
   const { id, modo } = useLocalSearchParams<{ id?: string; modo?: string }>();
   return (

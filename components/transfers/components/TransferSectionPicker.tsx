@@ -12,9 +12,9 @@ type Props = {
 };
 
 /**
- * Las cuatro secciones de Traslados como tarjetas en cuadrícula de 2×2: la
- * etiqueta completa, qué se hace ahí y cuántos hay. Reemplaza las pestañas,
- * que en el teléfono cortaban los nombres («Desp…», «Tran…»).
+ * Las secciones de Traslados (Por sacar, Recibir, Devoluciones) como tarjetas
+ * en cuadrícula: la etiqueta completa, qué se hace ahí y cuántos hay.
+ * Reemplaza las pestañas, que en el teléfono cortaban los nombres.
  */
 export function TransferSectionPicker({ value, counts, onChange }: Props) {
   const { isDark } = useTheme();

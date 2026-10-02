@@ -20,7 +20,7 @@ describe('parseTransferSummary: quién recibió (20261231340000)', () => {
 });
 
 describe('parseTransferSummary: asignados (20261231470000)', () => {
-  it('lee quien despacha y quien recibe', () => {
+  it('lee quien saca y quien recibe', () => {
     const order = parseTransferSummary({
       id: 't1',
       status: 'pending_dispatch',

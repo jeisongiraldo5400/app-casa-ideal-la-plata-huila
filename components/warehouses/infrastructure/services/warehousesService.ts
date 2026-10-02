@@ -88,11 +88,11 @@ export async function fetchWarehouseHistory(input: {
 export type WarehouseTransfers = {
   /** Hacia la bodega: en tránsito, recibidos en parte o con diferencias. */
   incoming: TransferListPage;
-  /** Desde la bodega: esperan despacho. */
+  /** Desde la bodega: esperan que saquen los productos. */
   pendingDispatch: TransferListPage;
 };
 
-/** Traslados en camino hacia la bodega y por despachar desde ella (dos consultas en paralelo). */
+/** Traslados en camino hacia la bodega y por sacar desde ella (dos consultas en paralelo). */
 export async function fetchWarehouseTransfers(warehouseId: string): Promise<WarehouseTransfers> {
   const [incoming, pendingDispatch] = await Promise.all([
     supabase.rpc('list_transfer_orders_page', {

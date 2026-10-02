@@ -27,7 +27,7 @@ const TABS: { value: WarehouseDetailTab; label: string; icon: 'inventory-2' | 'l
 
 /**
  * Detalle de una bodega: Productos (existencias), En camino (traslados que
- * llegan y por despachar) e Historial (movimientos). El servidor rechaza a
+ * llegan y por sacar) e Historial (movimientos). El servidor rechaza a
  * quien no es admin ni Responsable de la bodega («Sin permiso para ver esta
  * bodega»); el mensaje se muestra tal cual en cada pestaña.
  */

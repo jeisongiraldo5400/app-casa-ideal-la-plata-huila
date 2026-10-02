@@ -38,7 +38,7 @@ function useSignedUrls(paths: string[]): Record<string, string> {
   return urls;
 }
 
-/** Fotos del despacho / recepción (una por archivo) con toque para ampliar. */
+/** Fotos de la salida / recepción (una por archivo) con toque para ampliar. */
 export function TransferPhotosView({ events }: { events: TransferEvent[] }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);

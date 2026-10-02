@@ -69,7 +69,7 @@ describe('warehousesService', () => {
     });
   });
 
-  it('traslados: en camino hacia la bodega y por despachar desde ella', async () => {
+  it('traslados: en camino hacia la bodega y por sacar desde ella', async () => {
     rpc
       .mockResolvedValueOnce({ data: { total_count: 1, rows: [rawOrder({ id: 'in-1' })] }, error: null })
       .mockResolvedValueOnce({

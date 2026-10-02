@@ -35,13 +35,6 @@ jest.mock('@/components/auth/infrastructure/hooks/useAuth', () => ({
 let mockOnline = true;
 jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => mockOnline }));
 
-jest.mock('@/lib/users/sellersService', () => ({
-  fetchSellerOptions: jest.fn(async () => [
-    { id: 'u-carrier', full_name: 'Darío' },
-    { id: 'u-otro', full_name: 'Otro Transportador' },
-  ]),
-}));
-
 jest.mock('@/lib/idempotency', () => ({
   getOrCreatePersistentIdempotencyKey: jest.fn(async () => 'key-1'),
   clearPersistentIdempotencyKey: jest.fn(async () => undefined),
@@ -73,7 +66,7 @@ describe('TransferDetailScreen', () => {
     useTransferDraftStore.getState().reset();
   });
 
-  it('despachar: ajusta cantidades con −/+ y confirma con resumen', async () => {
+  it('sacar productos: cantidades ya llenas, se bajan con − y se confirma con resumen', async () => {
     (dispatchTransfer as jest.Mock).mockResolvedValue({
       transferOrderId: 't-1',
       orderNumber: 'TR-2026-0001',
@@ -83,16 +76,20 @@ describe('TransferDetailScreen', () => {
     });
     const screen = renderWith(rawPendingDispatchDetail());
 
-    await screen.findByText('Revisar y despachar');
-    fireEvent.press(screen.getByLabelText('Quitar una unidad: A despachar de Nevera Haceb'));
-    fireEvent.press(screen.getByText('Revisar y despachar'));
+    await screen.findByText('Sacar productos');
+    expect(screen.getByLabelText('A sacar de Lavadora LG').props.value).toBe('3');
+    // Ya no se pide transportador.
+    expect(screen.queryByText(/Transportador/)).toBeNull();
+    fireEvent.press(screen.getByLabelText('Quitar una unidad: A sacar de Nevera Haceb'));
+    fireEvent.press(screen.getByText('Sacar productos'));
 
-    expect(screen.getByText(/Vas a despachar 4 unidades \(2 productos\) de Principal → La Argentina\./)).toBeTruthy();
+    expect(screen.getByText('¿Sacar los productos de TR-2026-0001?')).toBeTruthy();
+    expect(screen.getByText(/Vas a sacar 4 unidades \(2 productos\) de Principal → La Argentina\./)).toBeTruthy();
     expect(screen.getByText(/1 unidad no sale y vuelve al disponible de Principal\./)).toBeTruthy();
     expect(screen.getByText(/Recibe: Recibe\. Le llegará un aviso\./)).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
 
     expect(dispatchTransfer).toHaveBeenCalledWith({
@@ -101,27 +98,29 @@ describe('TransferDetailScreen', () => {
         { item_id: 'i-1', quantity: 3 },
         { item_id: 'i-2', quantity: 1 },
       ],
-      carrierUserId: null,
       notes: '',
       photoPath: null,
       idempotencyKey: 'key-1',
     });
-    expect(await screen.findByText('TR-2026-0001 despachado: 4 unidades en camino a La Argentina.')).toBeTruthy();
+    expect(
+      await screen.findByText('TR-2026-0001: sacaste 4 unidades, en camino a La Argentina. Le avisamos a Recibe.')
+    ).toBeTruthy();
     expect(fetchDetail).toHaveBeenCalledTimes(2);
     expect(kickNotificationDispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('despachar: muestra «Recibe: X» asignado y no ofrece elegir receptores', async () => {
+  it('sacar productos: muestra «Recibe: X» asignado y no ofrece elegir receptores ni transportador', async () => {
     const screen = renderWith(rawPendingDispatchDetail());
-    await screen.findByText('Revisar y despachar');
+    await screen.findByText('Sacar productos');
     expect(screen.getByText('Recibe: Recibe')).toBeTruthy();
     expect(screen.queryByText(/Quiénes pueden recibir/)).toBeNull();
     expect(screen.queryByText('Quien lleva la mercancía no podrá recibirla.')).toBeNull();
-    // Un traslado viejo con transportador lo trae elegido (sigue opcional).
-    expect(screen.getAllByText('Transporta: Darío').length).toBeGreaterThan(0);
+    // Ya no se elige transportador (un traslado viejo lo muestra en la cabecera).
+    expect(screen.queryByText('¿Quién transporta?')).toBeNull();
+    expect(screen.queryByText('Sin transportador')).toBeNull();
   });
 
-  it('despachar sin receptor asignado: se puede, lo avisa y la llamada no lleva receptores', async () => {
+  it('sacar sin receptor asignado: se puede, lo avisa y la llamada no lleva receptores', async () => {
     (dispatchTransfer as jest.Mock).mockResolvedValue({
       transferOrderId: 't-1',
       orderNumber: 'TR-2026-0001',
@@ -131,47 +130,47 @@ describe('TransferDetailScreen', () => {
     });
     const raw = rawPendingDispatchDetail();
     const screen = renderWith({ ...raw, order: { ...raw.order, receiver: null } });
-    await screen.findByText('Revisar y despachar');
+    await screen.findByText('Sacar productos');
     expect(screen.getByText('Sin receptor asignado: solo un administrador podrá recibirlo')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Revisar y despachar'));
+    fireEvent.press(screen.getByText('Sacar productos'));
     expect(screen.getByText(/Sin receptor asignado: solo un administrador podrá recibirlo\./)).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Confirmar despacho'));
+      fireEvent.press(screen.getByText('Sí, sacar productos'));
     });
     expect(dispatchTransfer).toHaveBeenCalledTimes(1);
     expect((dispatchTransfer as jest.Mock).mock.calls[0][0]).not.toHaveProperty('receiverIds');
   });
 
-  it('detalle: «Despacha: X · Recibe: Y»', async () => {
+  it('detalle: «Saca: X · Recibe: Y»', async () => {
     const screen = renderWith(rawDetail());
-    expect(await screen.findByText('Despacha: Bodeguero · Recibe: Recibe')).toBeTruthy();
+    expect(await screen.findByText('Saca: Bodeguero · Recibe: Recibe')).toBeTruthy();
     expect(screen.queryByText(/Sin receptor asignado/)).toBeNull();
   });
 
   it('en camino sin receptor asignado: lo avisa en la cabecera', async () => {
     const screen = renderWith(rawDetail({ order: { dispatcher: null, receiver: null } }));
-    expect(await screen.findByText('Despacha: sin asignar · Recibe: sin asignar')).toBeTruthy();
+    expect(await screen.findByText('Saca: sin asignar · Recibe: sin asignar')).toBeTruthy();
     expect(screen.getByText('Sin receptor asignado: solo un administrador puede recibirlo.')).toBeTruthy();
   });
 
-  it('despachar: no deja pasar de lo reservado con +', async () => {
+  it('sacar productos: no deja pasar de lo reservado con +', async () => {
     const screen = renderWith(rawPendingDispatchDetail());
-    await screen.findByText('Revisar y despachar');
-    const plus = screen.getByLabelText('Agregar una unidad: A despachar de Lavadora LG');
+    await screen.findByText('Sacar productos');
+    const plus = screen.getByLabelText('Agregar una unidad: A sacar de Lavadora LG');
     fireEvent.press(plus);
-    expect(screen.getByLabelText('A despachar de Lavadora LG').props.value).toBe('3');
+    expect(screen.getByLabelText('A sacar de Lavadora LG').props.value).toBe('3');
   });
 
   it('recibir: «Te enviaron…», parcial con averiada y el error del servidor tal cual', async () => {
     (receiveTransfer as jest.Mock).mockRejectedValue({
       code: '42501',
-      message: 'Quien despachó el traslado no puede recibirlo',
+      message: 'El traslado TR-2026-0001 lo recibe Recibe: solo esa persona o un administrador puede recibirlo',
     });
     const screen = renderWith(rawDetail());
 
     expect(
-      await screen.findByText('Te enviaron: 3 × Lavadora LG — transporta Darío — despachado el 26/09/2026 10:00 a. m.')
+      await screen.findByText('Te enviaron: 3 × Lavadora LG — transporta Darío — sacado el 26/09/2026 10:00 a. m.')
     ).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('Agregar una unidad: Llegó bien de Lavadora LG'));
@@ -198,7 +197,7 @@ describe('TransferDetailScreen', () => {
       photoPath: null,
       idempotencyKey: 'key-1',
     });
-    expect(screen.getByText(/Quien despachó el traslado no puede recibirlo/)).toBeTruthy();
+    expect(screen.getByText(/lo recibe Recibe: solo esa persona o un administrador puede recibirlo/)).toBeTruthy();
   });
 
   it('recibir: «Falta» sin marcar unidades envía p_report_missing', async () => {
@@ -222,7 +221,7 @@ describe('TransferDetailScreen', () => {
     expect(await screen.findByText('Informaste que no llegó el resto de TR-2026-0001.')).toBeTruthy();
   });
 
-  it('recibir con seriales despachados: los pide antes de confirmar', async () => {
+  it('recibir con seriales sacados: los pide antes de confirmar', async () => {
     const screen = renderWith(
       rawDetail({
         items: [
@@ -250,7 +249,7 @@ describe('TransferDetailScreen', () => {
     mockOnline = false;
     const screen = renderWith(rawDetail());
     await screen.findByText('Revisar y recibir');
-    expect(screen.getByText(/Sin señal: para despachar o recibir necesitas conexión/)).toBeTruthy();
+    expect(screen.getByText(/Sin señal: para sacar productos o recibir necesitas conexión/)).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('Agregar una unidad: Llegó bien de Lavadora LG'));
     fireEvent.press(screen.getByText('Revisar y recibir'));

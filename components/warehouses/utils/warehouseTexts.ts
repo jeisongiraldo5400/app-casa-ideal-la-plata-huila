@@ -17,9 +17,9 @@ export function incomingText(warehouse: Pick<WarehouseSummary, 'incomingTransfer
   return warehouse.incomingTransfers > 0 ? `${warehouse.incomingTransfers} en camino` : null;
 }
 
-/** «1 por despachar» (traslados que salen); null si no hay. */
+/** «1 por sacar» (traslados que salen); null si no hay. */
 export function pendingDispatchText(warehouse: Pick<WarehouseSummary, 'pendingDispatch'>): string | null {
-  return warehouse.pendingDispatch > 0 ? `${warehouse.pendingDispatch} por despachar` : null;
+  return warehouse.pendingDispatch > 0 ? `${warehouse.pendingDispatch} por sacar` : null;
 }
 
 /** «Encargados: Ana, Luis» / «Sin encargado». */

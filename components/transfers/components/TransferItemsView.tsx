@@ -15,7 +15,7 @@ export function TransferItemsView({ detail }: { detail: TransferDetail }) {
       <SectionHeader title="Productos" hint={`${detail.items.length}`} />
       {detail.items.map((item) => {
         const parts = [`Pedido: ${item.quantity}`];
-        if (item.dispatchedQuantity > 0 || detail.order.dispatchedAt) parts.push(`Despachado: ${item.dispatchedQuantity}`);
+        if (item.dispatchedQuantity > 0 || detail.order.dispatchedAt) parts.push(`Sacado: ${item.dispatchedQuantity}`);
         if (item.receivedQuantity > 0) parts.push(`Recibido: ${item.receivedQuantity}`);
         if (item.damagedQuantity > 0) parts.push(`Averiado: ${item.damagedQuantity}`);
         const pending = maxReceive(item);

@@ -6,7 +6,7 @@ import type { DispatchSummary, ReceiveSummary, ReturnSummary, TransferMode } fro
 
 export const TRANSFER_STATUS_LABEL: Record<TransferStatus, string> = {
   draft: 'Borrador',
-  pending_dispatch: 'Por despachar',
+  pending_dispatch: 'Por sacar',
   in_transit: 'En tránsito',
   partially_received: 'Recibido en parte',
   received: 'Recibido',
@@ -27,7 +27,7 @@ export const TRANSFER_STATUS_TONE: Record<TransferStatus, StatusTone> = {
 };
 
 export const TRANSFER_MODE_LABEL: Record<TransferMode, string> = {
-  dispatch: 'Despachar',
+  dispatch: 'Sacar productos',
   receive: 'Recibir',
   return: 'Confirmar devolución',
   view: 'Ver',
@@ -50,7 +50,7 @@ export function formatTransferDate(value: string | null | undefined): string {
   return formatPaymentDateTime(value ?? null);
 }
 
-/** «Vence …» / «Vencido desde …» para un traslado despachado; null si no aplica. */
+/** «Vence …» / «Vencido desde …» para un traslado ya sacado; null si no aplica. */
 export function dueText(order: Pick<TransferSummary, 'dueAt' | 'isOverdue'>): string | null {
   if (!order.dueAt) return null;
   return order.isOverdue
@@ -58,26 +58,26 @@ export function dueText(order: Pick<TransferSummary, 'dueAt' | 'isOverdue'>): st
     : `Debe llegar antes de ${formatTransferDate(order.dueAt)}`;
 }
 
-/** «Te enviaron: N × Producto — transporta X — despachado el …» */
+/** «Te enviaron: N × Producto — sacado el …» (+ «transporta X» solo en traslados viejos). */
 export function sentLineText(
   item: Pick<TransferItem, 'dispatchedQuantity' | 'productName'>,
   order: Pick<TransferSummary, 'carrier' | 'dispatchedAt'>
 ): string {
-  const carrier = order.carrier?.name ? `transporta ${order.carrier.name}` : 'sin transportador';
-  const date = order.dispatchedAt ? `despachado el ${formatTransferDate(order.dispatchedAt)}` : 'sin fecha de despacho';
-  return `Te enviaron: ${formatQty(item.dispatchedQuantity)} × ${item.productName} — ${carrier} — ${date}`;
+  const carrier = order.carrier?.name ? ` — transporta ${order.carrier.name}` : '';
+  const date = order.dispatchedAt ? `sacado el ${formatTransferDate(order.dispatchedAt)}` : 'sin fecha de salida';
+  return `Te enviaron: ${formatQty(item.dispatchedQuantity)} × ${item.productName}${carrier} — ${date}`;
 }
 
-export function dispatchConfirmText(summary: DispatchSummary, order: TransferSummary, carrierName: string | null): string {
+/** Confirmación del paso «Sacar productos» (ya no se pide transportador). */
+export function dispatchConfirmText(summary: DispatchSummary, order: TransferSummary): string {
   const parts = [
-    `Vas a despachar ${unitsText(summary.units)} (${summary.lines} producto${summary.lines === 1 ? '' : 's'}) de ${transferRouteText(order)}.`,
+    `Vas a sacar ${unitsText(summary.units)} (${summary.lines} producto${summary.lines === 1 ? '' : 's'}) de ${transferRouteText(order)}.`,
   ];
   if (summary.released > 0) {
     parts.push(`${unitsText(summary.released)} no ${summary.released === 1 ? 'sale' : 'salen'} y ${summary.released === 1 ? 'vuelve' : 'vuelven'} al disponible de ${order.sourceWarehouse.name}.`);
   }
-  parts.push(carrierName ? `Transporta: ${carrierName}.` : 'Sin transportador asignado.');
   parts.push(order.receiver ? `Recibe: ${order.receiver.name}. Le llegará un aviso.` : `${NO_RECEIVER_DISPATCH_TEXT}.`);
-  parts.push('Solo se despacha una vez: lo que no marques ahora no podrá salir en este traslado.');
+  parts.push('Los productos se sacan una sola vez: lo que no marques ahora no podrá salir en este traslado.');
   return parts.join('\n');
 }
 
@@ -104,32 +104,39 @@ export function returnConfirmText(summary: ReturnSummary, order: TransferSummary
   return parts.join('\n');
 }
 
-/** Al despachar, sin receptor asignado (20261231470000). */
+/** Al sacar los productos, sin receptor asignado (20261231470000). */
 export const NO_RECEIVER_DISPATCH_TEXT = 'Sin receptor asignado: solo un administrador podrá recibirlo';
 /** En el detalle de un traslado en camino sin receptor asignado. */
 export const NO_RECEIVER_DETAIL_TEXT = 'Sin receptor asignado: solo un administrador puede recibirlo.';
 
-/** «Recibe: X» del panel de despacho. */
+/** «Recibe: X» del paso «Sacar productos». */
 export function receiverLineText(receiver: PersonRef | null): string {
   return receiver ? `Recibe: ${receiver.name}` : NO_RECEIVER_DISPATCH_TEXT;
 }
 
-/** «Despacha: X · Recibe: Y» (asignados por el admin al crear; 20261231470000). */
+/** «Saca: X · Recibe: Y» (asignados por el admin al crear; 20261231470000). */
 export function assignmentText(order: Pick<TransferSummary, 'dispatcher' | 'receiver'>): string {
-  return `Despacha: ${order.dispatcher?.name ?? 'sin asignar'} · Recibe: ${order.receiver?.name ?? 'sin asignar'}`;
+  return `Saca: ${order.dispatcher?.name ?? 'sin asignar'} · Recibe: ${order.receiver?.name ?? 'sin asignar'}`;
 }
 
 export const OFFLINE_TRANSFER_MESSAGE =
-  'Sin señal: para despachar o recibir necesitas conexión. Lo que marcaste queda guardado mientras no cierres la app.';
+  'Sin señal: para sacar productos o recibir necesitas conexión. Lo que marcaste queda guardado mientras no cierres la app.';
 
 /**
  * Por qué no hay acción disponible (modo solo lectura). `userId` permite decir
- * «despachaste» / «transportas» en vez de un genérico.
+ * «sacaste» / «transportas» en vez de un genérico.
  */
 export function viewNotice(
   order: Pick<
     TransferSummary,
-    'status' | 'dispatchedBy' | 'carrier' | 'receiver' | 'sourceWarehouse' | 'destinationWarehouse' | 'pendingReceiptQuantity'
+    | 'status'
+    | 'dispatchedBy'
+    | 'carrier'
+    | 'dispatcher'
+    | 'receiver'
+    | 'sourceWarehouse'
+    | 'destinationWarehouse'
+    | 'pendingReceiptQuantity'
   >,
   userId: string | null | undefined
 ): string | null {
@@ -137,9 +144,11 @@ export function viewNotice(
   const receiver = order.receiver ? `${order.receiver.name} en ${destination}` : `un administrador en ${destination}`;
   switch (order.status) {
     case 'draft':
-      return 'Borrador: se edita y se envía a despacho desde la web.';
+      return 'Borrador: se edita y se envía desde la web.';
     case 'pending_dispatch':
-      return `Espera despacho en ${order.sourceWarehouse.name}.`;
+      return order.dispatcher
+        ? `Por sacar: los productos los saca ${order.dispatcher.name} en ${order.sourceWarehouse.name}.`
+        : `Por sacar en ${order.sourceWarehouse.name}: falta asignar quién saca (lo hace un administrador en la web).`;
     case 'in_transit':
     case 'partially_received':
     case 'with_differences':
@@ -149,7 +158,7 @@ export function viewNotice(
           : null;
       }
       if (userId && order.dispatchedBy?.id === userId) {
-        return `Despachaste este traslado: lo recibe ${receiver}.`;
+        return `Sacaste los productos de este traslado: lo recibe ${receiver}.`;
       }
       if (userId && order.carrier?.id === userId) {
         return `Transportas este traslado: al llegar, ${receiver} confirma la recepción.`;

@@ -21,12 +21,14 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
   const colors = getColors(isDark);
   const { order } = detail;
   const due = dueText(order);
-  const rows: [string, string][] = [
-    ['Transporta', order.carrier?.name ?? 'Sin transportador'],
-    ['Creado', `${formatTransferDate(order.createdAt)}${order.createdBy ? ` · ${order.createdBy.name}` : ''}`],
-  ];
+  const rows: [string, string][] = [];
+  // Ya no se pide transportador al sacar: solo traslados viejos lo tienen.
+  if (order.carrier) rows.push(['Transporta', order.carrier.name]);
+  rows.push(
+    ['Creado', `${formatTransferDate(order.createdAt)}${order.createdBy ? ` · ${order.createdBy.name}` : ''}`]
+  );
   if (order.dispatchedAt) {
-    rows.push(['Despachado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
+    rows.push(['Sacado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
   }
   // Quién recibió (20261231340000).
   if (order.receivedByNames.length) {

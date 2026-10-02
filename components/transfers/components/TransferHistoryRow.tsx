@@ -14,7 +14,7 @@ import {
 
 /**
  * Fila del historial: lo mismo que la tabla de la web (número, ruta, estado,
- * unidades, quién creó, despachó y recibió) en formato de tarjeta compacta.
+ * unidades, quién creó, sacó y recibió) en formato de tarjeta compacta.
  */
 export function TransferHistoryRow({ order, onPress }: { order: TransferSummary; onPress: () => void }) {
   const { isDark } = useTheme();
@@ -22,7 +22,7 @@ export function TransferHistoryRow({ order, onPress }: { order: TransferSummary;
   const lines: [string, string][] = [];
   lines.push(['Creado', `${formatTransferDate(order.createdAt)}${order.createdBy ? ` · ${order.createdBy.name}` : ''}`]);
   if (order.dispatchedAt) {
-    lines.push(['Despachado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
+    lines.push(['Sacado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
   }
   if (order.receivedByNames.length) {
     const at = order.receivedAt ?? order.lastReceivedAt;

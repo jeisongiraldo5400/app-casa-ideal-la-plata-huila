@@ -53,7 +53,7 @@ function damagedPhotosToSend(draft: ReceiveDraft, items: ReceivePayloadItem[]): 
 
 /**
  * Recibir: por línea cuánto llegó bien y cuánto averiado (≤ en tránsito),
- * seriales si se despacharon con seriales, «Falta» y notas. Se permite parcial.
+ * seriales si salieron con seriales, «Falta» y notas. Se permite parcial.
  */
 export function ReceivePanel({ detail, online, onDone }: Props) {
   const { isDark } = useTheme();
@@ -211,7 +211,7 @@ export function ReceivePanel({ detail, online, onDone }: Props) {
             ) : null}
             {needsSerials && line.ok + line.damaged === 0 ? (
               <Text style={[styles.meta, { color: colors.text.secondary }]}>
-                Se despachó con seriales: al recibir escribe el serial de cada unidad.
+                Salió con seriales: al recibir escribe el serial de cada unidad.
               </Text>
             ) : null}
             {lineErrors[item.id] ? (

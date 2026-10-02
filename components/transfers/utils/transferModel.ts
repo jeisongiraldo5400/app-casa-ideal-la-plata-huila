@@ -39,9 +39,9 @@ export interface TransferSummary {
   carrier: PersonRef | null;
   createdBy: PersonRef | null;
   dispatchedBy: PersonRef | null;
-  /** Quien debe despachar, asignado por el admin al crear (20261231470000). */
+  /** Quien debe sacar los productos («Saca»), asignado por el admin al crear (20261231470000). */
   dispatcher: PersonRef | null;
-  /** Quien debe recibir, asignado por el admin al crear (puede ser quien despacha). */
+  /** Quien debe recibir, asignado por el admin al crear (puede ser quien saca). */
   receiver: PersonRef | null;
   /** Todos los que recibieron alguna parte, en orden (20261231340000). */
   receivedByNames: string[];
@@ -77,7 +77,7 @@ export interface TransferItem {
   productId: string;
   productName: string;
   productSku: string | null;
-  /** Reservado al enviar a despacho. */
+  /** Separado al crear el traslado. */
   quantity: number;
   dispatchedQuantity: number;
   receivedQuantity: number;

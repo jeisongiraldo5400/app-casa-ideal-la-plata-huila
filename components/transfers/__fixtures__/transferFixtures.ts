@@ -108,7 +108,7 @@ export function rawDetail(options: {
   };
 }
 
-/** Traslado por despachar: nada ha salido todavía. */
+/** Traslado por sacar: nada ha salido todavía. */
 export function rawPendingDispatchDetail(permissions: Record<string, boolean> = { can_dispatch: true, can_receive: false }) {
   return rawDetail({
     order: {
