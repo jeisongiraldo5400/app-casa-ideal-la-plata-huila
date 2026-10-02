@@ -1,7 +1,7 @@
 /** Textos de los traslados en la app (puros; se prueban sin React). */
 import { formatPaymentDateTime } from '@/lib/localDate';
 import type { StatusTone } from '@/components/ui/StatusChip';
-import type { TransferDetail, TransferItem, TransferStatus, TransferSummary } from './transferModel';
+import type { PersonRef, TransferItem, TransferStatus, TransferSummary } from './transferModel';
 import type { DispatchSummary, ReceiveSummary, ReturnSummary, TransferMode } from './transferRules';
 
 export const TRANSFER_STATUS_LABEL: Record<TransferStatus, string> = {
@@ -76,11 +76,7 @@ export function dispatchConfirmText(summary: DispatchSummary, order: TransferSum
     parts.push(`${unitsText(summary.released)} no ${summary.released === 1 ? 'sale' : 'salen'} y ${summary.released === 1 ? 'vuelve' : 'vuelven'} al disponible de ${order.sourceWarehouse.name}.`);
   }
   parts.push(carrierName ? `Transporta: ${carrierName}.` : 'Sin transportador asignado.');
-  if (summary.receiverNames.length) {
-    parts.push(
-      `Pueden recibir en ${order.destinationWarehouse.name}: ${summary.receiverNames.join(', ')}. Les llegará un aviso.`
-    );
-  }
+  parts.push(order.receiver ? `Recibe: ${order.receiver.name}. Le llegará un aviso.` : `${NO_RECEIVER_DISPATCH_TEXT}.`);
   parts.push('Solo se despacha una vez: lo que no marques ahora no podrá salir en este traslado.');
   return parts.join('\n');
 }
@@ -108,6 +104,21 @@ export function returnConfirmText(summary: ReturnSummary, order: TransferSummary
   return parts.join('\n');
 }
 
+/** Al despachar, sin receptor asignado (20261231470000). */
+export const NO_RECEIVER_DISPATCH_TEXT = 'Sin receptor asignado: solo un administrador podrá recibirlo';
+/** En el detalle de un traslado en camino sin receptor asignado. */
+export const NO_RECEIVER_DETAIL_TEXT = 'Sin receptor asignado: solo un administrador puede recibirlo.';
+
+/** «Recibe: X» del panel de despacho. */
+export function receiverLineText(receiver: PersonRef | null): string {
+  return receiver ? `Recibe: ${receiver.name}` : NO_RECEIVER_DISPATCH_TEXT;
+}
+
+/** «Despacha: X · Recibe: Y» (asignados por el admin al crear; 20261231470000). */
+export function assignmentText(order: Pick<TransferSummary, 'dispatcher' | 'receiver'>): string {
+  return `Despacha: ${order.dispatcher?.name ?? 'sin asignar'} · Recibe: ${order.receiver?.name ?? 'sin asignar'}`;
+}
+
 export const OFFLINE_TRANSFER_MESSAGE =
   'Sin señal: para despachar o recibir necesitas conexión. Lo que marcaste queda guardado mientras no cierres la app.';
 
@@ -116,10 +127,14 @@ export const OFFLINE_TRANSFER_MESSAGE =
  * «despachaste» / «transportas» en vez de un genérico.
  */
 export function viewNotice(
-  order: Pick<TransferSummary, 'status' | 'dispatchedBy' | 'carrier' | 'sourceWarehouse' | 'destinationWarehouse' | 'pendingReceiptQuantity'>,
+  order: Pick<
+    TransferSummary,
+    'status' | 'dispatchedBy' | 'carrier' | 'receiver' | 'sourceWarehouse' | 'destinationWarehouse' | 'pendingReceiptQuantity'
+  >,
   userId: string | null | undefined
 ): string | null {
   const destination = order.destinationWarehouse.name;
+  const receiver = order.receiver ? `${order.receiver.name} en ${destination}` : `un administrador en ${destination}`;
   switch (order.status) {
     case 'draft':
       return 'Borrador: se edita y se envía a despacho desde la web.';
@@ -134,12 +149,12 @@ export function viewNotice(
           : null;
       }
       if (userId && order.dispatchedBy?.id === userId) {
-        return `Despachaste este traslado: lo recibe un bodeguero en ${destination}.`;
+        return `Despachaste este traslado: lo recibe ${receiver}.`;
       }
       if (userId && order.carrier?.id === userId) {
-        return `Transportas este traslado: al llegar, un bodeguero en ${destination} confirma la recepción.`;
+        return `Transportas este traslado: al llegar, ${receiver} confirma la recepción.`;
       }
-      return `Lo recibe un bodeguero en ${destination}.`;
+      return `Lo recibe ${receiver}.`;
     case 'received':
       return 'Traslado recibido completo.';
     case 'closed_with_differences':
@@ -149,11 +164,4 @@ export function viewNotice(
     default:
       return null;
   }
-}
-
-/** «Pueden recibir» del detalle; null antes de despachar (20261231450000). */
-export function receiversText(detail: TransferDetail): string | null {
-  if (!detail.order.dispatchedAt) return null;
-  if (detail.receiversAssigned) return detail.receivers.map((receiver) => receiver.name).join(', ');
-  return 'Cualquier bodeguero (salvo quien despachó o transporta)';
 }

@@ -3,11 +3,7 @@ import { parseTransferDetail, parseTransferItem } from '../transferModel';
 import {
   availableModes,
   clampQuantity,
-  defaultReceiverIds,
   draftFitsDetail,
-  effectiveCarrierId,
-  receiverChoices,
-  selectedReceivers,
   initialDispatchDraft,
   initialMode,
   initialReceiveDraft,
@@ -110,35 +106,25 @@ describe('despacho', () => {
         { item_id: 'i-1', quantity: 3 },
         { item_id: 'i-2', quantity: 2 },
       ],
-      // Preselección: la encargada del destino (sin quien despacha ni el transportador).
-      summary: { units: 5, lines: 2, released: 0, receiverIds: ['u-recv'], receiverNames: ['Recibe'] },
+      summary: { units: 5, lines: 2, released: 0 },
     });
   });
 
-  it('receptores: no ofrece a quien despacha ni al transportador; preselecciona encargados', () => {
-    expect(receiverChoices(detail, 'u-carrier').map((option) => option.id)).toEqual(['u-recv', 'u-otro']);
-    expect(defaultReceiverIds(detail, 'u-carrier')).toEqual(['u-recv']);
-    // Sin transportador, el encargado que lo era sí se ofrece.
-    expect(defaultReceiverIds(detail, null)).toEqual(['u-recv', 'u-carrier']);
-    expect(effectiveCarrierId(detail, { carrierId: '' })).toBe('u-carrier');
-    expect(effectiveCarrierId(detail, { carrierId: 'u-otro' })).toBe('u-otro');
-  });
-
-  it('receptores: obligatorio al menos uno', () => {
-    const draft = { ...initialDispatchDraft(detail), receiverIds: [] };
-    expect(validateDispatch(detail, draft)).toEqual({
-      ok: false,
-      lineErrors: {},
-      message: 'Elige al menos una persona que pueda recibir en La Argentina.',
+  it('no elige receptores: quién recibe viene asignado en el traslado', () => {
+    expect(initialDispatchDraft(detail)).not.toHaveProperty('receiverIds');
+    expect(detail.order.receiver).toEqual({ id: 'u-recv', name: 'Recibe' });
+    // Sin receptor asignado también se puede despachar (lo recibe un admin).
+    const unassigned = parseTransferDetail({
+      ...rawPendingDispatchDetail(),
+      order: { ...rawPendingDispatchDetail().order, receiver: null },
     });
+    expect(validateDispatch(unassigned, initialDispatchDraft(unassigned)).ok).toBe(true);
   });
 
-  it('receptores: si el elegido pasa a transportar, deja de contar', () => {
-    const draft = { ...initialDispatchDraft(detail), receiverIds: ['u-otro'], carrierId: 'u-otro' };
-    expect(selectedReceivers(detail, draft)).toEqual([]);
-    expect(validateDispatch(detail, draft).ok).toBe(false);
-    const ok = validateDispatch(detail, { ...draft, receiverIds: ['u-otro', 'u-recv'] });
-    expect(ok.ok && ok.summary.receiverIds).toEqual(['u-recv']);
+  it('un borrador viejo con receiverIds sigue sirviendo (el campo se ignora)', () => {
+    const old = { ...initialDispatchDraft(detail), receiverIds: ['u-otro'] };
+    expect(draftFitsDetail(old, detail)).toBe(true);
+    expect(validateDispatch(detail, old)).toEqual(validateDispatch(detail, initialDispatchDraft(detail)));
   });
 
   it('omite las líneas en cero y cuenta lo que vuelve al origen', () => {

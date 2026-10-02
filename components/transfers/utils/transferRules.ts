@@ -9,7 +9,7 @@
  *   pendiente de recibir = en_tránsito − return_pending
  */
 import { normalizeSerial } from '@/components/inventory-flow/serials';
-import type { ReceiverOption, TransferDetail, TransferItem, TransferStatus } from './transferModel';
+import type { TransferDetail, TransferItem, TransferStatus } from './transferModel';
 import type { TransferPhotoDraft } from './transferPhotos';
 
 // ---------------------------------------------------------------------------
@@ -129,8 +129,6 @@ export type DispatchDraft = {
   notes: string;
   /** Foto general opcional de la carga. */
   photo: TransferPhotoDraft | null;
-  /** Quiénes pueden recibir en el destino (20261231450000); ≥ 1 para despachar. */
-  receiverIds: string[];
 };
 
 export type ReceiveLineDraft = {
@@ -159,45 +157,8 @@ export type TransferDraft = DispatchDraft | ReceiveDraft | ReturnDraft;
 export function initialDispatchDraft(detail: TransferDetail): DispatchDraft {
   const lines: Record<string, DispatchLineDraft> = {};
   for (const item of detail.items) lines[item.id] = { quantity: maxDispatch(item), serialsText: '' };
-  return {
-    kind: 'dispatch',
-    lines,
-    carrierId: '',
-    notes: '',
-    photo: null,
-    receiverIds: defaultReceiverIds(detail, detail.order.carrier?.id ?? null),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Receptores al despachar (20261231450000)
-// ---------------------------------------------------------------------------
-
-/** Transportador que quedará: el elegido al despachar o el que puso el admin. */
-export function effectiveCarrierId(detail: TransferDetail, draft: Pick<DispatchDraft, 'carrierId'>): string | null {
-  return draft.carrierId || detail.order.carrier?.id || null;
-}
-
-/** Quien despacha y el transportador no pueden recibir: no se ofrecen. */
-export function receiverChoices(detail: TransferDetail, carrierId: string | null): ReceiverOption[] {
-  return detail.receiverOptions.filter((option) => !option.isMe && option.id !== carrierId);
-}
-
-/** Preselección: los encargados del destino que se pueden elegir. */
-export function defaultReceiverIds(detail: TransferDetail, carrierId: string | null): string[] {
-  return receiverChoices(detail, carrierId)
-    .filter((option) => option.isManager)
-    .map((option) => option.id);
-}
-
-/** Los elegidos que siguen siendo válidos (si cambia el transportador, sale de la lista). */
-export function selectedReceivers(detail: TransferDetail, draft: DispatchDraft): ReceiverOption[] {
-  const chosen = new Set(draft.receiverIds ?? []);
-  return receiverChoices(detail, effectiveCarrierId(detail, draft)).filter((option) => chosen.has(option.id));
-}
-
-export function noReceiversMessage(detail: TransferDetail): string {
-  return `Elige al menos una persona que pueda recibir en ${detail.order.destinationWarehouse.name}.`;
+  // Quién recibe lo asigna el admin al crear (20261231470000): no se elige aquí.
+  return { kind: 'dispatch', lines, carrierId: '', notes: '', photo: null };
 }
 
 /** Recibir arranca en cero: quien recibe cuenta lo que llegó (no se da por hecho). */
@@ -279,8 +240,6 @@ export type DispatchSummary = {
   units: number;
   lines: number;
   released: number;
-  receiverIds: string[];
-  receiverNames: string[];
 };
 
 export function validateDispatch(
@@ -324,21 +283,7 @@ export function validateDispatch(
       message: 'Marca al menos una unidad para despachar (o pide en la web que cancelen el traslado).',
     };
   }
-  const receivers = selectedReceivers(detail, draft);
-  if (receivers.length === 0) {
-    return { ok: false, lineErrors, message: noReceiversMessage(detail) };
-  }
-  return {
-    ok: true,
-    items,
-    summary: {
-      units,
-      lines: items.length,
-      released,
-      receiverIds: receivers.map((receiver) => receiver.id),
-      receiverNames: receivers.map((receiver) => receiver.name),
-    },
-  };
+  return { ok: true, items, summary: { units, lines: items.length, released } };
 }
 
 export type ReceiveSummary = {

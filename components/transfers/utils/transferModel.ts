@@ -1,7 +1,7 @@
 /**
  * Forma de las órdenes de traslado tal como las devuelven las RPC
  * (`get_my_transfer_tasks`, `get_transfer_order_detail`; migraciones
- * 20261231280000, 20261231290000 y 20261231450000). Todas devuelven `Json`: aquí se
+ * 20261231280000, 20261231290000, 20261231450000 y 20261231470000). Todas devuelven `Json`: aquí se
  * convierten a tipos propios sin confiar en el servidor (numeric llega como
  * número o como texto, un campo nulo no debe tumbar la pantalla).
  */
@@ -39,6 +39,10 @@ export interface TransferSummary {
   carrier: PersonRef | null;
   createdBy: PersonRef | null;
   dispatchedBy: PersonRef | null;
+  /** Quien debe despachar, asignado por el admin al crear (20261231470000). */
+  dispatcher: PersonRef | null;
+  /** Quien debe recibir, asignado por el admin al crear (puede ser quien despacha). */
+  receiver: PersonRef | null;
   /** Todos los que recibieron alguna parte, en orden (20261231340000). */
   receivedByNames: string[];
   /** Hora de la última recepción (receivedAt solo se llena al recibir todo). */
@@ -107,26 +111,15 @@ export interface TransferEvent {
   photoPath: string | null;
   userName: string | null;
   createdAt: string | null;
-}
-
-/** Persona que se puede habilitar para recibir al despachar (20261231450000). */
-export interface ReceiverOption extends PersonRef {
-  /** Encargado (Responsable) de la bodega destino: se preselecciona. */
-  isManager: boolean;
-  isAdmin: boolean;
-  /** Quien consulta: si despacha, no puede quedar como receptor. */
-  isMe: boolean;
+  /** Recepción anulada por el admin (sigue en el historial con su foto). */
+  voided: boolean;
+  voidReason: string | null;
 }
 
 export interface TransferDetail {
   order: TransferSummary;
   items: TransferItem[];
   events: TransferEvent[];
-  /** Habilitados al despachar si `receiversAssigned`; si no, todos los bodegueros (regla anterior). */
-  receivers: PersonRef[];
-  receiversAssigned: boolean;
-  /** Solo llega a quien puede despachar. */
-  receiverOptions: ReceiverOption[];
   permissions: TransferPermissions;
 }
 
@@ -189,6 +182,8 @@ export function parseTransferSummary(value: unknown): TransferSummary {
     carrier: parsePerson(r.carrier),
     createdBy: parsePerson(r.created_by),
     dispatchedBy: parsePerson(r.dispatched_by),
+    dispatcher: parsePerson(r.dispatcher),
+    receiver: parsePerson(r.receiver),
     receivedByNames: Array.isArray(r.received_by_names)
       ? r.received_by_names.filter((name): name is string => typeof name === 'string' && name.length > 0)
       : [],
@@ -251,14 +246,9 @@ export function parseTransferEvent(value: unknown): TransferEvent {
     photoPath: strOrNull(r.photo_path),
     userName: strOrNull(r.user_name),
     createdAt: strOrNull(r.created_at),
+    voided: bool(r.voided),
+    voidReason: strOrNull(r.void_reason),
   };
-}
-
-function parseReceiverOption(value: unknown): ReceiverOption | null {
-  const person = parsePerson(value);
-  if (!person) return null;
-  const r = asObj(value);
-  return { ...person, isManager: bool(r.is_manager), isAdmin: bool(r.is_admin), isMe: bool(r.is_me) };
 }
 
 export function parseTransferDetail(value: unknown): TransferDetail {
@@ -267,14 +257,9 @@ export function parseTransferDetail(value: unknown): TransferDetail {
   return {
     order: parseTransferSummary(r.order),
     items: asArray(r.items).map(parseTransferItem),
+    // `receivers` / `receiver_options` siguen llegando para apps viejas: el
+    // receptor asignado ya viene en `order.receiver`.
     events: asArray(r.events).map(parseTransferEvent),
-    receivers: asArray(r.receivers)
-      .map(parsePerson)
-      .filter((person): person is PersonRef => person !== null),
-    receiversAssigned: bool(r.receivers_assigned),
-    receiverOptions: asArray(r.receiver_options)
-      .map(parseReceiverOption)
-      .filter((option): option is ReceiverOption => option !== null),
     permissions: {
       canDispatch: bool(permissions.can_dispatch),
       canReceive: bool(permissions.can_receive),

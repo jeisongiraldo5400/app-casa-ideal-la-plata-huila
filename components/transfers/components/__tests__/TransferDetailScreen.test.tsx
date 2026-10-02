@@ -89,7 +89,7 @@ describe('TransferDetailScreen', () => {
 
     expect(screen.getByText(/Vas a despachar 4 unidades \(2 productos\) de Principal → La Argentina\./)).toBeTruthy();
     expect(screen.getByText(/1 unidad no sale y vuelve al disponible de Principal\./)).toBeTruthy();
-    expect(screen.getByText(/Pueden recibir en La Argentina: Recibe\. Les llegará un aviso\./)).toBeTruthy();
+    expect(screen.getByText(/Recibe: Recibe\. Le llegará un aviso\./)).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(screen.getByText('Confirmar despacho'));
@@ -104,7 +104,6 @@ describe('TransferDetailScreen', () => {
       carrierUserId: null,
       notes: '',
       photoPath: null,
-      receiverIds: ['u-recv'],
       idempotencyKey: 'key-1',
     });
     expect(await screen.findByText('TR-2026-0001 despachado: 4 unidades en camino a La Argentina.')).toBeTruthy();
@@ -112,19 +111,17 @@ describe('TransferDetailScreen', () => {
     expect(kickNotificationDispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('por despachar sin receptores no avisa «sin bodegueros»: quién recibe se elige al despachar', async () => {
-    const raw = { ...rawPendingDispatchDetail(), receivers: [] };
-    const screen = renderWith(raw);
+  it('despachar: muestra «Recibe: X» asignado y no ofrece elegir receptores', async () => {
+    const screen = renderWith(rawPendingDispatchDetail());
     await screen.findByText('Revisar y despachar');
-    expect(screen.queryByText(/no tiene bodegueros activos que puedan recibir/)).toBeNull();
+    expect(screen.getByText('Recibe: Recibe')).toBeTruthy();
+    expect(screen.queryByText(/Quiénes pueden recibir/)).toBeNull();
+    expect(screen.queryByText('Quien lleva la mercancía no podrá recibirla.')).toBeNull();
+    // Un traslado viejo con transportador lo trae elegido (sigue opcional).
+    expect(screen.getAllByText('Transporta: Darío').length).toBeGreaterThan(0);
   });
 
-  it('en camino sin nadie que pueda recibir sí lo avisa en la cabecera', async () => {
-    const screen = renderWith(rawDetail({ receivers: [] }));
-    expect(await screen.findByText('La Argentina no tiene bodegueros activos que puedan recibir.')).toBeTruthy();
-  });
-
-  it('despachar: elegir receptores con búsqueda; sin ninguno no deja revisar', async () => {
+  it('despachar sin receptor asignado: se puede, lo avisa y la llamada no lleva receptores', async () => {
     (dispatchTransfer as jest.Mock).mockResolvedValue({
       transferOrderId: 't-1',
       orderNumber: 'TR-2026-0001',
@@ -132,53 +129,30 @@ describe('TransferDetailScreen', () => {
       replayed: false,
       quantities: {},
     });
-    const screen = renderWith(rawPendingDispatchDetail());
+    const raw = rawPendingDispatchDetail();
+    const screen = renderWith({ ...raw, order: { ...raw.order, receiver: null } });
     await screen.findByText('Revisar y despachar');
-    expect(screen.getByText('¿Quiénes pueden recibir en La Argentina?')).toBeTruthy();
-    // Un traslado viejo con transportador lo trae elegido (ya no «asignado al crear»).
-    expect(screen.getAllByText('Transporta: Darío').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/asignado al crear/)).toBeNull();
-
-    fireEvent.press(screen.getByLabelText('Elegir quiénes pueden recibir en La Argentina'));
-    // Ni quien despacha (is_me) ni el transportador aparecen.
-    expect(screen.queryByLabelText('Bodeguero')).toBeNull();
-    expect(screen.queryByLabelText('Darío')).toBeNull();
-    fireEvent.press(screen.getByLabelText('Recibe'));
-    fireEvent.press(screen.getByText('Listo'));
-    expect(screen.getByText('Nadie elegido')).toBeTruthy();
+    expect(screen.getByText('Sin receptor asignado: solo un administrador podrá recibirlo')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Revisar y despachar'));
-    expect(screen.getByText('Elige al menos una persona que pueda recibir en La Argentina.')).toBeTruthy();
-    expect(dispatchTransfer).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByLabelText('Elegir quiénes pueden recibir en La Argentina'));
-    fireEvent.changeText(screen.getByPlaceholderText('Buscar por nombre…'), 'otro');
-    expect(screen.queryByLabelText('Recibe')).toBeNull();
-    fireEvent.press(screen.getByLabelText('Otro Bodeguero'));
-    fireEvent.press(screen.getByText('Listo'));
-
-    fireEvent.press(screen.getByText('Revisar y despachar'));
+    expect(screen.getByText(/Sin receptor asignado: solo un administrador podrá recibirlo\./)).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText('Confirmar despacho'));
     });
-    expect(dispatchTransfer).toHaveBeenCalledWith(expect.objectContaining({ receiverIds: ['u-otro'] }));
+    expect(dispatchTransfer).toHaveBeenCalledTimes(1);
+    expect((dispatchTransfer as jest.Mock).mock.calls[0][0]).not.toHaveProperty('receiverIds');
   });
 
-  it('detalle: dice quiénes pueden recibir (habilitados o regla anterior)', async () => {
-    const screen = renderWith(
-      rawDetail({
-        receivers: [
-          { id: 'u-recv', name: 'Recibe' },
-          { id: 'u-otro', name: 'Otro Bodeguero' },
-        ],
-        receiversAssigned: true,
-      })
-    );
-    expect(await screen.findByText(/Recibe, Otro Bodeguero/)).toBeTruthy();
-    screen.unmount();
+  it('detalle: «Despacha: X · Recibe: Y»', async () => {
+    const screen = renderWith(rawDetail());
+    expect(await screen.findByText('Despacha: Bodeguero · Recibe: Recibe')).toBeTruthy();
+    expect(screen.queryByText(/Sin receptor asignado/)).toBeNull();
+  });
 
-    const old = renderWith(rawDetail());
-    expect(await old.findByText(/Cualquier bodeguero \(salvo quien despachó o transporta\)/)).toBeTruthy();
+  it('en camino sin receptor asignado: lo avisa en la cabecera', async () => {
+    const screen = renderWith(rawDetail({ order: { dispatcher: null, receiver: null } }));
+    expect(await screen.findByText('Despacha: sin asignar · Recibe: sin asignar')).toBeTruthy();
+    expect(screen.getByText('Sin receptor asignado: solo un administrador puede recibirlo.')).toBeTruthy();
   });
 
   it('despachar: no deja pasar de lo reservado con +', async () => {
@@ -292,7 +266,7 @@ describe('TransferDetailScreen', () => {
     const screen = renderWith(rawDetail({ permissions: { can_receive: false } }));
     expect(
       await screen.findByText(
-        'Transportas este traslado: al llegar, un bodeguero en La Argentina confirma la recepción.'
+        'Transportas este traslado: al llegar, Recibe en La Argentina confirma la recepción.'
       )
     ).toBeTruthy();
     expect(screen.queryByText('Revisar y recibir')).toBeNull();

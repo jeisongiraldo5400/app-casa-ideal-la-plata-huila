@@ -13,18 +13,14 @@ import { deleteTransferPhotos, uploadPendingTransferPhotos } from '../infrastruc
 import { droppedUploadedPhotos, optionalPhotoPath } from '../utils/transferPhotos';
 import type { TransferDetail } from '../utils/transferModel';
 import {
-  effectiveCarrierId,
   maxDispatch,
-  receiverChoices,
-  selectedReceivers,
   validateDispatch,
   type DispatchSummary,
   type DispatchPayloadItem,
 } from '../utils/transferRules';
-import { dispatchConfirmText, unitsText } from '../utils/transferTexts';
+import { dispatchConfirmText, receiverLineText, unitsText } from '../utils/transferTexts';
 import { ConfirmTransferSheet } from './ConfirmTransferSheet';
 import { QuantityStepper } from './QuantityStepper';
-import { ReceiverPickerField } from './ReceiverPickerField';
 import { SerialsTextField } from './SerialsTextField';
 import { TransferPhotoField } from './TransferPhotoField';
 
@@ -72,8 +68,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
   const carrierName = draft.carrierId
     ? people.find((person) => person.id === draft.carrierId)?.full_name ?? null
     : order.carrier?.name ?? null;
-  const receiverOptions = receiverChoices(detail, effectiveCarrierId(detail, draft));
-  const chosenReceivers = selectedReceivers(detail, draft);
 
   const updateLine = (itemId: string, patch: Partial<{ quantity: number; serialsText: string }>) => {
     const current = draft.lines[itemId] ?? { quantity: 0, serialsText: '' };
@@ -97,13 +91,12 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
   const confirm = async () => {
     if (!review) return;
     const carrierUserId = draft.carrierId || null;
-    const receiverIds = review.summary.receiverIds;
     const notes = draft.notes;
     const photo = draft.photo;
     const photoPath = optionalPhotoPath(order.id, photo);
     const result = await submit.run(
       'transfer_dispatch',
-      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath, receiverIds },
+      { id: order.id, items: review.items, carrierUserId, notes: notes.trim(), photoPath },
       (idempotencyKey) =>
         dispatchTransfer({
           transferOrderId: order.id,
@@ -111,7 +104,6 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
           carrierUserId,
           notes,
           photoPath,
-          receiverIds,
           idempotencyKey,
         }),
       photo
@@ -183,10 +175,7 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
         <Text style={[styles.label, { color: colors.text.primary }]}>Transportador (opcional)</Text>
         <OptionPickerField
           value={draft.carrierId}
-          onValueChange={(carrierId) =>
-            // Quien transporta no puede recibir: sale de la lista si estaba.
-            setDraft({ ...draft, carrierId, receiverIds: draft.receiverIds.filter((id) => id !== carrierId) })
-          }
+          onValueChange={(carrierId) => setDraft({ ...draft, carrierId })}
           options={carrierOptions}
           // El transportador se elige aquí (ya no al crear); un traslado viejo
           // que ya lo traía lo muestra como elegido.
@@ -195,19 +184,12 @@ export function DispatchPanel({ detail, online, onDone }: Props) {
           colors={colors}
           disabled={submit.submitting || !online}
         />
-        <Text style={[styles.help, { color: colors.text.secondary }]}>Quien lleva la mercancía no podrá recibirla.</Text>
       </View>
 
-      <ReceiverPickerField
-        destinationName={order.destinationWarehouse.name}
-        options={receiverOptions}
-        selectedIds={chosenReceivers.map((receiver) => receiver.id)}
-        onChange={(receiverIds) => {
-          setDraft({ ...draft, receiverIds });
-          if (formError) setFormError(null);
-        }}
-        disabled={submit.submitting}
-      />
+      {/* Quién recibe lo asigna el admin al crear el traslado (20261231470000). */}
+      <Text style={[styles.label, { color: order.receiver ? colors.text.primary : colors.warning.dark }]}>
+        {receiverLineText(order.receiver)}
+      </Text>
 
       <Input
         label="Notas del despacho (opcional)"

@@ -6,11 +6,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { TransferDetail } from '../utils/transferModel';
 import { RECEIVABLE } from '../utils/transferRules';
 import {
+  NO_RECEIVER_DETAIL_TEXT,
   TRANSFER_STATUS_LABEL,
   TRANSFER_STATUS_TONE,
+  assignmentText,
   dueText,
   formatTransferDate,
-  receiversText,
   transferRouteText,
 } from '../utils/transferTexts';
 
@@ -18,7 +19,7 @@ import {
 export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
-  const { order, receivers } = detail;
+  const { order } = detail;
   const due = dueText(order);
   const rows: [string, string][] = [
     ['Transporta', order.carrier?.name ?? 'Sin transportador'],
@@ -27,10 +28,6 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
   if (order.dispatchedAt) {
     rows.push(['Despachado', `${formatTransferDate(order.dispatchedAt)}${order.dispatchedBy ? ` · ${order.dispatchedBy.name}` : ''}`]);
   }
-  // Quiénes pueden recibir (20261231450000): los habilitados al despachar o,
-  // en traslados viejos, la regla anterior.
-  const canReceive = receiversText(detail);
-  if (canReceive) rows.push(['Pueden recibir', canReceive]);
   // Quién recibió (20261231340000).
   if (order.receivedByNames.length) {
     const at = order.receivedAt ?? order.lastReceivedAt;
@@ -45,6 +42,8 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
         <StatusChip label={TRANSFER_STATUS_LABEL[order.status]} tone={TRANSFER_STATUS_TONE[order.status]} />
       </View>
       <Text style={[styles.route, { color: colors.text.primary }]}>{transferRouteText(order)}</Text>
+      {/* Asignados por el admin al crear (20261231470000). */}
+      <Text style={[styles.assignment, { color: colors.text.primary }]}>{assignmentText(order)}</Text>
       {rows.map(([label, value]) => (
         <Text key={label} style={[styles.row, { color: colors.text.secondary }]}>
           <Text style={styles.rowLabel}>{label}: </Text>
@@ -54,11 +53,8 @@ export function TransferHeaderCard({ detail }: { detail: TransferDetail }) {
       {due ? (
         <Text style={[styles.due, { color: order.isOverdue ? colors.error.main : colors.text.secondary }]}>{due}</Text>
       ) : null}
-      {/* Antes de despachar no aplica: quién recibe se elige al despachar. */}
-      {receivers.length === 0 && RECEIVABLE.includes(order.status) ? (
-        <Text style={[styles.row, { color: colors.warning.dark }]}>
-          {order.destinationWarehouse.name} no tiene bodegueros activos que puedan recibir.
-        </Text>
+      {!order.receiver && (order.status === 'pending_dispatch' || RECEIVABLE.includes(order.status)) ? (
+        <Text style={[styles.row, { color: colors.warning.dark }]}>{NO_RECEIVER_DETAIL_TEXT}</Text>
       ) : null}
     </Card>
   );
@@ -69,6 +65,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   number: { ...Typography.section, flexShrink: 1 },
   route: { ...Typography.bodyStrong },
+  assignment: { ...Typography.bodySmall },
   row: { ...Typography.caption },
   rowLabel: { fontWeight: '700' },
   due: { ...Typography.bodySmallStrong },

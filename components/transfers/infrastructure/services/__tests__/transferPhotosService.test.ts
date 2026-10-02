@@ -92,7 +92,6 @@ describe('transferPhotosService', () => {
       carrierUserId: null,
       notes: '',
       photoPath: 't-1/carga.jpg',
-      receiverIds: ['u-recv'],
       idempotencyKey: 'k',
     });
     expect(rpc).toHaveBeenLastCalledWith('dispatch_transfer_order', expect.objectContaining({ p_photo_path: 't-1/carga.jpg' }));

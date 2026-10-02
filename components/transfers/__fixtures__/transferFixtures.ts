@@ -13,6 +13,9 @@ export function rawOrder(overrides: RawOrder = {}): RawOrder {
     carrier: { id: 'u-carrier', name: 'Darío' },
     created_by: { id: 'u-admin', name: 'Admin' },
     dispatched_by: { id: 'u-disp', name: 'Bodeguero' },
+    // Asignados por el admin al crear (20261231470000).
+    dispatcher: { id: 'u-disp', name: 'Bodeguero' },
+    receiver: { id: 'u-recv', name: 'Recibe' },
     notes: null,
     created_at: '2026-09-26T14:00:00Z',
     updated_at: '2026-09-26T15:00:00Z',
@@ -67,13 +70,12 @@ export function rawDetail(options: {
   order?: RawOrder;
   items?: RawItem[];
   permissions?: Record<string, boolean>;
-  receivers?: { id: string; name: string }[];
-  receiversAssigned?: boolean;
-  receiverOptions?: Record<string, unknown>[];
   events?: Record<string, unknown>[];
 } = {}) {
+  const order = rawOrder(options.order);
+  const receiver = order.receiver as { id: string; name: string } | null;
   return {
-    order: rawOrder(options.order),
+    order,
     items: options.items ?? [
       rawItem(),
       rawItem({
@@ -88,9 +90,10 @@ export function rawDetail(options: {
       }),
     ],
     events: options.events ?? [],
-    receivers: options.receivers ?? [{ id: 'u-recv', name: 'Recibe' }],
-    receivers_assigned: options.receiversAssigned ?? false,
-    receiver_options: options.receiverOptions ?? [],
+    // Siguen llegando para apps viejas; la app nueva usa `order.receiver`.
+    receivers: receiver ? [receiver] : [],
+    receivers_assigned: receiver !== null,
+    receiver_options: [],
     permissions: {
       can_edit: false,
       can_submit: false,
@@ -130,18 +133,6 @@ export function rawPendingDispatchDetail(permissions: Record<string, boolean> = 
         pending_receipt_quantity: 0,
       }),
     ],
-    receiverOptions: RAW_RECEIVER_OPTIONS,
     permissions,
   });
 }
-
-/**
- * Opciones para habilitar receptores al despachar (20261231450000): la
- * encargada del destino, otro bodeguero, el transportador y quien consulta.
- */
-export const RAW_RECEIVER_OPTIONS = [
-  { id: 'u-recv', name: 'Recibe', is_manager: true, is_admin: false, is_me: false },
-  { id: 'u-otro', name: 'Otro Bodeguero', is_manager: false, is_admin: false, is_me: false },
-  { id: 'u-carrier', name: 'Darío', is_manager: true, is_admin: false, is_me: false },
-  { id: 'u-disp', name: 'Bodeguero', is_manager: true, is_admin: false, is_me: true },
-];

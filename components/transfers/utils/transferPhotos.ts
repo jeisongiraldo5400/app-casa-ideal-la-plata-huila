@@ -87,6 +87,8 @@ const ACTION_LABEL: Record<string, string> = {
   return_to_origin: 'Devolución',
   return_requested: 'Devolución',
   write_off: 'Baja',
+  assignment: 'Asignación',
+  receipt_voided: 'Recepción anulada',
 };
 
 /**
@@ -104,7 +106,8 @@ export function eventPhotos(events: TransferEvent[]): TransferEventPhoto[] {
   }
   return [...byPath.entries()].map(([path, list]) => {
     const first = list[0];
-    const action = ACTION_LABEL[first.eventType] ?? 'Traslado';
+    const action =
+      (ACTION_LABEL[first.eventType] ?? 'Traslado') + (list.every((event) => event.voided) ? ' (anulada)' : '');
     const single = list.length === 1 && first.productName;
     const label = single
       ? `${action} · ${first.productName}${first.condition === 'damaged' ? ' (averiada)' : ''}`

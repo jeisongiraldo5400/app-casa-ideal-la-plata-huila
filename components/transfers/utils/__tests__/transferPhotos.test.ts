@@ -61,6 +61,24 @@ describe('transferPhotos', () => {
   });
 });
 
+describe('fotos de recepciones anuladas y eventos nuevos', () => {
+  it('marca «(anulada)» y nombra receipt_voided / assignment', () => {
+    const detail = parseTransferDetail(
+      rawDetail({
+        events: [
+          { id: 'e1', event_type: 'assignment', quantity: 0, photo_path: null },
+          { id: 'e2', event_type: 'receive', product_name: 'Lavadora LG', photo_path: 't-1/llego.jpg', voided: true, void_reason: 'Mal contado' },
+          { id: 'e3', event_type: 'receipt_voided', product_name: 'Lavadora LG', photo_path: 't-1/anula.jpg' },
+        ],
+      })
+    );
+    expect(eventPhotos(detail.events).map((photo) => photo.label)).toEqual([
+      'Recepción (anulada) · Lavadora LG',
+      'Recepción anulada · Lavadora LG',
+    ]);
+  });
+});
+
 describe('droppedUploadedPhotos', () => {
   const photo = (id: string, uploaded: boolean) => ({ id, uri: `file:///${id}.jpg`, mimeType: 'image/jpeg', size: 1, uploaded });
 

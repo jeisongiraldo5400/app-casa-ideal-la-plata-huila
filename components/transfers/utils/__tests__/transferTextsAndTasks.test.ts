@@ -2,9 +2,11 @@ import { rawDetail, rawOrder } from '../../__fixtures__/transferFixtures';
 import { parseTransferDetail, parseTransferSummary, parseTransferTasks, parseTransferWriteResult } from '../transferModel';
 import { countTasks, defaultSection, homeCardSubtitle, overdueCount, sortForList } from '../transferTasks';
 import {
+  assignmentText,
   dispatchConfirmText,
   dueText,
   receiveConfirmText,
+  receiverLineText,
   sentLineText,
   transferRouteText,
   viewNotice,
@@ -62,12 +64,15 @@ describe('textos', () => {
   it('resúmenes de confirmación', () => {
     const order = parseTransferSummary(rawOrder());
     const dispatchText = dispatchConfirmText(
-      { units: 4, lines: 2, released: 1, receiverIds: ['u-1', 'u-2'], receiverNames: ['Ana', 'Beto'] },
+      { units: 4, lines: 2, released: 1 },
       order,
       'Darío'
     );
     expect(dispatchText).toContain('1 unidad no sale y vuelve al disponible de Principal.');
-    expect(dispatchText).toContain('Pueden recibir en La Argentina: Ana, Beto. Les llegará un aviso.');
+    expect(dispatchText).toContain('Recibe: Recibe. Le llegará un aviso.');
+    expect(
+      dispatchConfirmText({ units: 1, lines: 1, released: 0 }, parseTransferSummary(rawOrder({ receiver: null })), null)
+    ).toContain('Sin receptor asignado: solo un administrador podrá recibirlo.');
     expect(receiveConfirmText({ ok: 2, damaged: 1, remaining: 2, reportMissing: false }, order)).toBe(
       'Recibes en La Argentina: 2 unidades en buen estado y 1 unidad averiada.\n2 unidades siguen en camino: puedes recibirlas después.'
     );
@@ -78,9 +83,23 @@ describe('textos', () => {
 
   it('motivo del modo solo lectura: quien despachó o transporta no recibe', () => {
     const order = parseTransferSummary(rawOrder());
-    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe un bodeguero en La Argentina.');
+    expect(viewNotice(order, 'u-disp')).toBe('Despachaste este traslado: lo recibe Recibe en La Argentina.');
+    expect(viewNotice(parseTransferSummary(rawOrder({ receiver: null })), 'x')).toBe(
+      'Lo recibe un administrador en La Argentina.'
+    );
     expect(viewNotice(order, 'u-carrier')).toMatch(/^Transportas este traslado/);
     expect(viewNotice(parseTransferSummary(rawOrder({ status: 'received' })), 'x')).toBe('Traslado recibido completo.');
+  });
+});
+
+describe('asignados', () => {
+  it('«Despacha: X · Recibe: Y», o sin asignar', () => {
+    expect(assignmentText(parseTransferSummary(rawOrder()))).toBe('Despacha: Bodeguero · Recibe: Recibe');
+    expect(assignmentText(parseTransferSummary(rawOrder({ dispatcher: null, receiver: null })))).toBe(
+      'Despacha: sin asignar · Recibe: sin asignar'
+    );
+    expect(receiverLineText({ id: 'u-1', name: 'Ana' })).toBe('Recibe: Ana');
+    expect(receiverLineText(null)).toBe('Sin receptor asignado: solo un administrador podrá recibirlo');
   });
 });
 
