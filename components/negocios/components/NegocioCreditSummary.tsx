@@ -52,15 +52,14 @@ export function NegocioCreditSummary({ calc, settings, schedule, frequency, firs
     <View style={[styles.card, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
       <Text style={{ color: colors.text.primary, fontWeight: '700', fontSize: 15 }}>Resumen del crédito</Text>
       <Row label="Valor productos" value={money(summary.productsSubtotal)} colors={colors} />
-      {(summary.manualInterestAmount <= 0 || summary.percentInterestAmount > 0) && (
-        <>
-          <Row label="Interés" value={money(summary.percentInterestAmount)} colors={colors} />
-          <Text style={note}>{summary.interestNote}</Text>
-        </>
-      )}
-      {summary.manualInterestAmount > 0 && (
-        <Row label="Interés pactado" value={money(summary.manualInterestAmount)} colors={colors} />
-      )}
+      {/* El interés es el que escribe el vendedor en Productos; el % de la
+          configuración está fijo en 0 y no se explica aquí. */}
+      <Row
+        label="Interés"
+        value={money(summary.manualInterestAmount + summary.percentInterestAmount)}
+        colors={colors}
+      />
+      <Text style={note}>Se escribe en el paso Productos.</Text>
       <Row label="Valor total crédito" value={money(summary.totalCredit)} bold colors={colors} />
 
       <View style={[styles.divider, { backgroundColor: colors.divider }]} />
