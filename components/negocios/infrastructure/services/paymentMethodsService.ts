@@ -5,7 +5,7 @@ import { fetchPaymentMethodsFromLocal } from '@/lib/offline/repositories/offline
 export type PaymentMethodOption = {
   id: string;
   name: string;
-  /** El cobro con este método exige adjuntar el soporte (p. ej. consignación). */
+  /** El cobro con este método requiere adjuntar el soporte (p. ej. consignación). */
   requiresSupport?: boolean;
 };
 
@@ -36,7 +36,7 @@ export async function fetchPaymentMethods(): Promise<PaymentMethodOption[]> {
   }
 }
 
-/** ¿El método elegido exige adjuntar el soporte del pago? */
+/** ¿El método elegido requiere adjuntar el soporte del pago? */
 export function paymentMethodRequiresSupport(
   methods: readonly { id: string; requiresSupport?: boolean }[],
   methodId: string | null | undefined
@@ -49,6 +49,6 @@ export function paymentMethodRequiresSupport(
 export function supportRequiredMessage(methodName?: string | null): string {
   const name = methodName?.trim();
   return name
-    ? `El método de pago «${name}» exige adjuntar el soporte (foto o PDF del comprobante).`
-    : 'Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).';
+    ? `El método de pago «${name}» requiere adjuntar el soporte (foto o PDF del comprobante).`
+    : 'Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).';
 }

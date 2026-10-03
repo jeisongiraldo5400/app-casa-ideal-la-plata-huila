@@ -150,7 +150,7 @@ describe('ProntoPagoSheet', () => {
     chooseMethod(utils, 'Consignación');
 
     expect(utils.getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();
-    expect(utils.getByText(/Este método de pago exige adjuntar el soporte/)).toBeTruthy();
+    expect(utils.getByText(/Este método de pago requiere adjuntar el soporte/)).toBeTruthy();
     fireEvent.press(utils.getByText('Revisar'));
     expect(utils.queryByText('Confirmar pronto pago')).toBeNull();
 

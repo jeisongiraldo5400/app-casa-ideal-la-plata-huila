@@ -120,7 +120,7 @@ describe('RegisterPaymentSheet · soporte obligatorio (consignación)', () => {
     const { getByText, props } = renderSheet({ paymentMethodId: 'pm-2', supportRequired: true });
 
     expect(getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();
-    expect(getByText('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).')).toBeTruthy();
+    expect(getByText('Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).')).toBeTruthy();
     fireEvent.press(getByText('Guardar pago'));
     expect(props.onSubmit).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe('RegisterPaymentSheet · soporte obligatorio (consignación)', () => {
       supportFile: { uri: 'file:///tmp/consignacion.jpg', mimeType: 'image/jpeg', name: 'consignacion.jpg' },
     });
 
-    expect(queryByText('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).')).toBeNull();
+    expect(queryByText('Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).')).toBeNull();
     fireEvent.press(getByText('Guardar pago'));
     expect(props.onSubmit).toHaveBeenCalled();
   });

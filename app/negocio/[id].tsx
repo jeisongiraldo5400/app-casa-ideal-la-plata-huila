@@ -850,7 +850,7 @@ function NegocioDetailScreenInner() {
     }
     const paymentMethodLabel =
       paymentMethods.find((method) => method.id === payMethodId)?.name || null;
-    // Consignación (u otro método marcado en el catálogo): el soporte es obligatorio.
+    // Todo método que no es efectivo (bandera requires_support del catálogo): el soporte es obligatorio.
     const supportRequired = paymentMethodRequiresSupport(paymentMethods, payMethodId);
     if (supportRequired && !paySupportFile) {
       return Alert.alert('Soporte obligatorio', supportRequiredMessage(paymentMethodLabel));

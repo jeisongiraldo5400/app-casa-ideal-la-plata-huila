@@ -118,7 +118,7 @@ export function ProntoPagoSheet({
   const cuotas = summary?.cuotas ?? [];
   const unavailable = loading || !summary || Boolean(blockedReason);
   const methodName = paymentMethods.find((method) => method.id === methodId)?.name || '';
-  // Consignación (u otro método marcado en el catálogo): sin soporte no se revisa.
+  // Todo método que no es efectivo (bandera requires_support): sin soporte no se revisa.
   const supportRequired = paymentMethodRequiresSupport(paymentMethods, methodId);
   const missingRequiredSupport = supportRequired && !supportFile;
 

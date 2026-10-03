@@ -34,7 +34,7 @@ type Props = {
   paymentMethodId: string;
   onChangePaymentMethod: (value: string) => void;
   paymentMethodsLoading?: boolean;
-  /** El método elegido exige adjuntar el soporte (p. ej. consignación). */
+  /** El método elegido requiere adjuntar el soporte (p. ej. consignación). */
   supportRequired?: boolean;
   supportFile: PagoSupportLocalFile | null;
   onPickSupport: (source: PagoSupportSource) => void;

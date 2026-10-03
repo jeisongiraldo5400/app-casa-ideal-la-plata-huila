@@ -270,7 +270,7 @@ describe('registerPagoOffline con soporte obligatorio', () => {
 
   it('sin soporte no guarda nada y lo explica', async () => {
     await expect(registerPagoOffline(consignacion)).rejects.toThrow(
-      'Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).'
+      'Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).'
     );
     expect(mockBatch).not.toHaveBeenCalled();
     expect(localFiles.persistPagoSupportFile).not.toHaveBeenCalled();

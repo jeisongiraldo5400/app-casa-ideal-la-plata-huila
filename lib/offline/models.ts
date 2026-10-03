@@ -142,7 +142,7 @@ export class CollectionRouteStopRecord extends Model {
 export class CatalogPaymentMethod extends Model {
   static table = 'catalog_payment_methods';
   @field('name') name!: string;
-  /** v13: el cobro con este método exige adjuntar el soporte. */
+  /** v13: el cobro con este método requiere adjuntar el soporte. */
   @field('requires_support') requiresSupport!: boolean | null;
 }
 

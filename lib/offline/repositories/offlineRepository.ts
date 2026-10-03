@@ -967,7 +967,7 @@ export async function registerPagoOffline(input: {
   registeredBy?: string | null;
 }) {
   if (input.supportRequired && !input.supportFile) {
-    throw new Error('Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).');
+    throw new Error('Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).');
   }
   // A centavos, igual que el cobro con red: un entero no cambia (ni el hash de
   // idempotencia) y un valor con decimales no arrastra ruido de coma flotante.

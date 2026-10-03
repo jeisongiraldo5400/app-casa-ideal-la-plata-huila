@@ -11,7 +11,7 @@ export type { PagoSupportSource };
 type Props = {
   /** Al ocultarse la hoja que lo contiene se cierra el menú de origen. */
   visible?: boolean;
-  /** El método elegido exige adjuntar el soporte (p. ej. consignación). */
+  /** El método elegido requiere adjuntar el soporte (p. ej. consignación). */
   supportRequired?: boolean;
   supportFile: PagoSupportLocalFile | null;
   onPickSupport: (source: PagoSupportSource) => void;
@@ -119,7 +119,7 @@ export function PagoSupportPicker({
       />
       {missingRequiredSupport ? (
         <Text style={[styles.fieldHint, { color: colors.error.main }]}>
-          Este método de pago exige adjuntar el soporte (foto o PDF del comprobante).
+          Este método de pago requiere adjuntar el soporte (foto o PDF del comprobante).
         </Text>
       ) : null}
     </View>

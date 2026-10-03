@@ -61,7 +61,7 @@ describe('fetchPaymentMethods', () => {
     expect(paymentMethodRequiresSupport(methods, 'pm-2')).toBe(false);
     expect(paymentMethodRequiresSupport(methods, '')).toBe(false);
     expect(supportRequiredMessage('Consignación')).toBe(
-      'El método de pago «Consignación» exige adjuntar el soporte (foto o PDF del comprobante).'
+      'El método de pago «Consignación» requiere adjuntar el soporte (foto o PDF del comprobante).'
     );
   });
 
