@@ -26,7 +26,8 @@ export function ModalSheet({ visible, onClose, title, subtitle, children, footer
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={requestClose}>
-      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Android: los Modal también van edge-to-edge y la ventana no se encoge con el teclado; 'height' sube el diálogo (como FullScreenModal). */}
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Pressable accessible={false} style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={requestClose} />
         <View style={[styles.card, { backgroundColor: colors.background.paper }]} accessibilityViewIsModal>
           <View style={styles.header}>

@@ -3,8 +3,9 @@ import { useTheme } from '@/components/theme';
 import { BackButton, Card, ScreenState, SegmentedControl } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { HeaderHeightContext } from '@react-navigation/elements';
 import { Stack } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
 import { useTransferDetail } from '../infrastructure/hooks/useTransferDetail';
 import { availableModes, initialMode, type TransferMode } from '../utils/transferRules';
@@ -37,6 +38,9 @@ export function TransferDetailScreen({ transferOrderId, preferredMode = null }: 
   const { detail, loading, error, reload } = useTransferDetail(transferOrderId);
   const [mode, setMode] = useState<TransferMode>('view');
   const [success, setSuccess] = useState<string | null>(null);
+  // El header (StackHeader) va encima de esta vista: sin restarlo, el cálculo
+  // del teclado se queda corto justo en los campos de abajo (nota, foto).
+  const headerHeight = useContext(HeaderHeightContext) ?? 0;
 
   const modes = detail ? availableModes(detail) : [];
   const modesKey = modes.join(',');
@@ -81,12 +85,21 @@ export function TransferDetailScreen({ transferOrderId, preferredMode = null }: 
   const notice = mode === 'view' ? viewNotice(detail.order, user?.id) : null;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    // Android (edge-to-edge): la ventana ya no se encoge con el teclado, así
+    // que la vista se achica ('height') para que se pueda bajar hasta la nota y
+    // el botón. iOS: el ScrollView corre el contenido y lleva a la vista el
+    // campo enfocado (automaticallyAdjustKeyboardInsets).
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'android' ? 'height' : undefined}
+      keyboardVerticalOffset={headerHeight}
+    >
       <Stack.Screen options={screenOptions} />
       <ScrollView
         style={[styles.flex, { backgroundColor: colors.background.default }]}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void reload()} />}
       >
         {!online ? (

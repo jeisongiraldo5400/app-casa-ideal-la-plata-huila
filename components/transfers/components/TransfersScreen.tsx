@@ -110,6 +110,10 @@ export function TransfersScreen() {
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background.default }]}
       contentContainerStyle={styles.content}
+      // El buscador del historial está dentro: un toque en un traslado abre
+      // el detalle aunque el teclado esté abierto.
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
       refreshControl={
         <RefreshControl
           refreshing={view === 'tasks' && state.loading && Boolean(state.tasks)}

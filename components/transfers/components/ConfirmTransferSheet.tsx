@@ -2,7 +2,7 @@ import { useTheme } from '@/components/theme';
 import { Button, ModalSheet } from '@/components/ui';
 import { Typography, getColors } from '@/constants/theme';
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions } from 'react-native';
 
 type Props = {
   visible: boolean;
@@ -19,6 +19,7 @@ type Props = {
 export function ConfirmTransferSheet({ visible, title, summary, confirmLabel, submitting, disabled, onConfirm, onClose }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
+  const { height } = useWindowDimensions();
   return (
     <ModalSheet
       visible={visible}
@@ -38,7 +39,10 @@ export function ConfirmTransferSheet({ visible, title, summary, confirmLabel, su
         </>
       }
     >
-      <Text style={[styles.summary, { color: colors.text.primary }]}>{summary}</Text>
+      {/* Con un error del servidor el resumen crece: que se pueda bajar y los botones sigan a la vista. */}
+      <ScrollView style={{ maxHeight: Math.max(height * 0.5, 200) }} keyboardShouldPersistTaps="handled">
+        <Text style={[styles.summary, { color: colors.text.primary }]}>{summary}</Text>
+      </ScrollView>
     </ModalSheet>
   );
 }
