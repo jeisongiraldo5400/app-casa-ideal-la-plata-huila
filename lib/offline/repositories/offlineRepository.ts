@@ -88,6 +88,7 @@ import {
 } from '../sync/types';
 import type { PagoSupportLocalFile } from '@/lib/uploadPagoSupport';
 import { PAGO_SUPPORT_BUCKET } from '@/lib/uploadPagoSupport';
+import { NEGOCIO_PHOTO_LABEL, negocioPhotoKindForRole } from '@/lib/negocioPhotos';
 import {
   deleteLocalPagoSupportFile,
   persistPagoSupportFile,
@@ -1604,14 +1605,13 @@ export async function listSyncQueue(): Promise<SyncQueueEntry[]> {
       case 'select_route_stop':
         summary = 'Selección de parada';
         break;
-      case 'upload_negocio_signature':
-        summary =
-          payload.role === 'foto_cliente'
-            ? `Foto del cliente · ${negocioLabel}`
-            : payload.role === 'foto_cedula'
-              ? `Foto de la cédula · ${negocioLabel}`
-              : `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
+      case 'upload_negocio_signature': {
+        const photoKind = negocioPhotoKindForRole(String(payload.role || ''));
+        summary = photoKind
+          ? `${NEGOCIO_PHOTO_LABEL[photoKind]} · ${negocioLabel}`
+          : `Firma (${String(payload.role || 'cliente')}) · ${negocioLabel}`;
         break;
+      }
       case 'register_print':
         summary = `Impresión de ${payload.document === 'recibo' ? 'recibo' : 'contrato'} · ${negocioLabel}`;
         break;

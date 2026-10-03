@@ -1,6 +1,9 @@
 import {
   NegocioPhotoUploadError,
+  negocioPhotoEntries,
   negocioPhotoFields,
+  negocioPhotoKindForField,
+  negocioPhotoKindForRole,
   negocioPhotoPath,
   uploadNegocioPhoto,
   validateNegocioPhoto,
@@ -34,6 +37,22 @@ describe('negocioPhotos', () => {
     expect(negocioPhotoFields({ cedula: 'u1/b.jpg' })).toEqual({ customer_id_photo_path: 'u1/b.jpg' });
   });
 
+  it('la cédula por atrás va en customer_id_back_photo_path, después del frente', () => {
+    expect(negocioPhotoFields({ cliente: 'u1/a.jpg', cedula: 'u1/b.jpg', cedula_atras: 'u1/c.jpg' })).toEqual({
+      customer_photo_path: 'u1/a.jpg',
+      customer_id_photo_path: 'u1/b.jpg',
+      customer_id_back_photo_path: 'u1/c.jpg',
+    });
+    const draft = { id: 'x', uri: 'file:///x.jpg', mimeType: 'image/jpeg', size: 1 };
+    expect(negocioPhotoEntries({ cedula_atras: draft, cliente: draft }).map((entry) => entry.kind)).toEqual([
+      'cliente',
+      'cedula_atras',
+    ]);
+    expect(negocioPhotoKindForRole('foto_cedula_atras')).toBe('cedula_atras');
+    expect(negocioPhotoKindForRole('cliente')).toBeNull();
+    expect(negocioPhotoKindForField('customer_id_back_photo_path')).toBe('cedula_atras');
+  });
+
   it('sube sin upsert a negocios-fotos', async () => {
     mockUpload.mockResolvedValue({ error: null });
     await expect(uploadNegocioPhoto('file:///a.jpg', { path: 'u1/a.jpg', mimeType: 'image/jpg' })).resolves.toBe('u1/a.jpg');
@@ -61,6 +80,6 @@ describe('negocioPhotos', () => {
     const promise = uploadNegocioPhoto('file:///a.jpg', { path: 'u1/a.jpg', mimeType: 'image/jpeg', kind: 'cedula' });
     await expect(promise).rejects.toBeInstanceOf(NegocioPhotoUploadError);
     await expect(promise).rejects.toMatchObject({ definitive: true });
-    await expect(promise).rejects.toThrow('No se pudo subir la foto de la cédula: new row violates row-level security policy');
+    await expect(promise).rejects.toThrow('No se pudo subir la foto de la cédula (frente): new row violates row-level security policy');
   });
 });

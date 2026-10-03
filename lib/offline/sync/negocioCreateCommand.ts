@@ -12,8 +12,11 @@ import {
 import {
   NEGOCIO_PHOTO_BUCKET,
   NEGOCIO_PHOTO_FIELD,
+  NEGOCIO_PHOTO_NOUN,
   NEGOCIO_PHOTO_ROLE,
   NegocioPhotoUploadError,
+  negocioPhotoKindForField,
+  negocioPhotoKindForRole,
   negocioPhotoExtension,
   validateNegocioPhoto,
   negocioPhotoFields,
@@ -53,7 +56,7 @@ type SignatureInput = {
   value: string | null | undefined;
 };
 
-/** Foto opcional del cliente (persona o cédula) con su ruta ya decidida. */
+/** Foto opcional del cliente (persona o cédula, frente o atrás) con su ruta ya decidida. */
 export type NegocioPhotoInput = {
   kind: NegocioPhotoKind;
   /** Archivo en el teléfono (`file:`/`content:`). */
@@ -340,7 +343,7 @@ async function pushUploadNegocioPhoto(payload: UploadNegocioSignaturePayload) {
       await uploadNegocioPhoto(upload.localUri, {
         path: payload.storagePath,
         mimeType: upload.mime || 'image/jpeg',
-        kind: payload.role === 'foto_cedula' ? 'cedula' : 'cliente',
+        kind: negocioPhotoKindForRole(payload.role) ?? 'cliente',
       });
     } catch (error) {
       if (!(error instanceof NegocioPhotoUploadError) || !error.definitive) throw error;
@@ -397,7 +400,7 @@ async function skipOptionalPhoto(
   if (!item) return null;
   const queued = parseOutboxPayload<CreateNegocioPayload>(item);
   if (queued.rpcSentAt) return null;
-  const field = NEGOCIO_PHOTO_FIELD[photo.role === 'foto_cedula' ? 'cedula' : 'cliente'];
+  const field = NEGOCIO_PHOTO_FIELD[negocioPhotoKindForRole(photo.role) ?? 'cliente'];
   const { [field]: _removed, ...negocio } = (queued.negocio || {}) as Record<string, unknown>;
   const next: CreateNegocioPayload = {
     ...queued,
@@ -438,30 +441,28 @@ async function skipOptionalPhoto(
 function skippedPhotosNote(payload: CreateNegocioPayload): string | null {
   const skipped = payload.skippedPhotos ?? [];
   if (!skipped.length) return null;
-  const labels = skipped.map((field) =>
-    field === NEGOCIO_PHOTO_FIELD.cedula ? 'la foto de la cédula' : 'la foto del cliente'
-  );
+  const labels = skipped.map((field) => NEGOCIO_PHOTO_NOUN[negocioPhotoKindForField(field) ?? 'cliente']);
   return `Se sincronizó sin ${labels.join(' ni ')}: no se pudo subir.`;
 }
 
 function isNegocioPhotoRole(role: string | null | undefined): boolean {
-  return role === 'foto_cliente' || role === 'foto_cedula';
+  return negocioPhotoKindForRole(role) !== null;
 }
 
 /**
  * Rol del archivo a partir de su nombre: `firma-<rol>.png` para las firmas,
- * `foto-<cliente|cedula>.<ext>` para las fotos del cliente.
+ * `foto-<cliente|cedula|cedula_atras>.<ext>` para las fotos del cliente.
  */
 function signatureRole(upload: FileUpload): string {
-  const photo = upload.fileName?.match(/^foto-([a-z]+)/)?.[1];
+  const photo = upload.fileName?.match(/^foto-([a-z_]+)/)?.[1];
   if (photo) return `foto_${photo}`;
   return upload.fileName?.match(/^firma-([a-z]+)/)?.[1] || 'cliente';
 }
 
-/** «la firma del cliente», «la foto de la cédula»… */
+/** «la firma del cliente», «la foto de la cédula (frente)»… */
 export function negocioFileLabel(role: string): string {
-  if (role === 'foto_cliente') return 'la foto del cliente';
-  if (role === 'foto_cedula') return 'la foto de la cédula';
+  const photoKind = negocioPhotoKindForRole(role);
+  if (photoKind) return NEGOCIO_PHOTO_NOUN[photoKind];
   return `la firma del ${role}`;
 }
 

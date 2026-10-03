@@ -1,6 +1,7 @@
 /**
  * Fotos opcionales del cliente al crear un negocio (migración 20261231370000):
- * una foto de la persona y una de su cédula, en el bucket privado
+ * una foto de la persona y de su cédula por el frente y por atrás
+ * (`customer_id_back_photo_path`), en el bucket privado
  * `negocios-fotos`, bajo la carpeta del usuario que crea el negocio
  * (`<auth.uid()>/<uuid>.<ext>`), igual que las firmas en `negocios-firmas`:
  * un negocio creado sin señal aún no tiene id en el servidor.
@@ -16,26 +17,51 @@ export const NEGOCIO_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 /** Qué muestra la foto. */
-export type NegocioPhotoKind = 'cliente' | 'cedula';
+export type NegocioPhotoKind = 'cliente' | 'cedula' | 'cedula_atras';
+
+/** Orden fijo en el asistente, en `p_negocio` y en el detalle. */
+export const NEGOCIO_PHOTO_KINDS: readonly NegocioPhotoKind[] = ['cliente', 'cedula', 'cedula_atras'];
 
 /** Rol con el que viaja en la cola sin señal (junto a los de las firmas). */
-export type NegocioPhotoRole = 'foto_cliente' | 'foto_cedula';
+export type NegocioPhotoRole = 'foto_cliente' | 'foto_cedula' | 'foto_cedula_atras';
 
 export const NEGOCIO_PHOTO_ROLE: Record<NegocioPhotoKind, NegocioPhotoRole> = {
   cliente: 'foto_cliente',
   cedula: 'foto_cedula',
+  cedula_atras: 'foto_cedula_atras',
 };
 
-/** Clave de `p_negocio` para cada foto. */
-export const NEGOCIO_PHOTO_FIELD: Record<NegocioPhotoKind, 'customer_photo_path' | 'customer_id_photo_path'> = {
+/** Clave de `p_negocio` para cada foto. `customer_id_photo_path` es el frente. */
+export type NegocioPhotoField = 'customer_photo_path' | 'customer_id_photo_path' | 'customer_id_back_photo_path';
+
+export const NEGOCIO_PHOTO_FIELD: Record<NegocioPhotoKind, NegocioPhotoField> = {
   cliente: 'customer_photo_path',
   cedula: 'customer_id_photo_path',
+  cedula_atras: 'customer_id_back_photo_path',
 };
 
 export const NEGOCIO_PHOTO_LABEL: Record<NegocioPhotoKind, string> = {
   cliente: 'Foto del cliente',
-  cedula: 'Foto de la cédula',
+  cedula: 'Cédula (frente)',
+  cedula_atras: 'Cédula (atrás)',
 };
+
+/** «la foto del cliente», «la foto de la cédula (frente)»… para los mensajes. */
+export const NEGOCIO_PHOTO_NOUN: Record<NegocioPhotoKind, string> = {
+  cliente: 'la foto del cliente',
+  cedula: 'la foto de la cédula (frente)',
+  cedula_atras: 'la foto de la cédula (atrás)',
+};
+
+/** Tipo de foto a partir de su rol en la cola (null si es una firma). */
+export function negocioPhotoKindForRole(role: string | null | undefined): NegocioPhotoKind | null {
+  return NEGOCIO_PHOTO_KINDS.find((kind) => NEGOCIO_PHOTO_ROLE[kind] === role) ?? null;
+}
+
+/** Tipo de foto a partir de su clave en `p_negocio`. */
+export function negocioPhotoKindForField(field: string | null | undefined): NegocioPhotoKind | null {
+  return NEGOCIO_PHOTO_KINDS.find((kind) => NEGOCIO_PHOTO_FIELD[kind] === field) ?? null;
+}
 
 /** Foto elegida en el teléfono, aún en el asistente. */
 export type NegocioPhotoDraft = {
@@ -75,9 +101,9 @@ export function negocioPhotoPath(userId: string, photo: Pick<NegocioPhotoDraft, 
   return `${userId}/${photo.id}.${ext}`;
 }
 
-/** Fotos presentes del borrador, en orden fijo (cliente, cédula). */
+/** Fotos presentes del borrador, en orden fijo (cliente, cédula frente, cédula atrás). */
 export function negocioPhotoEntries(photos: Partial<Record<NegocioPhotoKind, NegocioPhotoDraft | null>>) {
-  return (['cliente', 'cedula'] as const)
+  return NEGOCIO_PHOTO_KINDS
     .map((kind) => ({ kind, photo: photos[kind] ?? null }))
     .filter((entry): entry is { kind: NegocioPhotoKind; photo: NegocioPhotoDraft } => Boolean(entry.photo));
 }
@@ -88,7 +114,7 @@ export function negocioPhotoEntries(photos: Partial<Record<NegocioPhotoKind, Neg
  */
 export function negocioPhotoFields(paths: Partial<Record<NegocioPhotoKind, string | null>>): Record<string, string> {
   const fields: Record<string, string> = {};
-  for (const kind of ['cliente', 'cedula'] as const) {
+  for (const kind of NEGOCIO_PHOTO_KINDS) {
     const path = paths[kind];
     if (path) fields[NEGOCIO_PHOTO_FIELD[kind]] = path;
   }
@@ -101,7 +127,7 @@ export class NegocioPhotoUploadError extends Error {
   readonly definitive: boolean;
   readonly detail: string;
   constructor(kind: NegocioPhotoKind | null, detail: string, options: { definitive?: boolean } = {}) {
-    super(`No se pudo subir la ${kind === 'cedula' ? 'foto de la cédula' : 'foto del cliente'}: ${detail}`);
+    super(`No se pudo subir ${NEGOCIO_PHOTO_NOUN[kind ?? 'cliente']}: ${detail}`);
     this.name = 'NegocioPhotoUploadError';
     this.definitive = Boolean(options.definitive);
     this.detail = detail;

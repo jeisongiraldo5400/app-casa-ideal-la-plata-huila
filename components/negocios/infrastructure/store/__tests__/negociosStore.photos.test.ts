@@ -90,6 +90,7 @@ function mockFrom() {
 
 const FOTO_CLIENTE = { id: 'foto-1', uri: 'file:///cache/cliente.jpg', mimeType: 'image/jpeg', size: 200_000 };
 const FOTO_CEDULA = { id: 'foto-2', uri: 'file:///cache/cedula.jpg', mimeType: 'image/jpeg', size: 150_000 };
+const FOTO_CEDULA_ATRAS = { id: 'foto-3', uri: 'file:///cache/cedula-atras.jpg', mimeType: 'image/jpeg', size: 140_000 };
 
 const baseInput: CreateNegocioInput = {
   deal_date: '2026-10-01',
@@ -155,6 +156,35 @@ describe('negociosStore.createAndActivate · fotos del cliente', () => {
       customer_photo_path: 'u1/foto-1.jpg',
       customer_id_photo_path: 'u1/foto-2.jpg',
     });
+  });
+
+  it('cédula por el frente y por atrás: sube las dos y envía customer_id_back_photo_path', async () => {
+    await useNegociosStore.getState().createAndActivate({ ...withPhotos, customer_id_back_photo: FOTO_CEDULA_ATRAS });
+
+    expect(uploadNegocioPhoto).toHaveBeenCalledWith(FOTO_CEDULA_ATRAS.uri, {
+      path: 'u1/foto-3.jpg',
+      mimeType: 'image/jpeg',
+      kind: 'cedula_atras',
+    });
+    expect(rpcCall().p_negocio).toMatchObject({
+      customer_photo_path: 'u1/foto-1.jpg',
+      customer_id_photo_path: 'u1/foto-2.jpg',
+      customer_id_back_photo_path: 'u1/foto-3.jpg',
+    });
+  });
+
+  it('sin señal: la cédula por atrás va a la cola con su ruta', async () => {
+    useSyncStore.setState({ userId: 'u1', online: false });
+    (canUseLocalDb as jest.Mock).mockReturnValue(true);
+    const { fetchCreditSettingsFromLocal } = jest.requireMock('@/lib/offline/repositories/catalogRepository');
+    (fetchCreditSettingsFromLocal as jest.Mock).mockResolvedValue(CREDIT_SETTINGS_ROW);
+
+    await useNegociosStore.getState().createAndActivate({ ...baseInput, customer_id_back_photo: FOTO_CEDULA_ATRAS });
+
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(payload.photos).toEqual([
+      { kind: 'cedula_atras', uri: FOTO_CEDULA_ATRAS.uri, mimeType: 'image/jpeg', storagePath: 'u1/foto-3.jpg', uploaded: false },
+    ]);
   });
 
   it('solo la cédula: envía únicamente su ruta', async () => {
@@ -258,5 +288,44 @@ describe('negociosStore.createAndActivate · fotos del cliente', () => {
       })
     ).rejects.toThrow(/Foto del cliente: Solo se permiten fotos/);
     expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('negociosStore.createAndActivate · tope del interés', () => {
+  const TOPE = 'El interés no puede ser mayor que el subtotal de los productos';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFrom();
+    (canUseLocalDb as jest.Mock).mockReturnValue(false);
+    useSyncStore.setState({ userId: 'u1', online: true });
+    (supabase.rpc as jest.Mock).mockResolvedValue({ data: 'n1', error: null });
+    (validateNegocioItemsStock as jest.Mock).mockResolvedValue({ ok: true });
+    useNegociosStore.setState({ creditSettings: null });
+  });
+
+  it('un interés igual al subtotal de los productos se acepta', async () => {
+    await useNegociosStore.getState().createAndActivate({ ...baseInput, manual_interest_amount: 900000 });
+    expect(rpcCall().p_negocio).toMatchObject({ manual_interest_amount: 900000 });
+  });
+
+  it('con señal, un interés mayor que el subtotal no llega al servidor', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({ ...baseInput, manual_interest_amount: 900001 })
+    ).rejects.toThrow(TOPE);
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(uploadNegocioPhoto).not.toHaveBeenCalled();
+  });
+
+  it('sin señal, un interés mayor que el subtotal no se encola', async () => {
+    useSyncStore.setState({ userId: 'u1', online: false });
+    (canUseLocalDb as jest.Mock).mockReturnValue(true);
+    const { fetchCreditSettingsFromLocal } = jest.requireMock('@/lib/offline/repositories/catalogRepository');
+    (fetchCreditSettingsFromLocal as jest.Mock).mockResolvedValue(CREDIT_SETTINGS_ROW);
+
+    await expect(
+      useNegociosStore.getState().createAndActivate({ ...baseInput, manual_interest_amount: 1_000_000 })
+    ).rejects.toThrow(TOPE);
+    expect(enqueueNegocioCreateOffline).not.toHaveBeenCalled();
   });
 });

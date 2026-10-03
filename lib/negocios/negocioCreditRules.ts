@@ -53,6 +53,23 @@ const toNumber = (value: unknown): number => {
 };
 
 /**
+ * Mensaje de error del interés manual (en pesos), o `null` si es válido. No
+ * puede ser negativo ni mayor que el subtotal de los productos (igual sí).
+ * Misma regla que el panel web y la base de datos.
+ */
+export function manualInterestError(value: number, productsSubtotal?: number): string | null {
+  if (!Number.isFinite(value) || value < 0) return 'El interés no puede ser negativo';
+  if (
+    productsSubtotal !== undefined &&
+    Number.isFinite(productsSubtotal) &&
+    value > Math.max(0, productsSubtotal) + MONEY_EPSILON
+  ) {
+    return 'El interés no puede ser mayor que el subtotal de los productos';
+  }
+  return null;
+}
+
+/**
  * Lee `negocios.down_payment_schedule` (jsonb) con tolerancia a filas antiguas:
  * si viene vacío pero hay `down_payment`, se reconstruye un solo abono con
  * `down_payment_date` (o `deal_date` en negocios activados antes de tener fecha).

@@ -39,6 +39,7 @@ import {
   downPaymentScheduleTotal,
   financedAfterDownPayments,
   installmentPlanError,
+  manualInterestError,
   sortDownPaymentSchedule,
   type DownPaymentEntry,
 } from '@/lib/negocios/negocioCreditRules';
@@ -110,7 +111,10 @@ interface NegociosState {
     seller_signature_data_url?: string;
     /** Fotos opcionales: nunca impiden crear el negocio si faltan. */
     customer_photo?: NegocioPhotoDraft | null;
+    /** Cédula por el frente (`customer_id_photo_path`). */
     customer_id_photo?: NegocioPhotoDraft | null;
+    /** Cédula por atrás (`customer_id_back_photo_path`). */
+    customer_id_back_photo?: NegocioPhotoDraft | null;
     activate: boolean;
     /** Nombre del cliente y del vendedor, para pintar el negocio pendiente sin red. */
     customer_name?: string;
@@ -226,6 +230,7 @@ function createRequestFingerprint(input: CreateNegocioInput): string {
     seller_signature_source: input.seller_signature_data_url || null,
     customer_photo_id: input.customer_photo?.id || null,
     customer_id_photo_id: input.customer_id_photo?.id || null,
+    customer_id_back_photo_id: input.customer_id_back_photo?.id || null,
   });
 }
 
@@ -318,7 +323,11 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       input.seller_signature_data_url
     );
     if (signatureError) throw new Error(signatureError);
-    const photos = negocioPhotoEntries({ cliente: input.customer_photo, cedula: input.customer_id_photo });
+    const photos = negocioPhotoEntries({
+      cliente: input.customer_photo,
+      cedula: input.customer_id_photo,
+      cedula_atras: input.customer_id_back_photo,
+    });
     for (const { kind, photo } of photos) {
       const photoError = validateNegocioPhoto(photo);
       if (photoError) throw new Error(`${NEGOCIO_PHOTO_LABEL[kind]}: ${photoError}`);
@@ -341,9 +350,9 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       0
     );
     const manualInterestAmount = Number(input.manual_interest_amount ?? 0);
-    if (!Number.isFinite(manualInterestAmount) || manualInterestAmount < 0) {
-      throw new Error('El interés no puede ser negativo');
-    }
+    // Tope: no más que el subtotal de los productos (con y sin señal).
+    const interestError = manualInterestError(manualInterestAmount, productsSubtotal);
+    if (interestError) throw new Error(interestError);
     const baseTotal = productsSubtotal + manualInterestAmount;
     const schedule = sortDownPaymentSchedule(input.down_payment_schedule);
     const scheduleError = downPaymentScheduleError(schedule, input.deal_date, baseTotal);

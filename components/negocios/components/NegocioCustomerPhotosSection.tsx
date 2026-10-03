@@ -9,26 +9,30 @@ import { pickNegocioPhoto, type NegocioPhotoSource } from '../infrastructure/ser
 
 type Props = {
   customerPhoto: NegocioPhotoDraft | null;
+  /** Cédula por el frente. */
   idPhoto: NegocioPhotoDraft | null;
+  /** Cédula por atrás. */
+  idBackPhoto?: NegocioPhotoDraft | null;
   onChange: (kind: NegocioPhotoKind, photo: NegocioPhotoDraft | null) => void;
   disabled?: boolean;
 };
 
 /**
  * «Fotos del cliente (opcional)» del asistente: foto de la persona y de su
- * cédula. Nada aquí bloquea guardar el negocio.
+ * cédula por el frente y por atrás. Nada aquí bloquea guardar el negocio.
  */
-export function NegocioCustomerPhotosSection({ customerPhoto, idPhoto, onChange, disabled }: Props) {
+export function NegocioCustomerPhotosSection({ customerPhoto, idPhoto, idBackPhoto = null, onChange, disabled }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   return (
     <View style={styles.container} testID="negocio-fotos-cliente">
       <SectionHeader title="Fotos del cliente (opcional)" />
       <Text style={[styles.helper, { color: colors.text.secondary }]}>
-        Si quiere, tome una foto del cliente o de su cédula. No es obligatorio para guardar el negocio.
+        Si quiere, tome una foto del cliente o de su cédula por ambos lados. No es obligatorio para guardar el negocio.
       </Text>
       <PhotoSlot kind="cliente" photo={customerPhoto} onChange={onChange} disabled={disabled} />
       <PhotoSlot kind="cedula" photo={idPhoto} onChange={onChange} disabled={disabled} />
+      <PhotoSlot kind="cedula_atras" photo={idBackPhoto} onChange={onChange} disabled={disabled} />
     </View>
   );
 }

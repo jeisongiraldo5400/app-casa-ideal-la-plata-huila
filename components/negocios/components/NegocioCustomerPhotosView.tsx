@@ -8,7 +8,10 @@ import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type Props = {
   customerPhotoPath: string | null | undefined;
+  /** Cédula por el frente. */
   idPhotoPath: string | null | undefined;
+  /** Cédula por atrás. */
+  idBackPhotoPath?: string | null;
   /** Con señal: las URLs firmadas (1 h) las da el servidor. */
   online: boolean;
 };
@@ -20,7 +23,7 @@ type PhotoEntry = { kind: NegocioPhotoKind; path: string };
  * ampliar. Sin señal o sin fotos no se muestra nada; una URL que no se pueda
  * firmar se omite sin tumbar el detalle. No van en el contrato.
  */
-export function NegocioCustomerPhotosView({ customerPhotoPath, idPhotoPath, online }: Props) {
+export function NegocioCustomerPhotosView({ customerPhotoPath, idPhotoPath, idBackPhotoPath, online }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const photos = useMemo<PhotoEntry[]>(
@@ -28,8 +31,9 @@ export function NegocioCustomerPhotosView({ customerPhotoPath, idPhotoPath, onli
       [
         { kind: 'cliente' as const, path: customerPhotoPath || '' },
         { kind: 'cedula' as const, path: idPhotoPath || '' },
+        { kind: 'cedula_atras' as const, path: idBackPhotoPath || '' },
       ].filter((entry) => entry.path),
-    [customerPhotoPath, idPhotoPath]
+    [customerPhotoPath, idPhotoPath, idBackPhotoPath]
   );
   const [urls, setUrls] = useState<Partial<Record<NegocioPhotoKind, string>>>({});
   const [open, setOpen] = useState<NegocioPhotoKind | null>(null);

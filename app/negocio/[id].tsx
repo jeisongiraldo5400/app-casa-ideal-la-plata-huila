@@ -1991,11 +1991,14 @@ function NegocioDetailScreenInner() {
           </View>
         ) : null}
 
-        {online && !fromLocal && (negocio?.customer_photo_path || negocio?.customer_id_photo_path) ? (
+        {online &&
+        !fromLocal &&
+        (negocio?.customer_photo_path || negocio?.customer_id_photo_path || negocio?.customer_id_back_photo_path) ? (
           <View style={styles.section}>
             <NegocioCustomerPhotosView
               customerPhotoPath={negocio.customer_photo_path}
               idPhotoPath={negocio.customer_id_photo_path}
+              idBackPhotoPath={negocio.customer_id_back_photo_path}
               online={online && !fromLocal}
             />
           </View>

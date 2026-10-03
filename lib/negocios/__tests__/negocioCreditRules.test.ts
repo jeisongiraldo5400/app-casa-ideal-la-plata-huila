@@ -8,6 +8,7 @@ import {
   installmentPlanError,
   installmentsRangeError,
   isInstallmentsCountAllowed,
+  manualInterestError,
   parseDownPaymentSchedule,
   requiresInstallmentPlan,
 } from '../negocioCreditRules';
@@ -27,6 +28,30 @@ describe('installmentsRangeError', () => {
     expect(installmentsRangeError(2.5)).toBeTruthy();
     expect(installmentsRangeError(Number.NaN)).toBeTruthy();
     expect(isInstallmentsCountAllowed(0)).toBe(false);
+  });
+});
+
+describe('manualInterestError', () => {
+  const TOPE = 'El interés no puede ser mayor que el subtotal de los productos';
+
+  it('acepta cero, menos que el subtotal y exactamente el subtotal', () => {
+    expect(manualInterestError(0, 1_000_000)).toBeNull();
+    expect(manualInterestError(400_000, 1_000_000)).toBeNull();
+    expect(manualInterestError(1_000_000, 1_000_000)).toBeNull();
+  });
+
+  it('rechaza un interés mayor que el subtotal de los productos', () => {
+    expect(manualInterestError(1_000_001, 1_000_000)).toBe(TOPE);
+    expect(manualInterestError(50_000, 0)).toBe(TOPE);
+  });
+
+  it('rechaza un interés negativo o inválido', () => {
+    expect(manualInterestError(-1, 1_000_000)).toBe('El interés no puede ser negativo');
+    expect(manualInterestError(Number.NaN, 1_000_000)).toBe('El interés no puede ser negativo');
+  });
+
+  it('sin subtotal solo revisa el signo', () => {
+    expect(manualInterestError(5_000_000)).toBeNull();
   });
 });
 

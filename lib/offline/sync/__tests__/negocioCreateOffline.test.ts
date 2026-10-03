@@ -372,6 +372,54 @@ describe('negocio creado sin señal · fotos del cliente', () => {
     });
   });
 
+  it('la cédula por atrás viaja por la cola con su rol, su archivo y su clave en p_negocio', async () => {
+    await enqueue([
+      ...FOTOS,
+      { kind: 'cedula_atras', uri: 'file:///cache/atras.jpg', mimeType: 'image/jpeg', storagePath: 'u1/foto-3.jpg' },
+    ]);
+
+    const fotos = outboxPayloads('upload_negocio_signature').filter((row) => row.bucket === 'negocios-fotos');
+    expect(fotos.map((row) => [row.role, row.storagePath])).toEqual([
+      ['foto_cliente', 'u1/foto-1.jpg'],
+      ['foto_cedula', 'u1/foto-2.png'],
+      ['foto_cedula_atras', 'u1/foto-3.jpg'],
+    ]);
+    const uploads = mockDb.__table('file_uploads').filter((row) => row.bucket === 'negocios-fotos');
+    expect(uploads.map((row) => row.fileName)).toEqual(['foto-cliente.jpg', 'foto-cedula.png', 'foto-cedula_atras.jpg']);
+    expect(queuedPayload().negocio).toMatchObject({
+      customer_photo_path: 'u1/foto-1.jpg',
+      customer_id_photo_path: 'u1/foto-2.png',
+      customer_id_back_photo_path: 'u1/foto-3.jpg',
+    });
+
+    const atras = fotos[2];
+    await pushUploadNegocioSignature(atras);
+    expect(uploadNegocioPhoto).toHaveBeenCalledWith(expect.any(String), {
+      path: 'u1/foto-3.jpg',
+      mimeType: 'image/jpeg',
+      kind: 'cedula_atras',
+    });
+  });
+
+  it('la cédula por atrás que no sube se quita sola, con su nombre en el aviso', async () => {
+    await enqueue([
+      ...FOTOS,
+      { kind: 'cedula_atras', uri: 'file:///cache/atras.jpg', mimeType: 'image/jpeg', storagePath: 'u1/foto-3.jpg' },
+    ]);
+    (localFileExists as jest.Mock).mockResolvedValue(false);
+    const atras = outboxPayloads('upload_negocio_signature').find((row) => row.role === 'foto_cedula_atras');
+
+    const result = await pushUploadNegocioSignature(atras);
+
+    expect(result).toEqual({
+      outcome: 'done',
+      note: 'La foto de la cédula (atrás) no se pudo subir (ya no está guardada en el teléfono); el negocio se sincroniza sin ella.',
+    });
+    expect(queuedPayload().negocio).not.toHaveProperty('customer_id_back_photo_path');
+    expect(queuedPayload().negocio.customer_id_photo_path).toBe('u1/foto-2.png');
+    expect(queuedPayload().skippedPhotos).toEqual(['customer_id_back_photo_path']);
+  });
+
   it('una foto ya subida con red solo aporta su ruta (no se vuelve a subir)', async () => {
     await enqueue([{ ...FOTOS[0], uploaded: true }]);
 
@@ -483,7 +531,7 @@ describe('negocio creado sin señal · fotos del cliente', () => {
 
     const result = await pushCreateNegocio(queuedPayload(), 'idem-1');
 
-    expect(result).toEqual({ outcome: 'fail', message: 'La foto de la cédula no se pudo subir: Bucket not found' });
+    expect(result).toEqual({ outcome: 'fail', message: 'La foto de la cédula (frente) no se pudo subir: Bucket not found' });
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 

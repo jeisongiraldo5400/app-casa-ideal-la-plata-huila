@@ -48,6 +48,7 @@ import {
   downPaymentScheduleTotal,
   financedAfterDownPayments,
   installmentPlanError,
+  manualInterestError,
   requiresInstallmentPlan,
   sortDownPaymentSchedule,
   type DownPaymentRow,
@@ -241,9 +242,10 @@ function NegocioCreateScreenInner() {
   const [signature, setSignature] = useState('');
   const [sellerSignature, setSellerSignature] = useState('');
   const [guarantorSignature, setGuarantorSignature] = useState('');
-  /** Fotos opcionales del cliente (persona y cédula). */
+  /** Fotos opcionales del cliente (persona y cédula por el frente y por atrás). */
   const [customerPhoto, setCustomerPhoto] = useState<NegocioPhotoDraft | null>(null);
   const [customerIdPhoto, setCustomerIdPhoto] = useState<NegocioPhotoDraft | null>(null);
+  const [customerIdBackPhoto, setCustomerIdBackPhoto] = useState<NegocioPhotoDraft | null>(null);
 
   // Modal para crear nuevo cliente
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
@@ -341,6 +343,7 @@ function NegocioCreateScreenInner() {
     setGuarantorSignature('');
     setCustomerPhoto(null);
     setCustomerIdPhoto(null);
+    setCustomerIdBackPhoto(null);
     setShowNewCustomerModal(false);
     setNewCustomerName('');
     setNewCustomerId('');
@@ -746,6 +749,8 @@ function NegocioCreateScreenInner() {
   const manualInterestAmount =
     Number.isFinite(parsedManualInterest) && parsedManualInterest > 0 ? parsedManualInterest : 0;
   const baseTotal = subtotal + manualInterestAmount;
+  // Tope: el interés no puede pasar del subtotal de los productos (igual sí).
+  const interestError = manualInterestError(manualInterestAmount, subtotal);
   const downPaymentSchedule = downPaymentRowsToSchedule(downPayments);
   // La numeración es la misma del resumen y la que guardará la base (por fecha),
   // no la posición en la que se agregó la fila.
@@ -946,6 +951,7 @@ function NegocioCreateScreenInner() {
   const canAdvanceProductsStep = () => {
     if (!items.length) return false;
     if (items.some((i) => i.unit_price <= 0 || i.quantity <= 0)) return false;
+    if (interestError) return false;
     return itemsHaveValidStock(items, stockByProduct);
   };
 
@@ -1073,6 +1079,7 @@ function NegocioCreateScreenInner() {
         seller_signature_data_url: sellerSignature || undefined,
         customer_photo: customerPhoto,
         customer_id_photo: customerIdPhoto,
+        customer_id_back_photo: customerIdBackPhoto,
         activate,
         // Para poder pintar el negocio pendiente sin volver a preguntar.
         customer_name: customer.name,
@@ -1737,6 +1744,11 @@ function NegocioCreateScreenInner() {
                 value={manualInterest}
                 onChangeText={(value) => setManualInterest(formatNegocioMoneyInput(value))}
               />
+              {interestError ? (
+                <Text testID="negocio-interes-error" style={{ color: colors.error.main, fontSize: 13, marginTop: 4 }}>
+                  {interestError}
+                </Text>
+              ) : null}
               <Text style={{ fontWeight: '700', fontSize: 16, color: colors.text.primary, marginTop: 8 }}>
                 Total: {formatCOP(baseTotal)}
               </Text>
@@ -1935,7 +1947,14 @@ function NegocioCreateScreenInner() {
             <NegocioCustomerPhotosSection
               customerPhoto={customerPhoto}
               idPhoto={customerIdPhoto}
-              onChange={(kind, photo) => (kind === 'cedula' ? setCustomerIdPhoto(photo) : setCustomerPhoto(photo))}
+              idBackPhoto={customerIdBackPhoto}
+              onChange={(kind, photo) =>
+                kind === 'cedula'
+                  ? setCustomerIdPhoto(photo)
+                  : kind === 'cedula_atras'
+                    ? setCustomerIdBackPhoto(photo)
+                    : setCustomerPhoto(photo)
+              }
               disabled={saving}
             />
             {creditSettings?.legal_text ? (
@@ -2012,6 +2031,7 @@ function NegocioCreateScreenInner() {
                     'Revise la bodega y cantidad de cada producto.'
                   );
                 }
+                if (interestError) return Alert.alert('Interés', interestError);
               }
               if (step === 2) {
                 if (downPaymentError) return Alert.alert('Abonos iniciales', downPaymentError);

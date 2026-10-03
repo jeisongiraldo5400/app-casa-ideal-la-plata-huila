@@ -35,8 +35,18 @@ describe('NegocioCustomerPhotosView (detalle)', () => {
     expect(mockSigned).toHaveBeenCalledWith('negocios-fotos', 'u1/b.jpg', 3600);
     expect(screen.getByTestId('negocio-foto-cliente').props.source).toEqual({ uri: 'https://firmada/u1/a.jpg' });
 
-    fireEvent.press(screen.getByLabelText('Ampliar foto de la cédula'));
+    fireEvent.press(screen.getByLabelText('Ampliar cédula (frente)'));
     expect(screen.getByLabelText('Cerrar foto')).toBeTruthy();
+  });
+
+  it('muestra la cédula por el frente y por atrás con sus nombres', async () => {
+    const screen = render(
+      <NegocioCustomerPhotosView customerPhotoPath={null} idPhotoPath="u1/b.jpg" idBackPhotoPath="u1/c.jpg" online />
+    );
+    await waitFor(() => expect(screen.getByTestId('negocio-foto-cedula_atras')).toBeTruthy());
+    expect(mockSigned).toHaveBeenCalledWith('negocios-fotos', 'u1/c.jpg', 3600);
+    expect(screen.getByText('Cédula (frente)')).toBeTruthy();
+    expect(screen.getByText('Cédula (atrás)')).toBeTruthy();
   });
 
   it('solo la cédula: una sola miniatura', async () => {
@@ -75,7 +85,7 @@ describe('NegocioCustomerPhotosSection (asistente)', () => {
 
     expect(screen.getByText('Fotos del cliente (opcional)')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Tomar foto de la cédula'));
+      fireEvent.press(screen.getByLabelText('Tomar cédula (frente)'));
     });
     expect(pickNegocioPhoto).toHaveBeenCalledWith('camera');
     expect(onChange).toHaveBeenCalledWith('cedula', photo);
@@ -85,6 +95,21 @@ describe('NegocioCustomerPhotosSection (asistente)', () => {
     });
     expect(pickNegocioPhoto).toHaveBeenLastCalledWith('gallery');
     expect(onChange).toHaveBeenLastCalledWith('cliente', photo);
+  });
+
+  it('tiene dos espacios para la cédula: frente y atrás', async () => {
+    (pickNegocioPhoto as jest.Mock).mockResolvedValue(photo);
+    const onChange = jest.fn();
+    const screen = render(
+      <NegocioCustomerPhotosSection customerPhoto={null} idPhoto={photo} idBackPhoto={null} onChange={onChange} />
+    );
+    expect(screen.getByText('Cédula (frente)')).toBeTruthy();
+    expect(screen.getByText('Cédula (atrás)')).toBeTruthy();
+    expect(screen.getByLabelText('Cédula (frente): foto adjunta')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Tomar cédula (atrás)'));
+    });
+    expect(onChange).toHaveBeenCalledWith('cedula_atras', photo);
   });
 
   it('con foto muestra la miniatura y «Quitar»', () => {
