@@ -1,16 +1,8 @@
-import { formatCOP } from '@/lib/creditCalculator';
-import { formatPaymentDateTime } from '@/lib/localDate';
-import { formatNegocioCodigo } from '@/lib/negocioLabels';
-import { cuotaSaldo, type CuotaBalanceInput } from '@/lib/negocios/negocioBalance';
-
 /**
- * Compartir un negocio por WhatsApp con el chat del cliente (el titular del
- * negocio, `negocios.customer_id` → `customers.phone`). Funciones puras: las
- * usa la ficha del negocio para el contrato y los recibos en PDF.
- *
- * WhatsApp no deja adjuntar un archivo a un chat concreto por URL: el enlace
- * abre el chat del cliente con un mensaje de texto, y el PDF sigue saliendo
- * por la hoja de compartir del sistema.
+ * Número de WhatsApp del cliente (el titular del negocio,
+ * `negocios.customer_id` → `customers.phone`). Funciones puras: las usa
+ * `lib/sharing/sharePdfToWhatsApp` para mandar el contrato y los recibos en
+ * PDF directo al chat del cliente (Android).
  */
 
 /** Indicativo de Colombia: `wa.me` y `whatsapp://send` lo exigen. */
@@ -51,76 +43,4 @@ export function pickCustomerWhatsApp(
     if (number) return { number, phone: (candidate ?? '').trim() };
   }
   return null;
-}
-
-/** App de WhatsApp con el chat del número y el mensaje escrito. */
-export function buildWhatsAppChatAppUrl(number: string, message: string): string {
-  return `whatsapp://send?phone=${number}&text=${encodeURIComponent(message)}`;
-}
-
-/** Primer nombre para el saludo («MARÍA JOSÉ PÉREZ» → «María»). */
-export function greetingName(customerName: string | null | undefined): string {
-  const first = (customerName ?? '').trim().split(/\s+/)[0] ?? '';
-  if (!first || first.toLowerCase() === 'cliente') return '';
-  return first.charAt(0).toLocaleUpperCase('es-CO') + first.slice(1).toLocaleLowerCase('es-CO');
-}
-
-function greeting(customerName: string | null | undefined): string {
-  const name = greetingName(customerName);
-  return name ? `Hola ${name}.` : 'Hola.';
-}
-
-export type NegocioWhatsAppSummary = {
-  numero: number | null | undefined;
-  customerName: string | null | undefined;
-  totalCredit: number;
-  pendingBalance: number;
-  /** Próxima cuota sin pagar, si la hay. */
-  nextCuota?: { dueDate: string; amount: number } | null;
-};
-
-/** Primera cuota con saldo (por fecha), sin anuladas ni borradas. */
-export function nextPendingCuota(
-  cuotas: (CuotaBalanceInput & { due_date?: string | null })[] | null | undefined
-): { dueDate: string; amount: number } | null {
-  const pending = (cuotas ?? [])
-    .filter((cuota) => cuota.status !== 'anulada' && !cuota.deleted_at && cuota.due_date && cuotaSaldo(cuota) > 0)
-    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
-  const next = pending[0];
-  return next ? { dueDate: String(next.due_date), amount: cuotaSaldo(next) } : null;
-}
-
-/** Mensaje del contrato: el PDF va aparte, por la hoja de compartir. */
-export function buildNegocioWhatsAppMessage(summary: NegocioWhatsAppSummary): string {
-  const lines = [
-    `${greeting(summary.customerName)} Le escribimos de Casa Ideal sobre su negocio N.º ${formatNegocioCodigo(summary.numero)}.`,
-    `Total del crédito: ${formatCOP(summary.totalCredit)}`,
-    `Saldo pendiente: ${formatCOP(summary.pendingBalance)}`,
-  ];
-  if (summary.nextCuota && summary.pendingBalance > 0) {
-    lines.push(`Próxima cuota: ${formatCOP(summary.nextCuota.amount)} el ${formatPaymentDateTime(summary.nextCuota.dueDate.slice(0, 10))}`);
-  }
-  return lines.join('\n');
-}
-
-export type ReceiptWhatsAppSummary = {
-  customerName: string | null | undefined;
-  receiptNumber: string | null | undefined;
-  negocioNumero: number | null | undefined;
-  amount: number;
-  paidAt: string | null | undefined;
-  remainingBalance: number;
-  /** Pago tomado sin señal que el servidor aún no confirma. */
-  pendingConfirmation?: boolean;
-};
-
-export function buildReceiptWhatsAppMessage(summary: ReceiptWhatsAppSummary): string {
-  const receipt = summary.receiptNumber ? `el recibo ${summary.receiptNumber}` : 'su recibo';
-  const lines = [
-    `${greeting(summary.customerName)} Le escribimos de Casa Ideal con ${receipt} de su negocio N.º ${formatNegocioCodigo(summary.negocioNumero)}.`,
-    `Abono: ${formatCOP(summary.amount)}${summary.paidAt ? ` (${formatPaymentDateTime(summary.paidAt)})` : ''}`,
-    `Saldo pendiente: ${formatCOP(summary.remainingBalance)}`,
-  ];
-  if (summary.pendingConfirmation) lines.push('Pago pendiente de confirmar.');
-  return lines.join('\n');
 }

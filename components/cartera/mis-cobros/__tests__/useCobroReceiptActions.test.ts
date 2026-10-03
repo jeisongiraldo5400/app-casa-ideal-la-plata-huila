@@ -6,7 +6,14 @@ const mockPrintPayment = jest.fn(async (_data: NegocioReceiptData, _options?: un
 const mockFetchProducts = jest.fn();
 
 jest.mock('expo-print', () => ({ printToFileAsync: (options: { html: string }) => mockPrintToFile(options) }));
-jest.mock('expo-sharing', () => ({ isAvailableAsync: async () => false, shareAsync: jest.fn() }));
+const mockSharePdf = jest.fn(async (_input: unknown) => 'whatsapp');
+jest.mock('@/lib/sharing/sharePdfToWhatsApp', () => ({
+  ...jest.requireActual('@/lib/sharing/sharePdfToWhatsApp'),
+  sharePdfToWhatsApp: (input: unknown) => mockSharePdf(input),
+}));
+jest.mock('@/components/negocios/infrastructure/services/negocioCustomerPhonesService', () => ({
+  fetchNegocioCustomerPhones: async () => ({ phone: '300 123 4567', phoneSecondary: null }),
+}));
 jest.mock('@/components/printing', () => ({
   useBluetoothPrinter: () => ({ printPayment: mockPrintPayment, printing: false }),
 }));
@@ -34,6 +41,7 @@ const target = { negocio_id: 'n1', payment_id: 'p1' };
 describe('useCobroReceiptActions', () => {
   beforeEach(() => {
     mockPrintToFile.mockClear();
+    mockSharePdf.mockClear();
     mockPrintPayment.mockClear();
     mockFetchProducts.mockReset().mockResolvedValue([{ quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 }]);
   });
@@ -45,6 +53,18 @@ describe('useCobroReceiptActions', () => {
     const html = mockPrintToFile.mock.calls[0][0].html;
     expect(html).toContain('<li><span class="pq">2</span><span class="pn">Colchón doble</span>');
     expect(html).toContain('<span>Total productos</span>');
+  });
+
+  it('envía el PDF al WhatsApp del cliente con nombre claro', async () => {
+    const { result } = renderHook(() => useCobroReceiptActions());
+    await act(() => result.current.shareReceipt(data, target));
+    expect(mockSharePdf).toHaveBeenCalledWith({
+      uri: 'file:///recibo.pdf',
+      fileName: 'Recibo RV-1 - Cliente Uno.pdf',
+      phone: '300 123 4567',
+      phoneSecondary: null,
+      dialogTitle: 'RV-1',
+    });
   });
 
   it('el ticket por Bluetooth también recibe los productos', async () => {

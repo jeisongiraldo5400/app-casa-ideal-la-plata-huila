@@ -53,12 +53,7 @@ import {
 import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
 import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
 import { formatCustomerPhones } from '@/components/customers/domain/customerPhones';
-import { shareWithCustomerWhatsApp } from '@/components/negocios/infrastructure/services/negocioWhatsAppShare';
-import {
-  buildNegocioWhatsAppMessage,
-  buildReceiptWhatsAppMessage,
-  nextPendingCuota,
-} from '@/lib/negocios/negocioWhatsApp';
+import { contractPdfFileName, receiptPdfFileName, sharePdfToWhatsApp } from '@/lib/sharing/sharePdfToWhatsApp';
 import {
   pendingNegocioTitle,
   type PendingNegocioSync,
@@ -1133,13 +1128,16 @@ function NegocioDetailScreenInner() {
         // Tamaño oficio: 216 x 330 mm = 612 x 935 puntos a 72 ppp (legal sería 612 x 1008).
         // La web imprime con este mismo tamaño (ver NEGOCIO_CONTRACT_PDF_SIZE).
         const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, NEGOCIO_CONTRACT_PDF_SIZE));
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, {
-            mimeType: 'application/pdf',
-            dialogTitle: labelNegocioCodigo(negocio.numero),
-          });
-          return;
-        }
+        // Android: directo al chat de WhatsApp del cliente; iPhone o sin
+        // WhatsApp: la hoja de compartir con el PDF.
+        const outcome = await sharePdfToWhatsApp({
+          uri,
+          fileName: contractPdfFileName(negocio.numero, customerName),
+          phone: customerMeta.phone,
+          phoneSecondary: customerMeta.phone_secondary,
+          dialogTitle: labelNegocioCodigo(negocio.numero),
+        });
+        if (outcome !== 'unavailable') return;
       }
 
       await Share.share({
@@ -1151,28 +1149,6 @@ function NegocioDetailScreenInner() {
     } catch (e: any) {
       Alert.alert('Error', errorMessage(e, 'No se pudo compartir'));
     }
-  };
-
-  /**
-   * Botón «PDF» del contrato: con celular del cliente, primero WhatsApp a su
-   * chat (con el resumen del negocio) y el PDF como segunda opción.
-   */
-  const sharePdf = () => {
-    if (!negocio) return;
-    shareWithCustomerWhatsApp({
-      title: 'Compartir contrato',
-      customerName,
-      phone: customerMeta.phone,
-      phoneSecondary: customerMeta.phone_secondary,
-      message: buildNegocioWhatsAppMessage({
-        numero: negocio.numero,
-        customerName,
-        totalCredit: Number(negocio.total_credit),
-        pendingBalance,
-        nextCuota: nextPendingCuota(cuotas),
-      }),
-      sharePdf: shareContractPdf,
-    });
   };
 
   /** Campos del pronto pago para el recibo y el ticket de un pago existente. */
@@ -1222,35 +1198,17 @@ function NegocioDetailScreenInner() {
     });
     try {
       const Print = require('expo-print');
-      const Sharing = require('expo-sharing');
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: pago.virtual_receipt_number });
-      }
+      await sharePdfToWhatsApp({
+        uri,
+        fileName: receiptPdfFileName(pago.virtual_receipt_number, customerName),
+        phone: customerMeta.phone,
+        phoneSecondary: customerMeta.phone_secondary,
+        dialogTitle: pago.virtual_receipt_number,
+      });
     } catch (error: any) {
       Alert.alert('Error', errorMessage(error, 'No se pudo compartir el recibo'));
     }
-  };
-
-  /** Botón «PDF» de un recibo: igual que el contrato, WhatsApp primero. */
-  const shareReceipt = (pago: any) => {
-    if (!negocio) return;
-    shareWithCustomerWhatsApp({
-      title: 'Compartir recibo',
-      customerName,
-      phone: customerMeta.phone,
-      phoneSecondary: customerMeta.phone_secondary,
-      message: buildReceiptWhatsAppMessage({
-        customerName,
-        receiptNumber: pago.virtual_receipt_number,
-        negocioNumero: negocio.numero,
-        amount: Number(pago.amount),
-        paidAt: pago.paid_at,
-        remainingBalance: remainingAfterPago(cuotas, pagos, pago),
-        pendingConfirmation: Boolean(pago.pending_confirmation),
-      }),
-      sharePdf: () => shareReceiptPdf(pago),
-    });
   };
 
   const printReceipt = async (pago: any) => {
@@ -1946,7 +1904,7 @@ function NegocioDetailScreenInner() {
                       Alert.alert('Error', error?.message || 'No se pudo abrir el soporte')
                     );
                   }}
-                  onShare={() => shareReceipt(pago)}
+                  onShare={() => void shareReceiptPdf(pago)}
                   onPrint={() => void printReceipt(pago)}
                   onVoid={
                     canOfferVoidPago({ canVoid: canVoidPagos, online, fromLocal, pago })
@@ -2052,11 +2010,11 @@ function NegocioDetailScreenInner() {
               variant="outline"
               icon="picture-as-pdf"
               iconOnly
-              onPress={sharePdf}
+              onPress={() => void shareContractPdf()}
               accessibilityLabel={
                 contractPrints && contractPrints.count > 0
-                  ? `Compartir contrato en PDF, copia n.º ${contractPrints.count + 1}`
-                  : 'Compartir contrato en PDF'
+                  ? `Enviar PDF del contrato por WhatsApp, copia n.º ${contractPrints.count + 1}`
+                  : 'Enviar PDF del contrato por WhatsApp'
               }
               style={styles.secondaryAction}
             />

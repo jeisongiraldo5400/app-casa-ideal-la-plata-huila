@@ -1,12 +1,4 @@
-import {
-  buildNegocioWhatsAppMessage,
-  buildReceiptWhatsAppMessage,
-  buildWhatsAppChatAppUrl,
-  greetingName,
-  nextPendingCuota,
-  pickCustomerWhatsApp,
-  toCustomerWhatsAppNumber,
-} from '../negocioWhatsApp';
+import { pickCustomerWhatsApp, toCustomerWhatsAppNumber } from '../negocioWhatsApp';
 
 describe('toCustomerWhatsAppNumber', () => {
   it.each([
@@ -62,92 +54,5 @@ describe('pickCustomerWhatsApp', () => {
   it('null si ninguno sirve', () => {
     expect(pickCustomerWhatsApp(null, null)).toBeNull();
     expect(pickCustomerWhatsApp('4441234', '')).toBeNull();
-  });
-});
-
-describe('buildWhatsAppChatAppUrl', () => {
-  it('abre el chat del número con el texto codificado', () => {
-    expect(buildWhatsAppChatAppUrl('573001234567', 'Hola Ana.\nSaldo')).toBe(
-      'whatsapp://send?phone=573001234567&text=Hola%20Ana.%0ASaldo'
-    );
-  });
-
-  it('codifica el texto con encodeURIComponent', () => {
-    const message = 'Recibo #12 & saldo?';
-    expect(buildWhatsAppChatAppUrl('573001234567', message)).toBe(
-      `whatsapp://send?phone=573001234567&text=${encodeURIComponent(message)}`
-    );
-  });
-});
-
-describe('greetingName', () => {
-  it('toma el primer nombre con mayúscula inicial', () => {
-    expect(greetingName('MARÍA JOSÉ PÉREZ')).toBe('María');
-    expect(greetingName('  ana gómez ')).toBe('Ana');
-  });
-
-  it('vacío para «Cliente» o sin nombre', () => {
-    expect(greetingName('Cliente')).toBe('');
-    expect(greetingName(null)).toBe('');
-  });
-});
-
-describe('nextPendingCuota', () => {
-  it('primera cuota con saldo por fecha, sin anuladas ni pagadas', () => {
-    expect(
-      nextPendingCuota([
-        { due_date: '2026-12-01', amount: 100000, paid_amount: 0 },
-        { due_date: '2026-10-01', amount: 100000, paid_amount: 100000 },
-        { due_date: '2026-10-15', amount: 100000, paid_amount: 0, status: 'anulada' },
-        { due_date: '2026-11-01', amount: 100000, paid_amount: 40000 },
-      ])
-    ).toEqual({ dueDate: '2026-11-01', amount: 60000 });
-  });
-
-  it('null sin cuotas pendientes', () => {
-    expect(nextPendingCuota([{ due_date: '2026-10-01', amount: 5, paid_amount: 5 }])).toBeNull();
-    expect(nextPendingCuota(null)).toBeNull();
-  });
-});
-
-describe('mensajes', () => {
-  it('resumen del contrato con saldo y próxima cuota', () => {
-    const message = buildNegocioWhatsAppMessage({
-      numero: 20260007,
-      customerName: 'ANA GÓMEZ',
-      totalCredit: 1200000,
-      pendingBalance: 800000,
-      nextCuota: { dueDate: '2026-11-01', amount: 100000 },
-    });
-    expect(message).toContain('Hola Ana.');
-    expect(message).toContain('negocio N.º 20260007');
-    expect(message).toContain('Saldo pendiente:');
-    expect(message).toContain('el 01/11/2026');
-  });
-
-  it('sin próxima cuota cuando ya no debe', () => {
-    const message = buildNegocioWhatsAppMessage({
-      numero: 20260007,
-      customerName: 'Ana',
-      totalCredit: 1000,
-      pendingBalance: 0,
-      nextCuota: { dueDate: '2026-11-01', amount: 100 },
-    });
-    expect(message).not.toContain('Próxima cuota');
-  });
-
-  it('recibo con número, abono y aviso de pendiente', () => {
-    const message = buildReceiptWhatsAppMessage({
-      customerName: 'Ana',
-      receiptNumber: 'RV-000123',
-      negocioNumero: 20260007,
-      amount: 50000,
-      paidAt: '2026-10-02',
-      remainingBalance: 750000,
-      pendingConfirmation: true,
-    });
-    expect(message).toContain('el recibo RV-000123 de su negocio N.º 20260007');
-    expect(message).toContain('(02/10/2026)');
-    expect(message).toContain('Pago pendiente de confirmar.');
   });
 });

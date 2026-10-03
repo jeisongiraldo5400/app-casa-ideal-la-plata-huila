@@ -271,6 +271,17 @@ export async function fetchCustomerFromLocal(customerId: string): Promise<LocalC
   return rows.find((row) => row.id === customerId) ?? null;
 }
 
+/** Teléfonos del titular de un negocio descargado (enviar el PDF por WhatsApp sin señal). */
+export async function fetchNegocioCustomerPhonesFromLocal(
+  negocioId: string
+): Promise<{ phone: string | null; phoneSecondary: string | null } | null> {
+  if (!canUseLocalDb()) return null;
+  const negocio = await findOrNull<Negocio>('negocios', negocioId);
+  if (!negocio?.customerId) return null;
+  const customer = await findOrNull<Customer>('customers', negocio.customerId);
+  return customer ? { phone: customer.phone ?? null, phoneSecondary: customer.phoneSecondary ?? null } : null;
+}
+
 /** Negocios locales de un cliente concreto, para la ficha sin conexión. */
 export async function fetchCustomerNegociosFromLocal(customerId: string): Promise<CustomerWithNegocios | null> {
   if (!canUseLocalDb()) return null;

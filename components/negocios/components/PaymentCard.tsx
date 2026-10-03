@@ -169,7 +169,7 @@ export function PaymentCard({
         <IconButton
           icon="picture-as-pdf"
           label="PDF"
-          accessibilityLabel="Compartir recibo en PDF"
+          accessibilityLabel="Enviar PDF por WhatsApp"
           color={colors.primary.main}
           backgroundColor={`${colors.primary.main}12`}
           disabled={voided}
