@@ -102,11 +102,8 @@ export function buildNegocioTicket(data: NegocioTicketData): TicketLine[] {
 
   lines.push(
     { type: 'separator' },
-    // Subtotal → Interés → Total; el interés sale solo cuando lo hay.
+    // El interés no se imprime en el ticket: solo en el negocio y el contrato.
     { type: 'text', text: padRow('Subtotal', formatTicketMoney(data.productsSubtotal)) },
-    ...(Number(data.interestAmount) > 0
-      ? [{ type: 'text' as const, text: padRow('Interes', formatTicketMoney(data.interestAmount)) }]
-      : []),
     { type: 'text', text: padRow('Total credito', formatTicketMoney(data.totalCredit)), bold: true },
     ...downPaymentLines,
     { type: 'text', text: padRow('Financiado', formatTicketMoney(data.financedAmount)), bold: true },

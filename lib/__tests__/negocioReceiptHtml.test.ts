@@ -188,23 +188,6 @@ describe('buildNegocioReceiptHtml: productos del negocio', () => {
     expect(section).not.toContain('$');
   });
 
-  it('con interés agrega «Interés» y «Total» bajo «Total productos», con la misma clase', () => {
-    const section = sectionOf(buildNegocioReceiptHtml({ ...sample, products, totalCredit: 3_000_000 }));
-    expect(section).toContain(
-      `<div class="products-total"><span>Total productos</span><strong>${formatCOP(2_700_000)}</strong></div>` +
-        `<div class="products-total"><span>Interés</span><strong>${formatCOP(300_000)}</strong></div>` +
-        `<div class="products-total"><span>Total</span><strong>${formatCOP(3_000_000)}</strong></div>`
-    );
-  });
-
-  it('sin interés (o sin total conocido) el recibo queda como antes', () => {
-    for (const totalCredit of [2_700_000, null, undefined]) {
-      const section = sectionOf(buildNegocioReceiptHtml({ ...sample, products, totalCredit }));
-      expect(section).not.toContain('Interés');
-      expect(section).not.toContain('<span>Total</span>');
-    }
-  });
-
   it('sin productos (o lista vacía) no aparece la sección', () => {
     expect(buildNegocioReceiptHtml(sample)).not.toContain('<section class="products');
     expect(buildNegocioReceiptHtml({ ...sample, products: [] })).not.toContain('<section class="products');

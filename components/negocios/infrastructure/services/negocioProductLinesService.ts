@@ -2,11 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { receiptProductsFromItems, type NegocioReceiptProduct } from '@/lib/negocioReceiptHtml';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
-import {
-  canUseLocalDb,
-  fetchNegocioTotalCreditFromLocal,
-  fetchNegociosProductsFromLocal,
-} from '@/lib/offline/repositories/offlineRepository';
+import { canUseLocalDb, fetchNegociosProductsFromLocal } from '@/lib/offline/repositories/offlineRepository';
 import {
   groupNegocioProducts,
   type NegocioProductLine,
@@ -91,30 +87,6 @@ export async function fetchNegocioReceiptProducts(negocioId: string): Promise<Ne
     return products.length > 0 ? products : await fromLocal();
   } catch (error) {
     if (!isNetworkError(error)) console.warn('[recibo] no se pudieron leer los productos del negocio', error);
-    return fromLocal();
-  }
-}
-
-/**
- * Valor total del negocio (productos + interés) para el recibo de un cobro:
- * con él el recibo imprime «Interés» y «Total» bajo los productos. Con señal
- * sale del servidor; sin señal, del teléfono. Nunca lanza: sin dato devuelve
- * null y el recibo sale como antes.
- */
-export async function fetchNegocioReceiptTotalCredit(negocioId: string): Promise<number | null> {
-  const fromLocal = () => fetchNegocioTotalCreditFromLocal(negocioId).catch(() => null);
-  if (!useSyncStore.getState().online) return fromLocal();
-  try {
-    const { data, error } = await supabase
-      .from('negocios')
-      .select('total_credit')
-      .eq('id', negocioId)
-      .maybeSingle();
-    if (error) throw error;
-    const total = Number((data as { total_credit?: number | string | null } | null)?.total_credit);
-    return data && Number.isFinite(total) ? total : await fromLocal();
-  } catch (error) {
-    if (!isNetworkError(error)) console.warn('[recibo] no se pudo leer el total del negocio', error);
     return fromLocal();
   }
 }

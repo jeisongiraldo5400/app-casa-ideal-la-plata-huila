@@ -1712,15 +1712,6 @@ export type LocalNegocioProductRow = {
   subtotal?: number | null;
 };
 
-/** Valor total (productos + interés) de un negocio guardado en el teléfono; null si no está. */
-export async function fetchNegocioTotalCreditFromLocal(negocioId: string): Promise<number | null> {
-  if (!canUseLocalDb()) return null;
-  const negocio = await findOrNull<Negocio>('negocios', negocioId);
-  if (!negocio) return null;
-  const total = Number(negocio.totalCredit);
-  return Number.isFinite(total) ? total : null;
-}
-
 /** Productos de varios negocios a la vez (ficha del cliente sin señal). */
 export async function fetchNegociosProductsFromLocal(negocioIds: readonly string[]): Promise<LocalNegocioProductRow[]> {
   if (!canUseLocalDb() || negocioIds.length === 0) return [];

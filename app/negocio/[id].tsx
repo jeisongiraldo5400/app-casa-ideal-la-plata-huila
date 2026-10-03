@@ -745,7 +745,6 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
       remainingBalance: input.prontoPago ? 0 : Math.max(pendingBalance - input.amount, 0),
       products: receiptProducts,
-      totalCredit: Number(negocio.total_credit),
       ...(input.prontoPago
         ? {
             paymentKind: 'pronto_pago',
@@ -1219,7 +1218,6 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
-      totalCredit: Number(negocio.total_credit),
       copy,
     });
     try {
@@ -1274,7 +1272,6 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
-      totalCredit: Number(negocio.total_credit),
     }, { resolveCopy: () => recordReceiptPrint(pago, 'ticket') });
   };
 
