@@ -53,7 +53,7 @@ import {
 import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
 import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
 import { formatCustomerPhones } from '@/components/customers/domain/customerPhones';
-import { contractPdfFileName, receiptPdfFileName, sharePdfToWhatsApp } from '@/lib/sharing/sharePdfToWhatsApp';
+import { contractPdfFileName, receiptPdfFileName, sharePdf } from '@/lib/sharing/sharePdf';
 import {
   pendingNegocioTitle,
   type PendingNegocioSync,
@@ -1128,13 +1128,10 @@ function NegocioDetailScreenInner() {
         // Tamaño oficio: 216 x 330 mm = 612 x 935 puntos a 72 ppp (legal sería 612 x 1008).
         // La web imprime con este mismo tamaño (ver NEGOCIO_CONTRACT_PDF_SIZE).
         const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, NEGOCIO_CONTRACT_PDF_SIZE));
-        // Android: directo al chat de WhatsApp del cliente; iPhone o sin
-        // WhatsApp: la hoja de compartir con el PDF.
-        const outcome = await sharePdfToWhatsApp({
+        // Hoja de compartir con el PDF (Android e iPhone).
+        const outcome = await sharePdf({
           uri,
           fileName: contractPdfFileName(negocio.numero, customerName),
-          phone: customerMeta.phone,
-          phoneSecondary: customerMeta.phone_secondary,
           dialogTitle: labelNegocioCodigo(negocio.numero),
         });
         if (outcome !== 'unavailable') return;
@@ -1199,11 +1196,9 @@ function NegocioDetailScreenInner() {
     try {
       const Print = require('expo-print');
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
-      await sharePdfToWhatsApp({
+      await sharePdf({
         uri,
         fileName: receiptPdfFileName(pago.virtual_receipt_number, customerName),
-        phone: customerMeta.phone,
-        phoneSecondary: customerMeta.phone_secondary,
         dialogTitle: pago.virtual_receipt_number,
       });
     } catch (error: any) {
@@ -2013,8 +2008,8 @@ function NegocioDetailScreenInner() {
               onPress={() => void shareContractPdf()}
               accessibilityLabel={
                 contractPrints && contractPrints.count > 0
-                  ? `Enviar PDF del contrato por WhatsApp, copia n.º ${contractPrints.count + 1}`
-                  : 'Enviar PDF del contrato por WhatsApp'
+                  ? `Compartir PDF del contrato, copia n.º ${contractPrints.count + 1}`
+                  : 'Compartir PDF del contrato'
               }
               style={styles.secondaryAction}
             />

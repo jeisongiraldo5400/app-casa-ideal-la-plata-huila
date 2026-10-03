@@ -374,8 +374,8 @@ describe('CarteraPagosView (Cartera › Pagos)', () => {
     await waitFor(() => expect(screen.getByText('Ana Pérez')).toBeTruthy());
 
     // Solo la fila confirmada por el servidor trae acciones.
-    expect(screen.getAllByLabelText('Enviar PDF por WhatsApp')).toHaveLength(1);
-    fireEvent.press(screen.getByLabelText('Enviar PDF por WhatsApp'));
+    expect(screen.getAllByLabelText('Compartir PDF')).toHaveLength(1);
+    fireEvent.press(screen.getByLabelText('Compartir PDF'));
     expect(mockShareReceipt).toHaveBeenCalledWith(
       expect.objectContaining({ receiptNumber: 'RV-1', amount: 50000, remainingBalance: 100000, registeredBy: 'Gestor' }),
       // La fila identifica el pago para registrar la impresión.

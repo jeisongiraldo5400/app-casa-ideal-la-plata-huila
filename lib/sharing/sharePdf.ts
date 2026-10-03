@@ -1,46 +1,21 @@
-import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import type RNShare from 'react-native-share';
-import type { ShareSingleOptions, Social } from 'react-native-share';
-import { pickCustomerWhatsApp } from '@/lib/negocios/negocioWhatsApp';
 
 /**
- * Enviar un PDF (contrato o recibo) al cliente.
- *
- * - Android: abre WhatsApp (o WhatsApp Business) directo en el chat del
- *   cliente con el PDF adjunto; el vendedor solo toca Enviar.
- * - iPhone, o Android sin celular válido / sin WhatsApp / con cualquier error:
- *   la hoja de compartir del sistema con el PDF. Enviar nunca se bloquea.
+ * Compartir un PDF (contrato o recibo): la hoja de compartir del sistema, igual
+ * en Android y en iPhone; el vendedor elige WhatsApp, el chat u otra app.
  *
  * El archivo se copia con un nombre claro («Recibo RV-123 - Juan Perez.pdf»)
- * en la caché, que es la carpeta que comparten expo-sharing y react-native-share.
+ * en la caché, que es la carpeta que lee expo-sharing.
  */
 
-const WHATSAPP_APPS = [
-  { packageName: 'com.whatsapp', social: 'WHATSAPP', outcome: 'whatsapp' },
-  { packageName: 'com.whatsapp.w4b', social: 'WHATSAPPBUSINESS', outcome: 'whatsapp-business' },
-] as const;
+export type SharePdfOutcome = 'share-sheet' | 'unavailable';
 
-/**
- * Se carga al usarlo: una build sin el módulo nativo (p. ej. JS nuevo sobre
- * una build vieja) lanzaría al importar y tumbaría la pantalla; así solo cae a
- * la hoja de compartir.
- */
-function loadShare(): typeof RNShare {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('react-native-share').default;
-}
-
-export type SharePdfOutcome = 'whatsapp' | 'whatsapp-business' | 'share-sheet' | 'unavailable';
-
-export type SharePdfToWhatsAppInput = {
+export type SharePdfInput = {
   /** PDF de `Print.printToFileAsync`. */
   uri: string;
   /** Nombre visible del archivo, con o sin «.pdf» (se limpia). */
   fileName: string;
-  phone: string | null | undefined;
-  phoneSecondary?: string | null;
   /** Título de la hoja de compartir (Android). */
   dialogTitle?: string;
 };
@@ -114,42 +89,8 @@ async function shareSheet(uri: string, dialogTitle?: string): Promise<SharePdfOu
   return 'share-sheet';
 }
 
-async function shareToWhatsAppChat(uri: string, fileName: string, number: string): Promise<SharePdfOutcome | null> {
-  const Share = loadShare();
-  for (const app of WHATSAPP_APPS) {
-    // Sin la app, shareSingle abriría la Play Store: se pregunta antes.
-    const { isInstalled } = await Share.isPackageInstalled(app.packageName);
-    if (!isInstalled) continue;
-    // `whatsAppNumber` lo lee el código nativo de Android (extra «jid» del
-    // chat), aunque los tipos de la librería no lo declaran.
-    const options: ShareSingleOptions & { whatsAppNumber: string } = {
-      // Valor de la constante nativa («whatsapp» / «whatsappbusiness»).
-      social: Share.Social[app.social] as Social.Whatsapp,
-      whatsAppNumber: number,
-      url: uri,
-      type: 'application/pdf',
-      filename: fileName.replace(/\.pdf$/i, ''),
-    };
-    await Share.shareSingle(options);
-    return app.outcome;
-  }
-  return null;
-}
-
-export async function sharePdfToWhatsApp(
-  input: SharePdfToWhatsAppInput,
-  platform: string = Platform.OS
-): Promise<SharePdfOutcome> {
+export async function sharePdf(input: SharePdfInput): Promise<SharePdfOutcome> {
   const fileName = sanitizePdfFileName(input.fileName);
   const uri = await namedCopy(input.uri, fileName);
-  const target = platform === 'android' ? pickCustomerWhatsApp(input.phone, input.phoneSecondary) : null;
-  if (target) {
-    try {
-      const outcome = await shareToWhatsAppChat(uri, fileName, target.number);
-      if (outcome) return outcome;
-    } catch {
-      // Cualquier falla de WhatsApp termina en la hoja de compartir.
-    }
-  }
   return shareSheet(uri, input.dialogTitle);
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Casa Ideal",
     "slug": "app-casa-ideal",
-    "version": "3.4.8",
+    "version": "3.4.9",
     "orientation": "default",
     "scheme": "appcasaideal",
     "userInterfaceStyle": "automatic",
@@ -109,7 +109,6 @@
       ],
       "./plugins/withWatermelonJsiCmakePath",
       "./plugins/withAndroidBluetoothPrinterPermissions",
-      "./plugins/withWhatsAppPackageQueries",
       [
         "react-native-thermal-printer-driver",
         {

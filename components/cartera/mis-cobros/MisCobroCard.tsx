@@ -101,7 +101,7 @@ export function MisCobroCard({ row, onPress, showRegisteredBy = false, actions }
             <>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Enviar PDF por WhatsApp"
+                accessibilityLabel="Compartir PDF"
                 hitSlop={8}
                 onPress={() => actions.onShareReceipt(receipt, row)}>
                 <MaterialIcons name="picture-as-pdf" size={22} color={colors.primary.main} />
