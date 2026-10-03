@@ -745,6 +745,7 @@ function NegocioDetailScreenInner() {
       paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
       remainingBalance: input.prontoPago ? 0 : Math.max(pendingBalance - input.amount, 0),
       products: receiptProducts,
+      totalCredit: Number(negocio.total_credit),
       ...(input.prontoPago
         ? {
             paymentKind: 'pronto_pago',
@@ -1218,6 +1219,7 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
+      totalCredit: Number(negocio.total_credit),
       copy,
     });
     try {
@@ -1272,6 +1274,7 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
+      totalCredit: Number(negocio.total_credit),
     }, { resolveCopy: () => recordReceiptPrint(pago, 'ticket') });
   };
 
@@ -1397,6 +1400,11 @@ function NegocioDetailScreenInner() {
             seller_id: negocio.seller_id || null,
             products_subtotal: Number(negocio.products_subtotal),
             interest_amount: Number(negocio.interest_amount),
+            // Interés manual guardado: se reenvía tal cual (sin la columna en la
+            // fila, update_negocio conserva el valor guardado).
+            ...(negocio.manual_interest_amount != null
+              ? { manual_interest_amount: Number(negocio.manual_interest_amount) }
+              : {}),
             total_credit: Number(negocio.total_credit),
             down_payment: Number(negocio.down_payment),
             down_payment_date: negocio.down_payment_date || null,
@@ -1767,7 +1775,11 @@ function NegocioDetailScreenInner() {
         ) : null}
 
         {/* Sin señal el subtotal sale de la suma de los ítems descargados. */}
-        <NegocioProductsSummary items={items} productsSubtotal={Number(negocio.products_subtotal)} />
+        <NegocioProductsSummary
+          items={items}
+          productsSubtotal={Number(negocio.products_subtotal)}
+          totalCredit={Number(negocio.total_credit)}
+        />
 
         {/* La orden del negocio y de dónde salió la mercancía. Sin conexión no
             se conoce el origen y la tarjeta se omite. */}

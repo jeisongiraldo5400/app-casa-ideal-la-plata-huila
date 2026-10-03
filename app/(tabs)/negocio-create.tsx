@@ -77,6 +77,7 @@ import {
   fetchStockForProductsWithSource,
   formatNegocioMoneyInput,
   itemsHaveValidStock,
+  parseNegocioMoney,
   type ProductWarehouseStock,
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 import {
@@ -221,6 +222,8 @@ function NegocioCreateScreenInner() {
   const [stockFromLocal, setStockFromLocal] = useState(false);
   /** Abonos iniciales pactados (vacío = sin cuota inicial). */
   const [downPayments, setDownPayments] = useState<DownPaymentRow[]>([]);
+  /** Interés manual en pesos (texto del campo, con puntos de miles; '' = 0). */
+  const [manualInterest, setManualInterest] = useState('');
   /**
    * Vendedor que un administrador asigna a un cliente SIN dueño ('' = ninguno).
    * Con dueño no se elige: el vendedor del negocio es el dueño del cliente.
@@ -328,6 +331,7 @@ function NegocioCreateScreenInner() {
     originOrderSearch.setQuery('');
     setStockByProduct({});
     setDownPayments([]);
+    setManualInterest('');
     setSellerId('');
     setInstallments('3');
     setFrequency(creditSettings?.default_frequency || 'mensual');
@@ -736,14 +740,20 @@ function NegocioCreateScreenInner() {
   };
   const installmentsNumber = Number(installments);
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  // Interés fijo en pesos pactado con el cliente; se suma al valor de los
+  // productos y todo lo demás (abonos, cuotas, saldo) parte de ese total.
+  const parsedManualInterest = parseNegocioMoney(manualInterest);
+  const manualInterestAmount =
+    Number.isFinite(parsedManualInterest) && parsedManualInterest > 0 ? parsedManualInterest : 0;
+  const baseTotal = subtotal + manualInterestAmount;
   const downPaymentSchedule = downPaymentRowsToSchedule(downPayments);
   // La numeración es la misma del resumen y la que guardará la base (por fecha),
   // no la posición en la que se agregó la fila.
   const downPaymentLabels = downPaymentRowLabels(downPayments);
-  const downPaymentError = downPaymentScheduleError(downPaymentSchedule, localDateValue(), subtotal);
+  const downPaymentError = downPaymentScheduleError(downPaymentSchedule, localDateValue(), baseTotal);
   const downPaymentTotal = downPaymentScheduleTotal(downPaymentSchedule);
-  // Si los abonos cubren el valor de los productos no hay plan de cuotas.
-  const planRequired = requiresInstallmentPlan(subtotal, downPaymentSchedule);
+  // Si los abonos cubren el valor total (productos + interés) no hay plan de cuotas.
+  const planRequired = requiresInstallmentPlan(baseTotal, downPaymentSchedule);
   // Con saldo, el vendedor define libremente la cantidad de cuotas: solo se
   // exige un entero mayor a 0, sin tope superior.
   const installmentsValid =
@@ -751,7 +761,7 @@ function NegocioCreateScreenInner() {
   const effectiveInstallmentsCount =
     planRequired && Number.isSafeInteger(installmentsNumber) ? installmentsNumber : 0;
   const planError = installmentPlanError(
-    financedAfterDownPayments(subtotal, downPaymentSchedule),
+    financedAfterDownPayments(baseTotal, downPaymentSchedule),
     effectiveInstallmentsCount,
     firstDueDate,
     localDateValue()
@@ -801,6 +811,7 @@ function NegocioCreateScreenInner() {
     installmentsCount: effectiveInstallmentsCount,
     frequency,
     settings,
+    manualInterest: manualInterestAmount,
   });
   const addDownPayment = () =>
     setDownPayments((rows) => [
@@ -1052,6 +1063,7 @@ function NegocioCreateScreenInner() {
         ...sellerInput,
         ...originPayload,
         items,
+        manual_interest_amount: manualInterestAmount,
         down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
         installments_count: effectiveInstallmentsCount,
         frequency,
@@ -1711,7 +1723,22 @@ function NegocioCreateScreenInner() {
 
             <View style={[styles.summaryCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <Text style={{ fontWeight: '700', fontSize: 16, color: colors.text.primary }}>
-                Subtotal Productos: {formatCOP(subtotal)}
+                Subtotal: {formatCOP(subtotal)}
+              </Text>
+              <Text style={{ color: colors.text.secondary, fontSize: 13, marginTop: 8 }}>
+                Interés (COP)
+              </Text>
+              <TextInput
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={colors.text.secondary}
+                accessibilityLabel="Interés en pesos"
+                style={[styles.input, { borderColor: colors.divider, color: colors.text.primary, backgroundColor: colors.background.default }]}
+                value={manualInterest}
+                onChangeText={(value) => setManualInterest(formatNegocioMoneyInput(value))}
+              />
+              <Text style={{ fontWeight: '700', fontSize: 16, color: colors.text.primary, marginTop: 8 }}>
+                Total: {formatCOP(baseTotal)}
               </Text>
               {items.length > 0 && !itemsHaveValidStock(items, stockByProduct) && (
                 <Text style={{ color: colors.error.main, fontSize: 13, marginTop: 4 }}>
@@ -1784,7 +1811,7 @@ function NegocioCreateScreenInner() {
               {downPaymentError ||
                 (downPayments.length > 0
                   ? `Total abonos: ${formatCOP(downPaymentTotal)} · saldo a financiar: ${formatCOP(
-                      Math.max(0, subtotal - downPaymentTotal)
+                      Math.max(0, baseTotal - downPaymentTotal)
                     )}`
                   : 'Sin cuota inicial todo el valor se financia en cuotas.')}
             </Text>
@@ -1845,7 +1872,7 @@ function NegocioCreateScreenInner() {
               </>
             ) : (
               <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
-                Los abonos iniciales cubren el valor de los productos: el negocio no lleva cuotas ni
+                Los abonos iniciales cubren el valor total: el negocio no lleva cuotas ni
                 fecha de primera cuota.
               </Text>
             )}

@@ -44,6 +44,80 @@ describe('calculateCredit mobile/web parity', () => {
   });
 });
 
+describe('calculateCredit con interés manual', () => {
+  const pct: CreditSettingsInput = {
+    formula_type: 'financed_balance',
+    interest_rate_monthly_pct: 2,
+    rounding_unit: 1000,
+    money_decimal_places: 0,
+  };
+
+  it('con interés manual 0 da exactamente lo mismo que sin él', () => {
+    for (const formula_type of ['financed_balance', 'simple_markup', 'cash_includes_interest'] as const) {
+      const base = { productsSubtotal: 1_234_567, downPayment: 300_000, installmentsCount: 7, settings: { ...pct, formula_type } };
+      const { formulaSnapshot: a, ...sinManual } = calculateCredit(base);
+      const { formulaSnapshot: b, ...conCero } = calculateCredit({ ...base, manualInterest: 0 });
+      expect(conCero).toEqual(sinManual);
+      expect(sinManual.manualInterestAmount).toBe(0);
+      expect(a.formula_type).toBe(b.formula_type);
+    }
+  });
+
+  it('suma el interés manual al total redondeado, sin redondearlo', () => {
+    const result = calculateCredit({
+      productsSubtotal: 1_000_000,
+      downPayment: 0,
+      installmentsCount: 3,
+      settings: { ...pct, interest_rate_monthly_pct: 0 },
+      manualInterest: 150_555,
+    });
+    expect(result.totalCredit).toBe(1_150_555);
+    expect(result.interestAmount).toBe(150_555);
+    expect(result.manualInterestAmount).toBe(150_555);
+    expect(result.financedAmount).toBe(1_150_555);
+    expect(result.installmentAmount).toBe(383_518);
+  });
+
+  it('la base del porcentaje sigue siendo los productos menos los abonos que caen sobre ellos', () => {
+    const result = calculateCredit({
+      productsSubtotal: 1_000_000,
+      downPayment: 500_000,
+      installmentsCount: 3,
+      settings: pct,
+      manualInterest: 100_000,
+    });
+    // 500.000 × 2% × 3 = 30.000 → 1.030.000 + 100.000 manual
+    expect(result.totalCredit).toBe(1_130_000);
+    expect(result.interestAmount).toBe(130_000);
+    expect(result.financedAmount).toBe(630_000);
+  });
+
+  it('los abonos pueden cubrir productos + interés manual, y no más', () => {
+    const result = calculateCredit({
+      productsSubtotal: 1_000_000,
+      downPayment: 2_000_000,
+      installmentsCount: 0,
+      settings: pct,
+      manualInterest: 100_000,
+    });
+    expect(result.downPayment).toBe(1_100_000);
+    expect(result.totalCredit).toBe(1_100_000);
+    expect(result.financedAmount).toBe(0);
+  });
+
+  it('un interés negativo cuenta como 0', () => {
+    const result = calculateCredit({
+      productsSubtotal: 900_000,
+      downPayment: 0,
+      installmentsCount: 3,
+      settings: { ...pct, interest_rate_monthly_pct: 0 },
+      manualInterest: -50_000,
+    });
+    expect(result.totalCredit).toBe(900_000);
+    expect(result.manualInterestAmount).toBe(0);
+  });
+});
+
 describe('formatCOP', () => {
   it('omite los centavos en montos redondos', () => {
     expect(formatCOP(800000)).toContain('800.000');

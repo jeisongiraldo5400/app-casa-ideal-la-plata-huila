@@ -4,6 +4,7 @@ import {
   NEGOCIO_CONTRACT_PDF_SIZE,
   type NegocioContractData,
 } from '../negocioContractHtml';
+import { formatCOP } from '../creditCalculator';
 
 const base: NegocioContractData = {
   numero: 2026021,
@@ -159,5 +160,35 @@ describe('logo grande en el encabezado', () => {
   it('el título y el número van junto al logo, con los datos de la empresa', () => {
     const html = buildNegocioContractHtml(base);
     expect(html).toMatch(/<header class="brand">\s*<img class="logo"[^>]*>\s*<div class="brand-side">\s*<div class="company">[\s\S]*?<div class="title"><h2>Solicitud de crédito<\/h2>/);
+  });
+});
+
+describe('contrato del negocio: interés', () => {
+  const finance = (html: string) => html.slice(html.indexOf('<div class="finance'), html.indexOf('</div>\n  </div>', html.indexOf('<div class="finance')));
+
+  it('sin interés conserva la grilla de 4 columnas y no muestra la línea', () => {
+    const html = buildNegocioContractHtml(base);
+    expect(html).toContain('<div class="finance">');
+    expect(finance(html)).not.toContain('Interés');
+  });
+
+  it('con interés: Valor artículos → Interés → Total del crédito, en grilla de 3 columnas', () => {
+    const html = buildNegocioContractHtml({
+      ...base,
+      interest_amount: 150_000,
+      total_credit: 1_650_000,
+      financed_amount: 1_650_000,
+      installment_amount: 550_000,
+    });
+    expect(html).toContain('<div class="finance with-interest">');
+    const grid = finance(html);
+    const articulos = grid.indexOf('Valor artículos');
+    const interes = grid.indexOf('<span>Interés</span>');
+    const total = grid.indexOf('Total del crédito');
+    expect(articulos).toBeGreaterThan(-1);
+    expect(interes).toBeGreaterThan(articulos);
+    expect(total).toBeGreaterThan(interes);
+    expect(grid).toContain(`<span>Interés</span><strong>${formatCOP(150_000)}</strong>`);
+    expect(html).toContain('.finance.with-interest { grid-template-columns: repeat(3, 1fr); }');
   });
 });

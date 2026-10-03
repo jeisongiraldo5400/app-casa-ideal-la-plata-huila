@@ -248,6 +248,27 @@ describe('buildPaymentTicket', () => {
       expect(texts.findIndex((text) => text.startsWith('Valor recibido'))).toBeGreaterThan(start + 3);
     });
 
+    it('con interés imprime «Interes» y «Total» del negocio bajo el total de productos', () => {
+      const texts = textsOf({
+        ...receipt,
+        products: [{ quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 }],
+        totalCredit: 1500000,
+      });
+      const start = texts.indexOf('Productos');
+      expect(texts[start + 2]).toBe(padRow('Total productos', formatTicketMoney(1200000)));
+      expect(texts[start + 3]).toBe(padRow('Interes', formatTicketMoney(300000)));
+      expect(texts[start + 4]).toBe(padRow('Total', formatTicketMoney(1500000)));
+    });
+
+    it('sin interés no imprime las líneas de interés', () => {
+      const texts = textsOf({
+        ...receipt,
+        products: [{ quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 }],
+        totalCredit: 1200000,
+      });
+      expect(texts.some((text) => text.startsWith('Interes'))).toBe(false);
+    });
+
     it('sin precios descargados imprime solo cantidad y nombre, sin total', () => {
       const texts = textsOf({ ...receipt, products: [{ quantity: 1, name: longName }] });
       const start = texts.indexOf('Productos');
@@ -303,6 +324,23 @@ describe('buildNegocioTicket', () => {
     expect(texts).toContain('12 cuotas mensual');
     expect(texts).toContain('Contrato legal: compartir PDF');
     expect(texts).not.toContain('centrales de riesgo');
+  });
+
+  it('Subtotal → Interes → Total credito, y el interés solo cuando lo hay', () => {
+    const textsOf = (data: typeof negocio) =>
+      buildNegocioTicket(data)
+        .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+        .map((line) => line.text);
+    const texts = textsOf(negocio);
+    const subtotal = texts.indexOf(padRow('Subtotal', formatTicketMoney(1_000_000)));
+    expect(subtotal).toBeGreaterThan(-1);
+    expect(texts[subtotal + 1]).toBe(padRow('Interes', formatTicketMoney(200_000)));
+    expect(texts[subtotal + 2]).toBe(padRow('Total credito', formatTicketMoney(1_200_000)));
+
+    const sinInteres = textsOf({ ...negocio, interestAmount: 0, totalCredit: 1_000_000 });
+    const start = sinInteres.indexOf(padRow('Subtotal', formatTicketMoney(1_000_000)));
+    expect(sinInteres.some((text) => text.startsWith('Interes'))).toBe(false);
+    expect(sinInteres[start + 1]).toBe(padRow('Total credito', formatTicketMoney(1_000_000)));
   });
 
   it('muestra sin articulos cuando la lista esta vacia', () => {

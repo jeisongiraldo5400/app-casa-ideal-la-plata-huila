@@ -7,6 +7,7 @@ import {
   isProntoPagoReceipt,
   prontoPagoReceiptAmounts,
   receiptCustomerIdNumber,
+  receiptInterestAmount,
   receiptProducts,
   receiptProductsHavePrices,
   receiptProductsTotal,
@@ -85,6 +86,13 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
       }),
       ...(withPrices
         ? [{ type: 'text', text: padRow('Total productos', formatTicketMoney(receiptProductsTotal(products))), bold: true } as TicketLine]
+        : []),
+      // Con interés: «Interes» y «Total» (total del negocio) bajo los productos.
+      ...(withPrices && receiptInterestAmount(data, products) > 0
+        ? [
+            { type: 'text', text: padRow('Interes', formatTicketMoney(receiptInterestAmount(data, products))) } as TicketLine,
+            { type: 'text', text: padRow('Total', formatTicketMoney(Number(data.totalCredit))), bold: true } as TicketLine,
+          ]
         : []),
       { type: 'separator' },
     );

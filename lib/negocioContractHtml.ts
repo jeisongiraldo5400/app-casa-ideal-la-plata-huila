@@ -346,6 +346,12 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
       : data.frequency === 'semanal'
         ? 'semanales'
         : 'mensuales';
+  // Interés del negocio (productos → interés → total); solo sale si lo hay.
+  // Sin valor de productos (p. ej. sin ítems en el teléfono) no se deduce interés.
+  const interestAmount =
+    Number(data.products_subtotal) > 0
+      ? Math.max(0, Math.round((Number(data.total_credit) - Number(data.products_subtotal)) * 100) / 100 || 0)
+      : 0;
   const planLabel =
     data.installments_count > 0
       ? `${data.installments_count} cuotas ${frequencyLabel} de ${formatCOP(data.installment_amount)}`
@@ -417,6 +423,11 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
   .finance div:nth-last-child(-n+4) { border-bottom: 0; }
   .finance span { display: block; color: #53708f; font-size: ${tier.financeSpan}px; text-transform: uppercase; }
   .finance strong { font-size: ${tier.financeStrong}px; }
+  .finance.with-interest { grid-template-columns: repeat(3, 1fr); }
+  .finance.with-interest div:nth-child(4n) { border-right: 1px solid #8aaccf; }
+  .finance.with-interest div:nth-child(3n) { border-right: 0; }
+  .finance.with-interest div:nth-last-child(-n+4) { border-bottom: 1px solid #8aaccf; }
+  .finance.with-interest div:nth-last-child(-n+3) { border-bottom: 0; }
   .sigs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 5px; break-inside: avoid; }
   .sig { text-align: center; min-width: 0; }
   .sig-space { height: 40px; display: grid; place-items: end center; }
@@ -475,8 +486,11 @@ export function buildNegocioContractHtml(data: NegocioContractData): string {
     <thead><tr><th class="c" style="width:36px">Cant.</th><th>Descripción</th><th class="r" style="width:90px">Unitario</th><th class="r" style="width:90px">Subtotal</th></tr></thead>
     <tbody>${itemsRows}${emptyRows}</tbody>
   </table></div>
-  <div class="finance">
-    <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>
+  <div class="finance${interestAmount > 0 ? ' with-interest' : ''}">
+    <div><span>Valor artículos</span><strong>${formatCOP(data.products_subtotal)}</strong></div>${
+      interestAmount > 0 ? `
+    <div><span>Interés</span><strong>${formatCOP(interestAmount)}</strong></div>` : ''
+    }
     <div><span>Total del crédito</span><strong>${formatCOP(data.total_credit)}</strong></div>
     <div><span>Abonos iniciales</span><strong>${downPaymentLabel}</strong></div>
     <div><span>Saldo financiado</span><strong>${formatCOP(data.financed_amount)}</strong></div>

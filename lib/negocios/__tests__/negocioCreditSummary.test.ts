@@ -107,4 +107,41 @@ describe('buildNegocioCreditSummary', () => {
     expect(summary.financedAmount).toBe(0);
     expect(summary.interestNote).toMatch(/no queda saldo/);
   });
+
+  it('separa el interés manual del porcentual y explica la base del porcentaje', () => {
+    const schedule = [{ amount: 500_000, due_date: '2026-09-03' }];
+    const calc = calculateCredit({
+      productsSubtotal: 1_000_000,
+      downPayment: 500_000,
+      installmentsCount: 3,
+      frequency: 'mensual',
+      settings,
+      manualInterest: 100_000,
+    });
+    const summary = buildNegocioCreditSummary({ calc, settings, schedule, frequency: 'mensual', firstDueDate: '2026-10-03' });
+    expect(summary.manualInterestAmount).toBe(100_000);
+    expect(summary.percentInterestAmount).toBe(30_000);
+    expect(summary.interestAmount).toBe(130_000);
+    expect(summary.totalCredit).toBe(1_130_000);
+    expect(summary.financedAmount).toBe(630_000);
+    // La base del porcentaje es productos − abonos (500.000), no incluye el interés manual.
+    expect(summary.interestNote).toMatch(/saldo después de abonos \(\$\s?500\.000\)/);
+  });
+
+  it('solo interés manual: sin porcentaje la nota no inventa interés', () => {
+    const noRate = { ...settings, interest_rate_monthly_pct: 0 };
+    const calc = calculateCredit({
+      productsSubtotal: 900_000,
+      downPayment: 0,
+      installmentsCount: 3,
+      frequency: 'mensual',
+      settings: noRate,
+      manualInterest: 90_000,
+    });
+    const summary = buildNegocioCreditSummary({ calc, settings: noRate, schedule: [], frequency: 'mensual' });
+    expect(summary.percentInterestAmount).toBe(0);
+    expect(summary.manualInterestAmount).toBe(90_000);
+    expect(summary.totalCredit).toBe(990_000);
+    expect(summary.plan?.installmentAmount).toBe(330_000);
+  });
 });

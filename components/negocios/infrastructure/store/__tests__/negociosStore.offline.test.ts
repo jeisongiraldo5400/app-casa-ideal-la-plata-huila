@@ -160,6 +160,64 @@ describe('negociosStore.createAndActivate · sin señal', () => {
     expect(payload.lane).toBe('customer:c1');
   });
 
+  it('el negocio encolado lleva el interés manual y el total con interés', async () => {
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      manual_interest_amount: 150000,
+      down_payment_schedule: [{ amount: 300000, due_date: '2026-09-23' }],
+    });
+
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(payload.negocio).toMatchObject({
+      products_subtotal: 1200000,
+      manual_interest_amount: 150000,
+      interest_amount: 150000,
+      total_credit: 1350000,
+      down_payment: 300000,
+      financed_amount: 1050000,
+      installment_amount: 350000,
+    });
+    // El negocio pendiente se pinta con el total que incluye el interés.
+    expect(payload.local.totalCredit).toBe(1350000);
+  });
+
+  it('sin interés el payload lleva manual_interest_amount en 0 (la app nueva siempre lo envía)', async () => {
+    await useNegociosStore.getState().createAndActivate(baseInput);
+
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(payload.negocio.manual_interest_amount).toBe(0);
+    expect(payload.negocio.total_credit).toBe(1200000);
+  });
+
+  it('los abonos pueden llegar al total con interés, pero no superarlo', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({
+        ...baseInput,
+        manual_interest_amount: 100000,
+        down_payment_schedule: [{ amount: 1400000, due_date: '2026-09-23' }],
+        installments_count: 0,
+        first_due_date: null,
+      })
+    ).rejects.toThrow('Los abonos iniciales no pueden superar el valor total (productos + interés)');
+
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      manual_interest_amount: 100000,
+      down_payment_schedule: [{ amount: 1300000, due_date: '2026-09-23' }],
+      installments_count: 0,
+      first_due_date: null,
+    });
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(payload.negocio).toMatchObject({ total_credit: 1300000, financed_amount: 0, installments_count: 0 });
+  });
+
+  it('rechaza un interés negativo con el mismo mensaje del servidor', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({ ...baseInput, manual_interest_amount: -1 })
+    ).rejects.toThrow('El interés no puede ser negativo');
+    expect(enqueueNegocioCreateOffline).not.toHaveBeenCalled();
+  });
+
   it('sin configuración descargada lo dice en vez de fallar con un error técnico', async () => {
     (fetchCreditSettingsFromLocal as jest.Mock).mockResolvedValue(null);
 

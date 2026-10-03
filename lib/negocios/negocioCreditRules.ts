@@ -8,7 +8,7 @@
  * - El cliente puede pactar varios abonos iniciales con fechas distintas.
  *   `negocios.down_payment` es la suma y `down_payment_date` la primera fecha;
  *   el detalle vive en `negocios.down_payment_schedule`.
- * - Si los abonos cubren el valor de los productos el negocio no lleva cuotas
+ * - Si los abonos cubren el valor total (productos + interés manual) el negocio no lleva cuotas
  *   (`installments_count = 0`, sin fecha de primera cuota).
  * - Con saldo por financiar el vendedor define libremente el número de cuotas
  *   (entero mayor a 0, sin tope: `20260802150000_seller_defined_negocio_installments`).
@@ -164,11 +164,12 @@ function possessiveLabel(label: string): string {
 /**
  * Mensaje de error del cronograma de abonos iniciales, o `null` si es válido.
  * Un cronograma vacío es válido (negocio sin cuota inicial).
+ * `baseTotal` es el valor total del negocio: productos + interés manual.
  */
 export function downPaymentScheduleError(
   schedule: DownPaymentEntry[],
   dealDate: string,
-  productsSubtotal: number
+  baseTotal: number
 ): string | null {
   const seenDates = new Set<string>();
   const labels = downPaymentLabels(schedule);
@@ -192,30 +193,34 @@ export function downPaymentScheduleError(
     seenDates.add(entry.due_date);
     total += amount;
   }
-  if (Number.isFinite(productsSubtotal) && total > productsSubtotal + MONEY_EPSILON) {
-    return 'Los abonos iniciales no pueden superar el valor de los productos';
+  if (Number.isFinite(baseTotal) && total > baseTotal + MONEY_EPSILON) {
+    return 'Los abonos iniciales no pueden superar el valor total (productos + interés)';
   }
   return null;
 }
 
-/** Saldo que queda por financiar después de los abonos iniciales (nunca negativo). */
+/**
+ * Saldo que queda por financiar después de los abonos iniciales (nunca
+ * negativo). `baseTotal` = productos + interés manual.
+ */
 export function financedAfterDownPayments(
-  productsSubtotal: number,
+  baseTotal: number,
   schedule: DownPaymentEntry[]
 ): number {
-  const subtotal = Number.isFinite(productsSubtotal) ? Math.max(0, productsSubtotal) : 0;
-  return Math.max(0, subtotal - downPaymentScheduleTotal(schedule));
+  const base = Number.isFinite(baseTotal) ? Math.max(0, baseTotal) : 0;
+  return Math.max(0, base - downPaymentScheduleTotal(schedule));
 }
 
 /**
- * `true` cuando los abonos no cubren el valor de los productos y por tanto el
- * negocio necesita plan de cuotas (número de cuotas y fecha de la primera).
+ * `true` cuando los abonos no cubren el valor total (productos + interés
+ * manual) y por tanto el negocio necesita plan de cuotas (número de cuotas y
+ * fecha de la primera).
  */
 export function requiresInstallmentPlan(
-  productsSubtotal: number,
+  baseTotal: number,
   schedule: DownPaymentEntry[]
 ): boolean {
-  return financedAfterDownPayments(productsSubtotal, schedule) > MONEY_EPSILON;
+  return financedAfterDownPayments(baseTotal, schedule) > MONEY_EPSILON;
 }
 
 /** Mensaje de error si el número de cuotas no es un entero positivo, o `null`. */
@@ -253,7 +258,7 @@ export function installmentPlanError(
     return null;
   }
   if (installmentsCount !== 0) {
-    return 'Los abonos iniciales cubren el valor de los productos: el negocio no lleva cuotas';
+    return 'Los abonos iniciales cubren el valor total: el negocio no lleva cuotas';
   }
   return null;
 }

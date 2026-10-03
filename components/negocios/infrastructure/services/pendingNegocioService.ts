@@ -104,6 +104,14 @@ export async function loadLocalNegocioDetail(negocioId: string): Promise<LocalNe
         preview.negocioFields.products_subtotal != null
           ? Number(preview.negocioFields.products_subtotal)
           : local.negocio.products_subtotal,
+      // Interés del comando encolado (incluye el manual); si no, el derivado.
+      interest_amount:
+        preview.negocioFields.interest_amount != null
+          ? Number(preview.negocioFields.interest_amount)
+          : local.negocio.interest_amount,
+      ...(preview.negocioFields.manual_interest_amount != null
+        ? { manual_interest_amount: Number(preview.negocioFields.manual_interest_amount) }
+        : {}),
     },
     items: items as LocalDetail['items'],
     cuotas: local.cuotas.length ? local.cuotas : (preview.cuotas as LocalDetail['cuotas']),

@@ -144,6 +144,7 @@ export function buildPendingNegocioPreview(input: {
     negocioFields: {
       ...pick('products_subtotal'),
       ...pick('interest_amount'),
+      ...pick('manual_interest_amount'),
       ...pick('down_payment'),
       ...pick('down_payment_date'),
       ...pick('down_payment_schedule'),

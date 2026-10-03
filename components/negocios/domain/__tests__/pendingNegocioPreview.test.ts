@@ -3,6 +3,8 @@ import {
   buildPendingNegocioPreview,
   pendingNegocioTitle,
 } from '../pendingNegocioPreview';
+import { calculateCredit } from '@/lib/creditCalculator';
+import { buildProntoPagoSummary } from '@/lib/negocios/prontoPago';
 
 describe('addFrequency', () => {
   it('suma meses recortando al fin de mes, como interval de Postgres', () => {
@@ -74,5 +76,49 @@ describe('pendingNegocioTitle', () => {
   it('dice que aún no tiene número', () => {
     expect(pendingNegocioTitle({ state: 'pending', reason: null })).toBe('Pendiente de enviar · sin número aún');
     expect(pendingNegocioTitle({ state: 'rejected', reason: 'x' })).toBe('No se pudo enviar · sin número');
+  });
+});
+
+describe('negocio pendiente con interés manual', () => {
+  // 1.000.000 en productos + 200.000 de interés; 300.000 de cuota inicial y
+  // 3 cuotas sobre el resto (900.000).
+  const calc = calculateCredit({
+    productsSubtotal: 1_000_000,
+    downPayment: 300_000,
+    installmentsCount: 3,
+    frequency: 'mensual',
+    settings: { formula_type: 'financed_balance', interest_rate_monthly_pct: 0, rounding_unit: 1000, money_decimal_places: 0 },
+    manualInterest: 200_000,
+  });
+  const negocio = {
+    products_subtotal: calc.productsSubtotal,
+    interest_amount: calc.interestAmount,
+    manual_interest_amount: calc.manualInterestAmount,
+    total_credit: calc.totalCredit,
+    down_payment: calc.downPayment,
+    down_payment_schedule: [{ amount: 300_000, due_date: '2026-10-02' }],
+    financed_amount: calc.financedAmount,
+    installments_count: calc.installmentsCount,
+    installment_amount: calc.installmentAmount,
+    frequency: 'mensual',
+    first_due_date: '2026-11-02',
+  };
+  const preview = buildPendingNegocioPreview({ negocioId: 'n1', negocio, items: [], productNames: new Map() });
+
+  it('conserva el interés manual y el interés total del comando encolado', () => {
+    expect(preview.negocioFields).toMatchObject({
+      products_subtotal: 1_000_000,
+      interest_amount: 200_000,
+      manual_interest_amount: 200_000,
+    });
+  });
+
+  it('las cuotas suman el total con interés, y el pronto pago parte de ese total', () => {
+    const sum = preview.cuotas.reduce((total, cuota) => total + Number(cuota.amount), 0);
+    expect(sum).toBe(1_200_000);
+    expect(preview.cuotas.map((c) => c.amount)).toEqual([300_000, 300_000, 300_000, 300_000]);
+    // El pendiente que liquida el pronto pago es el de las cuotas (incluye el
+    // interés), nunca el valor de los productos.
+    expect(buildProntoPagoSummary(preview.cuotas).pendingTotal).toBe(1_200_000);
   });
 });

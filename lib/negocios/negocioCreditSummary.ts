@@ -32,7 +32,13 @@ export interface CreditSummaryPlan {
 
 export interface CreditSummary {
   productsSubtotal: number;
+  /** Interés total (porcentaje + manual) = totalCredit − productsSubtotal. */
   interestAmount: number;
+  /** Interés calculado con el porcentaje configurado (sin el manual). */
+  percentInterestAmount: number;
+  /** Interés manual en pesos pactado con el cliente. */
+  manualInterestAmount: number;
+  /** Explica el interés por porcentaje. */
   interestNote: string;
   totalCredit: number;
   downPayments: CreditSummaryDownPayment[];
@@ -90,8 +96,11 @@ export function buildNegocioCreditSummary({
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const downPaymentTotal = downPaymentScheduleTotal(schedule);
 
+  const manualInterestAmount = Math.max(0, Number(calc.manualInterestAmount) || 0);
+  const percentInterestAmount = Math.max(0, calc.interestAmount - manualInterestAmount);
+
   let interestNote: string;
-  if (n === 0 || calc.interestAmount <= 0) {
+  if (n === 0 || percentInterestAmount <= 0) {
     interestNote = rate > 0 && n === 0
       ? 'Sin interés: no queda saldo por financiar'
       : rate > 0
@@ -101,7 +110,7 @@ export function buildNegocioCreditSummary({
     interestNote = `${rate}% mensual sobre el valor de los productos durante ${formatMonths(financedMonths)}`;
   } else if (settings.formula_type === 'financed_balance') {
     interestNote = `${rate}% mensual sobre el saldo después de abonos (${money(
-      Math.max(0, calc.productsSubtotal - calc.downPayment)
+      Math.max(0, calc.productsSubtotal - Math.min(calc.downPayment, calc.productsSubtotal))
     )}) durante ${formatMonths(financedMonths)}`;
   } else {
     interestNote = 'El valor de los productos ya incluye el interés';
@@ -131,6 +140,8 @@ export function buildNegocioCreditSummary({
   return {
     productsSubtotal: calc.productsSubtotal,
     interestAmount: calc.interestAmount,
+    percentInterestAmount,
+    manualInterestAmount,
     interestNote,
     totalCredit: calc.totalCredit,
     downPayments,

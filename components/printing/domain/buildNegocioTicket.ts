@@ -102,11 +102,14 @@ export function buildNegocioTicket(data: NegocioTicketData): TicketLine[] {
 
   lines.push(
     { type: 'separator' },
+    // Subtotal → Interés → Total; el interés sale solo cuando lo hay.
     { type: 'text', text: padRow('Subtotal', formatTicketMoney(data.productsSubtotal)) },
-    { type: 'text', text: padRow('Interes', formatTicketMoney(data.interestAmount)) },
+    ...(Number(data.interestAmount) > 0
+      ? [{ type: 'text' as const, text: padRow('Interes', formatTicketMoney(data.interestAmount)) }]
+      : []),
+    { type: 'text', text: padRow('Total credito', formatTicketMoney(data.totalCredit)), bold: true },
     ...downPaymentLines,
     { type: 'text', text: padRow('Financiado', formatTicketMoney(data.financedAmount)), bold: true },
-    { type: 'text', text: padRow('Total credito', formatTicketMoney(data.totalCredit)), bold: true },
     ...textLines(
       data.installmentsCount > 0
         ? `${data.installmentsCount} cuotas ${frequencyLabel(data.frequency)} de ${formatTicketMoney(data.installmentAmount)}`

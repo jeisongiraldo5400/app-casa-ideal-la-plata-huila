@@ -92,9 +92,14 @@ interface NegociosState {
     assign_customer_seller?: boolean;
     /** Vendedor con el que se pinta el negocio pendiente sin señal (dueño del cliente). */
     local_seller_id?: string | null;
+    /**
+     * Interés manual en pesos (`negocios.manual_interest_amount`), >= 0. Se
+     * suma al valor de los productos; abonos, cuotas y saldo parten del total.
+     */
+    manual_interest_amount?: number;
     /** Abonos iniciales pactados (vacío = sin cuota inicial). */
     down_payment_schedule: DownPaymentEntry[];
-    /** 0 cuando los abonos iniciales cubren el valor de los productos. */
+    /** 0 cuando los abonos iniciales cubren el valor total (productos + interés). */
     installments_count: number;
     frequency: CreditFrequency;
     /** Obligatoria solo cuando hay plan de cuotas. */
@@ -335,11 +340,16 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       (s, i) => s + i.unit_price * i.quantity,
       0
     );
+    const manualInterestAmount = Number(input.manual_interest_amount ?? 0);
+    if (!Number.isFinite(manualInterestAmount) || manualInterestAmount < 0) {
+      throw new Error('El interés no puede ser negativo');
+    }
+    const baseTotal = productsSubtotal + manualInterestAmount;
     const schedule = sortDownPaymentSchedule(input.down_payment_schedule);
-    const scheduleError = downPaymentScheduleError(schedule, input.deal_date, productsSubtotal);
+    const scheduleError = downPaymentScheduleError(schedule, input.deal_date, baseTotal);
     if (scheduleError) throw new Error(scheduleError);
     const planError = installmentPlanError(
-      financedAfterDownPayments(productsSubtotal, schedule),
+      financedAfterDownPayments(baseTotal, schedule),
       input.installments_count,
       input.first_due_date,
       input.deal_date
@@ -367,6 +377,7 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       installmentsCount: input.installments_count,
       frequency: input.frequency,
       settings,
+      manualInterest: manualInterestAmount,
     });
 
     const requestFingerprint = createRequestFingerprint(input);
@@ -410,6 +421,8 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       target_remission_id: input.target_remission_id || null,
       products_subtotal: calc.productsSubtotal,
       interest_amount: calc.interestAmount,
+      // Siempre se envía (también 0): create_negocio trata su ausencia como 0.
+      manual_interest_amount: calc.manualInterestAmount,
       total_credit: calc.totalCredit,
       down_payment: calc.downPayment,
       down_payment_date: schedule[0]?.due_date ?? null,

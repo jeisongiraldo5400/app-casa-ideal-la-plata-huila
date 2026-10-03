@@ -114,6 +114,11 @@ export type LocalNegocioDetail = {
     created_by_name: string | null;
     /** Suma de los subtotales locales, para la tarjeta de productos. */
     products_subtotal: number;
+    /**
+     * Interés derivado (total − productos): el esquema local no lo guarda. 0
+     * sin ítems descargados (no se puede deducir).
+     */
+    interest_amount: number;
     delivery_order_id: null;
     customer_signature_url: null;
     guarantor_signature_url: null;
@@ -251,6 +256,7 @@ export function mapNegocioDetailFromLocal(input: {
     .filter((pago) => pago.negocioId === input.negocio.id)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
   const relatedItems = (input.items || []).filter((item) => item.negocioId === input.negocio.id);
+  const localProductsSubtotal = relatedItems.reduce((sum, item) => sum + item.subtotal, 0);
 
   return {
     negocio: {
@@ -270,7 +276,10 @@ export function mapNegocioDetailFromLocal(input: {
       gestor_cobro_name: input.negocio.gestorCobroName ?? null,
       created_by: input.negocio.createdBy ?? null,
       created_by_name: input.negocio.createdByName ?? null,
-      products_subtotal: relatedItems.reduce((sum, item) => sum + item.subtotal, 0),
+      products_subtotal: localProductsSubtotal,
+      interest_amount: relatedItems.length
+        ? Math.max(0, Math.round((Number(input.negocio.totalCredit) - localProductsSubtotal) * 100) / 100 || 0)
+        : 0,
       delivery_order_id: null,
       customer_signature_url: null,
       guarantor_signature_url: null,

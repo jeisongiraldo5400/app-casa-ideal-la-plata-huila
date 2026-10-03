@@ -90,6 +90,25 @@ describe('downPaymentScheduleError', () => {
   });
 });
 
+describe('base total con interés manual', () => {
+  const deal = '2026-09-03';
+  it('los abonos se comparan con productos + interés', () => {
+    const abonos = [{ amount: 1_050_000, due_date: deal }];
+    expect(downPaymentScheduleError(abonos, deal, 1_000_000)).toBe(
+      'Los abonos iniciales no pueden superar el valor total (productos + interés)'
+    );
+    expect(downPaymentScheduleError(abonos, deal, 1_000_000 + 100_000)).toBeNull();
+  });
+
+  it('el saldo y el plan de cuotas parten del total', () => {
+    const abonos = [{ amount: 1_000_000, due_date: deal }];
+    expect(financedAfterDownPayments(1_000_000, abonos)).toBe(0);
+    expect(requiresInstallmentPlan(1_000_000, abonos)).toBe(false);
+    expect(financedAfterDownPayments(1_100_000, abonos)).toBe(100_000);
+    expect(requiresInstallmentPlan(1_100_000, abonos)).toBe(true);
+  });
+});
+
 describe('plan de cuotas', () => {
   const deal = '2026-09-03';
   const parcial = [

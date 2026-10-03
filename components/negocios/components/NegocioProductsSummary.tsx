@@ -19,19 +19,33 @@ export type NegocioProductSummaryItem = {
 type Props = {
   items: NegocioProductSummaryItem[];
   productsSubtotal?: number | null;
+  /** Valor total del negocio (productos + interés): con interés salen «Interés» y «Total». */
+  totalCredit?: number | null;
 };
+
+/**
+ * Interés del negocio = total − valor de los productos; 0 si no se conoce el
+ * total o los productos (p. ej. sin ítems descargados en el teléfono).
+ */
+export function negocioInterestAmount(totalCredit: number | null | undefined, productsSubtotal: number): number {
+  const total = Number(totalCredit);
+  if (totalCredit == null || !Number.isFinite(total) || !(productsSubtotal > 0)) return 0;
+  const interest = Math.round((total - productsSubtotal) * 100) / 100;
+  return interest > 0.009 ? interest : 0;
+}
 
 function itemLabel(item: NegocioProductSummaryItem) {
   return item.description?.trim() || item.product?.name?.trim() || item.product?.sku?.trim() || item.product_id;
 }
 
 /** Productos del negocio en solo lectura, con subtotal. */
-export function NegocioProductsSummary({ items, productsSubtotal }: Props) {
+export function NegocioProductsSummary({ items, productsSubtotal, totalCredit }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const computedSubtotal = items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
   const total =
     productsSubtotal != null && Number.isFinite(Number(productsSubtotal)) ? Number(productsSubtotal) : computedSubtotal;
+  const interest = negocioInterestAmount(totalCredit, total);
 
   return (
     <View style={styles.root}>
@@ -63,6 +77,18 @@ export function NegocioProductsSummary({ items, productsSubtotal }: Props) {
             <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>Subtotal productos</Text>
             <Text style={[styles.footerValue, { color: colors.text.primary }]}>{formatCOP(total)}</Text>
           </View>
+          {interest > 0 && (
+            <>
+              <View style={[styles.footer, { backgroundColor: colors.surface.muted }]}>
+                <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>Interés</Text>
+                <Text style={[styles.footerValue, { color: colors.text.primary }]}>{formatCOP(interest)}</Text>
+              </View>
+              <View style={[styles.footer, { backgroundColor: colors.surface.muted }]}>
+                <Text style={[styles.footerLabel, { color: colors.text.secondary }]}>Total</Text>
+                <Text style={[styles.footerValue, { color: colors.text.primary }]}>{formatCOP(Number(totalCredit))}</Text>
+              </View>
+            </>
+          )}
         </View>
       )}
     </View>

@@ -22,11 +22,16 @@ export interface CreditCalcInput {
   installmentsCount: number;
   frequency?: CreditFrequency;
   settings: CreditSettingsInput;
+  /** Interés manual en pesos (`negocios.manual_interest_amount`), >= 0. Se suma al total sin redondear. */
+  manualInterest?: number;
 }
 
 export interface CreditCalcResult {
   productsSubtotal: number;
+  /** Interés total = totalCredit − productsSubtotal (incluye el interés manual). */
   interestAmount: number;
+  /** Interés manual en pesos que se sumó al total. */
+  manualInterestAmount: number;
   totalCredit: number;
   downPayment: number;
   financedAmount: number;
@@ -54,7 +59,9 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   const unit = Number(settings.rounding_unit) || 1;
   const decimalPlaces = Number(settings.money_decimal_places) || 0;
   const subtotal = Math.max(0, Number(productsSubtotal) || 0);
-  const initial = Math.min(Math.max(0, Number(downPayment) || 0), subtotal);
+  const manual = Math.max(0, Number(input.manualInterest) || 0);
+  // Los abonos iniciales pueden cubrir hasta el total (productos + interés manual).
+  const initial = Math.min(Math.max(0, Number(downPayment) || 0), subtotal + manual);
   const financedMonths = n * (frequency === "semanal" ? 7 / 30 : frequency === "quincenal" ? 0.5 : 1);
 
   let interestAmount = 0;
@@ -66,7 +73,9 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
       totalCredit = subtotal + interestAmount;
       break;
     case "financed_balance": {
-      const base = Math.max(0, subtotal - initial);
+      // La base del porcentaje sigue siendo el valor de los productos menos lo
+      // que de los abonos cae sobre ellos.
+      const base = Math.max(0, subtotal - Math.min(initial, subtotal));
       interestAmount = base * (rate / 100) * financedMonths;
       totalCredit = subtotal + interestAmount;
       break;
@@ -78,7 +87,8 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
       break;
   }
 
-  totalCredit = roundToUnit(totalCredit, unit, decimalPlaces);
+  // El interés manual se suma después del redondeo y no se redondea.
+  totalCredit = roundToUnit(totalCredit, unit, decimalPlaces) + manual;
   interestAmount = Math.max(0, totalCredit - subtotal);
   const financedAmount = Math.max(0, totalCredit - initial);
   // La cuota es exactamente saldo ÷ cuotas (a los decimales configurados);
@@ -89,6 +99,7 @@ export function calculateCredit(input: CreditCalcInput): CreditCalcResult {
   return {
     productsSubtotal: subtotal,
     interestAmount,
+    manualInterestAmount: manual,
     totalCredit,
     downPayment: initial,
     financedAmount,

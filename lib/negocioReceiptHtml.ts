@@ -42,6 +42,12 @@ export type NegocioReceiptData = {
    * valor no se imprime la sección: recibos de negocios sin productos cargados.
    */
   products?: NegocioReceiptProduct[] | null;
+  /**
+   * Valor total del negocio (`negocios.total_credit` = productos + interés).
+   * Si supera el total de los productos, bajo «Total productos» salen las
+   * líneas «Interés» y «Total». Sin valor el recibo queda como antes.
+   */
+  totalCredit?: number | null;
   /** Número de copia (`register_negocio_print`); desde la n.º 2 sale «COPIA N.º X». */
   copy?: PrintCopyInfo | null;
 };
@@ -121,6 +127,20 @@ export function receiptProductsHavePrices(products: readonly NegocioReceiptProdu
 /** Total de los productos: suma de los subtotales (como «Valor artículos» del contrato). */
 export function receiptProductsTotal(products: readonly NegocioReceiptProduct[]) {
   return Math.round(products.reduce((sum, product) => sum + (Number(product.subtotal) || 0), 0) * 100) / 100;
+}
+
+/**
+ * Interés del negocio para el recibo: total del negocio menos el total de los
+ * productos. 0 si no se conoce el total o no hay interés (no se imprime).
+ */
+export function receiptInterestAmount(
+  data: Pick<NegocioReceiptData, 'totalCredit'>,
+  products: readonly NegocioReceiptProduct[]
+) {
+  const total = Number(data.totalCredit);
+  if (data.totalCredit == null || !Number.isFinite(total)) return 0;
+  const interest = Math.round((total - receiptProductsTotal(products)) * 100) / 100;
+  return interest > 0.009 ? interest : 0;
 }
 
 /** Leyenda del recibo de un pago que todavía no confirmó el servidor. */
@@ -275,7 +295,7 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
  * reparte en 2 o 3 columnas para no pasar de una hoja. Sin productos no sale
  * nada.
  */
-function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products'>) {
+function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products' | 'totalCredit'>) {
   const list = receiptProducts(data);
   if (list.length === 0) return '';
   const withPrices = receiptProductsHavePrices(list);
@@ -288,8 +308,15 @@ function receiptProductsHtml(data: Pick<NegocioReceiptData, 'products'>) {
         ? `<span class="pp">${esc(formatCOP(Number(product.unitPrice)))} c/u</span><span class="ps">${esc(formatCOP(Number(product.subtotal)))}</span>`
         : ''
     }</li>`;
+  // Con interés: «Interés» y «Total» debajo, con la misma clase (RECEIPT_CSS
+  // no cambia y debe seguir idéntico al del web).
+  const interest = withPrices ? receiptInterestAmount(data, list) : 0;
   const total = withPrices
-    ? `<div class="products-total"><span>Total productos</span><strong>${esc(formatCOP(receiptProductsTotal(list)))}</strong></div>`
+    ? `<div class="products-total"><span>Total productos</span><strong>${esc(formatCOP(receiptProductsTotal(list)))}</strong></div>${
+        interest > 0
+          ? `<div class="products-total"><span>Interés</span><strong>${esc(formatCOP(interest))}</strong></div><div class="products-total"><span>Total</span><strong>${esc(formatCOP(Number(data.totalCredit)))}</strong></div>`
+          : ''
+      }`
     : '';
   return `<section class="products${dense ? ' is-dense' : compact ? ' is-compact' : ''}"><span class="products-title">Productos (${list.length})</span><ul class="products-list">${list.map(line).join('')}</ul>${total}</section>
 `;
