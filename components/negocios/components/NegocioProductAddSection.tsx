@@ -26,6 +26,10 @@ import {
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
 import { errorMessage } from '@/lib/errorMessage';
+import {
+  allowedSaleWarehouseIds,
+  type SaleWarehouseAccess,
+} from '@/components/negocios/domain/saleWarehouses';
 
 export type { NegocioProduct } from '@/components/negocios/infrastructure/services/negociosProductsService';
 
@@ -45,6 +49,11 @@ type Props = {
   onStockLoaded: (productId: string, stock: ProductWarehouseStock[]) => void;
   /** Aviso cuando la búsqueda terminó sin resultados (sin señal: no está en el teléfono). */
   emptyMessage?: string | null;
+  /**
+   * Bodegas de venta del usuario (3.5.0). Restringido, el stock y el escáner
+   * solo ven las bodegas permitidas. Sin él no se restringe (admin).
+   */
+  saleAccess?: SaleWarehouseAccess | null;
   colors: ThemeColors;
 };
 
@@ -56,8 +65,10 @@ export function NegocioProductAddSection({
   onAdd,
   onStockLoaded,
   emptyMessage = null,
+  saleAccess = null,
   colors,
 }: Props) {
+  const restrictedToSaleWarehouses = allowedSaleWarehouseIds(saleAccess) !== null;
   const [selectedProduct, setSelectedProduct] = useState<NegocioProduct | null>(null);
   const [productStock, setProductStock] = useState<ProductWarehouseStock[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
@@ -88,7 +99,7 @@ export function NegocioProductAddSection({
     let cancelled = false;
     setLoadingStock(true);
 
-    fetchProductWarehouseStock(selectedProduct.id)
+    fetchProductWarehouseStock(selectedProduct.id, saleAccess)
       .then((rows) => {
         if (cancelled) return;
         setProductStock(rows);
@@ -108,7 +119,7 @@ export function NegocioProductAddSection({
     return () => {
       cancelled = true;
     };
-  }, [selectedProduct, onStockLoaded]);
+  }, [selectedProduct, onStockLoaded, saleAccess]);
 
   const availability = useMemo(() => {
     if (!selectedProduct || !warehouseId) {
@@ -169,11 +180,13 @@ export function NegocioProductAddSection({
 
   const handleBarcodeScan = async (barcode: string) => {
     try {
-      const product = await findActiveProductByBarcode(barcode);
+      const product = await findActiveProductByBarcode(barcode, saleAccess);
       if (!product) {
         Alert.alert(
           'Producto no encontrado',
-          `No existe un producto activo con el código ${barcode}.`,
+          restrictedToSaleWarehouses
+            ? `No hay un producto con el código ${barcode} con existencias en tus bodegas de venta.`
+            : `No existe un producto activo con el código ${barcode}.`,
           [
             { text: 'Escanear de nuevo' },
             { text: 'Buscar manualmente', onPress: () => closeScanner() },
@@ -296,7 +309,11 @@ export function NegocioProductAddSection({
               <Text style={{ color: colors.text.secondary }}>Consultando stock…</Text>
             </View>
           ) : !hasStock ? (
-            <Text style={{ color: 'crimson' }}>Sin stock en ninguna bodega</Text>
+            <Text style={{ color: 'crimson' }}>
+              {restrictedToSaleWarehouses
+                ? 'Sin existencias en tus bodegas de venta'
+                : 'Sin stock en ninguna bodega'}
+            </Text>
           ) : (
             <>
               <Text style={{ color: colors.text.secondary, marginTop: 4 }}>Bodega</Text>

@@ -6,6 +6,12 @@ import {
   stockForProductFromLocal,
   stockForProductsFromLocal,
 } from '@/lib/offline/repositories/catalogRepository';
+import {
+  filterStockMap,
+  filterStockRows,
+  hasNoSaleWarehouses,
+  type SaleWarehouseAccess,
+} from '@/components/negocios/domain/saleWarehouses';
 
 export type ProductWarehouseStock = {
   warehouse_id: string;
@@ -47,9 +53,16 @@ export function aggregateNegocioStockItems(items: NegocioStockItem[]): NegocioSt
   return [...grouped.values()];
 }
 
+/**
+ * Existencias de un producto por bodega. Con `access` restringido (bodegas de
+ * venta, solo origen «desde bodega») llegan únicamente las bodegas permitidas:
+ * así el autoseleccionado y los chips nunca ofrecen otra.
+ */
 export async function fetchProductWarehouseStock(
-  productId: string
+  productId: string,
+  access?: SaleWarehouseAccess | null
 ): Promise<ProductWarehouseStock[]> {
+  if (hasNoSaleWarehouses(access)) return [];
   try {
     const { data, error } = await supabase
       .from('warehouse_stock')
@@ -62,17 +75,20 @@ export async function fetchProductWarehouseStock(
       throw new Error(error.message);
     }
 
-    return (data || []).map((row: any) => ({
-      warehouse_id: row.warehouse_id,
-      warehouse_name: row.warehouse?.name ?? 'Bodega',
-      quantity: Number(row.quantity) || 0,
-    }));
+    return filterStockRows(
+      (data || []).map((row: any) => ({
+        warehouse_id: row.warehouse_id,
+        warehouse_name: row.warehouse?.name ?? 'Bodega',
+        quantity: Number(row.quantity) || 0,
+      })),
+      access
+    );
   } catch (error) {
     // Sin señal se usan las existencias de la última descarga. La pantalla lo
     // advierte: puede que en la bodega ya no quede lo que aquí se ve.
     if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
     if (!(await hasLocalCatalog())) throw error;
-    return stockForProductFromLocal(productId);
+    return filterStockRows(await stockForProductFromLocal(productId), access);
   }
 }
 
@@ -81,10 +97,15 @@ export async function fetchProductWarehouseStock(
  * significa «esto es lo de la última descarga», y la pantalla lo muestra.
  */
 export async function fetchStockForProductsWithSource(
-  productIds: string[]
+  productIds: string[],
+  access?: SaleWarehouseAccess | null
 ): Promise<{ stock: Record<string, ProductWarehouseStock[]>; fromLocal: boolean }> {
   const uniqueIds = [...new Set(productIds.filter(Boolean))];
   if (!uniqueIds.length) return { stock: {}, fromLocal: false };
+  // Sin bodegas de venta: cada producto queda sin existencias (sin consultar).
+  if (hasNoSaleWarehouses(access)) {
+    return { stock: Object.fromEntries(uniqueIds.map((id) => [id, []])), fromLocal: false };
+  }
 
   try {
     const entries = await Promise.all(
@@ -104,18 +125,22 @@ export async function fetchStockForProductsWithSource(
         return [productId, rows] as const;
       })
     );
-    return { stock: Object.fromEntries(entries), fromLocal: false };
+    return { stock: filterStockMap(Object.fromEntries(entries), access), fromLocal: false };
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
     if (!(await hasLocalCatalog())) throw error;
-    return { stock: await stockForProductsFromLocal(uniqueIds), fromLocal: true };
+    return {
+      stock: filterStockMap(await stockForProductsFromLocal(uniqueIds), access),
+      fromLocal: true,
+    };
   }
 }
 
 export async function fetchStockForProducts(
-  productIds: string[]
+  productIds: string[],
+  access?: SaleWarehouseAccess | null
 ): Promise<Record<string, ProductWarehouseStock[]>> {
-  return (await fetchStockForProductsWithSource(productIds)).stock;
+  return (await fetchStockForProductsWithSource(productIds, access)).stock;
 }
 
 export function reservedQtyInItems(

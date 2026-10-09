@@ -63,6 +63,40 @@ export async function searchCatalogProductsFromLocal(term: string, limit = 20) {
   return filterCatalogProducts(await allProducts(), term, limit);
 }
 
+/**
+ * Productos con existencias (> 0) en alguna de esas bodegas, según la última
+ * descarga. Bodegas de venta (3.5.0): el vendedor solo ve lo de las suyas.
+ */
+export async function catalogProductIdsWithStockInFromLocal(
+  warehouseIds: readonly string[]
+): Promise<Set<string>> {
+  const ids = [...new Set(warehouseIds.filter(Boolean))];
+  if (!canUseLocalCatalog() || !ids.length) return new Set();
+  const rows = await getDatabase()
+    .get<CatalogWarehouseStock>('catalog_warehouse_stock')
+    .query(Q.where('warehouse_id', Q.oneOf(ids)), Q.where('quantity', Q.gt(0)))
+    .fetch();
+  return new Set(rows.map((row) => row.productId));
+}
+
+/** Búsqueda del catálogo local limitada a productos con stock en esas bodegas. */
+export async function searchCatalogProductsInWarehousesFromLocal(
+  term: string,
+  warehouseIds: readonly string[],
+  limit = 20
+) {
+  if (!canUseLocalCatalog() || !warehouseIds.length) return [];
+  const [products, withStock] = await Promise.all([
+    allProducts(),
+    catalogProductIdsWithStockInFromLocal(warehouseIds),
+  ]);
+  return filterCatalogProducts(
+    products.filter((product) => withStock.has(product.id)),
+    term,
+    limit
+  );
+}
+
 export async function findCatalogProductByBarcodeFromLocal(barcode: string) {
   if (!canUseLocalCatalog()) return null;
   const normalized = barcode.trim();

@@ -174,3 +174,55 @@ describe('negociosStore.createAndActivate — origen y destino', () => {
     expect(first.p_negocio_id).not.toBe(second.p_negocio_id);
   });
 });
+
+describe('negociosStore.createAndActivate — bodegas de venta', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFrom();
+    useSyncStore.setState({ userId: 'u1', online: true });
+    (supabase.rpc as jest.Mock).mockResolvedValue({ data: 'n1', error: null });
+    (validateNegocioItemsStock as jest.Mock).mockResolvedValue({ ok: true });
+    useNegociosStore.setState({ creditSettings: null });
+  });
+
+  it('rechaza una línea de una bodega no permitida, nombrando el producto, sin llamar al servidor', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({
+        ...baseInput,
+        sale_access: { restricted: true, allowedIds: ['w2'] },
+      })
+    ).rejects.toThrow(/«Base».*bodegas de venta/);
+    expect(supabase.rpc).not.toHaveBeenCalledWith('create_negocio', expect.anything());
+  });
+
+  it('sin bodegas asignadas no deja guardar desde bodega', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({
+        ...baseInput,
+        sale_access: { restricted: true, allowedIds: [] },
+      })
+    ).rejects.toThrow('No tienes bodegas asignadas para vender');
+  });
+
+  it('con la bodega permitida crea igual y el acceso NO viaja en p_negocio', async () => {
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      sale_access: { restricted: true, allowedIds: ['w1'] },
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('create_negocio', expect.anything());
+    const payload = rpcNegocioPayload();
+    expect(payload).not.toHaveProperty('sale_access');
+    const args = (supabase.rpc as jest.Mock).mock.calls[0][1];
+    expect(JSON.stringify(args)).not.toContain('allowedIds');
+  });
+
+  it('con origen en una orden no aplica: la bodega la trae la orden', async () => {
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      remission_id: 'rem-1',
+      source_delivery_order_id: 'rem-1',
+      sale_access: { restricted: true, allowedIds: [] },
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('create_negocio', expect.anything());
+  });
+});

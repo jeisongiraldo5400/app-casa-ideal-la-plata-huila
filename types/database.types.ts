@@ -5466,6 +5466,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_my_sale_warehouses: {
+        Args: never
+        Returns: Json
+      }
       get_my_transfer_tasks: {
         Args: never
         Returns: Json

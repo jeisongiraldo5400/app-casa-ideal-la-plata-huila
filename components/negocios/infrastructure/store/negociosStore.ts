@@ -52,6 +52,7 @@ import { createIdempotencyKey } from '@/lib/idempotency';
 import { negocioSkipsWarehouseStock } from '../services/negociosDeliveryOrdersService';
 import type { Json } from '@/types/database.types';
 import { NEGOCIO_SELLER_RULE } from '../../domain/negocioSellerOwner';
+import { saleWarehouseItemsError, type SaleWarehouseAccess } from '../../domain/saleWarehouses';
 
 export interface NegocioItem {
   product_id: string;
@@ -80,6 +81,12 @@ interface NegociosState {
      */
     target_remission_id?: string | null;
     items: NegocioItem[];
+    /**
+     * Bodegas de venta del usuario (3.5.0), solo con origen «desde bodega».
+     * Es una guarda local: NO viaja en `p_negocio` (el payload se hashea
+     * contra la clave de idempotencia y no cambia de forma).
+     */
+    sale_access?: SaleWarehouseAccess | null;
     /**
      * Vendedor enviado al servidor; por defecto el usuario autenticado. El
      * servidor lo sustituye por el dueño del cliente cuando lo tiene
@@ -318,6 +325,12 @@ export const useNegociosStore = create<NegociosState>((set, get) => ({
       throw new Error('Enviar en remisión solo aplica a negocios con origen «Sacar de bodegas»');
     }
     validateNegocioItemsInput(input.items);
+    // Con origen bodega, cada línea debe salir de una bodega de venta del
+    // usuario: antes de crear y también antes de encolar sin señal.
+    if (!negocioSkipsWarehouseStock(input)) {
+      const saleError = saleWarehouseItemsError(input.items, input.sale_access);
+      if (saleError) throw new Error(saleError);
+    }
     const signatureError = sellerSignatureRequiredError(
       input.customer_signature_data_url,
       input.seller_signature_data_url

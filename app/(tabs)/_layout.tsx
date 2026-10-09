@@ -4,6 +4,7 @@ import { CATALOGOS_HABILITADOS } from '@/constants/features';
 import { IconSize, Typography, getColors } from '@/constants/theme';
 import { useNavigateWithLoading } from '@/hooks/useNavigateWithLoading';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useSaleWarehousesBootstrap } from '@/hooks/useSaleWarehouses';
 import { Tabs } from 'expo-router';
 import { Platform, StyleSheet } from 'react-native';
 
@@ -32,6 +33,9 @@ export default function TabLayout() {
   // lo exigen (reportes, ruta de cobros, cartera…) siguen cerrándose solas
   // mientras `loading` sea true—, así que pintarlas antes no abre accesos.
   useUserRoles();
+  // Bodegas de venta (3.5.0): se cargan al entrar y quedan en caché para
+  // crear negocios sin señal.
+  useSaleWarehousesBootstrap();
 
   return (
     <Tabs

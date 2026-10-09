@@ -2,10 +2,16 @@ import { supabase } from '@/lib/supabase';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import {
   canUseLocalCatalog,
+  catalogProductIdsWithStockInFromLocal,
   findCatalogProductByBarcodeFromLocal,
   hasLocalCatalog,
   searchCatalogProductsFromLocal,
+  searchCatalogProductsInWarehousesFromLocal,
 } from '@/lib/offline/repositories/catalogRepository';
+import {
+  allowedSaleWarehouseIds,
+  type SaleWarehouseAccess,
+} from '@/components/negocios/domain/saleWarehouses';
 
 /** Sin red y sin catálogo bajado no hay nada que buscar: hay que decirlo. */
 export const SIN_CATALOGO_LOCAL =
@@ -69,51 +75,106 @@ function fromLocalProduct(row: {
   return { id: row.id, name: row.name, sku: row.sku || '', barcode: row.barcode || '' };
 }
 
-export async function searchProductsForNegocio(query: string): Promise<NegocioProduct[]> {
+/**
+ * Con bodegas de venta restringidas (3.5.0) solo se piden productos con
+ * existencias > 0 en las bodegas permitidas: el JOIN `!inner` deja fuera los
+ * demás. Una fila por producto (el stock viene anidado), igual se desduplica.
+ */
+const RESTRICTED_PRODUCT_FIELDS = `${PRODUCT_FIELDS}, warehouse_stock!inner(warehouse_id, quantity)`;
+
+function toNegocioProducts(rows: unknown[] | null): NegocioProduct[] {
+  const seen = new Set<string>();
+  const out: NegocioProduct[] = [];
+  for (const raw of rows || []) {
+    const row = raw as NegocioProduct;
+    if (!row?.id || seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push({ id: row.id, name: row.name, sku: row.sku, barcode: row.barcode });
+  }
+  return out;
+}
+
+/**
+ * Busca productos para el negocio. `access` solo se pasa con origen «desde
+ * bodega»: restringido, devuelve únicamente productos con stock en las bodegas
+ * de venta del usuario; sin ninguna, no consulta y devuelve vacío.
+ */
+export async function searchProductsForNegocio(
+  query: string,
+  access?: SaleWarehouseAccess | null
+): Promise<NegocioProduct[]> {
   const term = safeSearchTerm(query);
   if (!term) return [];
+  const allowedIds = allowedSaleWarehouseIds(access);
+  if (allowedIds && !allowedIds.length) return [];
 
   try {
-    const { data, error } = await supabase
+    let request = supabase
       .from('products')
-      .select(PRODUCT_FIELDS)
+      .select(allowedIds ? RESTRICTED_PRODUCT_FIELDS : PRODUCT_FIELDS)
       .is('deleted_at', null)
-      .eq('status', true)
+      .eq('status', true);
+    if (allowedIds) {
+      request = request
+        .in('warehouse_stock.warehouse_id', [...allowedIds])
+        .gt('warehouse_stock.quantity', 0);
+    }
+    const { data, error } = await request
       .or(`name.ilike.%${term}%,sku.ilike.%${term}%,barcode.ilike.%${term}%`)
       .order('name')
       .limit(20);
 
     if (error) throw new Error(`No fue posible buscar productos: ${error.message}`);
-    return (data || []) as NegocioProduct[];
+    return allowedIds ? toNegocioProducts(data) : ((data || []) as unknown as NegocioProduct[]);
   } catch (error) {
     // Sin señal se busca en el catálogo de la última descarga.
     if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
     if (!(await hasLocalCatalog())) throw new Error(SIN_CATALOGO_LOCAL);
-    const local = await searchCatalogProductsFromLocal(term, 20);
+    const local = allowedIds
+      ? await searchCatalogProductsInWarehousesFromLocal(term, allowedIds, 20)
+      : await searchCatalogProductsFromLocal(term, 20);
     return local.map(fromLocalProduct);
   }
 }
 
+/**
+ * Producto activo por código exacto. Con `access` restringido devuelve null si
+ * no tiene existencias en las bodegas de venta del usuario.
+ */
 export async function findActiveProductByBarcode(
-  barcode: string
+  barcode: string,
+  access?: SaleWarehouseAccess | null
 ): Promise<NegocioProduct | null> {
   const normalized = barcode.trim();
   if (!normalized) return null;
+  const allowedIds = allowedSaleWarehouseIds(access);
+  if (allowedIds && !allowedIds.length) return null;
 
   try {
-    const { data, error } = await supabase
+    let request = supabase
       .from('products')
-      .select(PRODUCT_FIELDS)
+      .select(allowedIds ? RESTRICTED_PRODUCT_FIELDS : PRODUCT_FIELDS)
       .eq('barcode', normalized)
       .is('deleted_at', null)
-      .eq('status', true)
-      .maybeSingle();
+      .eq('status', true);
+    if (allowedIds) {
+      request = request
+        .in('warehouse_stock.warehouse_id', [...allowedIds])
+        .gt('warehouse_stock.quantity', 0);
+    }
+    const { data, error } = await request.maybeSingle();
 
     if (error) throw new Error(`No fue posible buscar el código: ${error.message}`);
-    return (data as NegocioProduct | null) || null;
+    if (!data) return null;
+    return toNegocioProducts([data])[0] ?? null;
   } catch (error) {
     if (!isNetworkError(error) || !canUseLocalCatalog()) throw error;
     const local = await findCatalogProductByBarcodeFromLocal(normalized);
-    return local ? fromLocalProduct(local) : null;
+    if (!local) return null;
+    if (allowedIds) {
+      const withStock = await catalogProductIdsWithStockInFromLocal(allowedIds);
+      if (!withStock.has(local.id)) return null;
+    }
+    return fromLocalProduct(local);
   }
 }

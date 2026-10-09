@@ -192,3 +192,68 @@ describe('NegocioProductAddSection · producto que no está en el teléfono', ()
     expect(screen.getByText('Nevera')).toBeTruthy();
   });
 });
+
+describe('NegocioProductAddSection · bodegas de venta', () => {
+  const soloAndes = { restricted: true as const, allowedIds: ['warehouse-2'] };
+
+  function renderRestricted(onStockLoaded = jest.fn()) {
+    return render(
+      <NegocioProductAddSection
+        products={[product]}
+        productQuery="nev"
+        onProductQueryChange={jest.fn()}
+        items={[]}
+        onAdd={jest.fn()}
+        onStockLoaded={onStockLoaded}
+        saleAccess={soloAndes}
+        colors={colors}
+      />
+    );
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('pide el stock con el acceso y autoselecciona la bodega permitida', async () => {
+    // El servicio ya devuelve solo las bodegas permitidas.
+    (fetchProductWarehouseStock as jest.Mock).mockResolvedValue([
+      { warehouse_id: 'warehouse-2', warehouse_name: 'Andes', quantity: 2 },
+    ]);
+    const onStockLoaded = jest.fn();
+    const screen = renderRestricted(onStockLoaded);
+
+    fireEvent.press(screen.getByText('Nevera'));
+    await waitFor(() => expect(screen.getByText('Andes (2)')).toBeTruthy());
+
+    expect(fetchProductWarehouseStock).toHaveBeenCalledWith('product-1', soloAndes);
+    expect(onStockLoaded).toHaveBeenCalledWith('product-1', [
+      { warehouse_id: 'warehouse-2', warehouse_name: 'Andes', quantity: 2 },
+    ]);
+    expect(screen.queryByText(/Principal/)).toBeNull();
+  });
+
+  it('sin existencias en sus bodegas lo dice así', async () => {
+    (fetchProductWarehouseStock as jest.Mock).mockResolvedValue([]);
+    const screen = renderRestricted();
+
+    fireEvent.press(screen.getByText('Nevera'));
+    await waitFor(() =>
+      expect(screen.getByText('Sin existencias en tus bodegas de venta')).toBeTruthy()
+    );
+  });
+
+  it('el escáner busca con el acceso y explica que no está en sus bodegas', async () => {
+    (findActiveProductByBarcode as jest.Mock).mockResolvedValue(null);
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const screen = renderRestricted();
+
+    fireEvent.press(screen.getByLabelText('Escanear código de barras'));
+    await act(async () => fireEvent.press(screen.getByText('Simular escaneo')));
+
+    expect(findActiveProductByBarcode).toHaveBeenCalledWith('770123', soloAndes);
+    expect(alert).toHaveBeenCalledWith(
+      'Producto no encontrado',
+      expect.stringContaining('tus bodegas de venta'),
+      expect.any(Array)
+    );
+  });
+});
