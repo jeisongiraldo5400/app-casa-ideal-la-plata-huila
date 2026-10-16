@@ -29,6 +29,17 @@ describe('buildPushDeepLink', () => {
     expect(buildPushDeepLink({ kind: 'negocio', id: 'n-1', numero: 2026016 })).toBe('/negocio/n-1');
   });
 
+  it('un aviso de venta bajo costo abre el detalle del negocio', () => {
+    expect(
+      buildPushDeepLink({ kind: 'cost_alert', negocio_id: 'n-7', numero: 20260077 })
+    ).toBe('/negocio/n-7');
+  });
+
+  it('un aviso de costo sin negocio no lleva a ninguna parte', () => {
+    expect(buildPushDeepLink({ kind: 'cost_alert' })).toBeNull();
+    expect(buildPushDeepLink({ kind: 'cost_alert', negocio_id: '  ' })).toBeNull();
+  });
+
   it('abre las órdenes de entrega filtradas por su número', () => {
     expect(
       buildPushDeepLink({ kind: 'delivery_order', id: 'do-1', order_number: 'OE-2026-0012' })

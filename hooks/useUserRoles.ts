@@ -49,6 +49,13 @@ export function useUserRoles() {
   const isRecaudador = useCallback((): boolean => hasRole('recaudador'), [hasRole]);
 
   /**
+   * Perfil «costos» (20261231600000): el ÚNICO que ve costos y márgenes. Ser
+   * admin no basta. Lo que muestra se pide al servidor y nunca se guarda en el
+   * teléfono.
+   */
+  const isCostos = useCallback((): boolean => hasRole('costos'), [hasRole]);
+
+  /**
    * Solo puede llegar a un negocio buscándolo: no ve listados de cartera ni de
    * negocios. Es el caso del recaudador «puro» (20261125120000): cobra en
    * cualquier negocio, pero no recorre la cartera ajena. Si además tiene otro
@@ -85,6 +92,7 @@ export function useUserRoles() {
     isVendedor,
     isGestorCobro,
     isRecaudador,
+    isCostos,
     onlyFindsBySearch,
     canAccessCatalogs,
     canMarkOrderAsReceived,
