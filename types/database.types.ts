@@ -4878,6 +4878,23 @@ export type Database = {
         Returns: Json
       }
       cartera_today: { Args: never; Returns: string }
+      change_negocio_draft_source: {
+        Args: {
+          p_negocio_id: string
+          p_remission_id: string | null
+          p_source_delivery_order_id: string | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      check_negocio_draft_source: {
+        Args: {
+          p_negocio_id: string
+          p_remission_id?: string | null
+          p_source_delivery_order_id?: string | null
+        }
+        Returns: Json
+      }
       claim_notification_events: {
         Args: { p_limit?: number }
         Returns: {

@@ -154,6 +154,19 @@ import { isStopNoLongerCurrentError } from '@/lib/collection-routes/routeStopPag
 import { PagoAmountShortcuts } from '@/components/cartera/cobro/PagoAmountShortcuts';
 import { usePagoFormShortcuts } from '@/components/cartera/cobro/usePagoFormShortcuts';
 
+import { DraftOriginChangeSheet } from '@/components/negocios/components/DraftOriginChangeSheet';
+import {
+  CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR,
+  formatCoverageLine,
+  type PreparedDraftOriginChange,
+} from '@/components/negocios/domain/draftOriginChange';
+import {
+  changeDraftSource,
+  checkDraftSource,
+  clearPreparedDraftOriginChange,
+  readPreparedDraftOriginChange,
+} from '@/components/negocios/infrastructure/services/draftOriginChangeService';
+
 const TABLE_PAGE_SIZE = 5;
 
 export default function NegocioDetailScreen() {
@@ -202,6 +215,11 @@ function NegocioDetailScreenInner() {
   const [fromLocal, setFromLocal] = useState(false);
   /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
   const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
+  /** Hoja para cambiar el origen de un borrador (remisión u OE). */
+  const [originSheetOpen, setOriginSheetOpen] = useState(false);
+  /** Cambio de origen preparado sin señal, pendiente de confirmar con señal. */
+  const [preparedOrigin, setPreparedOrigin] = useState<PreparedDraftOriginChange | null>(null);
+  const [confirmingOrigin, setConfirmingOrigin] = useState(false);
   const { user } = useAuth();
   const { isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
@@ -1303,8 +1321,63 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    void readPreparedDraftOriginChange(id).then((change) => {
+      if (!cancelled) setPreparedOrigin(change);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  /**
+   * Confirma con señal el cambio de origen preparado sin señal: el servidor
+   * revisa lo disponible AHORA (la remisión pudo venderse) y solo entonces
+   * cambia. Con la misma clave de idempotencia, un reintento no duplica.
+   */
+  const confirmPreparedOrigin = async () => {
+    if (!negocio || !preparedOrigin || confirmingOrigin) return;
+    setConfirmingOrigin(true);
+    try {
+      const check = await checkDraftSource(negocio.id, preparedOrigin);
+      if (!check.usable) {
+        const detalle = check.lines
+          .filter((line) => line.missing_quantity > 0)
+          .map(formatCoverageLine)
+          .join('\n');
+        Alert.alert(
+          'La orden ya no alcanza',
+          [check.reason || 'La orden no sirve para este negocio.', detalle].filter(Boolean).join('\n\n') +
+            '\n\nElija otra orden con «Cambiar origen» o descarte el cambio preparado.'
+        );
+        return;
+      }
+      await changeDraftSource(negocio.id, preparedOrigin, preparedOrigin.idempotencyKey);
+      await clearPreparedDraftOriginChange(negocio.id);
+      setPreparedOrigin(null);
+      await load();
+      Alert.alert('Origen cambiado', `El negocio ahora sale de: ${preparedOrigin.label}. Ya puede activarlo.`);
+    } catch (error: any) {
+      Alert.alert('Error', errorMessage(error, 'No se pudo cambiar el origen del negocio'));
+    } finally {
+      setConfirmingOrigin(false);
+    }
+  };
+
+  const discardPreparedOrigin = () => {
+    if (!negocio) return;
+    void clearPreparedDraftOriginChange(negocio.id);
+    setPreparedOrigin(null);
+  };
+
   const activateDraft = async () => {
     if (activatingRef.current || !negocio) return;
+    if (preparedOrigin) {
+      Alert.alert('Confirme el cambio de origen', CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR);
+      return;
+    }
     const signatureError = sellerSignatureRequiredError(customerSignature, sellerSignature);
     if (signatureError) {
       Alert.alert('Firma requerida', signatureError);
@@ -1842,6 +1915,53 @@ function NegocioDetailScreenInner() {
 
         {canActivate ? (
           <Card variant="outlined" style={styles.signingCard}>
+            <SectionHeader title="Origen de la mercancía" />
+            <Text style={[styles.helper, { color: colors.text.secondary }]}>
+              {origen.kind === 'desconocido'
+                ? 'Sin señal no se sabe el origen guardado.'
+                : `Ahora: ${labelNegocioOrigen(origen, originOrderNumber)}.`}{' '}
+              Si la mercancía llega en una remisión u otra orden de entrega, cámbielo antes de activar. Se conservan
+              cliente, productos, precios, cuotas y fotos.
+            </Text>
+            {preparedOrigin ? (
+              <View testID="draft-origin-prepared" style={styles.preparedOrigin}>
+                <Text style={[styles.helper, { color: colors.warning.dark, fontWeight: '600' }]}>
+                  Preparado sin señal: {preparedOrigin.label}.{' '}
+                  {online && !fromLocal
+                    ? 'Confírmelo para que el servidor revise la orden.'
+                    : 'Se confirma cuando haya señal; no se envía solo.'}
+                </Text>
+                <View style={styles.preparedOriginActions}>
+                  <Button
+                    title="Confirmar cambio"
+                    icon="cloud-done"
+                    onPress={() => void confirmPreparedOrigin()}
+                    loading={confirmingOrigin}
+                    disabled={!online || fromLocal}
+                    style={styles.preparedOriginButton}
+                  />
+                  <Button
+                    title="Descartar"
+                    variant="outline"
+                    onPress={discardPreparedOrigin}
+                    disabled={confirmingOrigin}
+                    style={styles.preparedOriginButton}
+                  />
+                </View>
+              </View>
+            ) : null}
+            <Button
+              title="Cambiar origen"
+              variant="outline"
+              icon="swap-horiz"
+              onPress={() => setOriginSheetOpen(true)}
+              disabled={confirmingOrigin}
+            />
+          </Card>
+        ) : null}
+
+        {canActivate ? (
+          <Card variant="outlined" style={styles.signingCard}>
             <SectionHeader title="Firmas para activar" />
             <Text style={[styles.helper, { color: colors.text.secondary }]}>
               Puede dibujar las firmas o subir un PNG transparente. Si el cliente no firma ahora, la
@@ -2073,6 +2193,38 @@ function NegocioDetailScreenInner() {
         onSubmit={(values) => void prontoPago.submit(values)}
       />
 
+      {canActivate ? (
+        <DraftOriginChangeSheet
+          visible={originSheetOpen}
+          onClose={() => setOriginSheetOpen(false)}
+          negocioId={negocio.id}
+          customerId={negocio.customer_id ?? null}
+          items={items.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            product_name: item.product?.name || item.description || null,
+          }))}
+          offline={!online || fromLocal}
+          onChanged={(label) => {
+            setOriginSheetOpen(false);
+            // Un cambio confirmado con señal reemplaza el preparado sin señal.
+            void clearPreparedDraftOriginChange(negocio.id);
+            setPreparedOrigin(null);
+            void load().then(() =>
+              Alert.alert('Origen cambiado', `El negocio ahora sale de: ${label}. Ya puede activarlo.`)
+            );
+          }}
+          onPrepared={(change) => {
+            setOriginSheetOpen(false);
+            setPreparedOrigin(change);
+            Alert.alert(
+              'Cambio preparado',
+              'Quedó guardado en este teléfono. Cuando tenga señal, abra el negocio y pulse «Confirmar cambio»; después podrá activarlo.'
+            );
+          }}
+        />
+      ) : null}
+
       <AttachPagoSupportSheet attach={attachSupport} online={online} />
       <VoidPagoSheet
         pago={voidPago.target}
@@ -2143,6 +2295,9 @@ const styles = StyleSheet.create({
   warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   warningText: { ...Typography.bodySmall, flex: 1 },
   signingCard: { gap: Spacing.lg },
+  preparedOrigin: { gap: Spacing.sm },
+  preparedOriginActions: { flexDirection: 'row', gap: Spacing.sm },
+  preparedOriginButton: { flex: 1 },
   sellerCard: { padding: Spacing.lg },
   prontoPagoCard: { padding: Spacing.lg, gap: Spacing.md },
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
