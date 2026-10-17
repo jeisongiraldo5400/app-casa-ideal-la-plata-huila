@@ -45,6 +45,8 @@ import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
+import { CostosOnlyNegocioView } from '@/components/negocios/components/CostosOnlyNegocioView';
+import { isCostosOnlyUser } from '@/lib/costos/access';
 import { useNegocioCostDetail } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
@@ -174,9 +176,28 @@ const TABLE_PAGE_SIZE = 5;
 export default function NegocioDetailScreen() {
   return (
     <ScreenErrorBoundary screen="Detalle de negocio">
-      <NegocioDetailScreenInner />
+      <NegocioDetailRouter />
     </ScreenErrorBoundary>
   );
+}
+
+/**
+ * Con SOLO el perfil «costos» (aviso de venta bajo costo) el negocio no es
+ * legible para él: se muestra solo su costo y margen (20261231650000).
+ */
+function NegocioDetailRouter() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { roles } = useUserRoles();
+  const costosOnly = isCostosOnlyUser(roles.map((userRole) => userRole.role?.nombre ?? ''));
+  if (costosOnly && id) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Costo del negocio' }} />
+        <CostosOnlyNegocioView negocioId={id} />
+      </>
+    );
+  }
+  return <NegocioDetailScreenInner />;
 }
 
 function NegocioDetailScreenInner() {

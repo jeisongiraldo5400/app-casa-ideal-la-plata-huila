@@ -10,6 +10,7 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useWarehouseAccess } from '@/hooks/useWarehouseAccess';
 import { canUseWarehousesFor } from '@/lib/auth/warehouseAccess';
+import { isCostosOnlyUser } from '@/lib/costos/access';
 import { isOfflineError } from '@/lib/errorMessage';
 import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
@@ -37,9 +38,12 @@ function HomeScreenInner() {
   const online = useNetworkStatus();
   // Solo con Inicio a la vista, con red y con la app activa; órdenes de compra
   // solo para quien puede leerlas (admin y bodeguero; no el recaudador).
+  // Perfil «costos» sin rol operativo: entra a la app, pero el resumen de
+  // órdenes no es suyo; ve solo el acceso a Inventario (últimas compras).
+  const costosOnly = isCostosOnlyUser(roles.map((userRole) => userRole.role?.nombre ?? ''));
   const { pendingOrders, pendingDeliveryOrders, loading, error: statsError, reload: reloadStats } = useDashboardStats({
     includePurchaseOrders: warehouse.canReadPurchaseOrders,
-    focused,
+    focused: focused && !costosOnly,
     online,
   });
   // Traslados: la tarjeta sale para admin/bodeguero, responsables de bodega o
@@ -96,6 +100,21 @@ function HomeScreenInner() {
           subtitle={dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}
         />
 
+        {costosOnly ? (
+          <View style={styles.section} testID="home-costos-only">
+            <SectionHeader title="Perfil Costos" />
+            <ActionCard
+              title="Inventario"
+              subtitle="Existencias y últimas compras de cada producto (con señal)"
+              icon="inventory-2"
+              tone="info"
+              onPress={() => navigate('/(tabs)/inventory')}
+            />
+            <Text style={[styles.statsNotice, { color: colors.text.secondary }]}>
+              Los costos, márgenes y el detalle de ventas completos están en la web.
+            </Text>
+          </View>
+        ) : (
         <View style={styles.section}>
           <SectionHeader title="Resumen de hoy" hint={statsHint} />
           <View style={styles.statsRow} accessibilityState={{ busy: loading }}>
@@ -124,6 +143,7 @@ function HomeScreenInner() {
             </TouchableOpacity>
           ) : null}
         </View>
+        )}
 
         {showCommercialSection ? (
           <View style={styles.section}>
