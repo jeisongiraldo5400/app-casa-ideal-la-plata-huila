@@ -21,6 +21,7 @@ import { formatDeliveryLocation } from '../domain/deliveryLocation';
 import { DeliveryOrderProductsModal } from './DeliveryOrderProductsModal';
 import { DeliveryOrderRecipientModal } from './DeliveryOrderRecipientModal';
 import { OfflineOrderToggle, canTakeOrderOffline, useCanCarryOrdersOnPhone } from './OfflineOrderToggle';
+import { DeliveryOrderPrintButton } from './DeliveryOrderPrintButton';
 
 interface DeliveryOrderCardProps {
   order: DeliveryOrder;
@@ -233,6 +234,9 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* PDF carta para compartir o imprimir (requiere señal). */}
+        <DeliveryOrderPrintButton orderId={order.id} orderNumber={order.order_number} style={styles.printButton} />
       </Card>
 
       {/* Modal de productos */}
@@ -407,6 +411,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 6,
+  },
+  printButton: {
+    marginTop: 10,
   },
   actionButtonText: {
     fontSize: 13,

@@ -5558,6 +5558,24 @@ export type Database = {
           warehouse_name: string
         }[]
       }
+      get_delivery_order_print_data: {
+        Args: { p_delivery_order_id: string }
+        Returns: Json
+      }
+      get_delivery_order_print_history: {
+        Args: { p_delivery_order_id: string }
+        Returns: {
+          channel: string
+          copy_number: number
+          delivery_order_id: string
+          format: string
+          id: string
+          layout: string
+          order_number: string
+          printed_at: string
+          printed_by_name: string
+        }[]
+      }
       get_delivery_order_serials: {
         Args: { p_delivery_order_id: string }
         Returns: {
@@ -6675,6 +6693,16 @@ export type Database = {
           p_stop_id: string
         }
         Returns: string
+      }
+      register_delivery_order_print: {
+        Args: {
+          p_channel: string
+          p_client_event_id?: string
+          p_delivery_order_id: string
+          p_format?: string
+          p_layout?: string
+        }
+        Returns: Json
       }
       register_delivery_order_return: {
         Args: {
