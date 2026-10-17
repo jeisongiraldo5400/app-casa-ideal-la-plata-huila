@@ -4,6 +4,17 @@ import { Text } from 'react-native';
 import { InventoryList } from '../InventoryList';
 
 const mockUseInventory = jest.fn();
+let mockIsCostos = false;
+
+jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ isCostos: () => mockIsCostos }) }));
+jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
+jest.mock('../ProductPurchasesPanel', () => ({
+  ProductPurchasesPanel: ({ productId }: { productId: string }) => {
+    const ReactModule = jest.requireActual<typeof import('react')>('react');
+    const { Text: NativeText } = jest.requireActual<typeof import('react-native')>('react-native');
+    return ReactModule.createElement(NativeText, null, `compras ${productId}`);
+  },
+}));
 
 jest.mock('@/components/inventory/infrastructure/hooks/useInventory', () => ({
   useInventory: () => mockUseInventory(),
@@ -110,5 +121,16 @@ describe('InventoryList progressive loading', () => {
     screen.rerender(<InventoryList header={<Text>Inventario</Text>} />);
 
     expect(loadInventory).toHaveBeenCalledTimes(2);
+  });
+
+  it('«Últimas compras» solo en la tarjeta del perfil costos', () => {
+    mockUseInventory.mockReturnValue(inventoryState());
+    mockIsCostos = false;
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    expect(screen.queryByText('compras product-1')).toBeNull();
+    mockIsCostos = true;
+    screen.rerender(<InventoryList header={<Text>Inventario</Text>} />);
+    expect(screen.getByText('compras product-1')).toBeTruthy();
+    mockIsCostos = false;
   });
 });

@@ -2,6 +2,9 @@ import { useInventory } from '@/components/inventory/infrastructure/hooks/useInv
 import type { InventoryItem } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import { ProductPurchasesPanel } from './ProductPurchasesPanel';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
 import React, { useEffect, useRef } from 'react';
 import {
@@ -36,6 +39,10 @@ export function InventoryList({ header }: InventoryListProps) {
     refreshInventory,
   } = useInventory();
   const mountedRef = useRef(false);
+  // «Últimas compras» (propuesta 4): solo perfil «costos», con señal.
+  const { isCostos } = useUserRoles();
+  const showPurchases = isCostos();
+  const online = useNetworkStatus();
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -102,6 +109,7 @@ export function InventoryList({ header }: InventoryListProps) {
             <Text style={styles.warehouseName}>{displayWarehouse}</Text>
           </View>
         ) : null}
+        {showPurchases ? <ProductPurchasesPanel productId={item.id} online={online} /> : null}
       </Card>
     );
   };

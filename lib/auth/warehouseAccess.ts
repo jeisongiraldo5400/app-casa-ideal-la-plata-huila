@@ -31,7 +31,9 @@ export function warehouseAccessFor(roleNames: readonly string[]): WarehouseAcces
     canReadPurchaseOrders: operational,
     canRegisterAnyExit: operational,
     canUseExits: operational || receivesPickupAssignments,
-    canSeeAllOrders: roles.size > 0,
+    // El perfil «costos» no es operativo (20261231650000): solo con él no ve
+    // el listado de órdenes; con cualquier otro rol, sí (como antes).
+    canSeeAllOrders: [...roles].some((name) => name !== '' && name !== 'costos'),
   };
 }
 

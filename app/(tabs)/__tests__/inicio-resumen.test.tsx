@@ -217,4 +217,20 @@ describe('Inicio · tarjeta Bodegas', () => {
     mockRoleNames = ['bodeguero'];
     expect(render(<HomeScreen />).queryByText('Bodegas')).toBeNull();
   });
+
+  it('solo perfil Costos: sin resumen de órdenes ni módulos operativos, con acceso a Inventario', () => {
+    mockRoleNames = ['costos'];
+    mockTransfers = { canUse: false, tasks: null, memberships: [] };
+    mockStats = { pendingOrders: 3, pendingDeliveryOrders: 4, loading: false, error: null };
+
+    const screen = render(<HomeScreen />);
+
+    expect(screen.getByTestId('home-costos-only')).toBeTruthy();
+    expect(screen.queryByText('Resumen de hoy')).toBeNull();
+    expect(screen.queryByText('Gestión comercial')).toBeNull();
+    expect(screen.queryByText('Operaciones de almacén')).toBeNull();
+    fireEvent.press(screen.getByText('Inventario'));
+    expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/inventory');
+  });
 });
+
