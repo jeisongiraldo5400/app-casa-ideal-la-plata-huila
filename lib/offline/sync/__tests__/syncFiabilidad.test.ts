@@ -310,6 +310,8 @@ describe('2. errores definitivos no se reintentan medio día', () => {
     'El tipo de orden de entrega no es válido como origen del negocio',
     'Sin permiso para crear negocios',
     'La clave de idempotencia es obligatoria',
+    // Bodegas de venta (20261231560000).
+    'No puede vender "Nevera" (SKU NEV-1) desde la bodega Principal: esa bodega no pertenece a sus bodegas de venta. Pídale al administrador que se la asigne o cambie la bodega del producto.',
     // create_customer_offline.
     'Sin permiso para crear clientes',
     'Identificador e idempotencia son obligatorios',
