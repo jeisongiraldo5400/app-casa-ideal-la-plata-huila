@@ -16,6 +16,10 @@
  * / transfer_overdue; `data.kind = 'transfer_order'`, migración 20261231290000)
  * abren su detalle: la pantalla elige sola si toca recibir, despachar o solo ver.
  *
+ * Los avisos de venta por debajo del costo (`cost_sale_alert`, `data.kind =
+ * 'cost_alert'`, migración 20261231620000; solo llegan al perfil Costos) abren
+ * el detalle del negocio, donde ese perfil ve el costo y el margen por línea.
+ *
  * Los recordatorios de cobro con varios negocios abren Cartera filtrada por la
  * fecha de vencimiento. Las pestañas conservan su estado, así que la ruta lleva
  * un `n` distinto por aviso: Cartera vuelve a aplicar el filtro aunque ya
@@ -30,6 +34,7 @@ export type PushNotificationData = {
   numero?: unknown;
   order_number?: unknown;
   due_date?: unknown;
+  negocio_id?: unknown;
 };
 
 export type PushDeepLinkOptions = {
@@ -54,6 +59,11 @@ export function buildPushDeepLink(
 
   if (kind === "negocio") {
     return id ? `/negocio/${encodeURIComponent(id)}` : null;
+  }
+
+  if (kind === "cost_alert") {
+    const negocioId = text(data.negocio_id) || id;
+    return negocioId ? `/negocio/${encodeURIComponent(negocioId)}` : null;
   }
 
   if (kind === "delivery_order" || kind === "purchase_order") {
