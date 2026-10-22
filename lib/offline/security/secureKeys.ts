@@ -7,6 +7,8 @@ const SECURE_KEY_PATTERN = /^[A-Za-z0-9._-]+$/;
 export const SECURE_KEYS = {
   lastOnlineVerifiedAt: 'casa_ideal.last_online_verified_at',
   cachedRoles: 'casa_ideal.cached_roles',
+  /** Bodegas de las que el usuario puede vender (3.5.0), con el id del dueño. */
+  cachedSaleWarehouses: 'casa_ideal.cached_sale_warehouses',
   appLockEnabled: 'casa_ideal.app_lock_enabled',
   profileName: 'casa_ideal.profile_name',
   /** Identificador estable del aparato, para diagnosticar registros de push. */
@@ -101,6 +103,24 @@ export async function getCachedRoles(): Promise<CachedRoles | null> {
   return getSecureJson<CachedRoles>(SECURE_KEYS.cachedRoles);
 }
 
+/**
+ * Bodegas de venta del usuario (`get_my_sale_warehouses`). Lleva el `userId`
+ * para que otro usuario del mismo teléfono nunca herede la lista ajena.
+ */
+export type CachedSaleWarehouses = {
+  userId: string;
+  isAdmin: boolean;
+  warehouseIds: string[];
+};
+
+export async function setCachedSaleWarehouses(value: CachedSaleWarehouses) {
+  await setSecureJson(SECURE_KEYS.cachedSaleWarehouses, value);
+}
+
+export async function getCachedSaleWarehouses(): Promise<CachedSaleWarehouses | null> {
+  return getSecureJson<CachedSaleWarehouses>(SECURE_KEYS.cachedSaleWarehouses);
+}
+
 /** Nombre visible del usuario actual, para recibos registrados sin red. */
 export async function setCachedProfileName(name: string | null) {
   if (!name) {
@@ -118,6 +138,7 @@ export async function clearOfflineSecureData() {
   await Promise.all([
     deleteSecureKey(SECURE_KEYS.lastOnlineVerifiedAt),
     deleteSecureKey(SECURE_KEYS.cachedRoles),
+    deleteSecureKey(SECURE_KEYS.cachedSaleWarehouses),
     deleteSecureKey(SECURE_KEYS.profileName),
   ]);
 }

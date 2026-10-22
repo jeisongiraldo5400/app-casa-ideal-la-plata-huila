@@ -53,6 +53,8 @@ describe('useUserRoles', () => {
     expect(result.current.isVendedor()).toBe(false);
     expect(result.current.isGestorCobro()).toBe(false);
     expect(result.current.isRecaudador()).toBe(false);
+    // Ser admin no da el perfil de costos.
+    expect(result.current.isCostos()).toBe(false);
     // `admin` también abre el módulo de catálogos.
     expect(result.current.canAccessCatalogs()).toBe(true);
     expect(result.current.canMarkOrderAsReceived()).toBe(true);
@@ -62,6 +64,16 @@ describe('useUserRoles', () => {
     expect(result.current.roles).toEqual([
       { id: 'ur-1', role_id: 'r-1', role: { id: 'r-1', nombre: 'Admin' } },
     ]);
+  });
+
+  it('reconoce el perfil costos solo cuando lo tiene', async () => {
+    eq.mockResolvedValue({ data: [row('admin'), row('Costos', '2')], error: null });
+
+    const { result } = renderHook(() => useUserRoles());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.isCostos()).toBe(true);
+    expect(result.current.isAdmin()).toBe(true);
   });
 
   it('reconoce gestor de cobro, recaudador y el modo vendedor', async () => {

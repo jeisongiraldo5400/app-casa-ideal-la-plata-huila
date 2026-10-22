@@ -194,7 +194,10 @@ export function isDefinitiveBusinessError(message: string): boolean {
     text.includes('configuracion de credito') ||
     text.includes('valores inconsistentes') ||
     text.includes('ya no puede editarse') ||
-    text.includes('solo el administrador')
+    text.includes('solo el administrador') ||
+    // Bodega de venta no asignada al activar (servidor desde 20261231560000):
+    // no cambia hasta que el admin la asigne o se cambie la bodega del producto.
+    text.includes('bodegas de venta')
   );
 }
 

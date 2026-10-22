@@ -74,3 +74,20 @@ describe('canUseWarehousesFor', () => {
     expect(canUseWarehousesFor({ roleNames: ['vendedor', 'recaudador'], membershipsCount: 0 })).toBe(false);
   });
 });
+
+describe('warehouseAccessFor · perfil costos', () => {
+  it('solo costos no abre nada de almacén (ni el listado de órdenes)', () => {
+    expect(warehouseAccessFor(['costos'])).toEqual({
+      canRegisterEntries: false,
+      canReadPurchaseOrders: false,
+      canRegisterAnyExit: false,
+      canUseExits: false,
+      canSeeAllOrders: false,
+    });
+  });
+
+  it('costos junto a otro rol conserva lo de ese rol', () => {
+    expect(warehouseAccessFor(['costos', 'bodeguero']).canRegisterEntries).toBe(true);
+    expect(warehouseAccessFor(['costos', 'vendedor']).canSeeAllOrders).toBe(true);
+  });
+});

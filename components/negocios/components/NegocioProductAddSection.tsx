@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,12 @@ import {
   type NegocioProduct,
 } from '@/components/negocios/infrastructure/services/negociosProductsService';
 import { errorMessage } from '@/lib/errorMessage';
+import { fetchSalePrice } from '@/components/negocios/infrastructure/services/salePricesService';
+import { prefillUnitPriceText } from '@/components/negocios/domain/salePrice';
+import {
+  allowedSaleWarehouseIds,
+  type SaleWarehouseAccess,
+} from '@/components/negocios/domain/saleWarehouses';
 
 export type { NegocioProduct } from '@/components/negocios/infrastructure/services/negociosProductsService';
 
@@ -45,6 +51,11 @@ type Props = {
   onStockLoaded: (productId: string, stock: ProductWarehouseStock[]) => void;
   /** Aviso cuando la búsqueda terminó sin resultados (sin señal: no está en el teléfono). */
   emptyMessage?: string | null;
+  /**
+   * Bodegas de venta del usuario (3.5.0). Restringido, el stock y el escáner
+   * solo ven las bodegas permitidas. Sin él no se restringe (admin).
+   */
+  saleAccess?: SaleWarehouseAccess | null;
   colors: ThemeColors;
 };
 
@@ -56,14 +67,20 @@ export function NegocioProductAddSection({
   onAdd,
   onStockLoaded,
   emptyMessage = null,
+  saleAccess = null,
   colors,
 }: Props) {
+  const restrictedToSaleWarehouses = allowedSaleWarehouseIds(saleAccess) !== null;
   const [selectedProduct, setSelectedProduct] = useState<NegocioProduct | null>(null);
   const [productStock, setProductStock] = useState<ProductWarehouseStock[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [qty, setQty] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
+  // Precio de venta del producto elegido (si tiene) y turno de la consulta:
+  // una respuesta vieja (otro producto, o ya agregado/cancelado) se ignora.
+  const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
+  const salePriceTurn = useRef(0);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
 
@@ -88,7 +105,7 @@ export function NegocioProductAddSection({
     let cancelled = false;
     setLoadingStock(true);
 
-    fetchProductWarehouseStock(selectedProduct.id)
+    fetchProductWarehouseStock(selectedProduct.id, saleAccess)
       .then((rows) => {
         if (cancelled) return;
         setProductStock(rows);
@@ -108,7 +125,7 @@ export function NegocioProductAddSection({
     return () => {
       cancelled = true;
     };
-  }, [selectedProduct, onStockLoaded]);
+  }, [selectedProduct, onStockLoaded, saleAccess]);
 
   const availability = useMemo(() => {
     if (!selectedProduct || !warehouseId) {
@@ -144,13 +161,28 @@ export function NegocioProductAddSection({
     price > 0 &&
     !loadingStock;
 
+  /** Olvida la consulta de precio en curso (producto agregado o cancelado). */
+  const dropSalePrice = () => {
+    salePriceTurn.current += 1;
+    setSuggestedPrice(null);
+  };
+
   const pickProduct = (product: NegocioProduct) => {
     setSelectedProduct(product);
-    // Los productos no tienen precio de venta: el valor unitario lo escribe
-    // siempre el usuario.
     setUnitPrice('');
     setQty('1');
     onProductQueryChange('');
+    // Si el producto tiene precio de venta (lo registra el perfil Costos), el
+    // valor unitario se rellena con él; el vendedor puede cambiarlo. Si ya
+    // escribió algo cuando llega la respuesta, no se toca. Sin precio queda
+    // vacío como antes.
+    dropSalePrice();
+    const turn = salePriceTurn.current;
+    void fetchSalePrice(product.id).then((price) => {
+      if (salePriceTurn.current !== turn || price === null) return;
+      setSuggestedPrice(price);
+      setUnitPrice((current) => prefillUnitPriceText(current, price, formatNegocioMoneyInput));
+    });
   };
 
   /**
@@ -169,11 +201,13 @@ export function NegocioProductAddSection({
 
   const handleBarcodeScan = async (barcode: string) => {
     try {
-      const product = await findActiveProductByBarcode(barcode);
+      const product = await findActiveProductByBarcode(barcode, saleAccess);
       if (!product) {
         Alert.alert(
           'Producto no encontrado',
-          `No existe un producto activo con el código ${barcode}.`,
+          restrictedToSaleWarehouses
+            ? `No hay un producto con el código ${barcode} con existencias en tus bodegas de venta.`
+            : `No existe un producto activo con el código ${barcode}.`,
           [
             { text: 'Escanear de nuevo' },
             { text: 'Buscar manualmente', onPress: () => closeScanner() },
@@ -222,6 +256,7 @@ export function NegocioProductAddSection({
       unit_price: price,
     });
 
+    dropSalePrice();
     setSelectedProduct(null);
     setProductStock([]);
     setWarehouseId('');
@@ -296,7 +331,11 @@ export function NegocioProductAddSection({
               <Text style={{ color: colors.text.secondary }}>Consultando stock…</Text>
             </View>
           ) : !hasStock ? (
-            <Text style={{ color: 'crimson' }}>Sin stock en ninguna bodega</Text>
+            <Text style={{ color: 'crimson' }}>
+              {restrictedToSaleWarehouses
+                ? 'Sin existencias en tus bodegas de venta'
+                : 'Sin stock en ninguna bodega'}
+            </Text>
           ) : (
             <>
               <Text style={{ color: colors.text.secondary, marginTop: 4 }}>Bodega</Text>
@@ -386,6 +425,11 @@ export function NegocioProductAddSection({
                   {formatCOP(parseNegocioMoney(unitPrice) || 0)}
                 </Text>
               ) : null}
+              {suggestedPrice !== null && parseNegocioMoney(unitPrice) === suggestedPrice ? (
+                <Text testID="negocio-precio-sugerido" style={{ color: colors.text.secondary, fontSize: 12 }}>
+                  Precio de venta del producto. Puede cambiarlo.
+                </Text>
+              ) : null}
             </>
           )}
 
@@ -393,6 +437,7 @@ export function NegocioProductAddSection({
             <Pressable
               style={[styles.chip, { backgroundColor: colors.background.default }]}
               onPress={() => {
+                dropSalePrice();
                 setSelectedProduct(null);
                 setProductStock([]);
                 setWarehouseId('');

@@ -218,6 +218,27 @@ describe('negociosStore.createAndActivate · sin señal', () => {
     expect(enqueueNegocioCreateOffline).not.toHaveBeenCalled();
   });
 
+  it('bodegas de venta: no encola una línea de una bodega no permitida', async () => {
+    await expect(
+      useNegociosStore.getState().createAndActivate({
+        ...baseInput,
+        sale_access: { restricted: true, allowedIds: ['otra-bodega'] },
+      })
+    ).rejects.toThrow(/bodegas de venta/);
+    expect(enqueueNegocioCreateOffline).not.toHaveBeenCalled();
+  });
+
+  it('bodegas de venta: con la bodega permitida encola sin llevar el acceso en el payload', async () => {
+    const allowed = baseInput.items.map((item) => item.warehouse_id);
+    await useNegociosStore.getState().createAndActivate({
+      ...baseInput,
+      sale_access: { restricted: true, allowedIds: allowed },
+    });
+    const [payload] = (enqueueNegocioCreateOffline as jest.Mock).mock.calls[0];
+    expect(JSON.stringify(payload.negocio)).not.toContain('sale_access');
+    expect(JSON.stringify(payload.items)).not.toContain('allowedIds');
+  });
+
   it('sin configuración descargada lo dice en vez de fallar con un error técnico', async () => {
     (fetchCreditSettingsFromLocal as jest.Mock).mockResolvedValue(null);
 

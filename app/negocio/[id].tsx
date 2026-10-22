@@ -44,6 +44,10 @@ import { createIdempotencyKey } from '@/lib/idempotency';
 import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
+import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
+import { CostosOnlyNegocioScreen } from '@/components/negocios/components/CostosOnlyNegocioView';
+import { negocioDetailViewFor } from '@/lib/costos/access';
+import { useNegocioCostDetail } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
 import {
@@ -154,14 +158,43 @@ import { isStopNoLongerCurrentError } from '@/lib/collection-routes/routeStopPag
 import { PagoAmountShortcuts } from '@/components/cartera/cobro/PagoAmountShortcuts';
 import { usePagoFormShortcuts } from '@/components/cartera/cobro/usePagoFormShortcuts';
 
+import { DraftOriginChangeSheet } from '@/components/negocios/components/DraftOriginChangeSheet';
+import {
+  CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR,
+  formatCoverageLine,
+  preparedOriginIsStale,
+  type PreparedDraftOriginChange,
+} from '@/components/negocios/domain/draftOriginChange';
+import {
+  changeDraftSource,
+  checkDraftSource,
+  clearPreparedDraftOriginChange,
+  readPreparedDraftOriginChange,
+} from '@/components/negocios/infrastructure/services/draftOriginChangeService';
+
 const TABLE_PAGE_SIZE = 5;
 
 export default function NegocioDetailScreen() {
   return (
     <ScreenErrorBoundary screen="Detalle de negocio">
-      <NegocioDetailScreenInner />
+      <NegocioDetailRouter />
     </ScreenErrorBoundary>
   );
+}
+
+/**
+ * Con SOLO el perfil «costos» (aviso de venta bajo costo) el negocio no es
+ * legible para él: se muestra solo su costo y margen (20261231650000).
+ */
+function NegocioDetailRouter() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { roles } = useUserRoles();
+  const view = negocioDetailViewFor(
+    roles.map((userRole) => userRole.role?.nombre ?? ''),
+    { negocioNotReadable: false }
+  );
+  if (view === 'costos' && id) return <CostosOnlyNegocioScreen negocioId={id} />;
+  return <NegocioDetailScreenInner />;
 }
 
 function NegocioDetailScreenInner() {
@@ -199,11 +232,18 @@ function NegocioDetailScreenInner() {
   const [remisionVigente, setRemisionVigente] = useState<NegocioRemisionVigente | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** El servidor respondió sin fila (RLS) y el teléfono no tiene copia. */
+  const [notReadable, setNotReadable] = useState(false);
   const [fromLocal, setFromLocal] = useState(false);
   /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
   const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
+  /** Hoja para cambiar el origen de un borrador (remisión u OE). */
+  const [originSheetOpen, setOriginSheetOpen] = useState(false);
+  /** Cambio de origen preparado sin señal, pendiente de confirmar con señal. */
+  const [preparedOrigin, setPreparedOrigin] = useState<PreparedDraftOriginChange | null>(null);
+  const [confirmingOrigin, setConfirmingOrigin] = useState(false);
   const { user } = useAuth();
-  const { isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
+  const { roles: userRoles, isAdmin, isGestorCobro, isRecaudador, isVendedor, isCostos } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   /** Impresiones del contrato según el servidor; null sin señal o sin leer aún. */
@@ -222,6 +262,9 @@ function NegocioDetailScreenInner() {
   }, [id, online, refreshPrintHistory]);
   // Cobro en ruta: la parada solo cuenta el primer cobro y solo si sigue
   // siendo la actual; sin parada, se ofrece vincularla (ver routeStopPago).
+  // Costo y margen por línea: solo perfil «costos», con señal y con el negocio
+  // ya en el servidor. Se pide cada vez; no se guarda en el teléfono.
+  const costDetail = useNegocioCostDetail(id, isCostos() && online && !pendingSync, negocio?.status);
   const routeStop = useRouteStopPago({ negocioId: id, routeStopIdParam: routeStopId, online, reloadKey: negocio });
   // Última novedad de ruta («Sin pago» / «Reprogramado») del negocio.
   const ultimaGestion = useUltimaGestion(id ? [id] : [], online, negocio);
@@ -340,6 +383,7 @@ function NegocioDetailScreenInner() {
     setLoading(true);
     setLoadWarning(null);
     setLoadError(null);
+    setNotReadable(false);
     if (options?.preferLocal && canUseLocalDb()) {
       const local = await loadLocalNegocioDetail(id);
       if (local) {
@@ -368,6 +412,7 @@ function NegocioDetailScreenInner() {
           applyLocalDetail(local);
           return;
         }
+        setNotReadable(true);
         throw new Error('No se encontró el negocio o no tiene acceso a él.');
       }
       setNegocio(n);
@@ -1303,8 +1348,71 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setPreparedOrigin(null);
+    void readPreparedDraftOriginChange(id, user?.id).then((change) => {
+      if (!cancelled) setPreparedOrigin(change);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user?.id]);
+
+  // Activado, anulado o ya no borrador: el cambio preparado sobra y se borra.
+  useEffect(() => {
+    if (!id || !preparedOriginIsStale(negocio?.status)) return;
+    void clearPreparedDraftOriginChange(id, user?.id);
+    setPreparedOrigin(null);
+  }, [id, negocio?.status, user?.id]);
+
+  /**
+   * Confirma con señal el cambio de origen preparado sin señal: el servidor
+   * revisa lo disponible AHORA (la remisión pudo venderse) y solo entonces
+   * cambia. Con la misma clave de idempotencia, un reintento no duplica.
+   */
+  const confirmPreparedOrigin = async () => {
+    if (!negocio || !preparedOrigin || confirmingOrigin) return;
+    setConfirmingOrigin(true);
+    try {
+      const check = await checkDraftSource(negocio.id, preparedOrigin);
+      if (!check.usable) {
+        const detalle = check.lines
+          .filter((line) => line.missing_quantity > 0)
+          .map(formatCoverageLine)
+          .join('\n');
+        Alert.alert(
+          'La orden ya no alcanza',
+          [check.reason || 'La orden no sirve para este negocio.', detalle].filter(Boolean).join('\n\n') +
+            '\n\nElija otra orden con «Cambiar origen» o descarte el cambio preparado.'
+        );
+        return;
+      }
+      await changeDraftSource(negocio.id, preparedOrigin, preparedOrigin.idempotencyKey);
+      await clearPreparedDraftOriginChange(negocio.id, user?.id);
+      setPreparedOrigin(null);
+      await load();
+      Alert.alert('Origen cambiado', `El negocio ahora sale de: ${preparedOrigin.label}. Ya puede activarlo.`);
+    } catch (error: any) {
+      Alert.alert('Error', errorMessage(error, 'No se pudo cambiar el origen del negocio'));
+    } finally {
+      setConfirmingOrigin(false);
+    }
+  };
+
+  const discardPreparedOrigin = () => {
+    if (!negocio) return;
+    void clearPreparedDraftOriginChange(negocio.id, user?.id);
+    setPreparedOrigin(null);
+  };
+
   const activateDraft = async () => {
     if (activatingRef.current || !negocio) return;
+    if (preparedOrigin) {
+      Alert.alert('Confirme el cambio de origen', CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR);
+      return;
+    }
     const signatureError = sellerSignatureRequiredError(customerSignature, sellerSignature);
     if (signatureError) {
       Alert.alert('Firma requerida', signatureError);
@@ -1513,6 +1621,20 @@ function NegocioDetailScreenInner() {
     title: headerTitle,
     headerLeft: () => <BackButton onPress={handleGoBack} />,
   };
+
+  if (
+    !loading &&
+    !negocio &&
+    id &&
+    negocioDetailViewFor(
+      userRoles.map((userRole) => userRole.role?.nombre ?? ''),
+      { negocioNotReadable: notReadable }
+    ) === 'costos'
+  ) {
+    // Aviso de venta bajo costo a quien tiene «costos» y otro rol que no deja
+    // leer este negocio: se muestra solo lo suyo, el costo y el margen.
+    return <CostosOnlyNegocioScreen negocioId={id} />;
+  }
 
   if (!loading && !negocio) {
     return (
@@ -1731,6 +1853,8 @@ function NegocioDetailScreenInner() {
           totalCredit={Number(negocio.total_credit)}
         />
 
+        {costDetail ? <NegocioCostPanel result={costDetail} showTotals /> : null}
+
         {/* La orden del negocio y de dónde salió la mercancía. Sin conexión no
             se conoce el origen y la tarjeta se omite. */}
         {origen.kind !== 'desconocido' ? (
@@ -1839,6 +1963,53 @@ function NegocioDetailScreenInner() {
           )}
           <Pagination page={installmentPage} pageSize={TABLE_PAGE_SIZE} total={cuotas.length} onChange={setInstallmentPage} itemLabel="cuotas" />
         </View>
+
+        {canActivate ? (
+          <Card variant="outlined" style={styles.signingCard}>
+            <SectionHeader title="Origen de la mercancía" />
+            <Text style={[styles.helper, { color: colors.text.secondary }]}>
+              {origen.kind === 'desconocido'
+                ? 'Sin señal no se sabe el origen guardado.'
+                : `Ahora: ${labelNegocioOrigen(origen, originOrderNumber)}.`}{' '}
+              Si la mercancía llega en una remisión u otra orden de entrega, cámbielo antes de activar. Se conservan
+              cliente, productos, precios, cuotas y fotos.
+            </Text>
+            {preparedOrigin ? (
+              <View testID="draft-origin-prepared" style={styles.preparedOrigin}>
+                <Text style={[styles.helper, { color: colors.warning.dark, fontWeight: '600' }]}>
+                  Preparado sin señal: {preparedOrigin.label}.{' '}
+                  {online && !fromLocal
+                    ? 'Confírmelo para que el servidor revise la orden.'
+                    : 'Se confirma cuando haya señal; no se envía solo.'}
+                </Text>
+                <View style={styles.preparedOriginActions}>
+                  <Button
+                    title="Confirmar cambio"
+                    icon="cloud-done"
+                    onPress={() => void confirmPreparedOrigin()}
+                    loading={confirmingOrigin}
+                    disabled={!online || fromLocal}
+                    style={styles.preparedOriginButton}
+                  />
+                  <Button
+                    title="Descartar"
+                    variant="outline"
+                    onPress={discardPreparedOrigin}
+                    disabled={confirmingOrigin}
+                    style={styles.preparedOriginButton}
+                  />
+                </View>
+              </View>
+            ) : null}
+            <Button
+              title="Cambiar origen"
+              variant="outline"
+              icon="swap-horiz"
+              onPress={() => setOriginSheetOpen(true)}
+              disabled={confirmingOrigin}
+            />
+          </Card>
+        ) : null}
 
         {canActivate ? (
           <Card variant="outlined" style={styles.signingCard}>
@@ -2073,6 +2244,39 @@ function NegocioDetailScreenInner() {
         onSubmit={(values) => void prontoPago.submit(values)}
       />
 
+      {canActivate ? (
+        <DraftOriginChangeSheet
+          visible={originSheetOpen}
+          onClose={() => setOriginSheetOpen(false)}
+          negocioId={negocio.id}
+          userId={user?.id ?? null}
+          customerId={negocio.customer_id ?? null}
+          items={items.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            product_name: item.product?.name || item.description || null,
+          }))}
+          offline={!online || fromLocal}
+          onChanged={(label) => {
+            setOriginSheetOpen(false);
+            // Un cambio confirmado con señal reemplaza el preparado sin señal.
+            void clearPreparedDraftOriginChange(negocio.id, user?.id);
+            setPreparedOrigin(null);
+            void load().then(() =>
+              Alert.alert('Origen cambiado', `El negocio ahora sale de: ${label}. Ya puede activarlo.`)
+            );
+          }}
+          onPrepared={(change) => {
+            setOriginSheetOpen(false);
+            setPreparedOrigin(change);
+            Alert.alert(
+              'Cambio preparado',
+              'Quedó guardado en este teléfono. Cuando tenga señal, abra el negocio y pulse «Confirmar cambio»; después podrá activarlo.'
+            );
+          }}
+        />
+      ) : null}
+
       <AttachPagoSupportSheet attach={attachSupport} online={online} />
       <VoidPagoSheet
         pago={voidPago.target}
@@ -2143,6 +2347,9 @@ const styles = StyleSheet.create({
   warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   warningText: { ...Typography.bodySmall, flex: 1 },
   signingCard: { gap: Spacing.lg },
+  preparedOrigin: { gap: Spacing.sm },
+  preparedOriginActions: { flexDirection: 'row', gap: Spacing.sm },
+  preparedOriginButton: { flex: 1 },
   sellerCard: { padding: Spacing.lg },
   prontoPagoCard: { padding: Spacing.lg, gap: Spacing.md },
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },

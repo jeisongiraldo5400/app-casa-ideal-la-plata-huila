@@ -6,6 +6,7 @@ import { ExitMode, useExitsStore } from '@/components/exits/infrastructure/store
 // datos, porque aquí el usuario tiene la orden asignada pero no privilegios.
 import { DeliveryOrderProductsModal } from '@/components/purchase-orders/components/DeliveryOrderProductsModal';
 import { OfflineOrderToggle, canTakeOrderOffline, useCanCarryOrdersOnPhone } from '@/components/purchase-orders/components/OfflineOrderToggle';
+import { DeliveryOrderPrintButton } from '@/components/purchase-orders/components/DeliveryOrderPrintButton';
 import { useTheme } from '@/components/theme';
 import { useScreenLoading } from '@/hooks/useScreenLoading';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
@@ -337,6 +338,8 @@ export function MyOrdersScreen() {
           offlineToggle={canCarryOrders && canTakeOrderOffline(item)}
         />
 
+        <DeliveryOrderPrintButton orderId={item.id} orderNumber={item.order_number} />
+
         <View style={[styles.exitButton, { backgroundColor: colors.primary.main }]}>
           {isStarting
             ? <ActivityIndicator color={colors.primary.contrastText} />
@@ -409,6 +412,7 @@ export function MyOrdersScreen() {
         </View>
 
         <ProductsButton colors={colors} onOpen={setProductsModalTarget} orderId={item.id} orderNumber={item.order_number} />
+        <DeliveryOrderPrintButton orderId={item.id} orderNumber={item.order_number} />
 
         <View style={[styles.expandHint, { borderTopColor: colors.divider }]}>
           <Text style={[styles.expandHintText, { color: colors.primary.main }]}>

@@ -1,6 +1,8 @@
 import { useTheme } from '@/components/theme';
 import { Radius, Shadows, Spacing, getColors } from '@/constants/theme';
 import { startNavigationLoading } from '@/lib/ui/loadingStore';
+import { isCostosOnlyUser } from '@/lib/costos/access';
+import { useUserRolesStore } from '@/lib/auth/userRolesStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import React from 'react';
@@ -35,7 +37,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
       ? activeRoute
       : SECONDARY_ROUTE_CONTEXT[activeRoute]
     : undefined;
-  const visibleRoutes = state.routes.filter((route) => TAB_CONFIG[route.name]);
+  // Perfil «costos» sin rol operativo: sin la pestaña Salidas (no es suya).
+  const roles = useUserRolesStore((store) => store.roles);
+  const costosOnly = isCostosOnlyUser(roles.map((userRole) => userRole.role?.nombre ?? ''));
+  const visibleRoutes = state.routes.filter(
+    (route) => TAB_CONFIG[route.name] && !(costosOnly && route.name === 'exits-list')
+  );
 
   if (!activeRoute || !activeTabRoute) return null;
 

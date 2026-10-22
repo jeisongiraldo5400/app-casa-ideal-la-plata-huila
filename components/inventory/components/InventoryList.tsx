@@ -2,8 +2,14 @@ import { useInventory } from '@/components/inventory/infrastructure/hooks/useInv
 import type { InventoryItem } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { useTheme } from '@/components/theme';
 import { Card } from '@/components/ui/Card';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import { ProductPurchasesPanel } from './ProductPurchasesPanel';
+import { fetchSalePrices } from '@/components/negocios/infrastructure/services/salePricesService';
+import type { SalePriceMap } from '@/lib/offline/sync/salePrices';
+import { formatCOP } from '@/lib/creditCalculator';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -36,6 +42,24 @@ export function InventoryList({ header }: InventoryListProps) {
     refreshInventory,
   } = useInventory();
   const mountedRef = useRef(false);
+  // «Últimas compras» (propuesta 4): solo perfil «costos», con señal.
+  const { isCostos } = useUserRoles();
+  const showPurchases = isCostos();
+  const online = useNetworkStatus();
+  // Precio de venta de los productos visibles (lo registra el perfil Costos;
+  // lo ven todos). Sin señal sale de la última descarga.
+  const [salePrices, setSalePrices] = useState<SalePriceMap>({});
+  const productIdsKey = inventory.map((item) => item.id).join(',');
+  useEffect(() => {
+    if (!productIdsKey) return;
+    let cancelled = false;
+    void fetchSalePrices(productIdsKey.split(',')).then((prices) => {
+      if (!cancelled) setSalePrices(prices);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [productIdsKey, online]);
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -76,6 +100,11 @@ export function InventoryList({ header }: InventoryListProps) {
             <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
             <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
             {item.color_name ? <Text style={styles.productColor}>Color: {item.color_name}</Text> : null}
+            {salePrices[item.id] !== undefined ? (
+              <Text testID={`inventory-sale-price-${item.id}`} style={styles.salePrice}>
+                Precio de venta: {formatCOP(salePrices[item.id])}
+              </Text>
+            ) : null}
             <View style={styles.warehousesList}>
               <Text style={styles.warehousesTitle}>Bodegas:</Text>
               {warehousesWithStock.map((warehouse) => (
@@ -102,6 +131,7 @@ export function InventoryList({ header }: InventoryListProps) {
             <Text style={styles.warehouseName}>{displayWarehouse}</Text>
           </View>
         ) : null}
+        {showPurchases ? <ProductPurchasesPanel productId={item.id} online={online} /> : null}
       </Card>
     );
   };
@@ -244,6 +274,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   productColor: {
     fontSize: 12,
     color: colors.text.secondary,
+  },
+  salePrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginTop: 4,
   },
   warehousesList: {
     marginTop: 8,

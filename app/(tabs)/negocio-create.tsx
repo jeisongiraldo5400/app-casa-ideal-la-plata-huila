@@ -71,6 +71,8 @@ import {
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
+import { fetchSalePrice } from '@/components/negocios/infrastructure/services/salePricesService';
+import { applySalePriceToLine } from '@/components/negocios/domain/salePrice';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import { NegocioCreditSummary } from '@/components/negocios/components/NegocioCreditSummary';
 import {
@@ -129,6 +131,13 @@ import { customerPhonesError, toStoredPhone } from '@/components/customers/domai
 import { errorMessage } from '@/lib/errorMessage';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
+import { useNegocioCostPreview } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
+import { useSaleWarehouses } from '@/hooks/useSaleWarehouses';
+import {
+  BODEGAS_DE_VENTA_NO_CARGADAS,
+  SIN_BODEGAS_DE_VENTA,
+} from '@/components/negocios/domain/saleWarehouses';
 import {
   productSearchNotice,
   searchProductsForNegocio,
@@ -179,7 +188,7 @@ function NegocioCreateScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { roles: userRoles, isAdmin, isVendedor } = useUserRoles();
+  const { roles: userRoles, isAdmin, isVendedor, isCostos } = useUserRoles();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -194,6 +203,12 @@ function NegocioCreateScreenInner() {
   /** Momento de la última descarga del catálogo de producto. */
   const [catalogPulledAt, setCatalogPulledAt] = useState<number | null>(null);
   const online = useSyncStore((state) => state.online);
+  // Costo y margen por línea: solo perfil «costos», con señal, sin guardarlo.
+  const costPreviewEnabled = isCostos() && online;
+  // Bodegas de venta (3.5.0): solo con origen «desde bodega»; el admin no
+  // tiene restricción. Sin datos aún, no se muestran bodegas (falla cerrado).
+  const saleWarehouses = useSaleWarehouses();
+  const refreshSaleWarehouses = saleWarehouses.refresh;
   const [initialDataReload, setInitialDataReload] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -262,6 +277,12 @@ function NegocioCreateScreenInner() {
 
   const [pickingCodeudor, setPickingCodeudor] = useState(false);
   const [originType, setOriginType] = useState<'bodega' | 'orden_entrega'>('bodega');
+  /** Acceso a bodegas que se pasa a búsqueda, stock y guardado: solo «desde bodega». */
+  const bodegaSaleAccess = originType === 'bodega' ? saleWarehouses.access : null;
+  const saleWarehousesBlocked =
+    originType === 'bodega' &&
+    saleWarehouses.restricted &&
+    (!saleWarehouses.loaded || saleWarehouses.allowedIds.length === 0);
   // Sin señal, «Orden de entrega existente» lista las órdenes llevadas en el
   // teléfono (las que se marcaron con señal) en vez de consultar el servidor.
   const originOrderSearch = useOriginOrderSearch(
@@ -536,6 +557,14 @@ function NegocioCreateScreenInner() {
     if (!hasDraft) setShowDraftBanner(false);
   }, [hasDraft]);
 
+  // Bodegas de venta al día al abrir la pantalla (y al volver la señal): el
+  // admin pudo asignar o quitar bodegas desde la web.
+  useFocusEffect(
+    useCallback(() => {
+      if (online) void refreshSaleWarehouses();
+    }, [online, refreshSaleWarehouses])
+  );
+
   // Ubicación siempre al día: el relleno automático llega tras una consulta y
   // no debe pisar lo que se escribió mientras tanto.
   const locationRef = useRef({ departamentoId, municipioId, veredaId, direccion });
@@ -623,7 +652,7 @@ function NegocioCreateScreenInner() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const rows = await searchProductsForNegocio(query);
+        const rows = await searchProductsForNegocio(query, bodegaSaleAccess);
         if (!cancelled) {
           setProducts(rows);
           setProductSearchedQuery(query);
@@ -640,7 +669,7 @@ function NegocioCreateScreenInner() {
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [productQuery]);
+  }, [productQuery, bodegaSaleAccess]);
 
   useEffect(() => {
     if (!frequencyInitializedRef.current && creditSettings?.default_frequency) {
@@ -712,7 +741,7 @@ function NegocioCreateScreenInner() {
     }
 
     let cancelled = false;
-    fetchStockForProductsWithSource(productIds)
+    fetchStockForProductsWithSource(productIds, bodegaSaleAccess)
       .then(({ stock, fromLocal }) => {
         if (cancelled) return;
         setStockByProduct(stock);
@@ -727,7 +756,7 @@ function NegocioCreateScreenInner() {
     return () => {
       cancelled = true;
     };
-  }, [stockProductIdsKey, originType, selectedDeliveryOrder, originIsRemission, selectedOriginGroup]);
+  }, [stockProductIdsKey, originType, selectedDeliveryOrder, originIsRemission, selectedOriginGroup, bodegaSaleAccess]);
 
   const handleStockLoaded = useCallback(
     (productId: string, stock: ProductWarehouseStock[]) => {
@@ -743,6 +772,11 @@ function NegocioCreateScreenInner() {
   };
   const installmentsNumber = Number(installments);
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const costPreview = useNegocioCostPreview(items, costPreviewEnabled);
+  const costProductNames = useMemo(
+    () => Object.fromEntries(items.map((item) => [item.product_id, item.description])),
+    [items]
+  );
   // Interés fijo en pesos pactado con el cliente; se suma al valor de los
   // productos y todo lo demás (abonos, cuotas, saldo) parte de ese total.
   const parsedManualInterest = parseNegocioMoney(manualInterest);
@@ -846,6 +880,19 @@ function NegocioCreateScreenInner() {
 
   const handleAddItem = (item: NegocioItem) => {
     setItems((prev) => [...prev, item]);
+  };
+
+  /**
+   * Agrega una línea de la remisión u orden de entrega y, si el producto
+   * tiene precio de venta, lo pone como valor unitario cuando llegue (solo si
+   * la línea sigue sin valor: no pisa lo que el vendedor ya escribió).
+   */
+  const handleAddOriginItem = (item: NegocioItem) => {
+    handleAddItem(item);
+    void fetchSalePrice(item.product_id).then((price) => {
+      if (price === null) return;
+      setItems((prev) => applySalePriceToLine(prev, item.product_id, item.warehouse_id, price));
+    });
   };
 
   const updateItem = (
@@ -1069,6 +1116,8 @@ function NegocioCreateScreenInner() {
         ...sellerInput,
         ...originPayload,
         items,
+        // Guarda local (no viaja al servidor): cada línea, de una bodega permitida.
+        sale_access: bodegaSaleAccess,
         manual_interest_amount: manualInterestAmount,
         down_payment_schedule: sortDownPaymentSchedule(downPaymentSchedule),
         installments_count: effectiveInstallmentsCount,
@@ -1284,6 +1333,11 @@ function NegocioCreateScreenInner() {
                 ? 'Se genera una orden de entrega nueva y se reserva stock.'
                 : 'Se usan productos ya salidos o reservados. No se vuelve a descontar stock.'}
             </Text>
+            {saleWarehousesBlocked && saleWarehouses.loaded ? (
+              <Text testID="negocio-create-sin-bodegas-origen" style={{ color: colors.error.main, fontSize: 12 }}>
+                {SIN_BODEGAS_DE_VENTA} Puedes usar una orden de entrega existente.
+              </Text>
+            ) : null}
             {originType === 'bodega' && (
               <NegocioDeliveryModeSection
                 mode={deliveryMode}
@@ -1667,13 +1721,13 @@ function NegocioCreateScreenInner() {
                       <TouchableOpacity
                         disabled={Boolean(alreadyAdded)}
                         onPress={() =>
-                          handleAddItem({
+                          handleAddOriginItem({
                             product_id: remItem.product_id,
                             warehouse_id: remItem.warehouse_id,
                             quantity: 1,
                             description: remItem.product_name,
-                            // Sin precio de venta: el usuario escribe el
-                            // valor unitario en la lista de productos.
+                            // Vacío hasta saber el precio de venta; si no
+                            // tiene, el usuario lo escribe en la lista.
                             unit_price: 0,
                           })
                         }
@@ -1704,6 +1758,41 @@ function NegocioCreateScreenInner() {
                   );
                 })}
               </View>
+            ) : saleWarehousesBlocked ? (
+              <View
+                testID="negocio-create-sin-bodegas"
+                style={{ padding: 10, borderRadius: 8, backgroundColor: colors.error.main + '14', gap: 6 }}
+              >
+                {saleWarehouses.loaded ? (
+                  <Text style={{ color: colors.text.primary, fontSize: 13, fontWeight: '700' }}>
+                    {SIN_BODEGAS_DE_VENTA}
+                  </Text>
+                ) : saleWarehouses.error || !online ? (
+                  <>
+                    <Text style={{ color: colors.text.primary, fontSize: 13, fontWeight: '700' }}>
+                      {BODEGAS_DE_VENTA_NO_CARGADAS}
+                    </Text>
+                    {online ? (
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        onPress={() => void refreshSaleWarehouses()}
+                        style={[styles.chip, { alignSelf: 'flex-start', backgroundColor: colors.primary.main }]}
+                      >
+                        <Text style={{ color: colors.primary.contrastText, fontWeight: '700', fontSize: 12 }}>
+                          Reintentar
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator color={colors.primary.main} />
+                    <Text style={{ color: colors.text.secondary, fontSize: 13 }}>
+                      Cargando tus bodegas de venta…
+                    </Text>
+                  </View>
+                )}
+              </View>
             ) : (
               <NegocioProductAddSection
                 products={products}
@@ -1713,6 +1802,7 @@ function NegocioCreateScreenInner() {
                 onAdd={handleAddItem}
                 onStockLoaded={handleStockLoaded}
                 emptyMessage={productSearchMiss}
+                saleAccess={bodegaSaleAccess}
                 colors={colors}
               />
             )}
@@ -1727,6 +1817,10 @@ function NegocioCreateScreenInner() {
               }
               colors={colors}
             />
+
+            {costPreview ? (
+              <NegocioCostPanel result={costPreview} productNames={costProductNames} />
+            ) : null}
 
             <View style={[styles.summaryCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <Text style={{ fontWeight: '700', fontSize: 16, color: colors.text.primary }}>

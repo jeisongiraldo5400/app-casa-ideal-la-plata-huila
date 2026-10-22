@@ -4,6 +4,21 @@ import { Text } from 'react-native';
 import { InventoryList } from '../InventoryList';
 
 const mockUseInventory = jest.fn();
+let mockIsCostos = false;
+
+jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ isCostos: () => mockIsCostos }) }));
+const mockFetchSalePrices = jest.fn(async (_ids: readonly string[]) => ({}) as Record<string, number>);
+jest.mock('@/components/negocios/infrastructure/services/salePricesService', () => ({
+  fetchSalePrices: (ids: readonly string[]) => mockFetchSalePrices(ids),
+}));
+jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
+jest.mock('../ProductPurchasesPanel', () => ({
+  ProductPurchasesPanel: ({ productId }: { productId: string }) => {
+    const ReactModule = jest.requireActual<typeof import('react')>('react');
+    const { Text: NativeText } = jest.requireActual<typeof import('react-native')>('react-native');
+    return ReactModule.createElement(NativeText, null, `compras ${productId}`);
+  },
+}));
 
 jest.mock('@/components/inventory/infrastructure/hooks/useInventory', () => ({
   useInventory: () => mockUseInventory(),
@@ -59,6 +74,30 @@ function inventoryState(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe('InventoryList · precio de venta', () => {
+  afterEach(() => cleanup());
+
+  it('muestra el precio de venta del producto si lo tiene', async () => {
+    mockFetchSalePrices.mockResolvedValueOnce({ 'product-1': 1890000 });
+    mockUseInventory.mockReturnValue(inventoryState());
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(mockFetchSalePrices).toHaveBeenCalledWith(['product-1']);
+    expect(screen.getByTestId('inventory-sale-price-product-1')).toBeTruthy();
+    expect(screen.getByText(/Precio de venta:/)).toBeTruthy();
+  });
+
+  it('sin precio de venta no muestra la línea', async () => {
+    mockFetchSalePrices.mockResolvedValueOnce({});
+    mockUseInventory.mockReturnValue(inventoryState());
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(screen.queryByTestId('inventory-sale-price-product-1')).toBeNull();
+  });
+});
+
 describe('InventoryList progressive loading', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -110,5 +149,16 @@ describe('InventoryList progressive loading', () => {
     screen.rerender(<InventoryList header={<Text>Inventario</Text>} />);
 
     expect(loadInventory).toHaveBeenCalledTimes(2);
+  });
+
+  it('«Últimas compras» solo en la tarjeta del perfil costos', () => {
+    mockUseInventory.mockReturnValue(inventoryState());
+    mockIsCostos = false;
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    expect(screen.queryByText('compras product-1')).toBeNull();
+    mockIsCostos = true;
+    screen.rerender(<InventoryList header={<Text>Inventario</Text>} />);
+    expect(screen.getByText('compras product-1')).toBeTruthy();
+    mockIsCostos = false;
   });
 });

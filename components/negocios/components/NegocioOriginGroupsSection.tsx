@@ -15,6 +15,12 @@ type Props = {
   selectedGroup: RemissionOriginGroup | null;
   onSelectGroup: (group: RemissionOriginGroup) => void;
   colors: ThemeColors;
+  /**
+   * Motivo para deshabilitar un grupo (p. ej. OE hija de otro cliente al
+   * cambiar el origen de un borrador). Sin él solo se deshabilita la hija que
+   * ya tiene negocio.
+   */
+  disabledReason?: (group: RemissionOriginGroup) => string | null;
 };
 
 /**
@@ -28,6 +34,7 @@ export function NegocioOriginGroupsSection({
   selectedGroup,
   onSelectGroup,
   colors,
+  disabledReason,
 }: Props) {
   return (
     <View style={styles.block}>
@@ -51,7 +58,12 @@ export function NegocioOriginGroupsSection({
       ) : (
         groups.map((group) => {
           const selected = selectedGroup?.sourceOrderId === group.sourceOrderId;
-          const disabled = group.hasNegocio;
+          const reason = disabledReason
+            ? disabledReason(group)
+            : group.hasNegocio
+              ? 'Ya tiene negocio asociado'
+              : null;
+          const disabled = Boolean(reason);
           return (
             <Pressable
               key={`${group.kind}-${group.sourceOrderId}`}
@@ -76,9 +88,7 @@ export function NegocioOriginGroupsSection({
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: colors.text.primary }]}>{group.label}</Text>
                 <Text style={{ fontSize: 12, color: colors.text.secondary }}>
-                  {disabled
-                    ? 'Ya tiene negocio asociado'
-                    : `${group.items.length} producto(s) disponible(s)`}
+                  {reason ?? `${group.items.length} producto(s) disponible(s)`}
                 </Text>
               </View>
             </Pressable>

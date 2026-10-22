@@ -616,6 +616,7 @@ export type Database = {
           expires_at: string
           first_viewed_at: string | null
           id: string
+          include_sale_price: boolean
           label: string
           last_viewed_at: string | null
           revoked_at: string | null
@@ -632,6 +633,7 @@ export type Database = {
           expires_at: string
           first_viewed_at?: string | null
           id?: string
+          include_sale_price?: boolean
           label: string
           last_viewed_at?: string | null
           revoked_at?: string | null
@@ -648,6 +650,7 @@ export type Database = {
           expires_at?: string
           first_viewed_at?: string | null
           id?: string
+          include_sale_price?: boolean
           label?: string
           last_viewed_at?: string | null
           revoked_at?: string | null
@@ -4878,6 +4881,23 @@ export type Database = {
         Returns: Json
       }
       cartera_today: { Args: never; Returns: string }
+      change_negocio_draft_source: {
+        Args: {
+          p_negocio_id: string
+          p_remission_id: string | null
+          p_source_delivery_order_id: string | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      check_negocio_draft_source: {
+        Args: {
+          p_negocio_id: string
+          p_remission_id?: string | null
+          p_source_delivery_order_id?: string | null
+        }
+        Returns: Json
+      }
       claim_notification_events: {
         Args: { p_limit?: number }
         Returns: {
@@ -5019,6 +5039,7 @@ export type Database = {
         Args: {
           p_catalog_id: string
           p_expires_at: string
+          p_include_sale_price?: boolean
           p_label: string
           p_snapshot: Json
           p_token: string
@@ -5466,6 +5487,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_my_sale_warehouses: {
+        Args: never
+        Returns: Json
+      }
       get_my_transfer_tasks: {
         Args: never
         Returns: Json
@@ -5535,6 +5560,24 @@ export type Database = {
           product_sku: string
           warehouse_id: string
           warehouse_name: string
+        }[]
+      }
+      get_delivery_order_print_data: {
+        Args: { p_delivery_order_id: string }
+        Returns: Json
+      }
+      get_delivery_order_print_history: {
+        Args: { p_delivery_order_id: string }
+        Returns: {
+          channel: string
+          copy_number: number
+          delivery_order_id: string
+          format: string
+          id: string
+          layout: string
+          order_number: string
+          printed_at: string
+          printed_by_name: string
         }[]
       }
       get_delivery_order_serials: {
@@ -6654,6 +6697,16 @@ export type Database = {
           p_stop_id: string
         }
         Returns: string
+      }
+      register_delivery_order_print: {
+        Args: {
+          p_channel: string
+          p_client_event_id?: string
+          p_delivery_order_id: string
+          p_format?: string
+          p_layout?: string
+        }
+        Returns: Json
       }
       register_delivery_order_return: {
         Args: {
