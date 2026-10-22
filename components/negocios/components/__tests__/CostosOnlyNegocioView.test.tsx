@@ -51,4 +51,11 @@ describe('CostosOnlyNegocioView (aviso de venta para quien solo tiene el perfil 
     await waitFor(() => expect(screen.getByText('El negocio no existe o fue eliminado.')).toBeTruthy());
     expect(screen.getByText('Reintentar')).toBeTruthy();
   });
+
+  it('caída de red: mensaje en español', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
+    render(<CostosOnlyNegocioView negocioId="n1" />);
+    await waitFor(() => expect(screen.getByText(/Sin conexión con el servidor/)).toBeTruthy());
+    expect(screen.queryByText(/Network request failed/)).toBeNull();
+  });
 });

@@ -2,6 +2,7 @@ import { useTheme } from '@/components/theme';
 import { BackButton, ScreenState } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { errorMessage } from '@/lib/errorMessage';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseNegocioCostResult, type NegocioCostResult } from '@/lib/negocios/negocioCosts';
 import { supabase } from '@/lib/supabase';
@@ -40,7 +41,7 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
       ({ data, error }) => {
         const result = error ? null : parseNegocioCostResult(data);
         if (!result) {
-          setState({ status: 'error', message: error?.message || 'No se pudo consultar el costo del negocio.' });
+          setState({ status: 'error', message: errorMessage(error, 'No se pudo consultar el costo del negocio.') });
           return;
         }
         const root = (data ?? {}) as Record<string, unknown>;
@@ -55,7 +56,8 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
           },
         });
       },
-      () => setState({ status: 'error', message: 'No se pudo consultar el costo del negocio.' })
+      (failure: unknown) =>
+        setState({ status: 'error', message: errorMessage(failure, 'No se pudo consultar el costo del negocio.') })
     );
   }, [negocioId]);
 

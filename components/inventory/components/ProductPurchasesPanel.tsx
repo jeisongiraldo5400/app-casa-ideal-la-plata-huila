@@ -2,6 +2,7 @@ import { useTheme } from '@/components/theme';
 import { Button } from '@/components/ui';
 import { Radius, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
+import { errorMessage } from '@/lib/errorMessage';
 import {
   MOBILE_PURCHASES_LIMIT,
   formatPurchaseDate,
@@ -36,7 +37,8 @@ async function fetchPurchases(productId: string): Promise<ProductPurchases> {
     p_limit: MOBILE_PURCHASES_LIMIT,
     p_offset: 0,
   });
-  if (error) throw new Error(error.message || 'No se pudieron consultar las compras.');
+  // errorMessage traduce las caídas de red («Network request failed»).
+  if (error) throw new Error(errorMessage(error, 'No se pudieron consultar las compras.'));
   const parsed = parseProductPurchases(data);
   if (!parsed) throw new Error('Respuesta inválida del servidor.');
   return parsed;
