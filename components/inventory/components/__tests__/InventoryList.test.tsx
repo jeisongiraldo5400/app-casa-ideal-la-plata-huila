@@ -7,6 +7,10 @@ const mockUseInventory = jest.fn();
 let mockIsCostos = false;
 
 jest.mock('@/hooks/useUserRoles', () => ({ useUserRoles: () => ({ isCostos: () => mockIsCostos }) }));
+const mockFetchSalePrices = jest.fn(async (_ids: readonly string[]) => ({}) as Record<string, number>);
+jest.mock('@/components/negocios/infrastructure/services/salePricesService', () => ({
+  fetchSalePrices: (ids: readonly string[]) => mockFetchSalePrices(ids),
+}));
 jest.mock('@/hooks/useNetworkStatus', () => ({ useNetworkStatus: () => true }));
 jest.mock('../ProductPurchasesPanel', () => ({
   ProductPurchasesPanel: ({ productId }: { productId: string }) => {
@@ -69,6 +73,30 @@ function inventoryState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('InventoryList · precio de venta', () => {
+  afterEach(() => cleanup());
+
+  it('muestra el precio de venta del producto si lo tiene', async () => {
+    mockFetchSalePrices.mockResolvedValueOnce({ 'product-1': 1890000 });
+    mockUseInventory.mockReturnValue(inventoryState());
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(mockFetchSalePrices).toHaveBeenCalledWith(['product-1']);
+    expect(screen.getByTestId('inventory-sale-price-product-1')).toBeTruthy();
+    expect(screen.getByText(/Precio de venta:/)).toBeTruthy();
+  });
+
+  it('sin precio de venta no muestra la línea', async () => {
+    mockFetchSalePrices.mockResolvedValueOnce({});
+    mockUseInventory.mockReturnValue(inventoryState());
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(screen.queryByTestId('inventory-sale-price-product-1')).toBeNull();
+  });
+});
 
 describe('InventoryList progressive loading', () => {
   beforeEach(() => {

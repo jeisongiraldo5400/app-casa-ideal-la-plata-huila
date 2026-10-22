@@ -71,6 +71,8 @@ import {
 import { ScreenErrorBoundary } from '@/components/ui/ScreenErrorBoundary';
 import { NegocioProductAddSection } from '@/components/negocios/components/NegocioProductAddSection';
 import { NegocioItemsList } from '@/components/negocios/components/NegocioItemsList';
+import { fetchSalePrice } from '@/components/negocios/infrastructure/services/salePricesService';
+import { applySalePriceToLine } from '@/components/negocios/domain/salePrice';
 import { NegocioDatePicker } from '@/components/negocios/components/NegocioDatePicker';
 import { NegocioCreditSummary } from '@/components/negocios/components/NegocioCreditSummary';
 import {
@@ -878,6 +880,19 @@ function NegocioCreateScreenInner() {
 
   const handleAddItem = (item: NegocioItem) => {
     setItems((prev) => [...prev, item]);
+  };
+
+  /**
+   * Agrega una línea de la remisión u orden de entrega y, si el producto
+   * tiene precio de venta, lo pone como valor unitario cuando llegue (solo si
+   * la línea sigue sin valor: no pisa lo que el vendedor ya escribió).
+   */
+  const handleAddOriginItem = (item: NegocioItem) => {
+    handleAddItem(item);
+    void fetchSalePrice(item.product_id).then((price) => {
+      if (price === null) return;
+      setItems((prev) => applySalePriceToLine(prev, item.product_id, item.warehouse_id, price));
+    });
   };
 
   const updateItem = (
@@ -1706,13 +1721,13 @@ function NegocioCreateScreenInner() {
                       <TouchableOpacity
                         disabled={Boolean(alreadyAdded)}
                         onPress={() =>
-                          handleAddItem({
+                          handleAddOriginItem({
                             product_id: remItem.product_id,
                             warehouse_id: remItem.warehouse_id,
                             quantity: 1,
                             description: remItem.product_name,
-                            // Sin precio de venta: el usuario escribe el
-                            // valor unitario en la lista de productos.
+                            // Vacío hasta saber el precio de venta; si no
+                            // tiene, el usuario lo escribe en la lista.
                             unit_price: 0,
                           })
                         }

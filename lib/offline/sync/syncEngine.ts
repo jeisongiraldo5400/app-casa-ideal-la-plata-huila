@@ -37,6 +37,7 @@ import {
   shouldIncludeCatalog,
   type InFlightSyncMeta,
 } from './catalogPull';
+import { downloadSalePrices, forgetSalePrices } from './salePrices';
 import { planOutboxRun } from './lanes';
 import {
   prepareConfirmNegocio,
@@ -279,8 +280,12 @@ async function pullRemote(userId: string, reason: SyncReason = 'manual'): Promis
   if (productsNone) {
     await wipeLocalCatalog(database);
     await forgetCatalogPull(database);
+    await forgetSalePrices(database);
   } else if (catalogApplied) {
     await markCatalogPulled(database, payload.server_time);
+    // Precios de venta para rellenar el negocio sin señal (lista completa,
+    // aparte del paquete; si falla se queda la anterior).
+    await downloadSalePrices(database, (fn, args) => supabase.rpc(fn, args as never) as never);
   }
   // Foto de órdenes llevadas y remisiones pendientes: reemplazo completo.
   await applyOrdersSnapshot(database, payload);
