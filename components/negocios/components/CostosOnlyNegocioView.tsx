@@ -1,10 +1,11 @@
 import { useTheme } from '@/components/theme';
-import { ScreenState } from '@/components/ui';
+import { BackButton, ScreenState } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseNegocioCostResult, type NegocioCostResult } from '@/lib/negocios/negocioCosts';
 import { supabase } from '@/lib/supabase';
+import { Stack } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NegocioCostPanel } from './NegocioCostPanel';
@@ -93,7 +94,24 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
   );
 }
 
+/**
+ * Pantalla completa de la vista anterior dentro del Stack raíz. El header del
+ * Stack (`StackHeader`) solo pinta el botón de volver si la pantalla trae
+ * `headerLeft`: sin él, al llegar desde un aviso no había cómo regresar.
+ */
+export function CostosOnlyNegocioScreen({ negocioId }: { negocioId: string }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  return (
+    <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
+      <Stack.Screen options={{ title: 'Costo del negocio', headerLeft: () => <BackButton /> }} />
+      <CostosOnlyNegocioView negocioId={negocioId} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xl * 2 },
   header: { marginBottom: Spacing.md, gap: Spacing.xs },
   state: { margin: Spacing.lg },
