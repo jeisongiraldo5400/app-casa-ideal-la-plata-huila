@@ -26,7 +26,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useMyOrders } from '../infrastructure/hooks/useMyOrders';
+import { MY_ORDERS_HISTORY_OFFLINE_MESSAGE, useMyOrders } from '../infrastructure/hooks/useMyOrders';
+import { localOrdersNotice } from '@/components/purchase-orders/infrastructure/services/localDeliveryOrdersService';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
   fetchAssignedDeliveryOrderItems,
   PendingDeliveryOrder,
@@ -184,6 +186,19 @@ function HistoryDetail({ orderId, detail, colors, onRetry }: { orderId: string; 
   );
 }
 
+/** Aviso discreto de que lo visible salió del teléfono (sin señal). */
+function OfflineNotice({ message, colors, testID }: { message: string; colors: Colors; testID: string }) {
+  return (
+    <View testID={testID} style={[styles.offlineNotice, { backgroundColor: colors.warning.main + '18' }]}>
+      <MaterialIcons name="wifi-off" size={16} color={colors.warning.main} />
+      <Text style={[styles.offlineNoticeText, { color: colors.text.secondary }]}>{message}</Text>
+    </View>
+  );
+}
+
+/** Registrar una salida mueve existencias en el servidor: sin señal no se puede. */
+export const EXIT_NEEDS_SIGNAL_MESSAGE = 'Para registrar la salida se necesita conexión. Los productos de la orden sí se pueden consultar.';
+
 function InlineError({ message, colors }: { message: string; colors: Colors }) {
   return <View style={[styles.inlineError, { backgroundColor: colors.error.main + '12', borderColor: colors.error.main + '55' }]}><MaterialIcons name="error-outline" size={18} color={colors.error.main} /><Text style={[styles.inlineErrorText, { color: colors.error.main }]}>{message}</Text></View>;
 }
@@ -214,6 +229,10 @@ export function MyOrdersScreen() {
 
   const openExit = async (order: PendingDeliveryOrder) => {
     if (!user || order.pending_quantity <= 0 || openingOrderRef.current) return;
+    if (!useSyncStore.getState().online) {
+      Alert.alert('Sin señal', EXIT_NEEDS_SIGNAL_MESSAGE);
+      return;
+    }
 
     openingOrderRef.current = true;
     setStartingOrderId(order.id);
@@ -426,7 +445,20 @@ export function MyOrdersScreen() {
     );
   };
 
-  const renderEmptyState = (history: boolean) => (
+  // Sin señal y sin lista guardada (nunca se abrió con señal en este teléfono).
+  const pendingOfflineEmpty = orders.pendingSavedAt === 0 && orders.pendingOrders.length === 0;
+
+  const renderEmptyState = (history: boolean) => (!history && pendingOfflineEmpty) || (history && orders.historyOffline) ? (
+    <View testID={history ? 'registered-orders-offline-empty' : 'pending-orders-offline-empty'} style={[styles.messageCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
+      <MaterialIcons name="wifi-off" size={38} color={colors.text.secondary} />
+      <Text style={[styles.messageTitle, { color: colors.text.primary }]}>Sin señal</Text>
+      <Text style={[styles.messageText, { color: colors.text.secondary }]}>
+        {history
+          ? MY_ORDERS_HISTORY_OFFLINE_MESSAGE
+          : 'No hay órdenes pendientes guardadas en el teléfono. Abre «Mis órdenes» con señal para guardarlas.'}
+      </Text>
+    </View>
+  ) : (
     <View style={[styles.messageCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
       <MaterialIcons name={history ? 'history' : 'assignment-turned-in'} size={38} color={colors.success.main} />
       <Text style={[styles.messageTitle, { color: colors.text.primary }]}>
@@ -495,7 +527,9 @@ export function MyOrdersScreen() {
           contentContainerStyle={[styles.listContent, currentDataEmpty && styles.emptyListContent]}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={orders.pendingRefreshing} onRefresh={() => void orders.loadPending(true)} tintColor={colors.primary.main} />}
-          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : null}
+          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : orders.pendingSavedAt ? (
+            <OfflineNotice colors={colors} testID="pending-orders-offline-notice" message={localOrdersNotice(orders.pendingSavedAt, 'lista de')} />
+          ) : null}
           ListEmptyComponent={renderEmptyState(false)}
         />
       ) : (
@@ -509,7 +543,9 @@ export function MyOrdersScreen() {
           onEndReached={orders.loadMoreHistory}
           onEndReachedThreshold={0.35}
           refreshControl={<RefreshControl refreshing={orders.historyRefreshing} onRefresh={() => void orders.refreshHistory()} tintColor={colors.primary.main} />}
-          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : null}
+          ListHeaderComponent={blockingError ? <InlineError colors={colors} message={blockingError} /> : orders.historyOffline && orders.historyOrders.length > 0 ? (
+            <OfflineNotice colors={colors} testID="registered-orders-offline-notice" message={MY_ORDERS_HISTORY_OFFLINE_MESSAGE} />
+          ) : null}
           ListEmptyComponent={renderEmptyState(true)}
           ListFooterComponent={orders.historyLoadingMore ? (
             <View style={styles.loadingMore}>
@@ -536,6 +572,8 @@ export function MyOrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  offlineNotice: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: Spacing.md, borderRadius: 10 },
+  offlineNoticeText: { flex: 1, fontSize: 12 },
   header: { fontSize: 13, marginBottom: Spacing.md, paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg },
   tabs: { flexDirection: 'row', marginHorizontal: Spacing.xl, borderWidth: 1, borderRadius: Radius.control, padding: 4, gap: 4 },
   tabButton: { flex: 1, minHeight: 40, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 7 },

@@ -93,7 +93,26 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
           </Text>
         </View>
 
+        {/* Orden leída del teléfono (sin señal): la descarga no trae lo
+            entregado, así que no se pinta un avance que podría ser falso. */}
+        {order.from_local ? (
+          <View
+            testID={`local-order-summary-${order.id}`}
+            style={[styles.progressBadge, { backgroundColor: colors.warning.main + '15' }]}
+          >
+            <MaterialIcons name="smartphone" size={18} color={colors.warning.main} />
+            <Text style={[styles.progressBadgeText, { color: colors.warning.main, flexShrink: 1 }]}>
+              {order.total_items === 0
+                ? 'Guardada en el teléfono sin productos · se ven con señal'
+                : `${order.total_items} producto${order.total_items === 1 ? '' : 's'} · ${order.total_quantity} unidad${
+                    order.total_quantity === 1 ? '' : 'es'
+                  } · lo entregado se ve con señal`}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Barra de progreso mejorada */}
+        {!order.from_local ? (
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
             <Text style={[styles.progressLabel, { color: colors.text.secondary }]}>
@@ -126,13 +145,17 @@ export function DeliveryOrderCard({ order, showCreatedBy = true }: DeliveryOrder
           </View>
         </View>
 
+        ) : null}
+
         {/* Badge de estado de progreso */}
+        {!order.from_local ? (
         <View style={[styles.progressBadge, { backgroundColor: progressBadge.bgColor }]}>
           <MaterialIcons name={progressBadge.icon} size={18} color={progressBadge.color} />
           <Text style={[styles.progressBadgeText, { color: progressBadge.color }]}>
             {progressBadge.text}
           </Text>
         </View>
+        ) : null}
 
         {/* Información resumida del destinatario */}
         <View style={styles.recipientPreview}>

@@ -1,5 +1,6 @@
 import { closeDatabase, isDatabaseOpen, resetDatabase } from '../database';
 import { clearCachedActiveRoute } from '@/lib/collection-routes/routeCache';
+import { clearCachedPendingOrders } from '@/components/my-orders/infrastructure/services/myOrdersCache';
 import { clearOfflineSecureData } from './secureKeys';
 import { clearLocalPagoSupportFiles } from './localFiles';
 
@@ -15,6 +16,7 @@ export async function wipeLocalOfflineData() {
   const cleanupResults = await Promise.allSettled([
     clearOfflineSecureData(),
     clearCachedActiveRoute(),
+    clearCachedPendingOrders(),
     clearLocalPagoSupportFiles(),
   ]);
   cleanupResults.forEach((result) => {

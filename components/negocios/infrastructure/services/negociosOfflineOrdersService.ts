@@ -8,7 +8,10 @@ import {
   type LocalPendingRemission,
 } from '@/lib/offline/repositories/deliveryOrdersRepository';
 import { normalizeText } from '@/lib/search/normalizeText';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
+  fetchRemissionOriginProducts,
   mapRemissionOriginRows,
   type DeliveryOrderItemOption,
   type DeliveryOrderOption,
@@ -190,4 +193,37 @@ export function toPendingRemissionOption(row: LocalPendingRemission): PendingRem
 export async function fetchLocalPendingRemissions(): Promise<PendingRemissionOption[]> {
   const rows = await listLocalPendingRemissions();
   return rows.map(toPendingRemissionOption);
+}
+
+/** La remisión elegida con señal no se llevó al teléfono y la señal se fue. */
+export const REMISSION_NOT_ON_PHONE_MESSAGE =
+  'Sin señal: los productos de esta remisión no están guardados en el teléfono. Con señal, pulsa «Llevar en el teléfono» en la remisión y luego «Descargar».';
+
+/**
+ * Grupos de la remisión elegida como origen del negocio.
+ *
+ * Si se eligió de la lista del teléfono, salen de su foto. Si se eligió con
+ * señal (lista del servidor) y la señal se cae o no responde a tiempo antes de
+ * cargar sus productos, también se leen de la foto cuando la remisión está
+ * llevada en el teléfono: antes salía la alerta de error de red aunque la
+ * remisión estuviera guardada.
+ */
+export async function loadRemissionOriginGroups(
+  remissionId: string,
+  fromLocal: boolean,
+  fetchRemote: (id: string) => Promise<RemissionOriginGroup[]> = fetchRemissionOriginProducts
+): Promise<RemissionOriginGroup[]> {
+  if (fromLocal) return fetchLocalRemissionOriginGroups(remissionId);
+  const loadFromPhone = async () => {
+    const carried = (await listLocalOfflineOrders()).some((order) => order.id === remissionId);
+    if (!carried) throw new Error(REMISSION_NOT_ON_PHONE_MESSAGE);
+    return fetchLocalRemissionOriginGroups(remissionId);
+  };
+  if (!useSyncStore.getState().online) return loadFromPhone();
+  try {
+    return await fetchRemote(remissionId);
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    return loadFromPhone();
+  }
 }

@@ -13,6 +13,13 @@ import {
   RegisteredDeliveryOrderItem,
 } from '../services/myOrdersService';
 import { errorMessage } from '@/lib/errorMessage';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
+import { shouldUseLocalOrders } from '@/components/purchase-orders/infrastructure/services/localDeliveryOrdersService';
+import { readCachedPendingOrders, saveCachedPendingOrders } from '../services/myOrdersCache';
+
+/** Sin señal no hay historial ni detalle de salidas: se consultan en el servidor. */
+export const MY_ORDERS_HISTORY_OFFLINE_MESSAGE = 'Sin señal: tus entregas registradas se consultan con conexión.';
+export const MY_ORDERS_DETAIL_OFFLINE_MESSAGE = 'Sin señal: el detalle de tus salidas se consulta con conexión.';
 
 const HISTORY_PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -32,6 +39,13 @@ export function useMyOrders() {
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingRefreshing, setPendingRefreshing] = useState(false);
   const [pendingError, setPendingError] = useState<string | null>(null);
+  /**
+   * Sin señal la lista de pendientes es la última que llegó del servidor
+   * (guardada en el teléfono): aquí va cuándo llegó. `null` = del servidor.
+   */
+  const [pendingSavedAt, setPendingSavedAt] = useState<number | null>(null);
+  /** Sin señal: el historial no se pudo consultar (no es un error). */
+  const [historyOffline, setHistoryOffline] = useState(false);
 
   const [historyOrders, setHistoryOrders] = useState<RegisteredDeliveryOrder[]>([]);
   const [historySearch, setHistorySearch] = useState('');
@@ -48,6 +62,8 @@ export function useMyOrders() {
   const [detailsByOrderId, setDetailsByOrderId] = useState<Record<string, OrderDetailState>>({});
 
   const pendingRequestId = useRef(0);
+  /** Cuándo llegó del servidor la lista de pendientes que se ve (esta sesión). */
+  const pendingLoadedAtRef = useRef<number | null>(null);
   const historyRequestId = useRef(0);
   const detailRequestId = useRef(0);
   const loadMoreInFlight = useRef(false);
@@ -82,12 +98,38 @@ export function useMyOrders() {
     else setPendingLoading(true);
     setPendingError(null);
 
+    const userId = useSyncStore.getState().userId;
+    // Sin señal (o si la consulta falla por red): la última lista guardada.
+    // Si no hay copia guardada pero ya se veía una lista de esta sesión, se
+    // deja esa (con su hora) en vez de vaciar la pantalla.
+    const loadSaved = async () => {
+      const saved = await readCachedPendingOrders(userId);
+      if (requestId !== pendingRequestId.current) return;
+      if (saved) {
+        setPendingOrders(saved.orders);
+        setPendingSavedAt(saved.savedAt || pendingLoadedAtRef.current || 0);
+      } else {
+        setPendingSavedAt(pendingLoadedAtRef.current ?? 0);
+      }
+    };
+
     try {
+      if (shouldUseLocalOrders()) {
+        await loadSaved();
+        return;
+      }
       const orders = await fetchPendingDeliveryOrders();
       if (requestId !== pendingRequestId.current) return;
       setPendingOrders(orders);
+      setPendingSavedAt(null);
+      pendingLoadedAtRef.current = Date.now();
+      void saveCachedPendingOrders(userId, orders);
     } catch (error) {
       if (requestId !== pendingRequestId.current) return;
+      if (shouldUseLocalOrders(error)) {
+        await loadSaved();
+        return;
+      }
       setPendingError(errorMessage(error, 'No fue posible cargar las órdenes asignadas.'));
     } finally {
       if (requestId === pendingRequestId.current) {
@@ -120,6 +162,7 @@ export function useMyOrders() {
     setHistoryError(null);
 
     try {
+      if (shouldUseLocalOrders()) throw new Error('Sin señal');
       const result = await fetchMyRegisteredDeliveryOrders({
         searchTerm,
         page,
@@ -135,8 +178,15 @@ export function useMyOrders() {
       setHistoryPage(page);
       if (!append || result.orders.length > 0) setHistoryTotalCount(result.totalCount);
       setHistoryHasMore(result.hasMore);
+      setHistoryOffline(false);
     } catch (error) {
       if (requestId !== historyRequestId.current) return;
+      // Sin señal no es un fallo: se deja lo que ya se veía y se avisa.
+      if (shouldUseLocalOrders(error)) {
+        setHistoryOffline(true);
+        setHistoryHasMore(false);
+        return;
+      }
       setHistoryError(errorMessage(error, 'No fue posible cargar las órdenes registradas.'));
     } finally {
       if (requestId === historyRequestId.current) {
@@ -157,6 +207,15 @@ export function useMyOrders() {
       loadHistoryPage({ page: 1, append: false, refresh: true, searchTerm: debouncedHistorySearchRef.current }),
     ]);
   }, [loadHistoryPage, loadPending]);
+
+  // Al volver (o caerse) la señal se recarga: con señal, lo del servidor.
+  const online = useSyncStore((state) => state.online);
+  const previousOnline = useRef(online);
+  useEffect(() => {
+    if (previousOnline.current === online) return;
+    previousOnline.current = online;
+    void refreshAll();
+  }, [online, refreshAll]);
 
   useEffect(() => {
     debouncedHistorySearchRef.current = debouncedHistorySearch;
@@ -202,6 +261,7 @@ export function useMyOrders() {
       [orderId]: { items: [], serialsByExitId: {}, loading: true, error: null },
     }));
     try {
+      if (shouldUseLocalOrders()) throw new Error('Sin señal');
       const items = await fetchMyRegisteredDeliveryOrderItems(orderId);
       if (requestId !== detailRequestId.current) return;
       setDetailsByOrderId((current) => ({
@@ -225,7 +285,9 @@ export function useMyOrders() {
           items: [],
           serialsByExitId: {},
           loading: false,
-          error: errorMessage(error, 'No fue posible cargar los productos registrados.'),
+          error: shouldUseLocalOrders(error)
+            ? MY_ORDERS_DETAIL_OFFLINE_MESSAGE
+            : errorMessage(error, 'No fue posible cargar los productos registrados.'),
         },
       }));
     }
@@ -253,6 +315,7 @@ export function useMyOrders() {
     pendingLoading,
     pendingRefreshing,
     pendingError,
+    pendingSavedAt,
     loadPending,
     historyOrders,
     historySearch,
@@ -262,6 +325,7 @@ export function useMyOrders() {
     historyRefreshing,
     historyLoadingMore,
     historyError,
+    historyOffline,
     historyHasMore,
     refreshHistory,
     loadMoreHistory,

@@ -85,7 +85,6 @@ import {
 } from '@/components/negocios/infrastructure/services/negociosStockService';
 import {
   fetchPendingRemissions,
-  fetchRemissionOriginProducts,
   stockMapFromDeliveryOrder,
   type DeliveryOrderItemOption,
   type DeliveryOrderOption,
@@ -94,7 +93,7 @@ import {
 } from '@/components/negocios/infrastructure/services/negociosDeliveryOrdersService';
 import {
   fetchLocalPendingRemissions,
-  fetchLocalRemissionOriginGroups,
+  loadRemissionOriginGroups,
 } from '@/components/negocios/infrastructure/services/negociosOfflineOrdersService';
 import { buildNegocioOriginPayload } from '@/components/negocios/domain/negocioOrigin';
 import {
@@ -700,10 +699,8 @@ function NegocioCreateScreenInner() {
     setOriginGroupsLoading(true);
     // Remisión llevada en el teléfono: los grupos salen de su foto, restando
     // lo que ya tomaron negocios de este teléfono aún no enviados.
-    const loadGroups = selectedDeliveryOrder?.from_local
-      ? fetchLocalRemissionOriginGroups
-      : fetchRemissionOriginProducts;
-    loadGroups(selectedRemissionId)
+    // Elegida con señal y la señal se cae: también de la foto si está llevada.
+    loadRemissionOriginGroups(selectedRemissionId, Boolean(selectedDeliveryOrder?.from_local))
       .then((groups) => {
         if (!cancelled) setOriginGroups(groups);
       })

@@ -21,6 +21,11 @@ export interface DeliveryOrderItem {
   notes?: string | null;
   /** OE de cliente a la que pertenece la línea dentro de una remisión («OE-0012 · Cliente»); null si es propia. */
   group_label?: string | null;
+  /**
+   * Sólo en líneas leídas del teléfono (sin señal): lo que quedaba libre para
+   * vender en la última descarga. Lo entregado no viaja en la descarga.
+   */
+  available_quantity?: number | null;
 }
 
 export interface DeliveryOrderRecipient {
@@ -70,6 +75,13 @@ export interface DeliveryOrder {
   delivered_items: number;
   delivered_quantity: number;
   items: DeliveryOrderItem[];
+  /**
+   * La orden se leyó del teléfono (órdenes llevadas con «Llevar en el
+   * teléfono»), no del servidor: no trae lo entregado ni quién la creó.
+   */
+  from_local?: boolean;
+  /** Momento (ms) de la descarga de la que salió, si `from_local`. */
+  snapshot_at?: number | null;
 }
 
 export interface DeliveryOrderWithProgress extends DeliveryOrder {

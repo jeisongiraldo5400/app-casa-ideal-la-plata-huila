@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeliveryLocationFilter } from '../../domain/deliveryLocation';
 import { DeliveryOrder } from '../../types';
 import { errorMessage } from '@/lib/errorMessage';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 import {
   DELIVERY_ORDERS_PAGE_SIZE,
   DeliveryOrdersCursor,
   fetchDeliveryOrdersPage,
 } from '../services/deliveryOrdersPageService';
+import { listLocalDeliveryOrders, shouldUseLocalOrders } from '../services/localDeliveryOrdersService';
 
 const SEARCH_DEBOUNCE_MS = 400;
 
@@ -40,6 +42,10 @@ export function useAllDeliveryOrders({
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [serverPaginated, setServerPaginated] = useState(true);
+  /** Lo visible salió del teléfono (sin señal), no del servidor. */
+  const [fromLocal, setFromLocal] = useState(false);
+  /** Momento de la descarga de lo que se ve, si `fromLocal`. */
+  const [snapshotAt, setSnapshotAt] = useState<number | null>(null);
 
   const requestId = useRef(0);
   const cursor = useRef<DeliveryOrdersCursor | null>(null);
@@ -57,7 +63,25 @@ export function useAllDeliveryOrders({
       else if (options.append) setLoadingMore(true);
       else setLoading(true);
 
+      // Sin señal: las órdenes llevadas en el teléfono. Una página siguiente
+      // no existe (la lista local llega entera de una vez).
+      const loadLocal = async () => {
+        const local = await listLocalDeliveryOrders({ search: debouncedQuery, location: locationFilter });
+        if (id !== requestId.current) return;
+        setOrders(local.orders);
+        cursor.current = null;
+        setHasMore(false);
+        setServerPaginated(false);
+        setFromLocal(true);
+        setSnapshotAt(local.snapshotAt);
+        setError(null);
+      };
+
       try {
+        if (shouldUseLocalOrders()) {
+          if (!options.append) await loadLocal();
+          return;
+        }
         const page = await fetchDeliveryOrdersPage({
           search: debouncedQuery,
           location: locationFilter,
@@ -76,9 +100,22 @@ export function useAllDeliveryOrders({
         cursor.current = page.cursor;
         setHasMore(page.hasMore);
         setServerPaginated(page.serverPaginated);
+        setFromLocal(false);
+        setSnapshotAt(null);
         setError(null);
       } catch (err) {
         if (id !== requestId.current) return;
+        // Se cayó la señal (o no respondió a tiempo): lo guardado en el
+        // teléfono en vez del error. En una página siguiente se deja lo ya
+        // visible y se avisa al pie, como antes.
+        if (!options.append && shouldUseLocalOrders(err)) {
+          try {
+            await loadLocal();
+            return;
+          } catch {
+            // Sin base local: se muestra el error de la consulta.
+          }
+        }
         // Traducido: el usuario no debe leer el texto técnico de la red.
         setError(errorMessage(err, 'No se pudieron cargar las órdenes de entrega'));
         if (!options.append) {
@@ -114,6 +151,19 @@ export function useAllDeliveryOrders({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
 
+  // Al perder o recuperar la señal se vuelve a la primera página: sin señal
+  // salen las órdenes del teléfono y con señal otra vez las del servidor.
+  const online = useSyncStore((state) => state.online);
+  const previousOnline = useRef(online);
+  useEffect(() => {
+    if (previousOnline.current === online) return;
+    previousOnline.current = online;
+    cursor.current = null;
+    void load({ append: false, refresh: false });
+    // Igual que el disparador externo: sólo reacciona al cambio de señal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
+
   const refresh = useCallback(() => {
     cursor.current = null;
     return load({ append: false, refresh: true });
@@ -137,6 +187,8 @@ export function useAllDeliveryOrders({
     error,
     hasMore,
     serverPaginated,
+    fromLocal,
+    snapshotAt,
     isSearchDebouncing,
     refresh,
     loadMore,
