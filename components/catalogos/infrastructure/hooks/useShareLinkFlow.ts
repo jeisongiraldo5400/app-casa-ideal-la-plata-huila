@@ -32,7 +32,13 @@ export type ShareLinkResult = {
  */
 export type ShareLinkDelivery = 'whatsapp' | 'none';
 
-export type CreateShareLinkRequest = { label: string; hours: number; delivery: ShareLinkDelivery };
+export type CreateShareLinkRequest = {
+  label: string;
+  hours: number;
+  delivery: ShareLinkDelivery;
+  /** «Incluir precio de venta» (apagado por defecto). */
+  includeSalePrice?: boolean;
+};
 
 export type ShareLinkFlowState = {
   readiness: CatalogReadiness;
@@ -115,7 +121,7 @@ export function useShareLinkFlow(
   }, [catalogId, reload]);
 
   const create = useCallback(
-    async ({ label, hours, delivery }: CreateShareLinkRequest) => {
+    async ({ label, hours, delivery, includeSalePrice = false }: CreateShareLinkRequest) => {
       if (!detail) return false;
       const validation = validateShareLinkInput({ label, hours });
       setErrors(validation);
@@ -140,6 +146,7 @@ export function useShareLinkFlow(
           tokenHint: token.tokenHint,
           label,
           expiresAt: expiresAtFromHours(hours),
+          includeSalePrice,
         });
         const url = buildMagazineUrl(token.token);
         const trimmedLabel = label.trim();

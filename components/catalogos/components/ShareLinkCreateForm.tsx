@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 import { useTheme } from '@/components/theme';
 import { Button, Card, Input, OptionPickerField } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
@@ -29,6 +29,8 @@ export function ShareLinkCreateForm({ disabled, creating, progress, errors, subm
   const [label, setLabel] = useState('');
   const [hours, setHours] = useShareLinkHours();
   const [delivery, setDelivery] = useState<ShareLinkDelivery>('whatsapp');
+  // Opcional y apagado: sin activarlo, el enlace sale sin precios.
+  const [includeSalePrice, setIncludeSalePrice] = useState(false);
   // `creating` llega un render tarde: dos toques seguidos generarían dos enlaces.
   const submitting = useRef(false);
 
@@ -37,8 +39,11 @@ export function ShareLinkCreateForm({ disabled, creating, progress, errors, subm
     submitting.current = true;
     setDelivery(next);
     try {
-      const ok = await onCreate({ label, hours: Number(hours), delivery: next });
-      if (ok) setLabel('');
+      const ok = await onCreate({ label, hours: Number(hours), delivery: next, includeSalePrice });
+      if (ok) {
+        setLabel('');
+        setIncludeSalePrice(false);
+      }
     } finally {
       submitting.current = false;
     }
@@ -78,6 +83,21 @@ export function ShareLinkCreateForm({ disabled, creating, progress, errors, subm
         />
         {errors.hours ? <Text style={[styles.error, { color: colors.error.main }]}>{errors.hours}</Text> : null}
       </View>
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Text style={[styles.label, { color: colors.text.primary }]}>Incluir precio de venta</Text>
+          <Text style={[styles.hint, { color: colors.text.secondary }]}>El cliente verá el precio de los productos que lo tengan.</Text>
+        </View>
+        <Switch
+          testID="share-link-sale-price"
+          accessibilityLabel="Incluir precio de venta"
+          value={includeSalePrice}
+          onValueChange={setIncludeSalePrice}
+          disabled={creating}
+          trackColor={{ false: colors.divider, true: colors.primary.light }}
+          thumbColor={includeSalePrice ? colors.primary.main : colors.text.secondary}
+        />
+      </View>
       {submitError ? (
         <Text style={[styles.error, { color: colors.error.main }]} accessibilityLiveRegion="polite">
           {submitError}
@@ -114,5 +134,7 @@ const styles = StyleSheet.create({
   hint: { ...Typography.caption },
   field: { gap: Spacing.xs },
   label: { ...Typography.bodySmallStrong },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  switchText: { flex: 1, gap: 2 },
   error: { ...Typography.caption },
 });

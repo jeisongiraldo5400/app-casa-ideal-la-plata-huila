@@ -27,6 +27,8 @@ export type CreateShareLinkInput = {
   label: string;
   /** ISO. El RPC exige `now() < expiresAt <= now() + 30 días`. */
   expiresAt: string;
+  /** «Incluir precio de venta»: la revista mostrará el precio de los productos que lo tengan. */
+  includeSalePrice?: boolean;
 };
 
 /** Congela una versión nueva y crea un enlace; los enlaces anteriores siguen vivos. */
@@ -39,6 +41,8 @@ export async function createCatalogShareLink(input: CreateShareLinkInput): Promi
     p_token_hint: input.tokenHint,
     p_label: input.label.trim(),
     p_expires_at: input.expiresAt,
+    // Solo se manda cuando se pidió: sin la opción, la llamada es la de siempre.
+    ...(input.includeSalePrice ? { p_include_sale_price: true } : {}),
   });
   if (error) throw new Error(error.message || 'No fue posible crear el enlace privado.');
   return parseShareLinkResult(data, 'La base no devolvió el enlace creado.');

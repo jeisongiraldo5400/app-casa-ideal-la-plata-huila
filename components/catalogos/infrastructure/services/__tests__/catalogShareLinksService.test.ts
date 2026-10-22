@@ -44,6 +44,22 @@ describe('createCatalogShareLink', () => {
     expect(result).toEqual({ shareLinkId: 'link-1', expiresAt: input.expiresAt, versionId: 'v-1', versionNumber: 2 });
   });
 
+  it('con «Incluir precio de venta» agrega p_include_sale_price', async () => {
+    mockRpc.mockResolvedValueOnce({ data: { shareLinkId: 'link-1', expiresAt: input.expiresAt }, error: null });
+
+    await createCatalogShareLink({ ...input, includeSalePrice: true });
+
+    expect(mockRpc).toHaveBeenCalledWith('create_private_catalog_share_link', expect.objectContaining({ p_include_sale_price: true }));
+  });
+
+  it('sin la opción no manda el parámetro (compatible con bases sin la migración)', async () => {
+    mockRpc.mockResolvedValueOnce({ data: { shareLinkId: 'link-1', expiresAt: input.expiresAt }, error: null });
+
+    await createCatalogShareLink({ ...input, includeSalePrice: false });
+
+    expect(mockRpc.mock.calls[0][1]).not.toHaveProperty('p_include_sale_price');
+  });
+
   it('propaga el mensaje del RPC (vigencia, permisos, formato del token)', async () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'La vigencia máxima es de 30 días.' } });
     await expect(createCatalogShareLink(input)).rejects.toThrow('La vigencia máxima es de 30 días.');

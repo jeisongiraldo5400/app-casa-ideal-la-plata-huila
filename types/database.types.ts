@@ -616,6 +616,7 @@ export type Database = {
           expires_at: string
           first_viewed_at: string | null
           id: string
+          include_sale_price: boolean
           label: string
           last_viewed_at: string | null
           revoked_at: string | null
@@ -632,6 +633,7 @@ export type Database = {
           expires_at: string
           first_viewed_at?: string | null
           id?: string
+          include_sale_price?: boolean
           label: string
           last_viewed_at?: string | null
           revoked_at?: string | null
@@ -648,6 +650,7 @@ export type Database = {
           expires_at?: string
           first_viewed_at?: string | null
           id?: string
+          include_sale_price?: boolean
           label?: string
           last_viewed_at?: string | null
           revoked_at?: string | null
@@ -5036,6 +5039,7 @@ export type Database = {
         Args: {
           p_catalog_id: string
           p_expires_at: string
+          p_include_sale_price?: boolean
           p_label: string
           p_snapshot: Json
           p_token: string

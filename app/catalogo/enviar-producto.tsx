@@ -93,7 +93,7 @@ function EnviarProductoInner() {
     );
   }
 
-  const send = async ({ label, hours, delivery }: CreateShareLinkRequest): Promise<boolean> => {
+  const send = async ({ label, hours, delivery, includeSalePrice }: CreateShareLinkRequest): Promise<boolean> => {
     if (count === 0) return false;
     const validation = validateShareLinkInput({ label, hours });
     setErrors(validation);
@@ -103,7 +103,7 @@ function EnviarProductoInner() {
     setProgress(null);
     setSubmitError(null);
     try {
-      const sent = await shareProducts({ products: selection.selected, label, hours, onProgress: setProgress });
+      const sent = await shareProducts({ products: selection.selected, label, hours, includeSalePrice, onProgress: setProgress });
       const trimmedLabel = label.trim();
       const whatsApp =
         delivery === 'whatsapp' ? await shareLinkByWhatsApp(buildShareMessage({ url: sent.url, label: trimmedLabel })) : null;
