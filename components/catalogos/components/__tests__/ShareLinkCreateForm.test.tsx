@@ -31,4 +31,21 @@ describe('ShareLinkCreateForm', () => {
     expect(onCreate).toHaveBeenCalledTimes(2);
     expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({ delivery: 'none' }));
   });
+
+  it('«Incluir precio de venta» viene apagado y se manda solo si se activa', async () => {
+    const onCreate = jest.fn(async () => true);
+    const screen = render(
+      <ShareLinkCreateForm disabled={false} creating={false} progress={null} errors={{}} submitError={null} onCreate={onCreate} />
+    );
+
+    expect(screen.getByTestId('share-link-sale-price').props.value).toBe(false);
+    await act(async () => fireEvent.press(screen.getByText('Solo generar')));
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({ includeSalePrice: false }));
+
+    fireEvent(screen.getByTestId('share-link-sale-price'), 'valueChange', true);
+    await act(async () => fireEvent.press(screen.getByText('Solo generar')));
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({ includeSalePrice: true }));
+    // Tras crear, vuelve a apagado para el siguiente cliente.
+    expect(screen.getByTestId('share-link-sale-price').props.value).toBe(false);
+  });
 });

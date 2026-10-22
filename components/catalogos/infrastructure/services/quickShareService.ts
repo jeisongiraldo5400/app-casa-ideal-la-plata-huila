@@ -15,6 +15,8 @@ export type QuickShareInput = {
   /** Para quién es: lo que el vendedor verá en sus enlaces y en el aviso de apertura. */
   label: string;
   hours: number;
+  /** «Incluir precio de venta» (apagado por defecto). */
+  includeSalePrice?: boolean;
 };
 
 export type QuickShareProductsInput = {
@@ -22,6 +24,7 @@ export type QuickShareProductsInput = {
   products: readonly PublicCatalogListingItem[];
   label: string;
   hours: number;
+  includeSalePrice?: boolean;
   onProgress?: (progress: SnapshotProgress) => void;
 };
 
@@ -69,7 +72,7 @@ async function findReusableEdition(productIds: readonly string[], title: string)
 /** Congela la edición y crea el enlace: mismos pasos que «Compartir» en una edición normal. */
 async function createQuickShareLink(
   detail: PrivateCatalogDetail,
-  input: { label: string; hours: number },
+  input: { label: string; hours: number; includeSalePrice?: boolean },
   options: AnalyzeSnapshotOptions = {}
 ): Promise<QuickShareResult> {
   const snapshot = await buildCatalogSnapshot(detail, options);
@@ -82,6 +85,7 @@ async function createQuickShareLink(
     tokenHint: token.tokenHint,
     label: input.label,
     expiresAt: expiresAtFromHours(input.hours),
+    includeSalePrice: input.includeSalePrice === true,
   });
 
   return {
@@ -127,7 +131,13 @@ export async function shareProducts(input: QuickShareProductsInput): Promise<Qui
 
   const [first] = products;
   if (products.length === 1 && first) {
-    return shareSingleProduct({ productId: first.productId, productName: first.displayName, label: input.label, hours: input.hours });
+    return shareSingleProduct({
+      productId: first.productId,
+      productName: first.displayName,
+      label: input.label,
+      hours: input.hours,
+      includeSalePrice: input.includeSalePrice,
+    });
   }
 
   const productIds = products.map((item) => item.productId);
