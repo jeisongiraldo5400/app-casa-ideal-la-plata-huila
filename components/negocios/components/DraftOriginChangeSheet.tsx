@@ -135,6 +135,9 @@ export function DraftOriginChangeSheet({
   useEffect(() => {
     setServerCheck(null);
     setSaveError(null);
+    // Una revisión en curso que se cancela (sin señal o sin destino) no puede
+    // dejar «Revisando…» ni el botón bloqueados.
+    setChecking(false);
     if (!target || offline) return;
     let cancelled = false;
     setChecking(true);
