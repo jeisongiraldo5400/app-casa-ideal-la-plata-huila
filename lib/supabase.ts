@@ -41,7 +41,10 @@ function requestUrl(input: RequestInfo | URL): string {
  * tiempo límite: su carril de la cola las reintenta igual.
  */
 function isStorageRequest(url: string): boolean {
-  return url.includes('/storage/v1/');
+  // Pedir una URL firmada (`/object/sign/`) es una consulta corta, no una
+  // transferencia: sin corte, una firma colgada con señal débil dejaba el
+  // detalle del negocio cargando para siempre sin caer a lo guardado.
+  return url.includes('/storage/v1/') && !url.includes('/storage/v1/object/sign/');
 }
 
 /** `fetch` con `AbortController` y tiempo límite, salvo para Storage. */
