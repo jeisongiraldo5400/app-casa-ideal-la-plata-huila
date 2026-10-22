@@ -5,6 +5,7 @@ import {
   canUseLocalDb,
   fetchNegocioDetailFromLocal,
 } from '@/lib/offline/repositories/offlineRepository';
+import { fetchCreditSettingsFromLocal } from '@/lib/offline/repositories/catalogRepository';
 import { DEFAULT_REJECTED_NEGOCIO_REASON } from '@/lib/offline/sync/negocioCreateCommand';
 import { buildNegocioSyncStateMap } from '@/lib/offline/sync/negocioPendingSync';
 import { parseOutboxPayload } from '@/lib/offline/sync/outbox';
@@ -20,7 +21,23 @@ type LocalDetail = NonNullable<Awaited<ReturnType<typeof fetchNegocioDetailFromL
 export type LocalNegocioDetail = LocalDetail & {
   /** Estado de envío si el negocio se creó en el teléfono y el servidor aún no lo confirma. */
   pendingSync: PendingNegocioSync | null;
+  /**
+   * Texto legal y decimales del dinero de la configuración de crédito
+   * descargada. Sin esto el contrato impreso sin señal salía sin las
+   * «Condiciones adicionales». `null` si no hay configuración en el teléfono.
+   */
+  creditSettings: { legalText: string | null; moneyDecimalPlaces: number | null } | null;
 };
+
+async function localContractSettings(): Promise<LocalNegocioDetail['creditSettings']> {
+  const settings = await fetchCreditSettingsFromLocal().catch(() => null);
+  if (!settings) return null;
+  const decimals = Number(settings.money_decimal_places);
+  return {
+    legalText: settings.legal_text || null,
+    moneyDecimalPlaces: Number.isFinite(decimals) ? decimals : null,
+  };
+}
 
 /**
  * Estado de envío y vista previa (productos y plan) de un negocio creado sin
@@ -87,12 +104,13 @@ export async function loadPendingNegocio(
  * el comando encolado (la fila local no los guarda) y marca su estado.
  */
 export async function loadLocalNegocioDetail(negocioId: string): Promise<LocalNegocioDetail | null> {
-  const [local, pending] = await Promise.all([
+  const [local, pending, creditSettings] = await Promise.all([
     fetchNegocioDetailFromLocal(negocioId),
     loadPendingNegocio(negocioId).catch(() => null),
+    localContractSettings(),
   ]);
   if (!local) return null;
-  if (!pending) return { ...local, pendingSync: null };
+  if (!pending) return { ...local, pendingSync: null, creditSettings };
   const { preview } = pending;
   const items = local.items.length ? local.items : preview.items;
   return {
@@ -116,5 +134,6 @@ export async function loadLocalNegocioDetail(negocioId: string): Promise<LocalNe
     items: items as LocalDetail['items'],
     cuotas: local.cuotas.length ? local.cuotas : (preview.cuotas as LocalDetail['cuotas']),
     pendingSync: pending.sync,
+    creditSettings,
   };
 }

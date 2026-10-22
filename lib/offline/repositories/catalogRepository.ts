@@ -11,8 +11,11 @@ import {
 } from '../models';
 import {
   filterCatalogProducts,
+  queryLocalInventory,
   stockRowsForProduct,
   type LocalCatalogProduct,
+  type LocalInventoryQuery,
+  type LocalInventoryRow,
 } from '../domain/catalogLocal';
 import { getCatalogPulledAt } from '../sync/catalogPull';
 
@@ -139,6 +142,49 @@ export async function stockForProductsFromLocal(
   return Object.fromEntries(
     unique.map((productId) => [productId, stockRowsForProduct(rows, names, productId)])
   );
+}
+
+/**
+ * Una página de Inventario con el catálogo descargado. `null` si no hay base
+ * local o si el teléfono no lleva productos (Preparar el teléfono: «ninguno»).
+ */
+export async function fetchInventoryPageFromLocal(
+  query: LocalInventoryQuery
+): Promise<{ rows: LocalInventoryRow[]; totalCount: number } | null> {
+  if (!(await hasLocalCatalog())) return null;
+  const database = getDatabase();
+  const [products, stock, names] = await Promise.all([
+    database.get<CatalogProduct>('catalog_products').query().fetch(),
+    database.get<CatalogWarehouseStock>('catalog_warehouse_stock').query().fetch(),
+    warehouseNames(),
+  ]);
+  return queryLocalInventory(
+    products.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      status: row.status,
+      categoryId: row.categoryId ?? null,
+    })),
+    stock.map((row) => ({
+      productId: row.productId,
+      warehouseId: row.warehouseId,
+      quantity: Number(row.quantity) || 0,
+    })),
+    names,
+    query
+  );
+}
+
+/** Bodegas activas descargadas, por nombre (filtro de Inventario sin señal). */
+export async function fetchActiveWarehousesFromLocal(): Promise<{ id: string; name: string; city: string | null }[]> {
+  if (!canUseLocalCatalog()) return [];
+  const rows = await getDatabase().get<CatalogWarehouse>('catalog_warehouses').query().fetch();
+  return rows
+    .filter((row) => row.isActive !== false)
+    .map((row) => ({ id: row.id, name: row.name, city: row.city ?? null }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function stockForProductFromLocal(productId: string): Promise<LocalStockRow[]> {

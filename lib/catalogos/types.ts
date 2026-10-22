@@ -92,6 +92,12 @@ export type PrivateCatalogListItem = PrivateCatalog &
     isOwner: boolean;
     /** Cómo llegó a la lista, para el filtro de alcance. */
     scope: CatalogScope;
+    /**
+     * Foto principal del primer producto (con foto) del catálogo, para la
+     * miniatura de la lista cuando no hay portada propia. Solo se pide para
+     * los que el móvil muestra y no tienen portada.
+     */
+    firstProductImageUrl?: string | null;
   };
 
 export type MagazineProduct = PublicCatalogProductDetail & {

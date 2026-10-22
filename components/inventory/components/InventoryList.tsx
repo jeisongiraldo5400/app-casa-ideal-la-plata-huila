@@ -8,6 +8,8 @@ import { ProductPurchasesPanel } from './ProductPurchasesPanel';
 import { fetchSalePrices } from '@/components/negocios/infrastructure/services/salePricesService';
 import type { SalePriceMap } from '@/lib/offline/sync/salePrices';
 import { formatCOP } from '@/lib/creditCalculator';
+import { isOfflineError } from '@/lib/errorMessage';
+import { formatLocalDataLabel } from '@/lib/offline/sync/downloadData';
 import { Radius, Spacing, ThemeColors, getColors } from '@/constants/theme';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -33,6 +35,8 @@ export function InventoryList({ header }: InventoryListProps) {
     refreshing,
     loadingMore,
     error,
+    fromLocal,
+    localPulledAt,
     searchQuery,
     selectedWarehouseId,
     totalCount,
@@ -97,8 +101,11 @@ export function InventoryList({ header }: InventoryListProps) {
             <Text style={styles.productName}>{item.name || 'Sin nombre'}</Text>
             <Text style={styles.productSku}>SKU: {item.sku || 'N/A'}</Text>
             <Text style={styles.productBarcode}>Código: {item.barcode || 'N/A'}</Text>
-            <Text style={styles.productBrand}>Marca: {item.brand_name}</Text>
-            <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
+            {/* Sin señal la marca y la categoría no vienen con nombre: se omiten. */}
+            {item.brand_name ? <Text style={styles.productBrand}>Marca: {item.brand_name}</Text> : null}
+            {item.category_name ? (
+              <Text style={styles.productCategory}>Categoría: {item.category_name}</Text>
+            ) : null}
             {item.color_name ? <Text style={styles.productColor}>Color: {item.color_name}</Text> : null}
             {salePrices[item.id] !== undefined ? (
               <Text testID={`inventory-sale-price-${item.id}`} style={styles.salePrice}>
@@ -145,7 +152,9 @@ export function InventoryList({ header }: InventoryListProps) {
     <Card style={styles.emptyCard}>
       <Text style={styles.emptyText}>
         {error
-          ? `No se pudo cargar el inventario: ${error}`
+          ? isOfflineError(error)
+            ? error
+            : `No se pudo cargar el inventario: ${error}`
           : searchQuery
             ? 'No se encontraron productos'
             : 'No hay productos en el inventario'}
@@ -184,7 +193,18 @@ export function InventoryList({ header }: InventoryListProps) {
       data={inventory}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
-      ListHeaderComponent={<View style={styles.header}>{header}</View>}
+      ListHeaderComponent={
+        <View style={styles.header}>
+          {header}
+          {fromLocal ? (
+            <Card style={styles.localNotice}>
+              <Text testID="inventory-local-notice" style={styles.localNoticeText}>
+                Sin señal · {formatLocalDataLabel(localPulledAt)}. Las existencias pueden haber cambiado.
+              </Text>
+            </Card>
+          ) : null}
+        </View>
+      }
       ListEmptyComponent={emptyState}
       ListFooterComponent={footer}
       onEndReached={() => {
@@ -221,6 +241,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: colors.text.secondary,
+  },
+  localNotice: {
+    padding: Spacing.md,
+  },
+  localNoticeText: {
+    fontSize: 13,
+    color: colors.warning.dark,
   },
   emptyCard: {
     padding: 24,

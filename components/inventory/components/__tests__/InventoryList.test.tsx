@@ -162,3 +162,34 @@ describe('InventoryList progressive loading', () => {
     mockIsCostos = false;
   });
 });
+
+describe('InventoryList sin señal', () => {
+  afterEach(() => cleanup());
+
+  it('avisa que son existencias de la última descarga y omite marca/categoría vacías', async () => {
+    mockUseInventory.mockReturnValue(
+      inventoryState({
+        fromLocal: true,
+        localPulledAt: null,
+        inventory: [{ ...product, brand_name: '', category_name: '' }],
+      })
+    );
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(screen.getByTestId('inventory-local-notice')).toBeTruthy();
+    expect(screen.getByText('Silla comedor')).toBeTruthy();
+    expect(screen.queryByText(/Marca:/)).toBeNull();
+    expect(screen.queryByText(/Categoría:/)).toBeNull();
+  });
+
+  it('sin productos en el teléfono muestra el aviso tal cual', async () => {
+    mockUseInventory.mockReturnValue(
+      inventoryState({ inventory: [], error: 'Sin conexión y sin productos en el teléfono.' })
+    );
+    const screen = render(<InventoryList header={<Text>Inventario</Text>} />);
+    await act(async () => undefined);
+
+    expect(screen.getByText('Sin conexión y sin productos en el teléfono.')).toBeTruthy();
+  });
+});

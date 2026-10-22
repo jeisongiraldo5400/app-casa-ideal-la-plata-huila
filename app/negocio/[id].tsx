@@ -355,7 +355,12 @@ function NegocioDetailScreenInner() {
       setPaymentPage(0);
       setCustomerName(local.customer.name || '');
       setCustomerMeta(local.customer);
-      setLegalText(null);
+      // El texto legal bajó con la configuración de crédito: el contrato
+      // impreso sin señal lleva sus «Condiciones adicionales».
+      setLegalText(local.creditSettings?.legalText ?? null);
+      if (local.creditSettings?.moneyDecimalPlaces != null) {
+        setPayMoneyDecimals(local.creditSettings.moneyDecimalPlaces);
+      }
       setCustomerSignature('');
       setGuarantorSignature('');
       setSellerSignature('');

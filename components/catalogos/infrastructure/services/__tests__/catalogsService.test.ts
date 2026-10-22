@@ -17,10 +17,12 @@ jest.mock('@/lib/supabase', () => ({
 import {
   archiveOwnCatalog,
   createPrivateCatalog,
+  fetchCatalogThumbnails,
   getPrivateCatalog,
   IN_FILTER_BATCH_SIZE,
   listPrivateCatalogs,
   POSTGREST_PAGE_SIZE,
+  THUMBNAIL_BATCH_SIZE,
   updateCatalogCoverText,
 } from '../catalogsService';
 
@@ -135,6 +137,67 @@ describe('listPrivateCatalogs', () => {
     expect(links.range).toHaveBeenCalledWith(POSTGREST_PAGE_SIZE, 2 * POSTGREST_PAGE_SIZE - 1);
     expect(list.find((item) => item.id === 'cat-0')?.linkCount).toBe(POSTGREST_PAGE_SIZE + 1);
     expect(list.find((item) => item.id === 'cat-0')?.shareLinks[0].token).toBeNull();
+  });
+});
+
+describe('miniatura del primer producto', () => {
+  const previousUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  beforeAll(() => {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://base.example.supabase.co';
+  });
+  afterAll(() => {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = previousUrl;
+  });
+
+  it('pide la foto en una sola llamada y la pone en cada catálogo sin portada', async () => {
+    builders.catalogs = makeBuilder({
+      data: [
+        CATALOG_ROW,
+        { ...CATALOG_ROW, id: 'cat-2', cover_image_url: 'https://x/portada.jpg' },
+        { ...CATALOG_ROW, id: 'cat-3', owner_id: 'admin', visibility: 'organization', status: 'published' },
+        // Privado ajeno (el admin lo recibe por la RLS): no se dibuja, no se pide.
+        { ...CATALOG_ROW, id: 'cat-4', owner_id: 'otro', visibility: 'private' },
+      ],
+      error: null,
+    });
+    mockRpc.mockResolvedValue({
+      data: [{ catalog_id: 'cat-1', bucket: 'catalog-images', storage_path: 'fichas/nevera 1.jpg' }],
+      error: null,
+    });
+
+    const list = await listPrivateCatalogs('user-1');
+
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('get_catalog_list_thumbnails', { p_catalog_ids: ['cat-1', 'cat-3'] });
+    const byId = new Map(list.map((item) => [item.id, item.firstProductImageUrl]));
+    expect(byId.get('cat-1')).toBe('https://base.example.supabase.co/storage/v1/object/public/catalog-images/fichas/nevera%201.jpg');
+    expect(byId.get('cat-2')).toBeNull();
+    expect(byId.get('cat-3')).toBeNull();
+  });
+
+  it('si la función falla la lista sale igual, sin foto', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'Could not find the function' } });
+    const [item] = await listPrivateCatalogs('user-1');
+    expect(item.internalTitle).toBe('Lavadoras');
+    expect(item.firstProductImageUrl).toBeNull();
+
+    mockRpc.mockRejectedValue(new Error('Network request failed'));
+    const [offline] = await listPrivateCatalogs('user-1');
+    expect(offline.firstProductImageUrl).toBeNull();
+  });
+
+  it('trocea en lotes del tope de la función, no una llamada por catálogo', async () => {
+    mockRpc.mockResolvedValue({ data: [], error: null });
+    const ids = Array.from({ length: THUMBNAIL_BATCH_SIZE + 5 }, (_, index) => `cat-${index}`);
+    await fetchCatalogThumbnails(ids);
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    expect(mockRpc.mock.calls[0][1].p_catalog_ids).toHaveLength(THUMBNAIL_BATCH_SIZE);
+    expect(mockRpc.mock.calls[1][1].p_catalog_ids).toHaveLength(5);
+  });
+
+  it('sin catálogos que la necesiten no llama a la base', async () => {
+    await expect(fetchCatalogThumbnails([])).resolves.toEqual(new Map());
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });
 

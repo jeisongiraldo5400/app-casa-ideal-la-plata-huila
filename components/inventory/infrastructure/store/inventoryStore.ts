@@ -1,5 +1,13 @@
 import { errorMessage } from '@/lib/errorMessage';
 import { supabase } from '@/lib/supabase';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
+import {
+  fetchActiveWarehousesFromLocal,
+  fetchInventoryPageFromLocal,
+  localCatalogPulledAt,
+} from '@/lib/offline/repositories/catalogRepository';
+import type { LocalInventoryRow } from '@/lib/offline/domain/catalogLocal';
 import { create } from 'zustand';
 
 import { Database } from '@/types/database.types';
@@ -21,6 +29,27 @@ export interface InventoryItem {
   stock_by_warehouse: Record<string, { warehouse_id: string; warehouse_name: string; quantity: number }>;
   status: boolean;
   created_at: string;
+}
+
+/** Sin señal y sin productos en el teléfono: no hay de dónde mostrar nada. */
+export const SIN_PRODUCTOS_LOCALES =
+  'Sin conexión y sin productos en el teléfono. Con señal, pulse «Descargar» en Preparar el teléfono (productos: todos).';
+
+function fromLocalRow(row: LocalInventoryRow): InventoryItem {
+  return {
+    id: row.id,
+    name: row.name,
+    sku: row.sku || '',
+    barcode: row.barcode || '',
+    // Marca y categoría no bajan con nombre: la tarjeta omite esas líneas.
+    brand_name: '',
+    category_name: '',
+    color_name: null,
+    total_stock: row.totalStock,
+    stock_by_warehouse: Object.fromEntries(row.stock.map((stock) => [stock.warehouse_id, stock])),
+    status: row.status,
+    created_at: '',
+  };
 }
 
 interface InventoryLoadOptions {
@@ -46,6 +75,12 @@ interface InventoryState {
   refreshing: boolean;
   loadingMore: boolean;
   error: string | null;
+  /**
+   * La lista viene del catálogo descargado (sin señal): existencias de la
+   * última descarga, no las de ahora. `localPulledAt` es esa descarga.
+   */
+  fromLocal: boolean;
+  localPulledAt: number | null;
   searchQuery: string;
   // Paginación
   currentPage: number;
@@ -75,6 +110,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   refreshing: false,
   loadingMore: false,
   error: null,
+  fromLocal: false,
+  localPulledAt: null,
   searchQuery: '',
   currentPage: 1,
   pageSize: 20,
@@ -82,6 +119,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   hasMore: false,
 
   loadWarehouses: async () => {
+    // Sin señal, las bodegas descargadas: antes el filtro quedaba vacío.
+    const loadLocal = async () => {
+      const local = await fetchActiveWarehousesFromLocal().catch(() => []);
+      set({ warehouses: local as unknown as Warehouse[] });
+    };
+    if (!useSyncStore.getState().online) {
+      await loadLocal();
+      if (get().warehouses.length) return;
+    }
     try {
       const { data, error } = await supabase
         .from('warehouses')
@@ -89,6 +135,10 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         .eq('is_active', true)
         .order('name');
 
+      if (error && isNetworkError(error)) {
+        await loadLocal();
+        return;
+      }
       if (error) {
         // Solo loggear errores críticos, no errores de permisos o tablas vacías
         if (error.code !== 'PGRST116' && error.code !== '42P01') {
@@ -99,6 +149,10 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       }
       set({ warehouses: data || [] });
     } catch (error: any) {
+      if (isNetworkError(error)) {
+        await loadLocal();
+        return;
+      }
       // Solo loggear errores inesperados
       if (error?.message && !error.message.includes('permission')) {
         console.warn('Error loading warehouses:', error.message);
@@ -124,6 +178,55 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       error: null,
     });
 
+    /**
+     * Sin señal (o si la petición no llega) se lee el catálogo descargado con
+     * los mismos filtros. Antes la pantalla solo decía «Sin conexión» aunque
+     * el teléfono tuviera los productos y sus existencias. Devuelve si pudo.
+     */
+    const loadFromLocal = async (): Promise<boolean> => {
+      const local = await fetchInventoryPageFromLocal({
+        search: searchQuery,
+        warehouseId: targetWarehouseId ?? null,
+        categoryId: selectedCategoryId,
+        page,
+        pageSize,
+      }).catch(() => null);
+      if (requestId !== latestInventoryRequestId) return true;
+      if (!local) return false;
+      const pulledAt = await localCatalogPulledAt().catch(() => null);
+      if (requestId !== latestInventoryRequestId) return true;
+      const items = local.rows.map(fromLocalRow);
+      set((state) => ({
+        inventory: append
+          ? [...state.inventory, ...items.filter((item) => !state.inventory.some((current) => current.id === item.id))]
+          : items,
+        currentPage: page,
+        loading: false,
+        refreshing: false,
+        loadingMore: false,
+        error: null,
+        fromLocal: true,
+        localPulledAt: pulledAt,
+        totalCount: local.totalCount,
+        hasMore: local.totalCount > page * pageSize,
+      }));
+      return true;
+    };
+
+    const failOffline = (error: unknown) => {
+      set({
+        loading: false,
+        refreshing: false,
+        loadingMore: false,
+        error: isNetworkError(error)
+          ? SIN_PRODUCTOS_LOCALES
+          : errorMessage(error, 'No se pudo cargar el inventario'),
+      });
+    };
+
+    // Sin red conocida no se espera el tiempo límite del servidor.
+    if (!useSyncStore.getState().online && (await loadFromLocal())) return;
+
     try {
       const { data, error } = await supabase.rpc('get_products_dashboard', {
         page,
@@ -137,6 +240,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       });
 
       if (requestId !== latestInventoryRequestId) return;
+
+      if (error && isNetworkError(error)) {
+        if (await loadFromLocal()) return;
+        failOffline(error);
+        return;
+      }
 
       if (error) {
         console.error('Error loading inventory:', error);
@@ -157,6 +266,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
           loading: false,
           refreshing: false,
           loadingMore: false,
+          fromLocal: false,
           totalCount: append ? state.inventory.length : 0,
           hasMore: false,
         }));
@@ -223,11 +333,17 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         loading: false,
         refreshing: false,
         loadingMore: false,
+        fromLocal: false,
         totalCount,
         hasMore,
       }));
     } catch (error: any) {
       if (requestId !== latestInventoryRequestId) return;
+      if (isNetworkError(error)) {
+        if (await loadFromLocal()) return;
+        failOffline(error);
+        return;
+      }
       console.error('Error loading inventory (catch):', error);
       set({
         loading: false,

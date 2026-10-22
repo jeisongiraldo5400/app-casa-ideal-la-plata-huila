@@ -2,7 +2,7 @@ import { BarcodeScanner } from '@/components/scanning';
 import { useInventoryStore } from '@/components/inventory/infrastructure/store/inventoryStore';
 import { describeScanFailure } from '@/lib/barcodeScanFeedback';
 import { logHandledError } from '@/lib/errorMessage';
-import { supabase } from '@/lib/supabase';
+import { lookupScannedBarcode } from '@/components/inventory/infrastructure/services/scanLookupService';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
@@ -35,45 +35,41 @@ function QuickSearchScreenInner() {
     router.navigate('/(tabs)');
   };
 
+  const showScanAlert = (alert: { title: string; message: string }) => {
+    Alert.alert(alert.title, alert.message, [
+      { text: 'Intentar de nuevo', style: 'default' },
+      {
+        text: 'Cancelar',
+        style: 'cancel',
+        onPress: goHome,
+      },
+    ]);
+  };
+
   const handleScan = async (barcode: string) => {
-    try {
-      const { data: product, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('barcode', barcode)
-        .is('deleted_at', null)
-        .single();
-
-      if (error || !product) {
-        // Un fallo de red llega aquí dentro de `error`, no como excepción: el
-        // aviso distingue «no existe» de «no se pudo consultar».
-        const alert = describeScanFailure(error, barcode);
-        Alert.alert(alert.title, alert.message, [
-          { text: 'Intentar de nuevo', style: 'default' },
-          {
-            text: 'Cancelar',
-            style: 'cancel',
-            onPress: goHome,
-          },
-        ]);
-        return;
-      }
-
+    // Sin señal busca en el catálogo descargado (ver lookupScannedBarcode).
+    const result = await lookupScannedBarcode(barcode);
+    if (result.status === 'found') {
       setSearchQuery(barcode);
       router.navigate('/(tabs)/inventory');
       setScannerActive(false);
-    } catch (error: unknown) {
-      logHandledError('Buscar producto por código de barras', error);
-      const alert = describeScanFailure(error, barcode);
-      Alert.alert(alert.title, alert.message, [
-        { text: 'Intentar de nuevo', style: 'default' },
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-          onPress: goHome,
-        },
-      ]);
+      return;
     }
+    if (result.status === 'missing') {
+      showScanAlert(
+        result.fromLocal
+          ? {
+              title: 'No está en el teléfono',
+              message: `El código ${barcode} no vino en la última descarga. Con señal se consulta en el servidor.`,
+            }
+          : describeScanFailure(null, barcode)
+      );
+      return;
+    }
+    // Un fallo de red llega dentro de `error`: el aviso distingue «no existe»
+    // de «no se pudo consultar».
+    logHandledError('Buscar producto por código de barras', result.error);
+    showScanAlert(describeScanFailure(result.error, barcode));
   };
 
   const handleClose = () => {

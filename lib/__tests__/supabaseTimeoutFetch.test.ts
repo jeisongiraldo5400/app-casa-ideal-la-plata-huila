@@ -66,6 +66,19 @@ describe('createTimeoutFetch', () => {
     expect(mock.mock.calls[0][1]?.signal).toBeUndefined();
   });
 
+  it('sí corta la petición de una URL firmada (consulta corta, no una subida)', async () => {
+    const { fetchMock } = hangingFetch();
+    const timeoutFetch = createTimeoutFetch(fetchMock, 8_000);
+
+    const pending = timeoutFetch(
+      'https://test.supabase.co/storage/v1/object/sign/negocio-signatures/n1/cliente.png',
+      { method: 'POST' }
+    );
+    const asserted = expect(pending).rejects.toThrow(REQUEST_TIMEOUT_MESSAGE);
+    jest.advanceTimersByTime(8_000);
+    await asserted;
+  });
+
   it('una respuesta a tiempo no se ve afectada', async () => {
     const baseFetch = jest.fn(async () => ({ ok: true }) as Response) as unknown as typeof fetch;
     await expect(createTimeoutFetch(baseFetch, 8_000)(RPC_URL)).resolves.toMatchObject({ ok: true });
