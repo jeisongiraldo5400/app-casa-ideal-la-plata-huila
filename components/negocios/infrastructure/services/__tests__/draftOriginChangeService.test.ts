@@ -55,7 +55,7 @@ describe('draftOriginChangeService', () => {
     });
   });
 
-  it('guarda, lee y borra el cambio preparado sin señal por negocio', async () => {
+  it('guarda, lee y borra el cambio preparado sin señal por negocio y usuario', async () => {
     const change = {
       negocioId: 'n1',
       ...target,
@@ -64,11 +64,27 @@ describe('draftOriginChangeService', () => {
       idempotencyKey: 'clave',
       preparedAt: '2026-10-16T10:00:00.000Z',
     };
-    await savePreparedDraftOriginChange(change);
-    expect(await readPreparedDraftOriginChange('n1')).toEqual(change);
-    expect(await readPreparedDraftOriginChange('n2')).toBeNull();
-    await clearPreparedDraftOriginChange('n1');
-    expect(await readPreparedDraftOriginChange('n1')).toBeNull();
+    await savePreparedDraftOriginChange(change, 'u1');
+    expect(await readPreparedDraftOriginChange('n1', 'u1')).toEqual(change);
+    expect(await readPreparedDraftOriginChange('n2', 'u1')).toBeNull();
+    await clearPreparedDraftOriginChange('n1', 'u1');
+    expect(await readPreparedDraftOriginChange('n1', 'u1')).toBeNull();
     expect(AsyncStorage.setItem).toHaveBeenCalled();
+  });
+
+  it('otro usuario en el mismo teléfono no ve el cambio preparado', async () => {
+    const change = {
+      negocioId: 'n1',
+      ...target,
+      kind: 'remision' as const,
+      label: 'Remisión OE-1 · productos propios',
+      idempotencyKey: 'clave',
+      preparedAt: '2026-10-16T10:00:00.000Z',
+    };
+    await savePreparedDraftOriginChange(change, 'u1');
+    expect(await readPreparedDraftOriginChange('n1', 'u2')).toBeNull();
+    // Sin usuario (sesión cerrada) no se lee ni se guarda nada.
+    expect(await readPreparedDraftOriginChange('n1', null)).toBeNull();
+    await expect(savePreparedDraftOriginChange(change, null)).rejects.toThrow();
   });
 });

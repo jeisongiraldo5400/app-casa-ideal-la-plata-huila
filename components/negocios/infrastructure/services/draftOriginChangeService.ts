@@ -62,24 +62,41 @@ export async function changeDraftSource(
   if (error) throw rpcError(error, 'No se pudo cambiar el origen del negocio');
 }
 
-const preparedKey = (negocioId: string) => `@casa_ideal/negocio/origen_preparado/${negocioId}`;
+/**
+ * La clave lleva el usuario: si otra persona entra en el mismo teléfono, no ve
+ * (ni confirma con su cuenta) el cambio que preparó otro.
+ */
+const preparedKey = (userId: string, negocioId: string) =>
+  `@casa_ideal/negocio/origen_preparado/${userId}/${negocioId}`;
 
-export async function readPreparedDraftOriginChange(negocioId: string): Promise<PreparedDraftOriginChange | null> {
+export async function readPreparedDraftOriginChange(
+  negocioId: string,
+  userId: string | null | undefined
+): Promise<PreparedDraftOriginChange | null> {
+  if (!userId) return null;
   try {
-    const value = parsePreparedDraftOriginChange(await AsyncStorage.getItem(preparedKey(negocioId)));
+    const value = parsePreparedDraftOriginChange(await AsyncStorage.getItem(preparedKey(userId, negocioId)));
     return value && value.negocioId === negocioId ? value : null;
   } catch {
     return null;
   }
 }
 
-export async function savePreparedDraftOriginChange(change: PreparedDraftOriginChange): Promise<void> {
-  await AsyncStorage.setItem(preparedKey(change.negocioId), JSON.stringify(change));
+export async function savePreparedDraftOriginChange(
+  change: PreparedDraftOriginChange,
+  userId: string | null | undefined
+): Promise<void> {
+  if (!userId) throw new Error('Inicie sesión para preparar el cambio de origen.');
+  await AsyncStorage.setItem(preparedKey(userId, change.negocioId), JSON.stringify(change));
 }
 
-export async function clearPreparedDraftOriginChange(negocioId: string): Promise<void> {
+export async function clearPreparedDraftOriginChange(
+  negocioId: string,
+  userId: string | null | undefined
+): Promise<void> {
+  if (!userId) return;
   try {
-    await AsyncStorage.removeItem(preparedKey(negocioId));
+    await AsyncStorage.removeItem(preparedKey(userId, negocioId));
   } catch {
     // Si no se pudo borrar, la próxima confirmación responde por idempotencia.
   }

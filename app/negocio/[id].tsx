@@ -162,6 +162,7 @@ import { DraftOriginChangeSheet } from '@/components/negocios/components/DraftOr
 import {
   CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR,
   formatCoverageLine,
+  preparedOriginIsStale,
   type PreparedDraftOriginChange,
 } from '@/components/negocios/domain/draftOriginChange';
 import {
@@ -1350,13 +1351,21 @@ function NegocioDetailScreenInner() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    void readPreparedDraftOriginChange(id).then((change) => {
+    setPreparedOrigin(null);
+    void readPreparedDraftOriginChange(id, user?.id).then((change) => {
       if (!cancelled) setPreparedOrigin(change);
     });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, user?.id]);
+
+  // Activado, anulado o ya no borrador: el cambio preparado sobra y se borra.
+  useEffect(() => {
+    if (!id || !preparedOriginIsStale(negocio?.status)) return;
+    void clearPreparedDraftOriginChange(id, user?.id);
+    setPreparedOrigin(null);
+  }, [id, negocio?.status, user?.id]);
 
   /**
    * Confirma con señal el cambio de origen preparado sin señal: el servidor
@@ -1381,7 +1390,7 @@ function NegocioDetailScreenInner() {
         return;
       }
       await changeDraftSource(negocio.id, preparedOrigin, preparedOrigin.idempotencyKey);
-      await clearPreparedDraftOriginChange(negocio.id);
+      await clearPreparedDraftOriginChange(negocio.id, user?.id);
       setPreparedOrigin(null);
       await load();
       Alert.alert('Origen cambiado', `El negocio ahora sale de: ${preparedOrigin.label}. Ya puede activarlo.`);
@@ -1394,7 +1403,7 @@ function NegocioDetailScreenInner() {
 
   const discardPreparedOrigin = () => {
     if (!negocio) return;
-    void clearPreparedDraftOriginChange(negocio.id);
+    void clearPreparedDraftOriginChange(negocio.id, user?.id);
     setPreparedOrigin(null);
   };
 
@@ -2240,6 +2249,7 @@ function NegocioDetailScreenInner() {
           visible={originSheetOpen}
           onClose={() => setOriginSheetOpen(false)}
           negocioId={negocio.id}
+          userId={user?.id ?? null}
           customerId={negocio.customer_id ?? null}
           items={items.map((item) => ({
             product_id: item.product_id,
@@ -2250,7 +2260,7 @@ function NegocioDetailScreenInner() {
           onChanged={(label) => {
             setOriginSheetOpen(false);
             // Un cambio confirmado con señal reemplaza el preparado sin señal.
-            void clearPreparedDraftOriginChange(negocio.id);
+            void clearPreparedDraftOriginChange(negocio.id, user?.id);
             setPreparedOrigin(null);
             void load().then(() =>
               Alert.alert('Origen cambiado', `El negocio ahora sale de: ${label}. Ya puede activarlo.`)

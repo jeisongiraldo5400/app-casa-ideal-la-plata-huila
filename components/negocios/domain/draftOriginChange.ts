@@ -258,3 +258,13 @@ export function parsePreparedDraftOriginChange(raw: string | null | undefined): 
 /** Un activar con un cambio preparado pendiente saldría del origen viejo. */
 export const CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR =
   'Hay un cambio de origen preparado sin señal. Confírmelo primero («Confirmar cambio») o descártelo; si activa ahora, el negocio saldría del origen anterior.';
+
+/**
+ * Un cambio preparado solo tiene sentido mientras el negocio siga en borrador
+ * (o por firmar). Activado, anulado o en cualquier otro estado, se borra del
+ * teléfono al cargar el detalle. Sin estado conocido no se toca.
+ */
+export function preparedOriginIsStale(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return status !== 'borrador' && status !== 'por_firmar';
+}

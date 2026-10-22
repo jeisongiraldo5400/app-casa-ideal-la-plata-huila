@@ -37,6 +37,8 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   negocioId: string;
+  /** Usuario de la sesión: el cambio preparado queda ligado a él. */
+  userId: string | null;
   customerId: string | null;
   items: DraftOriginItem[];
   /** Sin señal (o con la copia del teléfono): solo se prepara el cambio. */
@@ -56,6 +58,7 @@ export function DraftOriginChangeSheet({
   visible,
   onClose,
   negocioId,
+  userId,
   customerId,
   items,
   offline,
@@ -186,7 +189,7 @@ export function DraftOriginChangeSheet({
           idempotencyKey: keyFor(targetKey),
           preparedAt: new Date().toISOString(),
         };
-        await savePreparedDraftOriginChange(change);
+        await savePreparedDraftOriginChange(change, userId);
         onPrepared(change);
         return;
       }

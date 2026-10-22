@@ -91,7 +91,11 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
           {state.header.customerName ?? 'Sin cliente'} · Vendedor {state.header.sellerName ?? '—'}
         </Text>
       </View>
-      <NegocioCostPanel result={state.result} showTotals />
+      {state.result.lines.length ? (
+        <NegocioCostPanel result={state.result} showTotals />
+      ) : (
+        <Text style={[Typography.bodySmall, { color: colors.text.secondary }]}>Este negocio no tiene productos</Text>
+      )}
     </ScrollView>
   );
 }

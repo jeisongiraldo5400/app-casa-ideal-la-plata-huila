@@ -67,6 +67,7 @@ function sheet(offline: boolean) {
         visible
         onClose={jest.fn()}
         negocioId="n-1"
+        userId="u-1"
         customerId="c-1"
         items={[{ product_id: 'p-1', quantity: 1, product_name: 'Nevera' }]}
         offline={offline}
