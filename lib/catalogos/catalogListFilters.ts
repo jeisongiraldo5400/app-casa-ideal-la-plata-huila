@@ -5,18 +5,28 @@ import type { PrivateCatalogListItem } from './types';
 
 /**
  * En el móvil hay dos listas, cada una en su pestaña de Catálogos (pedido del
- * usuario, 2026-09-29): «Mis catálogos», con SOLO lo propio, y «Globales», con
- * lo que otras personas publicaron para todos. Nunca se mezclan en la misma
+ * usuario, 2026-09-29): «Globales», con lo que otras personas publicaron para
+ * todos, y «Mis catálogos», con SOLO lo propio. Nunca se mezclan en la misma
  * lista. Lo privado ajeno (que la RLS le devuelve al administrador) y los
  * envíos rápidos ajenos no se muestran en el móvil: viven en el panel web.
+ * Desde 2026-10-22 los globales van primero (pedido del usuario).
  */
 export type CatalogTab = 'mine' | 'globals';
 
 export function catalogTabItems(counts: { mine: number; globals: number }): { value: CatalogTab; label: string; badge: number }[] {
   return [
-    { value: 'mine', label: 'Mis catálogos', badge: counts.mine },
     { value: 'globals', label: 'Globales', badge: counts.globals },
+    { value: 'mine', label: 'Mis catálogos', badge: counts.mine },
   ];
+}
+
+/**
+ * Pestaña con la que abre Catálogos mientras la persona no elija otra:
+ * «Globales» primero; si ya cargó y no hay ninguno, «Mis catálogos» para no
+ * abrir en una lista vacía. Mientras carga se queda en «Globales».
+ */
+export function defaultCatalogTab(input: { globals: number; loading: boolean }): CatalogTab {
+  return input.globals > 0 || input.loading ? 'globals' : 'mine';
 }
 
 /** Filtro por estado de «Mis catálogos». */

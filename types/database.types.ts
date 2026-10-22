@@ -5301,6 +5301,14 @@ export type Database = {
         Args: { p_municipio_id?: string }
         Returns: Json
       }
+      get_catalog_list_thumbnails: {
+        Args: { p_catalog_ids: string[] }
+        Returns: {
+          bucket: string
+          catalog_id: string
+          storage_path: string
+        }[]
+      }
       get_collection_manager_businesses: {
         Args: { p_gestor_id: string; p_limit?: number; p_search?: string }
         Returns: {
