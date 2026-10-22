@@ -10,6 +10,7 @@ import { CatalogListCard, useCatalogAccess, useCatalogosStore } from '@/componen
 import {
   catalogFilterItems,
   catalogTabItems,
+  defaultCatalogTab,
   formatCatalogStatusSummary,
   matchesCatalogListFilter,
   matchesCatalogListQuery,
@@ -40,7 +41,8 @@ function CatalogosScreenInner() {
   const access = useCatalogAccess();
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
-  const [tab, setTab] = useState<CatalogTab>('mine');
+  // Lo que la persona eligió; mientras no elija, manda `defaultCatalogTab`.
+  const [chosenTab, setChosenTab] = useState<CatalogTab | null>(null);
   const [filter, setFilter] = useState<CatalogListFilter>('all');
   const [quickSharesOpen, setQuickSharesOpen] = useState(false);
 
@@ -65,6 +67,8 @@ function CatalogosScreenInner() {
   const { editions, quickShares, globals } = useMemo(() => splitCatalogList(list), [list]);
   const mine = useMemo(() => [...editions, ...quickShares], [editions, quickShares]);
   const statusSummary = useMemo(() => summarizeCatalogStatuses(mine), [mine]);
+  // Globales primero (pedido del usuario, 2026-10-22).
+  const tab = chosenTab ?? defaultCatalogTab({ globals: globals.length, loading: loading && list.length === 0 });
   const onGlobals = tab === 'globals';
   const matches = useCallback(
     (item: (typeof list)[number]) => matchesCatalogListFilter(item, filter) && matchesCatalogListQuery(item, normalizedQuery),
@@ -162,7 +166,7 @@ function CatalogosScreenInner() {
           initialLoading ? { ...item, badge: undefined } : item
         )}
         value={tab}
-        onChange={(value) => setTab(value as CatalogTab)}
+        onChange={(value) => setChosenTab(value as CatalogTab)}
       />
       {onGlobals ? (
         <Text style={[styles.hint, { color: colors.text.secondary }]}>

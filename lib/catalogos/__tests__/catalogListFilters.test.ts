@@ -2,6 +2,7 @@ import {
   catalogFilterItems,
   catalogStatusGroup,
   catalogTabItems,
+  defaultCatalogTab,
   formatCatalogStatusSummary,
   isGlobalCatalog,
   matchesCatalogListFilter,
@@ -150,10 +151,24 @@ describe('resumen y filtro por estado', () => {
 });
 
 describe('catalogTabItems', () => {
-  it('dos pestañas, cada una con su contador', () => {
+  it('dos pestañas, globales primero, cada una con su contador', () => {
     expect(catalogTabItems({ mine: 4, globals: 2 })).toEqual([
-      { value: 'mine', label: 'Mis catálogos', badge: 4 },
       { value: 'globals', label: 'Globales', badge: 2 },
+      { value: 'mine', label: 'Mis catálogos', badge: 4 },
     ]);
+  });
+});
+
+describe('defaultCatalogTab', () => {
+  it('abre en «Globales» si hay alguno', () => {
+    expect(defaultCatalogTab({ globals: 3, loading: false })).toBe('globals');
+  });
+
+  it('mientras carga por primera vez se queda en «Globales»', () => {
+    expect(defaultCatalogTab({ globals: 0, loading: true })).toBe('globals');
+  });
+
+  it('sin globales abre en «Mis catálogos» para no mostrar una lista vacía', () => {
+    expect(defaultCatalogTab({ globals: 0, loading: false })).toBe('mine');
   });
 });

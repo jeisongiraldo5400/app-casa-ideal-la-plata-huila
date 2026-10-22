@@ -5,6 +5,7 @@ import { ListCard, StatusChip } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { catalogStatusTone, formatCatalogDate, labelCatalogScope, labelCatalogStatus, pluralize } from '@/lib/catalogos/labels';
 import { isGlobalCatalog } from '@/lib/catalogos/catalogListFilters';
+import { catalogThumbnailUrl } from '@/lib/catalogos/catalogThumbnail';
 import { catalogDisplayStatus } from '@/lib/catalogos/shareLinks';
 import type { PrivateCatalogListItem } from '@/lib/catalogos/types';
 import { CatalogProductThumb } from './CatalogProductThumb';
@@ -30,7 +31,8 @@ export function CatalogListCard({ item, onPress }: { item: PrivateCatalogListIte
   return (
     <ListCard onPress={onPress} accessibilityLabel={`Catálogo ${item.internalTitle}, ${labelCatalogStatus(status)}`}>
       <View style={styles.row}>
-        <CatalogProductThumb uri={item.coverImageUrl} size={56} recyclingKey={item.id} />
+        {/* Portada propia; si no hay, la foto del primer producto; si tampoco, el ícono. */}
+        <CatalogProductThumb uri={catalogThumbnailUrl(item)} size={56} recyclingKey={item.id} />
         <View style={styles.copy}>
           <View style={styles.top}>
             <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>

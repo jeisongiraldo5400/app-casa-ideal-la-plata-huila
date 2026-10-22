@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { mapCatalogRow, mapSections, mapShareLink, toListItem } from '@/lib/catalogos/catalogMappers';
+import { needsProductThumbnail } from '@/lib/catalogos/catalogThumbnail';
 import { DEFAULT_CATALOG_ACCENT, DEFAULT_CATALOG_TEMPLATE } from '@/lib/catalogos/constants';
+import { buildPublicStorageUrl } from '@/lib/catalogos/storageUrl';
 import type { PrivateCatalogDetail, PrivateCatalogListItem } from '@/lib/catalogos/types';
 import type { CatalogRow, ItemRow, SectionRow, ShareLinkRow, ShareLinkSummaryRow, VersionRow } from '../database';
 
@@ -12,6 +14,8 @@ type PostgrestPage<T> = { data: T[] | null; error: { message: string } | null };
 export const POSTGREST_PAGE_SIZE = 1000;
 /** Ids por filtro `in` (mantiene la URL corta). */
 export const IN_FILTER_BATCH_SIZE = 100;
+/** Tope de ids por llamada de `get_catalog_list_thumbnails` (20261231760000). */
+export const THUMBNAIL_BATCH_SIZE = 200;
 
 const CATALOG_COLUMNS =
   'id,owner_id,internal_title,public_title,introduction,cover_image_url,accent_color,template,status,visibility,show_price,show_availability,show_sku,show_contact,created_at,updated_at';
@@ -52,6 +56,39 @@ async function fetchByIds<T>(
   return batches.flat();
 }
 
+type ThumbnailRow = { catalog_id: string; bucket: string | null; storage_path: string | null };
+
+/**
+ * Foto principal del primer producto de cada catálogo, por id, en una sola
+ * llamada por cada 200 catálogos (no una por catálogo). La base solo responde
+ * por catálogos que quien mira puede ver. Es un adorno: si falla (sin señal,
+ * o la función aún no existe en esa base) la lista sale igual, con el ícono.
+ */
+export async function fetchCatalogThumbnails(catalogIds: readonly string[]): Promise<Map<string, string>> {
+  const thumbnails = new Map<string, string>();
+  if (catalogIds.length === 0) return thumbnails;
+  const pages = await Promise.all(
+    chunk(catalogIds, THUMBNAIL_BATCH_SIZE).map(async (batch) => {
+      try {
+        const response = await supabase.rpc('get_catalog_list_thumbnails', { p_catalog_ids: batch });
+        if (!response || response.error || !Array.isArray(response.data)) return [];
+        return response.data as ThumbnailRow[];
+      } catch {
+        return [];
+      }
+    })
+  );
+  for (const row of pages.flat()) {
+    if (!row.catalog_id || !row.bucket || !row.storage_path) continue;
+    try {
+      thumbnails.set(row.catalog_id, buildPublicStorageUrl(row.bucket, row.storage_path));
+    } catch {
+      // Sin EXPO_PUBLIC_SUPABASE_URL no hay URL que armar: queda el ícono.
+    }
+  }
+  return thumbnails;
+}
+
 /**
  * Usuario de la sesión guardada en el dispositivo. A diferencia de
  * `auth.getUser()`, no hace una petición al servidor en cada carga.
@@ -85,8 +122,18 @@ export async function listPrivateCatalogs(viewerId: string): Promise<PrivateCata
     'No fue posible cargar los catálogos'
   );
   const catalogIds = catalogRows.map((row) => row.id);
+  const thumbnailIds = catalogRows
+    .filter((row) =>
+      needsProductThumbnail({
+        coverImageUrl: row.cover_image_url,
+        isOwner: row.owner_id === viewerId,
+        visibility: row.visibility as PrivateCatalogListItem['visibility'],
+        status: row.status as PrivateCatalogListItem['status'],
+      })
+    )
+    .map((row) => row.id);
 
-  const [linkRows, versionRows] = await Promise.all([
+  const [linkRows, versionRows, thumbnails] = await Promise.all([
     fetchByIds<ShareLinkSummaryRow>(
       catalogIds,
       (batch, from, to) =>
@@ -104,6 +151,8 @@ export async function listPrivateCatalogs(viewerId: string): Promise<PrivateCata
       (batch, from, to) => supabase.from('catalog_versions').select('id,version_number').in('catalog_id', batch).order('id').range(from, to),
       'No fue posible cargar las versiones'
     ),
+    // En paralelo con enlaces y versiones: no alarga la carga.
+    fetchCatalogThumbnails(thumbnailIds),
   ]);
 
   const versionsById = versionNumbers(versionRows);
@@ -116,13 +165,14 @@ export async function listPrivateCatalogs(viewerId: string): Promise<PrivateCata
   // Un solo instante para todo el listado: dos filas nunca discrepan sobre si un enlace venció.
   const now = Date.now();
 
-  return catalogRows.map((row) =>
-    toListItem(row, {
+  return catalogRows.map((row) => ({
+    ...toListItem(row, {
       viewerId,
       now,
       shareLinks: (linksByCatalog.get(row.id) ?? []).map((link) => mapShareLink(link, versionsById)),
-    })
-  );
+    }),
+    firstProductImageUrl: thumbnails.get(row.id) ?? null,
+  }));
 }
 
 /**

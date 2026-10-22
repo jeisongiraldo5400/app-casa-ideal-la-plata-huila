@@ -54,8 +54,19 @@ jest.mock('expo-router', () => ({
 }));
 
 describe('Catálogos · pestañas y estados', () => {
+  it('abre en «Globales», que va primero', () => {
+    const screen = render(<CatalogosScreen />);
+
+    expect(screen.getByText('Global de la empresa')).toBeTruthy();
+    expect(screen.queryByText('Sala borrador')).toBeNull();
+    // «Globales» antes que «Mis catálogos» en el selector.
+    const labels = screen.getAllByText(/^(Globales|Mis catálogos)$/).map((node) => node.props.children);
+    expect(labels).toEqual(['Globales', 'Mis catálogos']);
+  });
+
   it('«Mis catálogos» muestra solo lo propio, con la relación de borradores y publicados', () => {
     const screen = render(<CatalogosScreen />);
+    fireEvent.press(screen.getByText('Mis catálogos'));
 
     expect(screen.getByText('Mis catálogos')).toBeTruthy();
     expect(screen.getByText('Globales')).toBeTruthy();
@@ -74,6 +85,7 @@ describe('Catálogos · pestañas y estados', () => {
 
   it('filtra por estado', () => {
     const screen = render(<CatalogosScreen />);
+    fireEvent.press(screen.getByText('Mis catálogos'));
 
     fireEvent.press(screen.getByText('Borradores'));
     expect(screen.getByText('Sala borrador')).toBeTruthy();
