@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DraftOriginChangeSheet } from '../DraftOriginChangeSheet';
 
@@ -46,10 +46,11 @@ jest.mock('../NegocioOriginOrderPicker', () => ({
 }));
 
 const mockCheck = jest.fn();
+const mockSavePrepared = jest.fn(async (..._args: unknown[]) => undefined);
 jest.mock('../../infrastructure/services/draftOriginChangeService', () => ({
   checkDraftSource: (...args: unknown[]) => mockCheck(...args),
   changeDraftSource: jest.fn(),
-  savePreparedDraftOriginChange: jest.fn(async () => undefined),
+  savePreparedDraftOriginChange: (...args: unknown[]) => mockSavePrepared(...args),
 }));
 jest.mock('../../infrastructure/services/negociosDeliveryOrdersService', () => ({
   fetchRemissionOriginProducts: jest.fn(async () => []),
@@ -60,7 +61,7 @@ jest.mock('../../infrastructure/services/negociosOfflineOrdersService', () => ({
 
 const METRICS = { frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
 
-function sheet(offline: boolean) {
+function sheet(offline: boolean, onPrepared: jest.Mock = jest.fn()) {
   return (
     <SafeAreaProvider initialMetrics={METRICS}>
       <DraftOriginChangeSheet
@@ -72,7 +73,7 @@ function sheet(offline: boolean) {
         items={[{ product_id: 'p-1', quantity: 1, product_name: 'Nevera' }]}
         offline={offline}
         onChanged={jest.fn()}
-        onPrepared={jest.fn()}
+        onPrepared={onPrepared}
       />
     </SafeAreaProvider>
   );
@@ -93,5 +94,36 @@ describe('DraftOriginChangeSheet', () => {
     expect(screen.queryByText('Revisando con el servidor…')).toBeNull();
     const prepare = screen.getByRole('button', { name: /Preparar cambio/ });
     expect(prepare.props.accessibilityState?.disabled).toBe(false);
+  });
+
+  it('si la revisión no llega al servidor (NetInfo dice que hay red), deja preparar el cambio', async () => {
+    mockCheck.mockRejectedValue(new Error('TypeError: Network request failed'));
+    const onPrepared = jest.fn();
+    render(sheet(false, onPrepared));
+    fireEvent.press(screen.getByTestId('pick-order'));
+    await act(async () => undefined);
+
+    expect(screen.queryByText(/Network request failed|Sin conexión/)).toBeNull();
+    expect(screen.getByTestId('draft-origin-offline-notice')).toBeTruthy();
+    const prepare = screen.getByRole('button', { name: /Preparar cambio/ });
+    expect(prepare.props.accessibilityState?.disabled).toBe(false);
+
+    fireEvent.press(prepare);
+    await act(async () => undefined);
+    expect(mockSavePrepared).toHaveBeenCalledWith(
+      expect.objectContaining({ negocioId: 'n-1', source_delivery_order_id: 'oe-1' }),
+      'u-1'
+    );
+    expect(onPrepared).toHaveBeenCalled();
+  });
+
+  it('un rechazo del servidor (no de red) se muestra y no deja preparar', async () => {
+    mockCheck.mockRejectedValue(new Error('Sin permiso para cambiar el origen'));
+    render(sheet(false));
+    fireEvent.press(screen.getByTestId('pick-order'));
+    await act(async () => undefined);
+
+    expect(screen.getByText(/Sin permiso para cambiar el origen/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Preparar cambio/ })).toBeNull();
   });
 });

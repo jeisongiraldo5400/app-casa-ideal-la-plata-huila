@@ -23,6 +23,10 @@ jest.mock('@/lib/offline/repositories/offlineRepository', () => ({
   canUseLocalDb: () => true,
   fetchNegocioDetailFromLocal: jest.fn(),
 }));
+const mockCreditSettings = jest.fn();
+jest.mock('@/lib/offline/repositories/catalogRepository', () => ({
+  fetchCreditSettingsFromLocal: () => mockCreditSettings(),
+}));
 jest.mock('@/lib/offline/sync/negocioCreateCommand', () => ({
   DEFAULT_REJECTED_NEGOCIO_REASON: 'El servidor no aceptó el negocio',
 }));
@@ -53,6 +57,7 @@ const outboxItem = (status: string, lastError: string | null = null, queuedAt = 
 
 describe('pendingNegocioService', () => {
   beforeEach(() => {
+    mockCreditSettings.mockResolvedValue(null);
     mockNegocio = { id: 'n1', rowSyncStatus: 'pending', rejectedReason: null };
     mockOutbox = [outboxItem('pending')];
     mockProducts = [{ id: 'p1', name: 'Nevera', sku: 'NEV' }];
@@ -96,5 +101,24 @@ describe('pendingNegocioService', () => {
     mockNegocio = null;
     (fetchNegocioDetailFromLocal as jest.Mock).mockResolvedValue(null);
     await expect(loadLocalNegocioDetail('n1')).resolves.toBeNull();
+  });
+
+  it('sin señal trae el texto legal y los decimales descargados para el contrato y el cobro', async () => {
+    mockOutbox = [];
+    mockNegocio = { id: 'n1', rowSyncStatus: 'synced', rejectedReason: null };
+    mockCreditSettings.mockResolvedValue({ legal_text: 'El cliente se compromete…', money_decimal_places: 0 });
+
+    const detail = await loadLocalNegocioDetail('n1');
+
+    expect(detail?.creditSettings).toEqual({ legalText: 'El cliente se compromete…', moneyDecimalPlaces: 0 });
+  });
+
+  it('sin configuración descargada el contrato sale sin texto legal, sin fallar', async () => {
+    mockCreditSettings.mockRejectedValue(new Error('base cerrada'));
+
+    const detail = await loadLocalNegocioDetail('n1');
+
+    expect(detail).not.toBeNull();
+    expect(detail?.creditSettings).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { useTheme } from '@/components/theme';
 import { Button, Card, FullScreenModal } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { errorMessage } from '@/lib/errorMessage';
+import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import {
   ORIGEN_PREPARADO_SIN_SENAL,
@@ -79,6 +80,13 @@ export function DraftOriginChangeSheet({
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Una clave por destino: un reintento tras perder la respuesta no duplica. */
   const keyRef = useRef<{ target: string; key: string } | null>(null);
+  /**
+   * La revisión no llegó al servidor aunque NetInfo diga que hay red (señal
+   * débil o la búsqueda ya cayó a las órdenes del teléfono). Antes quedaba el
+   * error y el botón bloqueado: no se podía ni cambiar ni preparar.
+   */
+  const [serverUnreachable, setServerUnreachable] = useState(false);
+  const preparing = offline || serverUnreachable;
 
   useEffect(() => {
     if (visible) return;
@@ -88,6 +96,7 @@ export function DraftOriginChangeSheet({
     setServerCheck(null);
     setCheckError(null);
     setSaveError(null);
+    setServerUnreachable(false);
     keyRef.current = null;
   }, [visible]);
 
@@ -141,7 +150,7 @@ export function DraftOriginChangeSheet({
     // Una revisión en curso que se cancela (sin señal o sin destino) no puede
     // dejar «Revisando…» ni el botón bloqueados.
     setChecking(false);
-    if (!target || offline) return;
+    if (!target || preparing) return;
     let cancelled = false;
     setChecking(true);
     setCheckError(null);
@@ -150,7 +159,10 @@ export function DraftOriginChangeSheet({
         if (!cancelled) setServerCheck(result);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setCheckError(errorMessage(error, 'No se pudo revisar la orden'));
+        if (cancelled) return;
+        // Sin llegar al servidor se pasa a preparar el cambio, como sin señal.
+        if (isNetworkError(error)) setServerUnreachable(true);
+        else setCheckError(errorMessage(error, 'No se pudo revisar la orden'));
       })
       .finally(() => {
         if (!cancelled) setChecking(false);
@@ -160,11 +172,11 @@ export function DraftOriginChangeSheet({
     };
     // targetKey resume el destino; `target` cambia de identidad en cada render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetKey, offline, negocioId]);
+  }, [targetKey, preparing, negocioId]);
 
   const lines: DraftOriginCoverageLine[] = serverCheck?.lines.length ? serverCheck.lines : target ? localCoverage.lines : [];
-  const ready = offline ? Boolean(target) && localCoverage.complete : Boolean(serverCheck?.usable);
-  const blockText = offline
+  const ready = preparing ? Boolean(target) && localCoverage.complete : Boolean(serverCheck?.usable);
+  const blockText = preparing
     ? target && !localCoverage.complete
       ? 'Según lo descargado, la orden no trae todo lo del negocio.'
       : null
@@ -182,7 +194,7 @@ export function DraftOriginChangeSheet({
     setSaving(true);
     setSaveError(null);
     try {
-      if (offline) {
+      if (preparing) {
         const change: PreparedDraftOriginChange = {
           negocioId,
           ...target,
@@ -214,8 +226,8 @@ export function DraftOriginChangeSheet({
         <View style={styles.footer}>
           <Button title="Cancelar" variant="outline" onPress={onClose} disabled={saving} style={styles.footerButton} />
           <Button
-            title={offline ? 'Preparar cambio' : 'Cambiar origen'}
-            icon={offline ? 'schedule' : 'local-shipping'}
+            title={preparing ? 'Preparar cambio' : 'Cambiar origen'}
+            icon={preparing ? 'schedule' : 'local-shipping'}
             onPress={() => void confirm()}
             loading={saving}
             disabled={!ready || checking}
@@ -228,7 +240,7 @@ export function DraftOriginChangeSheet({
           Se conservan el cliente, los productos, los precios, las cuotas y las fotos. Solo cambia la orden de la que
           sale la mercancía y la bodega de cada producto.
         </Text>
-        {offline ? (
+        {preparing ? (
           <Card variant="muted" style={styles.notice}>
             <MaterialIcons name="wifi-off" size={20} color={colors.warning.dark} />
             <Text testID="draft-origin-offline-notice" style={[styles.helper, styles.flex, { color: colors.text.primary }]}>

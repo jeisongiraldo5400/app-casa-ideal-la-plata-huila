@@ -226,6 +226,55 @@ describe('fetchCustomerSummary sin red', () => {
   });
 });
 
+describe('fetchCustomerSummary de un cliente creado sin señal', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (canUseLocalDb as jest.Mock).mockReturnValue(true);
+    (isNetworkError as jest.Mock).mockReturnValue(false);
+    (fetchCustomerNegociosFromLocal as jest.Mock).mockResolvedValue({ negocios: [] });
+    mockLocalCatalogs();
+  });
+
+  it('con señal, si el servidor aún no lo tiene, muestra el del teléfono', async () => {
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'Cliente no encontrado', code: 'P0001' },
+    });
+    (fetchCustomerFromLocal as jest.Mock).mockResolvedValue({
+      id: 'c9',
+      name: 'Nuevo sin señal',
+      idNumber: '555',
+      phone: null,
+      sellerId: null,
+    });
+
+    const summary = await fetchCustomerSummary('c9');
+
+    expect(summary.fromCache).toBe(true);
+    expect(summary.customer).toMatchObject({ id: 'c9', name: 'Nuevo sin señal' });
+  });
+
+  it('si tampoco está en el teléfono, se conserva el error del servidor', async () => {
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'Cliente no encontrado', code: 'P0001' },
+    });
+    (fetchCustomerFromLocal as jest.Mock).mockResolvedValue(null);
+
+    await expect(fetchCustomerSummary('c9')).rejects.toThrow('Cliente no encontrado');
+  });
+
+  it('otros rechazos del servidor no caen a lo local', async () => {
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: null,
+      error: { message: 'Sin permiso para consultar clientes', code: 'P0001' },
+    });
+
+    await expect(fetchCustomerSummary('c9')).rejects.toThrow('Sin permiso para consultar clientes');
+    expect(fetchCustomerFromLocal).not.toHaveBeenCalled();
+  });
+});
+
 describe('claimCustomer', () => {
   function mockUpdate(result: { data: unknown; error: unknown }) {
     const maybeSingle = jest.fn().mockResolvedValue(result);
