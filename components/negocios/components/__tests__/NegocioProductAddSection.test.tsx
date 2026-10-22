@@ -4,6 +4,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { NegocioProductAddSection } from '../NegocioProductAddSection';
 import { findActiveProductByBarcode } from '../../infrastructure/services/negociosProductsService';
 import { fetchProductWarehouseStock } from '../../infrastructure/services/negociosStockService';
+import { fetchSalePrice } from '../../infrastructure/services/salePricesService';
 
 jest.mock('@/components/scanning', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
@@ -29,6 +30,10 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('../../infrastructure/services/negociosProductsService', () => ({
   findActiveProductByBarcode: jest.fn(),
+}));
+
+jest.mock('../../infrastructure/services/salePricesService', () => ({
+  fetchSalePrice: jest.fn(async () => null),
 }));
 
 jest.mock('../../infrastructure/services/negociosStockService', () => {
@@ -148,6 +153,85 @@ describe('NegocioProductAddSection scanner', () => {
       expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ quantity: 2 }));
     }
   );
+});
+
+describe('NegocioProductAddSection · precio de venta', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (fetchProductWarehouseStock as jest.Mock).mockResolvedValue([
+      { warehouse_id: 'warehouse-1', warehouse_name: 'Principal', quantity: 5 },
+    ]);
+    (findActiveProductByBarcode as jest.Mock).mockResolvedValue(product);
+  });
+
+  async function pickScanned(onAdd = jest.fn()) {
+    const screen = renderSection({ onAdd });
+    fireEvent.press(screen.getByLabelText('Escanear código de barras'));
+    await act(async () => fireEvent.press(screen.getByText('Simular escaneo')));
+    await waitFor(() => expect(screen.getByText('Principal (5)')).toBeTruthy());
+    return screen;
+  }
+
+  it('con precio de venta rellena el valor unitario y se puede agregar tal cual', async () => {
+    (fetchSalePrice as jest.Mock).mockResolvedValue(1_890_000);
+    const onAdd = jest.fn();
+    const screen = await pickScanned(onAdd);
+
+    await waitFor(() => expect(screen.getByLabelText('Valor unitario').props.value).toBe('1.890.000'));
+    expect(fetchSalePrice).toHaveBeenCalledWith('product-1');
+    expect(screen.getByTestId('negocio-precio-sugerido').props.children).toBe(
+      'Precio de venta del producto. Puede cambiarlo.'
+    );
+    fireEvent.press(screen.getByText('Agregar'));
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ unit_price: 1_890_000 }));
+  });
+
+  it('el vendedor puede cambiar el precio sugerido', async () => {
+    (fetchSalePrice as jest.Mock).mockResolvedValue(1_890_000);
+    const onAdd = jest.fn();
+    const screen = await pickScanned(onAdd);
+    await waitFor(() => expect(screen.getByLabelText('Valor unitario').props.value).toBe('1.890.000'));
+
+    fireEvent.changeText(screen.getByLabelText('Valor unitario'), '1750000');
+    expect(screen.queryByTestId('negocio-precio-sugerido')).toBeNull();
+    fireEvent.press(screen.getByText('Agregar'));
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ unit_price: 1_750_000 }));
+  });
+
+  it('no pisa lo que el vendedor escribió antes de que llegara el precio', async () => {
+    let resolvePrice: (value: number | null) => void = () => undefined;
+    (fetchSalePrice as jest.Mock).mockImplementation(
+      () => new Promise<number | null>((resolve) => { resolvePrice = resolve; })
+    );
+    const screen = await pickScanned();
+
+    fireEvent.changeText(screen.getByLabelText('Valor unitario'), '999000');
+    await act(async () => resolvePrice(1_890_000));
+    expect(screen.getByLabelText('Valor unitario').props.value).toBe('999.000');
+  });
+
+  it('sin precio de venta el valor unitario queda vacío', async () => {
+    (fetchSalePrice as jest.Mock).mockResolvedValue(null);
+    const screen = await pickScanned();
+    await act(async () => undefined);
+    expect(screen.getByLabelText('Valor unitario').props.value).toBe('');
+    expect(screen.queryByTestId('negocio-precio-sugerido')).toBeNull();
+  });
+
+  it('una respuesta que llega tras cancelar no rellena el siguiente producto', async () => {
+    let resolvePrice: (value: number | null) => void = () => undefined;
+    (fetchSalePrice as jest.Mock).mockImplementationOnce(
+      () => new Promise<number | null>((resolve) => { resolvePrice = resolve; })
+    );
+    const screen = await pickScanned();
+    fireEvent.press(screen.getByText('Cancelar'));
+    (fetchSalePrice as jest.Mock).mockResolvedValue(null);
+    fireEvent.press(screen.getByLabelText('Escanear código de barras'));
+    await act(async () => fireEvent.press(screen.getByText('Simular escaneo')));
+    await waitFor(() => expect(screen.getByText('Principal (5)')).toBeTruthy());
+    await act(async () => resolvePrice(1_890_000));
+    expect(screen.getByLabelText('Valor unitario').props.value).toBe('');
+  });
 });
 
 describe('NegocioProductAddSection · producto que no está en el teléfono', () => {
