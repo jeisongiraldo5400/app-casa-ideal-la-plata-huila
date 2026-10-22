@@ -1,6 +1,8 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Alert } from 'react-native';
 import MyOrdersScreen from '../my-orders';
+import { useSyncStore } from '@/lib/offline/store/syncStore';
 
 const mockPush = jest.fn();
 const mockRpc = jest.fn();
@@ -337,5 +339,37 @@ describe('MyOrdersScreen', () => {
     }
 
     expect(input.props.value).toBe('cli');
+  });
+
+  describe('sin señal', () => {
+    afterEach(() => {
+      act(() => { useSyncStore.setState({ online: true }); });
+    });
+
+    it('se queda con la lista que ya veía, con el aviso discreto y sin errores de red', async () => {
+      const screen = render(<MyOrdersScreen />);
+      await screen.findByTestId('assigned-order-order-1');
+
+      mockRpc.mockImplementation(() => Promise.reject(new Error('TypeError: Network request failed')));
+      act(() => { useSyncStore.setState({ online: false }); });
+
+      expect(await screen.findByTestId('pending-orders-offline-notice')).toBeTruthy();
+      expect(screen.getByTestId('assigned-order-order-1')).toBeTruthy();
+      expect(screen.queryByText(/Network request failed/)).toBeNull();
+      expect(screen.queryByText('No se pudieron cargar las órdenes')).toBeNull();
+    });
+
+    it('registrar la salida avisa que necesita conexión en vez de intentar', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+      const screen = render(<MyOrdersScreen />);
+      const orderCard = await screen.findByTestId('assigned-order-order-1');
+      act(() => { useSyncStore.setState({ online: false }); });
+
+      fireEvent.press(orderCard);
+
+      expect(alertSpy).toHaveBeenCalledWith('Sin señal', expect.stringContaining('se necesita conexión'));
+      expect(mockSelectDeliveryOrder).not.toHaveBeenCalled();
+      alertSpy.mockRestore();
+    });
   });
 });

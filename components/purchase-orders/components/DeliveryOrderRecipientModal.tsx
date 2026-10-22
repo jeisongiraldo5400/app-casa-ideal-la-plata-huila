@@ -1,6 +1,8 @@
 import { useTheme } from '@/components/theme';
 import { Spacing, getColors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { fetchCustomerFromLocal } from '@/lib/offline/repositories/offlineRepository';
+import { shouldUseLocalOrders } from '../infrastructure/services/localDeliveryOrdersService';
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
@@ -65,11 +67,42 @@ export function DeliveryOrderRecipientModal({
         }
     }, [visible, order.id]);
 
+    /**
+     * Sin señal: el cliente descargado en el teléfono y, si no está, lo que
+     * trae la propia orden; en una remisión, el nombre del asignado.
+     */
+    const loadRecipientFromPhone = async () => {
+        if (isCustomerOrder && order.customer_id) {
+            const local = await fetchCustomerFromLocal(order.customer_id).catch(() => null);
+            setCustomerDetails({
+                id: order.customer_id,
+                name: local?.name || order.customer_name || 'Cliente sin nombre',
+                id_number: local?.idNumber ?? order.customer_id_number,
+                phone: local?.phone ?? order.customer_phone,
+                email: local?.email ?? order.customer_email,
+                address: order.delivery_address || local?.address || null,
+                notes: null,
+            });
+        } else {
+            setUserDetails({
+                id: order.assigned_to_user_id || '',
+                full_name: order.assigned_to_user_name,
+                email: order.assigned_to_user_email,
+            });
+        }
+        setLoading(false);
+    };
+
     const loadRecipientDetails = async () => {
         setLoading(true);
         setError(null);
         setCustomerDetails(null);
         setUserDetails(null);
+
+        if (order.from_local || shouldUseLocalOrders()) {
+            await loadRecipientFromPhone();
+            return;
+        }
 
         try {
             if (isCustomerOrder && order.customer_id) {
@@ -80,6 +113,10 @@ export function DeliveryOrderRecipientModal({
                     .eq('id', order.customer_id)
                     .single();
 
+                if (customerError && shouldUseLocalOrders(customerError)) {
+                    await loadRecipientFromPhone();
+                    return;
+                }
                 if (customerError) {
                     console.error('Error loading customer:', customerError);
                     setError('Error al cargar información del cliente');
@@ -94,6 +131,10 @@ export function DeliveryOrderRecipientModal({
                     .eq('id', order.assigned_to_user_id)
                     .single();
 
+                if (userError && shouldUseLocalOrders(userError)) {
+                    await loadRecipientFromPhone();
+                    return;
+                }
                 if (userError) {
                     console.error('Error loading user:', userError);
                     setError('Error al cargar información del usuario');
@@ -104,6 +145,10 @@ export function DeliveryOrderRecipientModal({
 
             setLoading(false);
         } catch (err: any) {
+            if (shouldUseLocalOrders(err)) {
+                await loadRecipientFromPhone();
+                return;
+            }
             console.error('Error loading recipient:', err);
             setError(err.message || 'Error al cargar información');
             setLoading(false);

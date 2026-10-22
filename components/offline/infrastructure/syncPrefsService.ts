@@ -30,6 +30,7 @@ import { errorMessage } from '@/lib/errorMessage';
 import { isNetworkError } from '@/lib/offline/security/sessionPolicy';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
 import { isDatabaseOpen } from '@/lib/offline/database';
+import { listLocalOfflineOrders } from '@/lib/offline/repositories/deliveryOrdersRepository';
 import {
   getLocalSyncConfig,
   hasPendingChoicesToDownload,
@@ -354,7 +355,25 @@ async function refreshEstimate() {
 
 let inFlightLoad: Promise<void> | null = null;
 
+/**
+ * Sin señal no se sabe qué órdenes marcó la persona en el servidor, pero sí
+ * cuáles bajaron al teléfono: esas son las marcadas en la última descarga.
+ * Sin esto, una orden ya descargada se veía sin «En el teléfono» y ofrecía
+ * «Llevar en el teléfono» como si faltara.
+ */
+async function applyLocalOrderSelection() {
+  const known = useSyncPrefsStore.getState().config.ordenes;
+  if (known.ids && known.ids.length > 0) return;
+  const rows = await listLocalOfflineOrders().catch(() => []);
+  if (!rows.length) return;
+  const ids = rows.map((row) => row.id);
+  useSyncPrefsStore.setState((state) => ({
+    config: { ...state.config, ordenes: { ...state.config.ordenes, ids, count: Math.max(state.config.ordenes.count, ids.length) } },
+  }));
+}
+
 async function applyLocalFallback() {
+  await applyLocalOrderSelection();
   const local = await Promise.resolve(getLocalSyncConfig()).catch(() => null);
   if (!local) {
     useSyncPrefsStore.setState({ status: 'offline' });

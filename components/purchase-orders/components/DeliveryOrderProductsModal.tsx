@@ -23,6 +23,13 @@ import {
     serialMatchesQuery,
 } from '@/components/exit-serials/infrastructure/services/exitSerialsService';
 import { fetchDeliveryOrderItemsForViewing } from '../infrastructure/services/deliveryOrderItemsService';
+import {
+    OrderNotOnPhoneError,
+    fetchLocalDeliveryOrderItems,
+    localOrderWithoutLinesMessage,
+    localOrdersNotice,
+    shouldUseLocalOrders,
+} from '../infrastructure/services/localDeliveryOrdersService';
 import { DeliveryOrderItem } from '../types';
 import { OfflineOrderToggle } from './OfflineOrderToggle';
 
@@ -71,21 +78,55 @@ export function DeliveryOrderProductsModal({
     const [searchTerm, setSearchTerm] = useState('');
     const [visibleCount, setVisibleCount] = useState(10);
     const [serialsByLine, setSerialsByLine] = useState<SerialsByLine>({});
+    /** Productos leídos del teléfono (sin señal): sin entregas ni seriales. */
+    const [fromLocal, setFromLocal] = useState(false);
+    const [localSnapshotAt, setLocalSnapshotAt] = useState<number | null>(null);
+    const [localUnusableReason, setLocalUnusableReason] = useState<string | null>(null);
+    /** El error es por falta de señal (orden no guardada), no un fallo. */
+    const [errorIsOffline, setErrorIsOffline] = useState(false);
 
     const loadOrderItems = useCallback(async () => {
         setLoading(true);
         setError(null);
+        setErrorIsOffline(false);
 
-        // Los seriales son complementarios: se cargan en paralelo y, si fallan,
-        // la lista de productos se ve igual, sin el botón de seriales.
-        loadSerials(orderId)
-            .then(setSerialsByLine)
-            .catch(() => setSerialsByLine({}));
+        // Sin señal: la orden llevada en el teléfono. Si no se llevó, se dice
+        // cómo llevarla en vez de mostrar el error técnico de la red.
+        const loadFromPhone = async () => {
+            const local = await fetchLocalDeliveryOrderItems(orderId);
+            if (!local) throw new OrderNotOnPhoneError();
+            setItems(local.items);
+            setSerialsByLine({});
+            setLocalSnapshotAt(local.snapshotAt);
+            setLocalUnusableReason(local.items.length === 0 ? local.unusableReason : null);
+            setFromLocal(true);
+        };
 
         try {
-            setItems(await loadItems(orderId));
+            if (shouldUseLocalOrders()) {
+                await loadFromPhone();
+                return;
+            }
+            // Los seriales son complementarios: se cargan en paralelo y, si
+            // fallan, la lista de productos se ve igual, sin el botón de seriales.
+            loadSerials(orderId)
+                .then(setSerialsByLine)
+                .catch(() => setSerialsByLine({}));
+            try {
+                setItems(await loadItems(orderId));
+                setFromLocal(false);
+                setLocalSnapshotAt(null);
+            } catch (err) {
+                // Señal débil o caída a mitad de camino: lo guardado.
+                if (!shouldUseLocalOrders(err)) throw err;
+                await loadFromPhone();
+            }
         } catch (err) {
-            console.error('Error loading order items:', err);
+            if (err instanceof OrderNotOnPhoneError) {
+                setErrorIsOffline(true);
+            } else {
+                console.error('Error loading order items:', err);
+            }
             setError(err instanceof Error && err.message ? err.message : 'Error al cargar los productos');
         } finally {
             setLoading(false);
@@ -188,8 +229,23 @@ export function DeliveryOrderProductsModal({
                         </View>
                     ) : null}
 
-                    {/* Progreso general */}
-                    {!loading && !error && (
+                    {fromLocal && !loading && !error ? (
+                        <View
+                            testID="delivery-order-products-local-notice"
+                            style={[styles.localNotice, { backgroundColor: colors.warning.main + '18' }]}
+                        >
+                            <MaterialIcons name="wifi-off" size={16} color={colors.warning.main} />
+                            <Text style={[styles.localNoticeText, { color: colors.text.secondary }]}>
+                                {localOrdersNotice(localSnapshotAt)}{' '}
+                                {localUnusableReason
+                                    ? localOrderWithoutLinesMessage(localUnusableReason)
+                                    : 'Lo entregado se ve con señal.'}
+                            </Text>
+                        </View>
+                    ) : null}
+
+                    {/* Progreso general (con señal: la descarga no trae lo entregado) */}
+                    {!loading && !error && !fromLocal && (
                         <View style={[styles.progressSection, { backgroundColor: colors.background.default }]}>
                             <View style={styles.progressHeader}>
                                 <Text style={[styles.progressTitle, { color: colors.text.primary }]}>
@@ -261,8 +317,12 @@ export function DeliveryOrderProductsModal({
                         </View>
                     ) : error ? (
                         <View style={styles.errorContainer}>
-                            <MaterialIcons name="error-outline" size={48} color={colors.error.main} />
-                            <Text style={[styles.errorText, { color: colors.error.main }]}>{error}</Text>
+                            <MaterialIcons
+                                name={errorIsOffline ? 'wifi-off' : 'error-outline'}
+                                size={48}
+                                color={errorIsOffline ? colors.text.secondary : colors.error.main}
+                            />
+                            <Text style={[styles.errorText, { color: errorIsOffline ? colors.text.secondary : colors.error.main }]}>{error}</Text>
                             <TouchableOpacity
                                 style={[styles.retryButton, { backgroundColor: colors.primary.main }]}
                                 onPress={loadOrderItems}
@@ -353,6 +413,7 @@ export function DeliveryOrderProductsModal({
                                                     </View>
                                                 )}
                                             </View>
+                                            {!fromLocal ? (
                                             <View style={styles.itemStatus}>
                                                 {item.is_complete ? (
                                                     <MaterialIcons name="check-circle" size={32} color={colors.success.main} />
@@ -362,6 +423,7 @@ export function DeliveryOrderProductsModal({
                                                     <MaterialIcons name="radio-button-unchecked" size={32} color={colors.text.secondary} />
                                                 )}
                                             </View>
+                                            ) : null}
                                         </View>
 
                                         <View style={styles.itemQuantities}>
@@ -373,6 +435,17 @@ export function DeliveryOrderProductsModal({
                                                     {item.quantity}
                                                 </Text>
                                             </View>
+                                            {fromLocal ? (
+                                                <View style={[styles.quantityBox, { backgroundColor: colors.info.main + '15' }]}>
+                                                    <Text style={[styles.quantityLabel, { color: colors.text.secondary }]}>
+                                                        Disponible
+                                                    </Text>
+                                                    <Text style={[styles.quantityValue, { color: colors.info.main }]}>
+                                                        {item.available_quantity ?? '—'}
+                                                    </Text>
+                                                </View>
+                                            ) : (
+                                            <>
                                             <View style={[styles.quantityBox, { backgroundColor: colors.success.main + '15' }]}>
                                                 <Text style={[styles.quantityLabel, { color: colors.text.secondary }]}>
                                                     Entregado
@@ -399,6 +472,8 @@ export function DeliveryOrderProductsModal({
                                                     {item.pending_quantity}
                                                 </Text>
                                             </View>
+                                            </>
+                                            )}
                                         </View>
 
                                         <DeliveryOrderSerialsButton serials={serialsOf(item)} />
@@ -442,6 +517,20 @@ export function DeliveryOrderProductsModal({
 }
 
 const styles = StyleSheet.create({
+    localNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginHorizontal: Spacing.md,
+        marginBottom: Spacing.sm,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
+    },
+    localNoticeText: {
+        flex: 1,
+        fontSize: 12,
+    },
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',

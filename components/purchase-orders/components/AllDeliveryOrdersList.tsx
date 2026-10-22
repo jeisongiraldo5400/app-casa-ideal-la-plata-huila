@@ -21,7 +21,9 @@ import {
   fetchLocationMasters,
   type LocationMasters,
 } from "@/lib/locations/locationsService";
+import { fetchLocationCatalogsFromLocal } from "@/lib/offline/repositories/catalogRepository";
 import { useAllDeliveryOrders } from "../infrastructure/hooks/useAllDeliveryOrders";
+import { localOrdersNotice } from "../infrastructure/services/localDeliveryOrdersService";
 import { DeliveryOrder } from "../types";
 import { DeliveryOrderCard } from "./DeliveryOrderCard";
 import { DeliveryOrderLocationFilterModal } from "./DeliveryOrderLocationFilterModal";
@@ -60,6 +62,8 @@ export function AllDeliveryOrdersList({
     refreshing,
     error,
     hasMore,
+    fromLocal,
+    snapshotAt,
     isSearchDebouncing,
     refresh,
     loadMore,
@@ -69,7 +73,10 @@ export function AllDeliveryOrdersList({
   // vuelven a tocar. Si fallan, el filtro queda vacío pero el listado sigue.
   useEffect(() => {
     let active = true;
+    // Sin señal, los de la última descarga: el filtro sigue sirviendo sobre
+    // las órdenes guardadas en el teléfono.
     fetchLocationMasters()
+      .catch(() => fetchLocationCatalogsFromLocal())
       .then((next) => { if (active) setMasters(next); })
       .catch((err) => { console.error("Error loading location masters:", err); })
       .finally(() => { if (active) setMastersLoading(false); });
@@ -119,6 +126,20 @@ export function AllDeliveryOrdersList({
               Reintentar
             </Text>
           </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (fromLocal && !debouncedQuery && activeLocationFilters === 0) {
+      return (
+        <View style={styles.centered} testID="all-delivery-orders-local-empty">
+          <MaterialIcons name="wifi-off" size={64} color={colors.text.secondary} />
+          <Text style={[styles.emptyText, { color: colors.text.primary }]}>
+            No hay órdenes guardadas en el teléfono
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.text.secondary }]}>
+            Con señal, pulsa «Llevar en el teléfono» en la orden y luego «Descargar» en Preparar el teléfono.
+          </Text>
         </View>
       );
     }
@@ -240,6 +261,18 @@ export function AllDeliveryOrdersList({
         />
       </TouchableOpacity>
 
+      {fromLocal ? (
+        <View
+          testID="all-delivery-orders-local-notice"
+          style={[styles.localNotice, { backgroundColor: colors.warning.main + "18" }]}
+        >
+          <MaterialIcons name="wifi-off" size={16} color={colors.warning.main} />
+          <Text style={[styles.localNoticeText, { color: colors.text.secondary }]}>
+            {localOrdersNotice(snapshotAt)}
+          </Text>
+        </View>
+      ) : null}
+
       <FlatList
         data={orders}
         keyExtractor={(order) => order.id}
@@ -289,6 +322,19 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  localNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderRadius: 10,
+  },
+  localNoticeText: {
+    flex: 1,
+    fontSize: 12,
   },
   listContent: {
     paddingBottom: 24,

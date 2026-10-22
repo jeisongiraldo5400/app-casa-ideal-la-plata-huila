@@ -1,4 +1,5 @@
 import { clearCachedActiveRoute } from '@/lib/collection-routes/routeCache';
+import { clearCachedPendingOrders } from '@/components/my-orders/infrastructure/services/myOrdersCache';
 import { closeDatabase, isDatabaseOpen, resetDatabase } from '../../database';
 import { clearLocalPagoSupportFiles } from '../localFiles';
 import { clearOfflineSecureData } from '../secureKeys';
@@ -11,6 +12,9 @@ jest.mock('../../database', () => ({
 }));
 jest.mock('@/lib/collection-routes/routeCache', () => ({
   clearCachedActiveRoute: jest.fn(),
+}));
+jest.mock('@/components/my-orders/infrastructure/services/myOrdersCache', () => ({
+  clearCachedPendingOrders: jest.fn(async () => undefined),
 }));
 jest.mock('../localFiles', () => ({
   clearLocalPagoSupportFiles: jest.fn(),
@@ -39,6 +43,8 @@ describe('wipeLocalOfflineData', () => {
     expect(resetDatabase).toHaveBeenCalledTimes(1);
     expect(closeDatabase).toHaveBeenCalledTimes(1);
     expect(clearCachedActiveRoute).toHaveBeenCalledTimes(1);
+    // La copia de «Mis órdenes» tampoco sobrevive al cierre de sesión.
+    expect(clearCachedPendingOrders).toHaveBeenCalledTimes(1);
     expect(clearLocalPagoSupportFiles).toHaveBeenCalledTimes(1);
     expect(clearOfflineSecureData).toHaveBeenCalledTimes(1);
   });
