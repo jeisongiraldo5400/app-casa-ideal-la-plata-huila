@@ -167,7 +167,12 @@ export async function fetchCustomerSummary(customerId: string): Promise<Customer
     if (error) throw asError(error, 'No fue posible cargar el cliente');
     return { ...parseCustomerSummary(data), fromCache: false };
   } catch (error) {
-    if (!isNetworkError(error) || !canUseLocalDb()) throw error;
+    // Un cliente creado sin señal que aún no llega al servidor: con señal el
+    // servidor responde «Cliente no encontrado» y la ficha mostraba ese error
+    // aunque el teléfono lo tuviera. Igual que el detalle del negocio, se
+    // muestra lo del teléfono.
+    const notOnServer = /cliente no encontrado/i.test(error instanceof Error ? error.message : '');
+    if ((!isNetworkError(error) && !notOnServer) || !canUseLocalDb()) throw error;
     const [customer, negocios, locations, profiles] = await Promise.all([
       fetchCustomerFromLocal(customerId),
       fetchCustomerNegociosFromLocal(customerId),
