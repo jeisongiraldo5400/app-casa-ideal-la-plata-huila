@@ -8,6 +8,7 @@ import {
   formatCoverageLine,
   parseDraftSourceCheck,
   parsePreparedDraftOriginChange,
+  preparedOriginIsStale,
 } from '../draftOriginChange';
 
 describe('evaluateDraftOriginCoverage', () => {
@@ -157,5 +158,20 @@ describe('parsePreparedDraftOriginChange', () => {
     expect(parsePreparedDraftOriginChange(null)).toBeNull();
     expect(parsePreparedDraftOriginChange('{no es json')).toBeNull();
     expect(parsePreparedDraftOriginChange(JSON.stringify({ negocioId: 'n1' }))).toBeNull();
+  });
+});
+
+describe('preparedOriginIsStale', () => {
+  it('solo sigue vigente mientras el negocio es borrador o por firmar', () => {
+    expect(preparedOriginIsStale('borrador')).toBe(false);
+    expect(preparedOriginIsStale('por_firmar')).toBe(false);
+    expect(preparedOriginIsStale('activo')).toBe(true);
+    expect(preparedOriginIsStale('anulado')).toBe(true);
+    expect(preparedOriginIsStale('entregado')).toBe(true);
+  });
+
+  it('sin estado conocido no se borra', () => {
+    expect(preparedOriginIsStale(null)).toBe(false);
+    expect(preparedOriginIsStale(undefined)).toBe(false);
   });
 });

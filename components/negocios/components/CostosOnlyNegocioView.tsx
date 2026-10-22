@@ -1,10 +1,12 @@
 import { useTheme } from '@/components/theme';
-import { ScreenState } from '@/components/ui';
+import { BackButton, ScreenState } from '@/components/ui';
 import { Spacing, Typography, getColors } from '@/constants/theme';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { errorMessage } from '@/lib/errorMessage';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseNegocioCostResult, type NegocioCostResult } from '@/lib/negocios/negocioCosts';
 import { supabase } from '@/lib/supabase';
+import { Stack } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NegocioCostPanel } from './NegocioCostPanel';
@@ -39,7 +41,7 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
       ({ data, error }) => {
         const result = error ? null : parseNegocioCostResult(data);
         if (!result) {
-          setState({ status: 'error', message: error?.message || 'No se pudo consultar el costo del negocio.' });
+          setState({ status: 'error', message: errorMessage(error, 'No se pudo consultar el costo del negocio.') });
           return;
         }
         const root = (data ?? {}) as Record<string, unknown>;
@@ -54,7 +56,8 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
           },
         });
       },
-      () => setState({ status: 'error', message: 'No se pudo consultar el costo del negocio.' })
+      (failure: unknown) =>
+        setState({ status: 'error', message: errorMessage(failure, 'No se pudo consultar el costo del negocio.') })
     );
   }, [negocioId]);
 
@@ -88,12 +91,33 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
           {state.header.customerName ?? 'Sin cliente'} · Vendedor {state.header.sellerName ?? '—'}
         </Text>
       </View>
-      <NegocioCostPanel result={state.result} showTotals />
+      {state.result.lines.length ? (
+        <NegocioCostPanel result={state.result} showTotals />
+      ) : (
+        <Text style={[Typography.bodySmall, { color: colors.text.secondary }]}>Este negocio no tiene productos</Text>
+      )}
     </ScrollView>
   );
 }
 
+/**
+ * Pantalla completa de la vista anterior dentro del Stack raíz. El header del
+ * Stack (`StackHeader`) solo pinta el botón de volver si la pantalla trae
+ * `headerLeft`: sin él, al llegar desde un aviso no había cómo regresar.
+ */
+export function CostosOnlyNegocioScreen({ negocioId }: { negocioId: string }) {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+  return (
+    <View style={[styles.screen, { backgroundColor: colors.background.default }]}>
+      <Stack.Screen options={{ title: 'Costo del negocio', headerLeft: () => <BackButton /> }} />
+      <CostosOnlyNegocioView negocioId={negocioId} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xl * 2 },
   header: { marginBottom: Spacing.md, gap: Spacing.xs },
   state: { margin: Spacing.lg },

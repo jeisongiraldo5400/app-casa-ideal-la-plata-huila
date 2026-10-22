@@ -51,4 +51,20 @@ describe('CostosOnlyNegocioView (aviso de venta para quien solo tiene el perfil 
     await waitFor(() => expect(screen.getByText('El negocio no existe o fue eliminado.')).toBeTruthy());
     expect(screen.getByText('Reintentar')).toBeTruthy();
   });
+
+  it('caída de red: mensaje en español', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
+    render(<CostosOnlyNegocioView negocioId="n1" />);
+    await waitFor(() => expect(screen.getByText(/Sin conexión con el servidor/)).toBeTruthy());
+    expect(screen.queryByText(/Network request failed/)).toBeNull();
+  });
+
+  it('sin líneas avisa que el negocio no tiene productos', async () => {
+    rpc.mockResolvedValue({
+      data: { numero: 20260078, customer_name: 'Cliente Dos', seller_name: 'V', lines: [], totals: null },
+      error: null,
+    });
+    render(<CostosOnlyNegocioView negocioId="n1" />);
+    expect(await screen.findByText('Este negocio no tiene productos')).toBeTruthy();
+  });
 });

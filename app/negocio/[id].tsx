@@ -45,8 +45,8 @@ import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
 import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
-import { CostosOnlyNegocioView } from '@/components/negocios/components/CostosOnlyNegocioView';
-import { isCostosOnlyUser } from '@/lib/costos/access';
+import { CostosOnlyNegocioScreen } from '@/components/negocios/components/CostosOnlyNegocioView';
+import { negocioDetailViewFor } from '@/lib/costos/access';
 import { useNegocioCostDetail } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
@@ -162,6 +162,7 @@ import { DraftOriginChangeSheet } from '@/components/negocios/components/DraftOr
 import {
   CONFIRMA_ORIGEN_ANTES_DE_ACTIVAR,
   formatCoverageLine,
+  preparedOriginIsStale,
   type PreparedDraftOriginChange,
 } from '@/components/negocios/domain/draftOriginChange';
 import {
@@ -188,15 +189,11 @@ export default function NegocioDetailScreen() {
 function NegocioDetailRouter() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { roles } = useUserRoles();
-  const costosOnly = isCostosOnlyUser(roles.map((userRole) => userRole.role?.nombre ?? ''));
-  if (costosOnly && id) {
-    return (
-      <>
-        <Stack.Screen options={{ title: 'Costo del negocio' }} />
-        <CostosOnlyNegocioView negocioId={id} />
-      </>
-    );
-  }
+  const view = negocioDetailViewFor(
+    roles.map((userRole) => userRole.role?.nombre ?? ''),
+    { negocioNotReadable: false }
+  );
+  if (view === 'costos' && id) return <CostosOnlyNegocioScreen negocioId={id} />;
   return <NegocioDetailScreenInner />;
 }
 
@@ -235,6 +232,8 @@ function NegocioDetailScreenInner() {
   const [remisionVigente, setRemisionVigente] = useState<NegocioRemisionVigente | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** El servidor respondió sin fila (RLS) y el teléfono no tiene copia. */
+  const [notReadable, setNotReadable] = useState(false);
   const [fromLocal, setFromLocal] = useState(false);
   /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
   const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
@@ -244,7 +243,7 @@ function NegocioDetailScreenInner() {
   const [preparedOrigin, setPreparedOrigin] = useState<PreparedDraftOriginChange | null>(null);
   const [confirmingOrigin, setConfirmingOrigin] = useState(false);
   const { user } = useAuth();
-  const { isAdmin, isGestorCobro, isRecaudador, isVendedor, isCostos } = useUserRoles();
+  const { roles: userRoles, isAdmin, isGestorCobro, isRecaudador, isVendedor, isCostos } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   /** Impresiones del contrato según el servidor; null sin señal o sin leer aún. */
@@ -384,6 +383,7 @@ function NegocioDetailScreenInner() {
     setLoading(true);
     setLoadWarning(null);
     setLoadError(null);
+    setNotReadable(false);
     if (options?.preferLocal && canUseLocalDb()) {
       const local = await loadLocalNegocioDetail(id);
       if (local) {
@@ -412,6 +412,7 @@ function NegocioDetailScreenInner() {
           applyLocalDetail(local);
           return;
         }
+        setNotReadable(true);
         throw new Error('No se encontró el negocio o no tiene acceso a él.');
       }
       setNegocio(n);
@@ -1350,13 +1351,21 @@ function NegocioDetailScreenInner() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    void readPreparedDraftOriginChange(id).then((change) => {
+    setPreparedOrigin(null);
+    void readPreparedDraftOriginChange(id, user?.id).then((change) => {
       if (!cancelled) setPreparedOrigin(change);
     });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, user?.id]);
+
+  // Activado, anulado o ya no borrador: el cambio preparado sobra y se borra.
+  useEffect(() => {
+    if (!id || !preparedOriginIsStale(negocio?.status)) return;
+    void clearPreparedDraftOriginChange(id, user?.id);
+    setPreparedOrigin(null);
+  }, [id, negocio?.status, user?.id]);
 
   /**
    * Confirma con señal el cambio de origen preparado sin señal: el servidor
@@ -1381,7 +1390,7 @@ function NegocioDetailScreenInner() {
         return;
       }
       await changeDraftSource(negocio.id, preparedOrigin, preparedOrigin.idempotencyKey);
-      await clearPreparedDraftOriginChange(negocio.id);
+      await clearPreparedDraftOriginChange(negocio.id, user?.id);
       setPreparedOrigin(null);
       await load();
       Alert.alert('Origen cambiado', `El negocio ahora sale de: ${preparedOrigin.label}. Ya puede activarlo.`);
@@ -1394,7 +1403,7 @@ function NegocioDetailScreenInner() {
 
   const discardPreparedOrigin = () => {
     if (!negocio) return;
-    void clearPreparedDraftOriginChange(negocio.id);
+    void clearPreparedDraftOriginChange(negocio.id, user?.id);
     setPreparedOrigin(null);
   };
 
@@ -1612,6 +1621,20 @@ function NegocioDetailScreenInner() {
     title: headerTitle,
     headerLeft: () => <BackButton onPress={handleGoBack} />,
   };
+
+  if (
+    !loading &&
+    !negocio &&
+    id &&
+    negocioDetailViewFor(
+      userRoles.map((userRole) => userRole.role?.nombre ?? ''),
+      { negocioNotReadable: notReadable }
+    ) === 'costos'
+  ) {
+    // Aviso de venta bajo costo a quien tiene «costos» y otro rol que no deja
+    // leer este negocio: se muestra solo lo suyo, el costo y el margen.
+    return <CostosOnlyNegocioScreen negocioId={id} />;
+  }
 
   if (!loading && !negocio) {
     return (
@@ -2226,6 +2249,7 @@ function NegocioDetailScreenInner() {
           visible={originSheetOpen}
           onClose={() => setOriginSheetOpen(false)}
           negocioId={negocio.id}
+          userId={user?.id ?? null}
           customerId={negocio.customer_id ?? null}
           items={items.map((item) => ({
             product_id: item.product_id,
@@ -2236,7 +2260,7 @@ function NegocioDetailScreenInner() {
           onChanged={(label) => {
             setOriginSheetOpen(false);
             // Un cambio confirmado con señal reemplaza el preparado sin señal.
-            void clearPreparedDraftOriginChange(negocio.id);
+            void clearPreparedDraftOriginChange(negocio.id, user?.id);
             setPreparedOrigin(null);
             void load().then(() =>
               Alert.alert('Origen cambiado', `El negocio ahora sale de: ${label}. Ya puede activarlo.`)

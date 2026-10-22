@@ -68,4 +68,14 @@ describe('ProductPurchasesPanel (últimas compras en el móvil)', () => {
     });
     expect(await screen.findByText(/Solo el perfil Costos.*Toca para reintentar/)).toBeTruthy();
   });
+
+  it('caída de red: el mensaje sale en español, no el texto técnico en inglés', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
+    render(<ProductPurchasesPanel productId="p1" online />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Últimas compras'));
+    });
+    expect(await screen.findByText(/Sin conexión con el servidor.*Toca para reintentar/)).toBeTruthy();
+    expect(screen.queryByText(/Network request failed/)).toBeNull();
+  });
 });

@@ -37,6 +37,8 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   negocioId: string;
+  /** Usuario de la sesión: el cambio preparado queda ligado a él. */
+  userId: string | null;
   customerId: string | null;
   items: DraftOriginItem[];
   /** Sin señal (o con la copia del teléfono): solo se prepara el cambio. */
@@ -56,6 +58,7 @@ export function DraftOriginChangeSheet({
   visible,
   onClose,
   negocioId,
+  userId,
   customerId,
   items,
   offline,
@@ -135,6 +138,9 @@ export function DraftOriginChangeSheet({
   useEffect(() => {
     setServerCheck(null);
     setSaveError(null);
+    // Una revisión en curso que se cancela (sin señal o sin destino) no puede
+    // dejar «Revisando…» ni el botón bloqueados.
+    setChecking(false);
     if (!target || offline) return;
     let cancelled = false;
     setChecking(true);
@@ -183,7 +189,7 @@ export function DraftOriginChangeSheet({
           idempotencyKey: keyFor(targetKey),
           preparedAt: new Date().toISOString(),
         };
-        await savePreparedDraftOriginChange(change);
+        await savePreparedDraftOriginChange(change, userId);
         onPrepared(change);
         return;
       }
