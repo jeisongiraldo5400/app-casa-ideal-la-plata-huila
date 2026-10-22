@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { AppState, type AppStateStatus, Platform } from 'react-native'
+import { installOfflineSessionGuard } from '@/lib/auth/offlineSessionGuard'
+import { useSyncStore } from '@/lib/offline/store/syncStore'
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
@@ -124,27 +126,53 @@ export async function readStoredSession(): Promise<Session | null> {
   }
 }
 
+// Sesión vencida sin señal: cada consulta caía a lo local solo después de
+// ~25 s de reintentos de refresco. Ver `lib/auth/offlineSessionGuard.ts`.
+installOfflineSessionGuard(supabase.auth as never, {
+  isOnline: () => useSyncStore.getState().online,
+  readStoredSession,
+})
+
+/**
+ * ¿Debe correr el refresco automático? Solo en primer plano y con señal: sin
+ * señal cada vuelta del temporizador (30 s) lanza un refresco con reintentos
+ * que nunca llega y retiene el candado de auth-js, así que las consultas que
+ * llegan mientras tanto esperan detrás de él.
+ */
+export function shouldAutoRefreshSession(appState: AppStateStatus, online: boolean): boolean {
+  return appState === 'active' && online
+}
+
 /**
  * Mantiene el refresco de la sesión activo solamente mientras la aplicación
- * nativa está en primer plano. Debe montarse una sola vez en el layout raíz.
+ * nativa está en primer plano y hay señal. Debe montarse una sola vez en el
+ * layout raíz.
  */
 export function startSupabaseAuthLifecycle(): () => void {
   if (Platform.OS === 'web') return () => undefined
 
-  const updateAutoRefresh = (state: AppStateStatus) => {
-    if (state === 'active') {
-      supabase.auth.startAutoRefresh()
-      return
-    }
-
-    supabase.auth.stopAutoRefresh()
+  let appState: AppStateStatus = AppState.currentState
+  let running: boolean | null = null
+  const update = () => {
+    const next = shouldAutoRefreshSession(appState, useSyncStore.getState().online)
+    if (next === running) return
+    running = next
+    if (next) supabase.auth.startAutoRefresh()
+    else supabase.auth.stopAutoRefresh()
   }
 
-  updateAutoRefresh(AppState.currentState)
-  const subscription = AppState.addEventListener('change', updateAutoRefresh)
+  update()
+  const subscription = AppState.addEventListener('change', (state) => {
+    appState = state
+    update()
+  })
+  const unsubscribeOnline = useSyncStore.subscribe((state, previous) => {
+    if (state.online !== previous.online) update()
+  })
 
   return () => {
     subscription.remove()
+    unsubscribeOnline()
     supabase.auth.stopAutoRefresh()
   }
 }

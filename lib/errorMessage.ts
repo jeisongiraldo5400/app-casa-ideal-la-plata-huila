@@ -51,7 +51,7 @@ export const OFFLINE_MESSAGE = 'Sin conexión con el servidor. Revisa tu red e i
 
 /** Texto técnico (en inglés) de una petición que no llegó al servidor. */
 const NETWORK_FAILURE_TEXT =
-  /failed to fetch|network request failed|networkerror|load failed|ERR_NETWORK|timeout/i;
+  /failed to fetch|network request failed|networkerror|load failed|ERR_NETWORK|timeout|no respondi[óo] a tiempo/i;
 
 const BY_PATTERN: Array<[RegExp, string]> = [
   [NETWORK_FAILURE_TEXT, OFFLINE_MESSAGE],
