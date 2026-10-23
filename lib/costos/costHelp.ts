@@ -2,8 +2,8 @@
  * Ayudas cortas («?») de los términos de costos y «Ganancia/Pérdida» en vez
  * de solo «margen». Copia del diccionario de la web
  * (`frontend/src/app/admin/costos/domain/ayudas.ts`): si cambia un texto,
- * cambiarlo en las dos. Puro, sin React. Por decisión del usuario no se
- * sugiere precio de venta en ningún lado.
+ * cambiarlo en las dos. Puro, sin React. Por decisión del usuario ningún
+ * texto propone un precio de venta.
  */
 import { formatCOP } from '@/lib/creditCalculator';
 

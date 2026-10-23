@@ -179,21 +179,21 @@ describe('NegocioProductAddSection · precio de venta', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Valor unitario').props.value).toBe('1.890.000'));
     expect(fetchSalePrice).toHaveBeenCalledWith('product-1');
-    expect(screen.getByTestId('negocio-precio-sugerido').props.children).toBe(
+    expect(screen.getByTestId('negocio-precio-venta').props.children).toBe(
       'Precio de venta del producto. Puede cambiarlo.'
     );
     fireEvent.press(screen.getByText('Agregar'));
     expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ unit_price: 1_890_000 }));
   });
 
-  it('el vendedor puede cambiar el precio sugerido', async () => {
+  it('el vendedor puede cambiar el precio de venta', async () => {
     (fetchSalePrice as jest.Mock).mockResolvedValue(1_890_000);
     const onAdd = jest.fn();
     const screen = await pickScanned(onAdd);
     await waitFor(() => expect(screen.getByLabelText('Valor unitario').props.value).toBe('1.890.000'));
 
     fireEvent.changeText(screen.getByLabelText('Valor unitario'), '1750000');
-    expect(screen.queryByTestId('negocio-precio-sugerido')).toBeNull();
+    expect(screen.queryByTestId('negocio-precio-venta')).toBeNull();
     fireEvent.press(screen.getByText('Agregar'));
     expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ unit_price: 1_750_000 }));
   });
@@ -215,7 +215,7 @@ describe('NegocioProductAddSection · precio de venta', () => {
     const screen = await pickScanned();
     await act(async () => undefined);
     expect(screen.getByLabelText('Valor unitario').props.value).toBe('');
-    expect(screen.queryByTestId('negocio-precio-sugerido')).toBeNull();
+    expect(screen.queryByTestId('negocio-precio-venta')).toBeNull();
   });
 
   it('una respuesta que llega tras cancelar no rellena el siguiente producto', async () => {

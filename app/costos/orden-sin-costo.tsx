@@ -49,7 +49,7 @@ export default function OrdenSinCostoScreen() {
             </Text>
           </View>
           <Text style={[Typography.body, styles.gap, { color: colors.text.secondary }]}>
-            Cóstela para que el margen de las ventas sea correcto.
+            Costéela para que el margen de las ventas sea correcto.
           </Text>
           <Text style={[Typography.body, styles.gap, { color: colors.text.primary }]}>
             Costéela desde la web: Costos → Costear órdenes.

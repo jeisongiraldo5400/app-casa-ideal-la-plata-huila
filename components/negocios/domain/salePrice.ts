@@ -13,7 +13,7 @@ type PricedLine = {
   unit_price: number;
 };
 
-/** Texto del campo «Valor unitario» tras conocer el precio sugerido. */
+/** Texto del campo «Valor unitario» tras conocer el precio de venta del producto. */
 export function prefillUnitPriceText(
   current: string,
   price: number | null,
@@ -25,7 +25,7 @@ export function prefillUnitPriceText(
 }
 
 /**
- * Pone el precio sugerido en la línea recién agregada (producto + bodega)
+ * Pone el precio de venta del producto en la línea recién agregada (producto + bodega)
  * solo si sigue sin valor unitario. Devuelve el mismo arreglo si no cambia.
  */
 export function applySalePriceToLine<T extends PricedLine>(
