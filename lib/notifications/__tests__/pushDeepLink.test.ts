@@ -29,10 +29,11 @@ describe('buildPushDeepLink', () => {
     expect(buildPushDeepLink({ kind: 'negocio', id: 'n-1', numero: 2026016 })).toBe('/negocio/n-1');
   });
 
-  it('un aviso de venta bajo costo abre el detalle del negocio', () => {
+  it('un aviso de venta bajo costo abre su pantalla propia, no el detalle del negocio', () => {
     expect(
       buildPushDeepLink({ kind: 'cost_alert', negocio_id: 'n-7', numero: 20260077 })
-    ).toBe('/negocio/n-7');
+    ).toBe('/costos/aviso/n-7');
+    expect(buildPushDeepLink({ kind: 'cost_alert', id: 'n-8' })).toBe('/costos/aviso/n-8');
   });
 
   it('un aviso de costo sin negocio no lleva a ninguna parte', () => {

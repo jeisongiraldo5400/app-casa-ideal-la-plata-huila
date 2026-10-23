@@ -181,15 +181,16 @@ export default function NegocioDetailScreen() {
 }
 
 /**
- * Con SOLO el perfil «costos» (aviso de venta bajo costo) el negocio no es
- * legible para él: se muestra solo su costo y margen (20261231650000).
+ * El detalle nunca muestra costos. Con SOLO el perfil «costos» el negocio no es
+ * legible para él (20261231650000), y un aviso viejo puede traer
+ * `?view=costos`: en esos casos se muestra la pantalla del aviso de costos.
  */
 function NegocioDetailRouter() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, view: requestedView } = useLocalSearchParams<{ id: string; view?: string }>();
   const { roles } = useUserRoles();
   const view = negocioDetailViewFor(
     roles.map((userRole) => userRole.role?.nombre ?? ''),
-    { negocioNotReadable: false }
+    { requestedView }
   );
   if (view === 'costos' && id) return <CostosOnlyNegocioScreen negocioId={id} />;
   return <NegocioDetailScreenInner />;
@@ -230,8 +231,6 @@ function NegocioDetailScreenInner() {
   const [remisionVigente, setRemisionVigente] = useState<NegocioRemisionVigente | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  /** El servidor respondió sin fila (RLS) y el teléfono no tiene copia. */
-  const [notReadable, setNotReadable] = useState(false);
   const [fromLocal, setFromLocal] = useState(false);
   /** Creado sin señal y aún sin confirmar por el servidor (null = confirmado). */
   const [pendingSync, setPendingSync] = useState<PendingNegocioSync | null>(null);
@@ -385,7 +384,6 @@ function NegocioDetailScreenInner() {
     setLoading(true);
     setLoadWarning(null);
     setLoadError(null);
-    setNotReadable(false);
     if (options?.preferLocal && canUseLocalDb()) {
       const local = await loadLocalNegocioDetail(id);
       if (local) {
@@ -414,7 +412,6 @@ function NegocioDetailScreenInner() {
           applyLocalDetail(local);
           return;
         }
-        setNotReadable(true);
         throw new Error('No se encontró el negocio o no tiene acceso a él.');
       }
       setNegocio(n);
@@ -1581,20 +1578,6 @@ function NegocioDetailScreenInner() {
     title: headerTitle,
     headerLeft: () => <BackButton onPress={handleGoBack} />,
   };
-
-  if (
-    !loading &&
-    !negocio &&
-    id &&
-    negocioDetailViewFor(
-      userRoles.map((userRole) => userRole.role?.nombre ?? ''),
-      { negocioNotReadable: notReadable }
-    ) === 'costos'
-  ) {
-    // Aviso de venta bajo costo a quien tiene «costos» y otro rol que no deja
-    // leer este negocio: se muestra solo lo suyo, el costo y el margen.
-    return <CostosOnlyNegocioScreen negocioId={id} />;
-  }
 
   if (!loading && !negocio) {
     return (

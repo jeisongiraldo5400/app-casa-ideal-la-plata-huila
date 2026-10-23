@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { act, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { CostosOnlyNegocioView } from '../CostosOnlyNegocioView';
 import { supabase } from '@/lib/supabase';
@@ -66,5 +66,27 @@ describe('CostosOnlyNegocioView (aviso de venta para quien solo tiene el perfil 
     });
     render(<CostosOnlyNegocioView negocioId="n1" />);
     expect(await screen.findByText('Este negocio no tiene productos')).toBeTruthy();
+  });
+
+  it('una respuesta vieja que llega tarde no pisa la última consulta', async () => {
+    let resolveOld: (value: unknown) => void = () => undefined;
+    rpc
+      .mockReturnValueOnce(new Promise((done) => { resolveOld = done; }))
+      .mockResolvedValueOnce({
+        data: { numero: 20260079, customer_name: 'Cliente Tres', seller_name: 'V', lines: [], totals: null },
+        error: null,
+      });
+    const view = render(<CostosOnlyNegocioView negocioId="n1" />);
+    // Se va la señal y vuelve: se lanza una segunda consulta.
+    mockOnline = false;
+    view.rerender(<CostosOnlyNegocioView negocioId="n1" />);
+    mockOnline = true;
+    view.rerender(<CostosOnlyNegocioView negocioId="n1" />);
+    expect(await screen.findByText('Este negocio no tiene productos')).toBeTruthy();
+    await act(async () => {
+      resolveOld({ data: null, error: { message: 'Respuesta vieja' } });
+    });
+    expect(screen.queryByText('Respuesta vieja')).toBeNull();
+    expect(screen.getByText('Este negocio no tiene productos')).toBeTruthy();
   });
 });
