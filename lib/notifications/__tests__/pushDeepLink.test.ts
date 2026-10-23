@@ -40,6 +40,27 @@ describe('buildPushDeepLink', () => {
     expect(buildPushDeepLink({ kind: 'cost_alert', negocio_id: '  ' })).toBeNull();
   });
 
+  // Punto 6 (2026-10-22): llegó mercancía de una OC sin costo (20261231810000).
+  it('un aviso de mercancía sin costo abre la pantalla que indica costear en la web', () => {
+    expect(
+      buildPushDeepLink({
+        kind: 'cost_po_uncosted',
+        purchase_order_id: 'po-1',
+        order_number: 'OC-0597',
+        uncosted_count: 3,
+      } as never)
+    ).toBe('/costos/orden-sin-costo?orden=OC-0597&productos=3');
+  });
+
+  it('un aviso de mercancía sin costo con datos raros abre la pantalla igual', () => {
+    expect(buildPushDeepLink({ kind: 'cost_po_uncosted', uncosted_count: 'x' } as never)).toBe(
+      '/costos/orden-sin-costo'
+    );
+    expect(buildPushDeepLink({ kind: 'cost_po_uncosted', order_number: 'OC 1/2', uncosted_count: '1' } as never)).toBe(
+      '/costos/orden-sin-costo?orden=OC%201%2F2&productos=1'
+    );
+  });
+
   it('abre las órdenes de entrega filtradas por su número', () => {
     expect(
       buildPushDeepLink({ kind: 'delivery_order', id: 'do-1', order_number: 'OE-2026-0012' })

@@ -20,6 +20,11 @@
  * 'cost_alert'`, migración 20261231620000; solo llegan al perfil Costos) abren
  * el detalle del negocio, donde ese perfil ve el costo y el margen por línea.
  *
+ * Los avisos de mercancía sin costo (`cost_po_received_uncosted`, `data.kind =
+ * 'cost_po_uncosted'`, migración 20261231810000; solo perfil Costos) abren una
+ * pantalla simple que indica costear la orden desde la web: en el teléfono no
+ * hay pantalla para costear.
+ *
  * Los recordatorios de cobro con varios negocios abren Cartera filtrada por la
  * fecha de vencimiento. Las pestañas conservan su estado, así que la ruta lleva
  * un `n` distinto por aviso: Cartera vuelve a aplicar el filtro aunque ya
@@ -27,6 +32,7 @@
  */
 
 import { parseCarteraDueParam } from '@/lib/cartera/carteraDeepLink';
+import { buildUncostedOrderRoute } from '@/lib/costos/uncostedOrderNotice';
 
 export type PushNotificationData = {
   kind?: unknown;
@@ -35,6 +41,7 @@ export type PushNotificationData = {
   order_number?: unknown;
   due_date?: unknown;
   negocio_id?: unknown;
+  uncosted_count?: unknown;
 };
 
 export type PushDeepLinkOptions = {
@@ -64,6 +71,10 @@ export function buildPushDeepLink(
   if (kind === "cost_alert") {
     const negocioId = text(data.negocio_id) || id;
     return negocioId ? `/negocio/${encodeURIComponent(negocioId)}` : null;
+  }
+
+  if (kind === "cost_po_uncosted") {
+    return buildUncostedOrderRoute(data);
   }
 
   if (kind === "delivery_order" || kind === "purchase_order") {
