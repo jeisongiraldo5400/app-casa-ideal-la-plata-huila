@@ -130,8 +130,6 @@ import { customerPhonesError, toStoredPhone } from '@/components/customers/domai
 import { errorMessage } from '@/lib/errorMessage';
 import { expectedSellerIdOnCreate, roleNamesOf } from '@/components/customers/domain/customerCreationAssignment';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
-import { useNegocioCostPreview } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
 import { useSaleWarehouses } from '@/hooks/useSaleWarehouses';
 import {
   BODEGAS_DE_VENTA_NO_CARGADAS,
@@ -187,7 +185,7 @@ function NegocioCreateScreenInner() {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const { user } = useAuth();
-  const { roles: userRoles, isAdmin, isVendedor, isCostos } = useUserRoles();
+  const { roles: userRoles, isAdmin, isVendedor } = useUserRoles();
   const { fetchCreditSettings, creditSettings, createAndActivate } =
     useNegociosStore();
 
@@ -202,8 +200,8 @@ function NegocioCreateScreenInner() {
   /** Momento de la última descarga del catálogo de producto. */
   const [catalogPulledAt, setCatalogPulledAt] = useState<number | null>(null);
   const online = useSyncStore((state) => state.online);
-  // Costo y margen por línea: solo perfil «costos», con señal, sin guardarlo.
-  const costPreviewEnabled = isCostos() && online;
+  // Sin costos ni ganancia al armar el negocio, ni para el perfil «costos»:
+  // el cliente suele estar al lado mirando la pantalla.
   // Bodegas de venta (3.5.0): solo con origen «desde bodega»; el admin no
   // tiene restricción. Sin datos aún, no se muestran bodegas (falla cerrado).
   const saleWarehouses = useSaleWarehouses();
@@ -769,11 +767,6 @@ function NegocioCreateScreenInner() {
   };
   const installmentsNumber = Number(installments);
   const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const costPreview = useNegocioCostPreview(items, costPreviewEnabled);
-  const costProductNames = useMemo(
-    () => Object.fromEntries(items.map((item) => [item.product_id, item.description])),
-    [items]
-  );
   // Interés fijo en pesos pactado con el cliente; se suma al valor de los
   // productos y todo lo demás (abonos, cuotas, saldo) parte de ese total.
   const parsedManualInterest = parseNegocioMoney(manualInterest);
@@ -1814,10 +1807,6 @@ function NegocioCreateScreenInner() {
               }
               colors={colors}
             />
-
-            {costPreview ? (
-              <NegocioCostPanel result={costPreview} productNames={costProductNames} />
-            ) : null}
 
             <View style={[styles.summaryCard, { backgroundColor: colors.background.paper, borderColor: colors.divider }]}>
               <Text style={{ fontWeight: '700', fontSize: 16, color: colors.text.primary }}>
