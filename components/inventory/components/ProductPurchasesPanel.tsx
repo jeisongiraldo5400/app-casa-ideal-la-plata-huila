@@ -1,7 +1,8 @@
 import { useTheme } from '@/components/theme';
-import { Button } from '@/components/ui';
+import { Button, HelpHint } from '@/components/ui';
 import { Radius, Spacing, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
+import { COST_HELP } from '@/lib/costos/costHelp';
 import { errorMessage } from '@/lib/errorMessage';
 import {
   MOBILE_PURCHASES_LIMIT,
@@ -96,10 +97,15 @@ export function ProductPurchasesPanel({ productId, online }: Props) {
           </Text>
         ) : (
           <View>
-            <Text style={[styles.summary, { color: colors.text.secondary }]}>
-              Último {money(state.data.lastUnitCost)} · Promedio {money(state.data.avgUnitCost)} · Mín. {money(state.data.minUnitCost)} · Máx.{' '}
-              {money(state.data.maxUnitCost)}
-            </Text>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summary, { color: colors.text.secondary }]}>Último {money(state.data.lastUnitCost)}</Text>
+              <HelpHint term="Último costo" text={COST_HELP.ultimo_costo} size={13} />
+              <Text style={[styles.summary, { color: colors.text.secondary }]}>· Promedio {money(state.data.avgUnitCost)}</Text>
+              <HelpHint term="Costo promedio" text={COST_HELP.costo_promedio} size={13} />
+              <Text style={[styles.summary, { color: colors.text.secondary }]}>
+                · Mín. {money(state.data.minUnitCost)} · Máx. {money(state.data.maxUnitCost)}
+              </Text>
+            </View>
             {state.data.rows.length === 0 ? (
               <Text style={[styles.note, { color: colors.text.secondary }]}>Sin compras recibidas por orden de compra.</Text>
             ) : (
@@ -141,7 +147,8 @@ const styles = StyleSheet.create({
   root: { marginTop: Spacing.sm, paddingTop: Spacing.xs, borderTopWidth: StyleSheet.hairlineWidth },
   loader: { marginVertical: Spacing.sm },
   note: { fontSize: 12, marginTop: Spacing.xs },
-  summary: { fontSize: 12, marginBottom: Spacing.xs },
+  summary: { fontSize: 12 },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 4, marginBottom: Spacing.xs },
   row: { paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, marginTop: Spacing.xs },
   rowLine: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm },
   rowTitle: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
