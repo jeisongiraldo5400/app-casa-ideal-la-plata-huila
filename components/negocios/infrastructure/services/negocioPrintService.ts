@@ -11,7 +11,6 @@ import {
   rememberCopyNumber,
   type NegocioPrintDocument,
   type NegocioPrintEvent,
-  type NegocioPrintFormat,
   type PrintCopyCache,
 } from '@/lib/negocios/printRegistry';
 import { useSyncStore } from '@/lib/offline/store/syncStore';
@@ -22,6 +21,10 @@ import { findPendingPagoCommand, queuePrintOffline } from '@/lib/offline/reposit
  * Registro de impresiones del contrato y los recibos (`register_negocio_print`,
  * 20261231300000). Con red el servidor asigna el número de copia; sin red el
  * teléfono imprime con el mayor número que conoce + 1 y encola el registro.
+ *
+ * Solo cuenta lo impreso en papel (decisión 2026-10-23): en el móvil, el
+ * ticket por la impresora Bluetooth. Compartir el PDF no suma copia ni se
+ * registra, por eso aquí el formato es siempre 'ticket'.
  */
 
 const CACHE_KEY = '@casa_ideal/impresiones/copias_v1';
@@ -51,7 +54,6 @@ async function rememberInCache(key: string, copyNumber: number) {
 export type RecordNegocioPrintInput = {
   negocioId: string;
   document: NegocioPrintDocument;
-  format: NegocioPrintFormat;
   /** Id del pago en el servidor (recibo de un pago ya sincronizado). */
   pagoId?: string | null;
   /** Pago hecho sin señal, aún en la cola: id local de su fila. */
@@ -63,7 +65,7 @@ export type RecordNegocioPrintInput = {
 };
 
 /**
- * Registra una impresión y devuelve el número de copia para el papel. Nunca
+ * Registra un ticket impreso por Bluetooth y devuelve el número de copia para el papel. Nunca
  * lanza: si no se puede registrar ni encolar, devuelve null y se imprime sin
  * marca (no se bloquea la impresión).
  */
@@ -85,7 +87,7 @@ export async function recordNegocioPrint(input: RecordNegocioPrintInput): Promis
         const { data, error } = await supabase.rpc('register_negocio_print' as never, {
           p_negocio_id: input.negocioId,
           p_document: input.document,
-          p_format: input.format,
+          p_format: 'ticket',
           p_channel: 'movil',
           p_pago_id: pagoId,
           p_client_event_id: clientEventId,
@@ -108,7 +110,7 @@ export async function recordNegocioPrint(input: RecordNegocioPrintInput): Promis
     const queued = await queuePrintOffline({
       negocioId: input.negocioId,
       document: input.document,
-      format: input.format,
+      format: 'ticket',
       pagoId,
       pagoIdempotencyKey,
       clientEventId,

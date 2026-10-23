@@ -60,10 +60,10 @@ describe('printRegistry', () => {
   });
 
   it('dice si la próxima impresión del contrato sale original o copia', () => {
-    expect(labelNextContractPrint({ count: 0, last: null })).toBe('La próxima impresión sale como original');
+    expect(labelNextContractPrint({ count: 0, last: null })).toBe('La próxima impresión en papel sale como original');
     expect(labelNextContractPrint(summarizeContractPrints(parsePrintHistory([
       { id: 'e1', document: 'contrato', format: 'pdf', channel: 'web', copy_number: 1, printed_at: '2026-09-30T15:00:00Z' },
-    ])))).toBe('La próxima impresión sale como COPIA N.º 2');
+    ])))).toBe('La próxima impresión en papel sale como COPIA N.º 2');
   });
 
   it('lo anterior al registro cuenta como impreso, sin fecha ni usuario inventados', () => {
@@ -71,6 +71,6 @@ describe('printRegistry', () => {
       { id: 'h1', document: 'contrato', copy_number: 1, printed_at: '2026-09-22T15:00:00Z', printed_by_name: null, historical: true },
     ]));
     expect(labelContractPrintSummary(summary)).toBe('Contrato impreso 1 vez · antes del registro de impresiones');
-    expect(labelNextContractPrint(summary)).toBe('La próxima impresión sale como COPIA N.º 2');
+    expect(labelNextContractPrint(summary)).toBe('La próxima impresión en papel sale como COPIA N.º 2');
   });
 });

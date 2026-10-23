@@ -15,8 +15,9 @@ jest.mock('@/components/printing', () => ({
   useBluetoothPrinter: () => ({ printPayment: mockPrintPayment, printing: false }),
 }));
 jest.mock('@/lib/uploadPagoSupport', () => ({ openPagoSupport: jest.fn() }));
+const mockRecordPrint = jest.fn(async (_input: unknown) => ({ number: 3, printedAt: '2026-10-23T15:00:00Z', printedBy: 'Ana' }));
 jest.mock('@/components/negocios/infrastructure/services/negocioPrintService', () => ({
-  recordNegocioPrint: jest.fn(async () => null),
+  recordNegocioPrint: (input: unknown) => mockRecordPrint(input),
 }));
 jest.mock('@/components/negocios/infrastructure/services/negocioProductLinesService', () => ({
   fetchNegocioReceiptProducts: (id: string) => mockFetchProducts(id),
@@ -40,6 +41,7 @@ describe('useCobroReceiptActions', () => {
     mockPrintToFile.mockClear();
     mockSharePdf.mockClear();
     mockPrintPayment.mockClear();
+    mockRecordPrint.mockClear();
     mockFetchProducts.mockReset().mockResolvedValue([{ quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 }]);
   });
 
@@ -68,5 +70,21 @@ describe('useCobroReceiptActions', () => {
     expect(mockPrintPayment.mock.calls[0][0].products).toEqual([
       { quantity: 2, name: 'Colchón doble', unitPrice: 600000, subtotal: 1200000 },
     ]);
+  });
+
+  it('compartir el PDF no registra copia ni lleva marca de copia', async () => {
+    const { result } = renderHook(() => useCobroReceiptActions());
+    await act(() => result.current.shareReceipt(data, target));
+    expect(mockRecordPrint).not.toHaveBeenCalled();
+    const html = mockPrintToFile.mock.calls[0][0].html;
+    expect(html).not.toContain('COPIA N.º');
+  });
+
+  it('el ticket por Bluetooth sí registra la copia del recibo', async () => {
+    const { result } = renderHook(() => useCobroReceiptActions());
+    await act(() => result.current.printReceipt(data, target));
+    const options = mockPrintPayment.mock.calls[0][1] as { resolveCopy: () => Promise<unknown> };
+    await expect(options.resolveCopy()).resolves.toEqual(expect.objectContaining({ number: 3 }));
+    expect(mockRecordPrint).toHaveBeenCalledWith({ negocioId: 'n1', document: 'recibo', pagoId: 'p1' });
   });
 });

@@ -14,8 +14,9 @@ import { receiptPdfFileName, sharePdf } from '@/lib/sharing/sharePdf';
 /** Pago ya confirmado por el servidor (solo esos tienen recibo en «Cobros»). */
 type CobroPrintTarget = Pick<MisCobroRow, 'negocio_id' | 'payment_id'>;
 
-const recordCobroPrint = (target: CobroPrintTarget, format: 'pdf' | 'ticket') =>
-  recordNegocioPrint({ negocioId: target.negocio_id, document: 'recibo', format, pagoId: target.payment_id });
+/** Solo el ticket en papel suma copia; el PDF compartido no se registra. */
+const recordCobroTicketPrint = (target: CobroPrintTarget) =>
+  recordNegocioPrint({ negocioId: target.negocio_id, document: 'recibo', pagoId: target.payment_id });
 
 /**
  * Acciones sobre el recibo de un cobro (antes solo en el modal «Cobros de …»):
@@ -27,12 +28,9 @@ export function useCobroReceiptActions() {
   const shareReceipt = useCallback(async (data: NegocioReceiptData, target: CobroPrintTarget) => {
     try {
       // Los productos del negocio no vienen en la fila del cobro: se leen al
-      // imprimir (servidor o teléfono), a la vez que se registra la copia.
-      const [copy, products] = await Promise.all([
-        recordCobroPrint(target, 'pdf'),
-        fetchNegocioReceiptProducts(target.negocio_id),
-      ]);
-      const html = buildNegocioReceiptHtml({ ...data, products, copy });
+      // compartir (servidor o teléfono). El PDF no suma copia ni lleva marca.
+      const products = await fetchNegocioReceiptProducts(target.negocio_id);
+      const html = buildNegocioReceiptHtml({ ...data, products });
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
       await sharePdf({
         uri,
@@ -47,7 +45,7 @@ export function useCobroReceiptActions() {
   const printReceipt = useCallback(
     async (data: NegocioReceiptData, target: CobroPrintTarget) => {
       const products = await fetchNegocioReceiptProducts(target.negocio_id);
-      await printPayment({ ...data, products }, { resolveCopy: () => recordCobroPrint(target, 'ticket') });
+      await printPayment({ ...data, products }, { resolveCopy: () => recordCobroTicketPrint(target) });
     },
     [printPayment]
   );

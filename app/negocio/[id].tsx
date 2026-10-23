@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Share,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -36,9 +35,7 @@ import {
 } from '@/components/negocios/infrastructure/services/negocioPrintService';
 import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseDownPaymentSchedule } from '@/lib/negocios/negocioCreditRules';
-import { buildNegocioContractHtml, NEGOCIO_CONTRACT_PDF_SIZE } from '@/lib/negocioContractHtml';
-import { buildNegocioReceiptHtml, receiptProductsFromItems } from '@/lib/negocioReceiptHtml';
-import { LETTER_PDF_SIZE, pdfPrintOptions } from '@/lib/pdfPrintOptions';
+import { receiptProductsFromItems } from '@/lib/negocioReceiptHtml';
 import { useBluetoothPrinter } from '@/components/printing';
 import { createIdempotencyKey } from '@/lib/idempotency';
 import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
@@ -55,7 +52,10 @@ import {
 import { NegocioPendingSyncBanner } from '@/components/negocios/components/NegocioPendingSyncBanner';
 import { NegocioCustomerContact } from '@/components/negocios/components/NegocioCustomerContact';
 import { formatCustomerPhones } from '@/components/customers/domain/customerPhones';
-import { contractPdfFileName, receiptPdfFileName, sharePdf } from '@/lib/sharing/sharePdf';
+import {
+  shareNegocioContractPdf,
+  shareNegocioReceiptPdf,
+} from '@/components/negocios/infrastructure/services/negocioPdfShareService';
 import {
   pendingNegocioTitle,
   type PendingNegocioSync,
@@ -765,7 +765,6 @@ function NegocioDetailScreenInner() {
       recordNegocioPrint({
         negocioId,
         document: 'recibo',
-        format: 'ticket',
         pagoId: input.pagoId ?? null,
         pendingPago: input.pendingPago ?? null,
         printedByName: registeredByName,
@@ -1095,16 +1094,10 @@ function NegocioDetailScreenInner() {
     }
   };
 
+  /** Compartir el PDF no es imprimir en papel: no suma copia ni lleva marca. */
   const shareContractPdf = async () => {
     if (!negocio) return;
-    const copy = await recordNegocioPrint({
-      negocioId: negocio.id,
-      document: 'contrato',
-      format: 'pdf',
-      printedByName: registeredByName,
-    });
-    void refreshPrintHistory();
-    const html = buildNegocioContractHtml({
+    const contract = {
       numero: negocio.numero,
       deal_date: negocio.deal_date,
       location: [
@@ -1157,39 +1150,9 @@ function NegocioDetailScreenInner() {
         paid_amount: Number(c.paid_amount || 0),
         status: c.status,
       })),
-      copy,
-    });
-
+    };
     try {
-      // Prefer expo-print if available
-      let Print: any;
-      let Sharing: any;
-      try {
-        Print = require('expo-print');
-        Sharing = require('expo-sharing');
-      } catch {
-        Print = null;
-      }
-
-      if (Print?.printToFileAsync && Sharing?.shareAsync) {
-        // Tamaño oficio: 216 x 330 mm = 612 x 935 puntos a 72 ppp (legal sería 612 x 1008).
-        // La web imprime con este mismo tamaño (ver NEGOCIO_CONTRACT_PDF_SIZE).
-        const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, NEGOCIO_CONTRACT_PDF_SIZE));
-        // Hoja de compartir con el PDF (Android e iPhone).
-        const outcome = await sharePdf({
-          uri,
-          fileName: contractPdfFileName(negocio.numero, customerName),
-          dialogTitle: labelNegocioCodigo(negocio.numero),
-        });
-        if (outcome !== 'unavailable') return;
-      }
-
-      await Share.share({
-        message: `${labelNegocioCodigo(negocio.numero)} — ${customerName} — Total ${formatCOP(
-          Number(negocio.total_credit)
-        )}\n\n(Abra la web para imprimir el PDF completo)`,
-        title: labelNegocioCodigo(negocio.numero),
-      });
+      await shareNegocioContractPdf(contract);
     } catch (e: any) {
       Alert.alert('Error', errorMessage(e, 'No se pudo compartir'));
     }
@@ -1206,23 +1169,25 @@ function NegocioDetailScreenInner() {
     pendingConfirmation: Boolean(pago.pending_confirmation),
   });
 
-  /** Qué recibo se imprime: un pago en cola se identifica por su fila local. */
-  const recordReceiptPrint = (pago: any, format: 'pdf' | 'ticket') =>
+  /**
+   * Ticket del recibo por Bluetooth (solo el papel suma copia). Un pago en cola
+   * se identifica por su fila local.
+   */
+  const recordReceiptTicketPrint = (pago: any) =>
     recordNegocioPrint({
       negocioId: negocio!.id,
       document: 'recibo',
-      format,
       pagoId: pago.pending_confirmation ? null : pago.id,
       pendingPagoLocalId: pago.pending_confirmation ? pago.id : null,
       printedByName: registeredByName,
     });
 
+  /** El PDF compartido no suma copia ni lleva marca. */
   const shareReceiptPdf = async (pago: any) => {
     if (!negocio) return;
-    const copy = await recordReceiptPrint(pago, 'pdf');
     // Saldo que quedó tras ese pago, no el saldo actual del negocio.
     const remainingBalance = remainingAfterPago(cuotas, pagos, pago);
-    const html = buildNegocioReceiptHtml({
+    const receipt = {
       receiptNumber: pago.virtual_receipt_number,
       status: pago.receipt_status,
       paidAt: pago.paid_at,
@@ -1238,16 +1203,9 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
-      copy,
-    });
+    };
     try {
-      const Print = require('expo-print');
-      const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
-      await sharePdf({
-        uri,
-        fileName: receiptPdfFileName(pago.virtual_receipt_number, customerName),
-        dialogTitle: pago.virtual_receipt_number,
-      });
+      await shareNegocioReceiptPdf(receipt);
     } catch (error: any) {
       Alert.alert('Error', errorMessage(error, 'No se pudo compartir el recibo'));
     }
@@ -1272,7 +1230,7 @@ function NegocioDetailScreenInner() {
       remainingBalance,
       ...pagoReceiptExtras(pago),
       products: receiptProducts,
-    }, { resolveCopy: () => recordReceiptPrint(pago, 'ticket') });
+    }, { resolveCopy: () => recordReceiptTicketPrint(pago) });
   };
 
   /**
@@ -1333,7 +1291,7 @@ function NegocioDetailScreenInner() {
       })),
     }, {
       resolveCopy: () =>
-        recordNegocioPrint({ negocioId, document: 'contrato', format: 'ticket', printedByName: registeredByName }),
+        recordNegocioPrint({ negocioId, document: 'contrato', printedByName: registeredByName }),
     });
     void refreshPrintHistory();
   };
@@ -2177,11 +2135,7 @@ function NegocioDetailScreenInner() {
               icon="picture-as-pdf"
               iconOnly
               onPress={() => void shareContractPdf()}
-              accessibilityLabel={
-                contractPrints && contractPrints.count > 0
-                  ? `Compartir PDF del contrato, copia n.º ${contractPrints.count + 1}`
-                  : 'Compartir PDF del contrato'
-              }
+              accessibilityLabel="Compartir PDF del contrato"
               style={styles.secondaryAction}
             />
           ) : null}

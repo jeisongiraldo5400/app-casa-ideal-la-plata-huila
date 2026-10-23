@@ -180,6 +180,10 @@ export type CreateNegocioPayload = OutboxPayloadBase & {
 export type RegisterPrintPayload = OutboxPayloadBase & {
   negocioId: string;
   document: 'contrato' | 'recibo';
+  /**
+   * Hoy siempre 'ticket' (solo el papel cuenta). 'pdf' queda para comandos
+   * encolados por versiones anteriores, que se siguen enviando tal cual.
+   */
   format: 'pdf' | 'ticket';
   pagoId: string | null;
   pagoIdempotencyKey: string | null;
