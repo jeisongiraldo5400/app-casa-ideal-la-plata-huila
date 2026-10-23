@@ -44,10 +44,8 @@ import { createIdempotencyKey } from '@/lib/idempotency';
 import { MOBILE_PAYMENT_SITE, paymentSiteLabel } from '@/lib/paymentSite';
 import { SignaturePad } from '@/components/negocios/components/SignaturePad';
 import { NegocioProductsSummary } from '@/components/negocios/components/NegocioProductsSummary';
-import { NegocioCostPanel } from '@/components/negocios/components/NegocioCostPanel';
 import { CostosOnlyNegocioScreen } from '@/components/negocios/components/CostosOnlyNegocioView';
 import { negocioDetailViewFor } from '@/lib/costos/access';
-import { useNegocioCostDetail } from '@/components/negocios/infrastructure/hooks/useNegocioCosts';
 import { NegocioHero } from '@/components/negocios/components/NegocioHero';
 import { InstallmentCard } from '@/components/negocios/components/InstallmentCard';
 import {
@@ -243,7 +241,7 @@ function NegocioDetailScreenInner() {
   const [preparedOrigin, setPreparedOrigin] = useState<PreparedDraftOriginChange | null>(null);
   const [confirmingOrigin, setConfirmingOrigin] = useState(false);
   const { user } = useAuth();
-  const { roles: userRoles, isAdmin, isGestorCobro, isRecaudador, isVendedor, isCostos } = useUserRoles();
+  const { roles: userRoles, isAdmin, isGestorCobro, isRecaudador, isVendedor } = useUserRoles();
   const online = useSyncStore((state) => state.online);
   const registeredByName = currentUserName || user?.email || null;
   /** Impresiones del contrato según el servidor; null sin señal o sin leer aún. */
@@ -262,9 +260,8 @@ function NegocioDetailScreenInner() {
   }, [id, online, refreshPrintHistory]);
   // Cobro en ruta: la parada solo cuenta el primer cobro y solo si sigue
   // siendo la actual; sin parada, se ofrece vincularla (ver routeStopPago).
-  // Costo y margen por línea: solo perfil «costos», con señal y con el negocio
-  // ya en el servidor. Se pide cada vez; no se guarda en el teléfono.
-  const costDetail = useNegocioCostDetail(id, isCostos() && online && !pendingSync, negocio?.status);
+  // Costo y ganancia NO se muestran en el detalle del negocio (confidencial,
+  // 2026-10-23): solo en el aviso de Costos y en «Últimas compras» del inventario.
   const routeStop = useRouteStopPago({ negocioId: id, routeStopIdParam: routeStopId, online, reloadKey: negocio });
   // Última novedad de ruta («Sin pago» / «Reprogramado») del negocio.
   const ultimaGestion = useUltimaGestion(id ? [id] : [], online, negocio);
@@ -1857,8 +1854,6 @@ function NegocioDetailScreenInner() {
           productsSubtotal={Number(negocio.products_subtotal)}
           totalCredit={Number(negocio.total_credit)}
         />
-
-        {costDetail ? <NegocioCostPanel result={costDetail} showTotals /> : null}
 
         {/* La orden del negocio y de dónde salió la mercancía. Sin conexión no
             se conoce el origen y la tarjeta se omite. */}
