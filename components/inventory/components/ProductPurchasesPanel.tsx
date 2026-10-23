@@ -45,6 +45,32 @@ async function fetchPurchases(productId: string): Promise<ProductPurchases> {
   return parsed;
 }
 
+function Stat({
+  label,
+  value,
+  help,
+  helpTerm,
+  colors,
+}: {
+  label: string;
+  value: string;
+  help?: string;
+  helpTerm?: string;
+  colors: ReturnType<typeof getColors>;
+}) {
+  return (
+    <View style={[styles.stat, { backgroundColor: colors.surface.sunken, borderRadius: Radius.chip }]}>
+      <View style={styles.statLabelRow}>
+        <Text style={[styles.statLabel, { color: colors.text.secondary }]}>{label}</Text>
+        {help && helpTerm ? <HelpHint term={helpTerm} text={help} size={13} /> : null}
+      </View>
+      <Text style={[styles.statValue, { color: colors.text.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * Botón «Últimas compras» de la tarjeta del producto (propuesta 4). Solo se
  * monta para el perfil «costos». Despliega las 5 recepciones más recientes
@@ -97,14 +123,11 @@ export function ProductPurchasesPanel({ productId, online }: Props) {
           </Text>
         ) : (
           <View>
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summary, { color: colors.text.secondary }]}>Último {money(state.data.lastUnitCost)}</Text>
-              <HelpHint term="Último costo" text={COST_HELP.ultimo_costo} size={13} />
-              <Text style={[styles.summary, { color: colors.text.secondary }]}>· Promedio {money(state.data.avgUnitCost)}</Text>
-              <HelpHint term="Costo promedio" text={COST_HELP.costo_promedio} size={13} />
-              <Text style={[styles.summary, { color: colors.text.secondary }]}>
-                · Mín. {money(state.data.minUnitCost)} · Máx. {money(state.data.maxUnitCost)}
-              </Text>
+            <View style={styles.statsGrid}>
+              <Stat label="Último" value={money(state.data.lastUnitCost)} help={COST_HELP.ultimo_costo} helpTerm="Último costo" colors={colors} />
+              <Stat label="Promedio" value={money(state.data.avgUnitCost)} help={COST_HELP.costo_promedio} helpTerm="Costo promedio" colors={colors} />
+              <Stat label="Mínimo" value={money(state.data.minUnitCost)} colors={colors} />
+              <Stat label="Máximo" value={money(state.data.maxUnitCost)} colors={colors} />
             </View>
             {state.data.rows.length === 0 ? (
               <Text style={[styles.note, { color: colors.text.secondary }]}>Sin compras recibidas por orden de compra.</Text>
@@ -116,18 +139,22 @@ export function ProductPurchasesPanel({ productId, online }: Props) {
                   testID={`product-purchase-row-${row.entryId}`}
                 >
                   <View style={styles.rowLine}>
-                    <Text style={[styles.rowTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                      {formatPurchaseDate(row.createdAt)} · {row.orderNumber ?? 'Sin orden'}
-                    </Text>
+                    <Text style={[styles.rowTitle, { color: colors.text.primary }]}>{row.orderNumber ?? 'Sin orden'}</Text>
                     <Text style={[styles.rowCost, { color: colors.text.primary }]}>
                       {row.unitCost === null ? 'Sin costear' : money(row.unitCost)}
                     </Text>
                   </View>
-                  <Text style={[styles.rowDetail, { color: colors.text.secondary }]} numberOfLines={2}>
-                    {supplierLabel(row)} · {row.warehouseName ?? 'Sin bodega'} · ×{row.quantity}
-                    {row.totalCost !== null ? ` = ${money(row.totalCost)}` : ''}
-                    {row.receivedByName ? ` · Recibió ${row.receivedByName}` : ''}
-                  </Text>
+                  <Text style={[styles.rowDate, { color: colors.text.secondary }]}>{formatPurchaseDate(row.createdAt)}</Text>
+                  <View style={styles.rowDetails}>
+                    <Text style={[styles.rowDetail, { color: colors.text.primary }]}>{supplierLabel(row)}</Text>
+                    <Text style={[styles.rowDetail, { color: colors.text.secondary }]}>
+                      {row.warehouseName ?? 'Sin bodega'} · {row.quantity} {row.quantity === 1 ? 'unidad' : 'unidades'}
+                      {row.totalCost !== null ? ` · Total ${money(row.totalCost)}` : ''}
+                    </Text>
+                    {row.receivedByName ? (
+                      <Text style={[styles.rowDetail, { color: colors.text.secondary }]}>Recibió {row.receivedByName}</Text>
+                    ) : null}
+                  </View>
                 </View>
               ))
             )}
@@ -147,11 +174,16 @@ const styles = StyleSheet.create({
   root: { marginTop: Spacing.sm, paddingTop: Spacing.xs, borderTopWidth: StyleSheet.hairlineWidth },
   loader: { marginVertical: Spacing.sm },
   note: { fontSize: 12, marginTop: Spacing.xs },
-  summary: { fontSize: 12 },
-  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 4, marginBottom: Spacing.xs },
-  row: { paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, marginTop: Spacing.xs },
-  rowLine: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm },
-  rowTitle: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
-  rowCost: { fontSize: 13, fontWeight: '700' },
-  rowDetail: { fontSize: 12, marginTop: 2 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.xs, marginBottom: Spacing.sm },
+  stat: { flexBasis: '47%', flexGrow: 1, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md },
+  statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statLabel: { fontSize: 12 },
+  statValue: { fontSize: 15, fontWeight: '700', marginTop: 2 },
+  row: { paddingVertical: Spacing.md, paddingHorizontal: Spacing.md, marginTop: Spacing.sm },
+  rowLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: Spacing.sm },
+  rowTitle: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  rowCost: { fontSize: 15, fontWeight: '700' },
+  rowDate: { fontSize: 12, marginTop: 2 },
+  rowDetails: { marginTop: Spacing.sm, gap: 4 },
+  rowDetail: { fontSize: 13, lineHeight: 18 },
 });
