@@ -27,6 +27,7 @@ import {
     OrderNotOnPhoneError,
     fetchLocalDeliveryOrderItems,
     localOrderWithoutLinesMessage,
+    localUnusableOrderNotice,
     localOrdersNotice,
     shouldUseLocalOrders,
 } from '../infrastructure/services/localDeliveryOrdersService';
@@ -98,7 +99,7 @@ export function DeliveryOrderProductsModal({
             setItems(local.items);
             setSerialsByLine({});
             setLocalSnapshotAt(local.snapshotAt);
-            setLocalUnusableReason(local.items.length === 0 ? local.unusableReason : null);
+            setLocalUnusableReason(local.unusableReason);
             setFromLocal(true);
         };
 
@@ -237,9 +238,11 @@ export function DeliveryOrderProductsModal({
                             <MaterialIcons name="wifi-off" size={16} color={colors.warning.main} />
                             <Text style={[styles.localNoticeText, { color: colors.text.secondary }]}>
                                 {localOrdersNotice(localSnapshotAt)}{' '}
-                                {localUnusableReason
-                                    ? localOrderWithoutLinesMessage(localUnusableReason)
-                                    : 'Lo entregado se ve con señal.'}
+                                {!localUnusableReason
+                                    ? 'Lo entregado se ve con señal.'
+                                    : items.length === 0
+                                      ? localOrderWithoutLinesMessage(localUnusableReason)
+                                      : localUnusableOrderNotice(localUnusableReason)}
                             </Text>
                         </View>
                     ) : null}
@@ -436,14 +439,17 @@ export function DeliveryOrderProductsModal({
                                                 </Text>
                                             </View>
                                             {fromLocal ? (
+                                                // Orden que ya no sirve para un negocio: sin «Disponible».
+                                                item.available_quantity == null ? null : (
                                                 <View style={[styles.quantityBox, { backgroundColor: colors.info.main + '15' }]}>
                                                     <Text style={[styles.quantityLabel, { color: colors.text.secondary }]}>
                                                         Disponible
                                                     </Text>
                                                     <Text style={[styles.quantityValue, { color: colors.info.main }]}>
-                                                        {item.available_quantity ?? '—'}
+                                                        {item.available_quantity}
                                                     </Text>
                                                 </View>
+                                                )
                                             ) : (
                                             <>
                                             <View style={[styles.quantityBox, { backgroundColor: colors.success.main + '15' }]}>

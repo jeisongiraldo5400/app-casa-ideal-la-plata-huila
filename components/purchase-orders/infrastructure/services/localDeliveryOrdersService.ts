@@ -48,9 +48,18 @@ export function localOrdersNotice(snapshotAt: number | null, source = 'descarga'
     : 'Sin señal: mostrando lo guardado en el teléfono.';
 }
 
-/** Orden guardada sin productos: la descarga sólo los trae si aún sirve de origen. */
+/**
+ * Orden guardada SIN productos (no sirve de origen y no bajó ninguna línea:
+ * cancelada, eliminada o descargada de un servidor anterior). Desde
+ * 20261231770000 las ligadas a un negocio sí bajan con sus productos.
+ */
 export function localOrderWithoutLinesMessage(reason: string): string {
-  return `${reason.replace(/\.$/, '')}: sus productos no se guardan en el teléfono. Con señal se ven completos.`;
+  return `${reason.replace(/\.$/, '')}: no hay productos de esta orden guardados en el teléfono. Con señal se ven completos.`;
+}
+
+/** Orden guardada con sus productos que ya no sirve para un negocio nuevo. */
+export function localUnusableOrderNotice(reason: string): string {
+  return `${reason.replace(/\.$/, '')}: sus productos se muestran solo para consulta. Lo entregado se ve con señal.`;
 }
 
 /** Cuando la orden no se llevó al teléfono no hay nada que mostrar sin señal. */
@@ -195,7 +204,8 @@ export type LocalDeliveryOrderItems = {
   snapshotAt: number | null;
   /**
    * La orden bajó pero ya no sirve de origen de un negocio (p. ej. ya está
-   * vinculada a uno): el servidor no manda sus productos en la descarga.
+   * vinculada a uno). Desde 20261231770000 sus productos bajan igual (sólo
+   * para verlos); `items` vacío = no hay ninguno guardado.
    */
   unusableReason: string | null;
 };
@@ -206,9 +216,13 @@ export async function fetchLocalDeliveryOrderItems(orderId: string): Promise<Loc
   const order = rows.find((row) => row.id === orderId);
   if (!order) return null;
   const lines = await getLocalOfflineOrderLines(orderId);
+  const usable = order.usable;
   return {
-    items: lines.map(localLineToItem),
+    // En una orden que ya no sirve no hay «disponible» que mostrar (es 0).
+    items: lines.map((line, index) =>
+      usable ? localLineToItem(line, index) : { ...localLineToItem(line, index), available_quantity: null }
+    ),
     snapshotAt: order.snapshotAt,
-    unusableReason: order.usable ? null : order.unusableReason || 'Ya no sirve para un negocio',
+    unusableReason: usable ? null : order.unusableReason || 'Ya no sirve para un negocio',
   };
 }

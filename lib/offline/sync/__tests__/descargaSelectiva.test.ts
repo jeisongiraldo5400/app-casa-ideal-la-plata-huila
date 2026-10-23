@@ -8,7 +8,7 @@ import {
   pendingLocalQuantitiesByOrigin,
 } from '../../repositories/deliveryOrdersRepository';
 import { purgeUnselectedDomains, purgeUnsentNegocios, wipeLocalCatalog } from '../applyPull';
-import { applyOrdersSnapshot } from '../ordersSnapshot';
+import { applyOrdersSnapshot, orderLinesToStore } from '../ordersSnapshot';
 import { requestPull, type PullRpc } from '../pullRequest';
 import { classifyPushError, isDefinitiveOriginError } from '../retryPolicy';
 import {
@@ -866,6 +866,87 @@ describe('foto de órdenes y remisiones', () => {
     expect((await getLocalOfflineOrderLines('r1'))[0].availableQuantity).toBe(1);
     expect(await listLocalPendingRemissions()).toEqual([]);
     expect(await localOrdersSnapshotAt()).toBe(Date.parse('2026-09-25T13:00:00Z'));
+  });
+
+  it('una OE ya ligada a un negocio se guarda con sus productos (display_lines) y disponible 0', async () => {
+    await applyOrdersSnapshot(
+      mockDb as never,
+      basePayload({
+        delivery_orders_snapshot: [
+          {
+            id: 'oe5',
+            order_number: 'OE-0005',
+            order_type: 'customer',
+            status: 'approved',
+            customer_id: 'c5',
+            customer_name: 'Luz',
+            usable: false,
+            unusable_reason: 'La orden ya está vinculada a un negocio',
+            lines: [],
+            display_lines: [
+              {
+                group_kind: 'self',
+                source_order_id: 'oe5',
+                source_has_negocio: true,
+                product_id: 'p1',
+                product_name: 'Colchón',
+                warehouse_id: 'w1',
+                warehouse_name: 'Andes',
+                quantity: 2,
+                // Aunque el servidor mandara otra cosa, en una orden que no sirve es 0.
+                available_quantity: 2,
+              },
+            ],
+          },
+          {
+            id: 'r1',
+            order_number: 'OE-0010',
+            order_type: 'remission',
+            status: 'pending',
+            customer_id: null,
+            customer_name: null,
+            usable: true,
+            lines: [{ group_kind: 'own', product_id: 'p1', warehouse_id: 'w1', quantity: 7, available_quantity: 4 }],
+            display_lines: [],
+          },
+        ],
+        pending_remissions: [],
+      })
+    );
+
+    expect(await getLocalOfflineOrderLines('oe5')).toEqual([
+      expect.objectContaining({
+        orderId: 'oe5',
+        groupKind: 'self',
+        productName: 'Colchón',
+        warehouseName: 'Andes',
+        sourceHasNegocio: true,
+        quantity: 2,
+        availableQuantity: 0,
+      }),
+    ]);
+    const oe5 = (await listLocalOfflineOrders()).find((order) => order.id === 'oe5')!;
+    expect(oe5).toMatchObject({ usable: false, unusableReason: 'La orden ya está vinculada a un negocio' });
+    // La que sirve sigue usando `lines`, con su disponible.
+    expect((await getLocalOfflineOrderLines('r1'))[0]).toMatchObject({ availableQuantity: 4 });
+  });
+
+  it('orderLinesToStore: servidor anterior (sin display_lines) deja la orden que no sirve sin productos', () => {
+    const base = {
+      id: 'oe5', order_number: 'OE-0005', order_type: 'customer', status: 'approved',
+      customer_id: 'c5', customer_name: 'Luz', usable: false, lines: [],
+    };
+    expect(orderLinesToStore(base)).toEqual([]);
+    expect(orderLinesToStore({ ...base, display_lines: null })).toEqual([]);
+    // Una orden que sirve nunca toma display_lines.
+    expect(
+      orderLinesToStore({
+        ...base,
+        usable: true,
+        lines: [],
+        display_lines: [{ group_kind: 'self', product_id: 'p1', warehouse_id: 'w1', quantity: 1, available_quantity: 1 }],
+      })
+    ).toEqual([]);
   });
 
   it('un paquete sin las claves nuevas deja la foto anterior', async () => {
