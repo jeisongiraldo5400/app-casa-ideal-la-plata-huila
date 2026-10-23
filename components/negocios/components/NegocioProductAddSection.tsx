@@ -79,7 +79,7 @@ export function NegocioProductAddSection({
   const [unitPrice, setUnitPrice] = useState('');
   // Precio de venta del producto elegido (si tiene) y turno de la consulta:
   // una respuesta vieja (otro producto, o ya agregado/cancelado) se ignora.
-  const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
+  const [productSalePrice, setProductSalePrice] = useState<number | null>(null);
   const salePriceTurn = useRef(0);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
@@ -164,7 +164,7 @@ export function NegocioProductAddSection({
   /** Olvida la consulta de precio en curso (producto agregado o cancelado). */
   const dropSalePrice = () => {
     salePriceTurn.current += 1;
-    setSuggestedPrice(null);
+    setProductSalePrice(null);
   };
 
   const pickProduct = (product: NegocioProduct) => {
@@ -180,7 +180,7 @@ export function NegocioProductAddSection({
     const turn = salePriceTurn.current;
     void fetchSalePrice(product.id).then((price) => {
       if (salePriceTurn.current !== turn || price === null) return;
-      setSuggestedPrice(price);
+      setProductSalePrice(price);
       setUnitPrice((current) => prefillUnitPriceText(current, price, formatNegocioMoneyInput));
     });
   };
@@ -425,8 +425,8 @@ export function NegocioProductAddSection({
                   {formatCOP(parseNegocioMoney(unitPrice) || 0)}
                 </Text>
               ) : null}
-              {suggestedPrice !== null && parseNegocioMoney(unitPrice) === suggestedPrice ? (
-                <Text testID="negocio-precio-sugerido" style={{ color: colors.text.secondary, fontSize: 12 }}>
+              {productSalePrice !== null && parseNegocioMoney(unitPrice) === productSalePrice ? (
+                <Text testID="negocio-precio-venta" style={{ color: colors.text.secondary, fontSize: 12 }}>
                   Precio de venta del producto. Puede cambiarlo.
                 </Text>
               ) : null}

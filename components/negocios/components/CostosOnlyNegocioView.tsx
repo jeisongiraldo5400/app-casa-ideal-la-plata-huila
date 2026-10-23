@@ -7,7 +7,7 @@ import { labelNegocioCodigo } from '@/lib/negocioLabels';
 import { parseNegocioCostResult, type NegocioCostResult } from '@/lib/negocios/negocioCosts';
 import { supabase } from '@/lib/supabase';
 import { Stack } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NegocioCostPanel } from './NegocioCostPanel';
 
@@ -21,24 +21,38 @@ type State =
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
- * Negocio visto por quien tiene SOLO el perfil «costos» (p. ej. al tocar un
- * aviso de venta bajo costo). No puede leer el negocio (no es suyo ni lo
- * cobra), así que se muestra únicamente lo que le corresponde: costo y margen
- * por producto, con `cost_get_negocio`. Requiere señal; nada se guarda.
+ * Pantalla del aviso de venta bajo costo o bajo margen (perfil «costos»): se
+ * abre desde `/costos/aviso/[negocioId]` y, para quien tiene SOLO ese perfil,
+ * también desde `/negocio/[id]`. Muestra únicamente costo y ganancia por
+ * producto, con `cost_get_negocio`. Requiere señal; nada se guarda.
  */
 export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const online = useNetworkStatus();
   const [state, setState] = useState<State>({ status: 'loading' });
+  // Solo la última consulta, y solo con la pantalla montada, puede tocar el
+  // estado: una respuesta tardía (se salió, o se reintentó) se descarta.
+  const mountedRef = useRef(true);
+  const requestRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const load = useCallback(() => {
+    const request = ++requestRef.current;
+    const current = () => mountedRef.current && request === requestRef.current;
     setState({ status: 'loading' });
     (supabase.rpc as unknown as (name: string, params: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message?: string } | null }>)(
       'cost_get_negocio',
       { p_negocio_id: negocioId }
     ).then(
       ({ data, error }) => {
+        if (!current()) return;
         const result = error ? null : parseNegocioCostResult(data);
         if (!result) {
           setState({ status: 'error', message: errorMessage(error, 'No se pudo consultar el costo del negocio.') });
@@ -56,8 +70,10 @@ export function CostosOnlyNegocioView({ negocioId }: { negocioId: string }) {
           },
         });
       },
-      (failure: unknown) =>
-        setState({ status: 'error', message: errorMessage(failure, 'No se pudo consultar el costo del negocio.') })
+      (failure: unknown) => {
+        if (!current()) return;
+        setState({ status: 'error', message: errorMessage(failure, 'No se pudo consultar el costo del negocio.') });
+      }
     );
   }, [negocioId]);
 

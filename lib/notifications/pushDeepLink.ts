@@ -18,7 +18,8 @@
  *
  * Los avisos de venta por debajo del costo (`cost_sale_alert`, `data.kind =
  * 'cost_alert'`, migración 20261231620000; solo llegan al perfil Costos) abren
- * el detalle del negocio, donde ese perfil ve el costo y el margen por línea.
+ * su pantalla propia (`app/costos/aviso/[negocioId].tsx`) con el costo y la
+ * ganancia por línea: el detalle del negocio nunca muestra costos.
  *
  * Los avisos de mercancía sin costo (`cost_po_received_uncosted`, `data.kind =
  * 'cost_po_uncosted'`, migración 20261231810000; solo perfil Costos) abren una
@@ -32,6 +33,7 @@
  */
 
 import { parseCarteraDueParam } from '@/lib/cartera/carteraDeepLink';
+import { costAlertRoute } from '@/lib/costos/access';
 import { buildUncostedOrderRoute } from '@/lib/costos/uncostedOrderNotice';
 
 export type PushNotificationData = {
@@ -70,7 +72,7 @@ export function buildPushDeepLink(
 
   if (kind === "cost_alert") {
     const negocioId = text(data.negocio_id) || id;
-    return negocioId ? `/negocio/${encodeURIComponent(negocioId)}` : null;
+    return negocioId ? costAlertRoute(negocioId) : null;
   }
 
   if (kind === "cost_po_uncosted") {

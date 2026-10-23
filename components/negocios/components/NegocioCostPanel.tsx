@@ -13,20 +13,20 @@ import { StyleSheet, Text, View } from 'react-native';
 
 type Props = {
   result: NegocioCostResult;
-  /** Nombre de cada producto por id (la vista previa no lo trae del servidor). */
-  productNames?: Record<string, string>;
-  /** Con resumen (costo total y margen): en el detalle del negocio. */
+  /** Con resumen (costo total y ganancia total). */
   showTotals?: boolean;
 };
 
 const money = (value: number | null) => (value === null ? '—' : formatCOP(value));
 
 /**
- * Costo y ganancia por línea («Ganancia» o «Pérdida» con su %). Solo se monta para el perfil «costos» con
- * conexión; quien no tiene el perfil nunca lo ve (y el servidor tampoco le
+ * Costo y ganancia por línea («Ganancia» o «Pérdida» con su %). Solo se usa en
+ * la pantalla del aviso de costos (`CostosOnlyNegocioView`), para el perfil
+ * «costos» con conexión: el detalle, la creación y la edición del negocio nunca
+ * lo muestran. Quien no tiene el perfil nunca lo ve (y el servidor tampoco le
  * respondería).
  */
-export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
+export function NegocioCostPanel({ result, showTotals }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   if (!result.lines.length) return null;
@@ -43,8 +43,9 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
       <SectionHeader title="Costos y ganancia" hint={hint} />
       <View style={styles.noteRow}>
         <Text style={[styles.note, styles.noteText, { color: colors.text.secondary }]}>
-          Solo lo ve el perfil Costos. La ganancia se calcula con el costo promedio.
-          {snapshot ? ' El costo quedó fijado al activar el negocio.' : ''}
+          {snapshot
+            ? 'Solo lo ve el perfil Costos. La ganancia se calcula con el costo fijado al activar.'
+            : 'Solo lo ve el perfil Costos. La ganancia se calcula con el costo promedio.'}
         </Text>
         {snapshot ? <HelpHint term="Costo fijado" text={COST_HELP.costo_fijado} /> : null}
       </View>
@@ -52,7 +53,7 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
         const level = costAlertLevel(line);
         const alert = costAlertText(line, result.minMarginPct);
         const tone = level === 'bajo_costo' ? 'error' : level === 'bajo_margen' ? 'warning' : 'default';
-        const name = line.productName || productNames?.[line.productId] || 'Producto';
+        const name = line.productName || 'Producto';
         const profit = profitView(line.marginAmount, line.marginPct);
         return (
           <ListCard key={`${line.productId}-${index}`}>

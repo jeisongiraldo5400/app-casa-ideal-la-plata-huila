@@ -2,10 +2,11 @@
  * Costo y margen por línea de negocio (perfil «costos», migración
  * 20261231620000).
  *
- * Solo lo ve quien tiene el perfil «costos»: ni admin ni vendedor. Se pide
- * siempre al servidor (`cost_preview_lines` al crear, `cost_get_negocio` en el
- * detalle) y NUNCA se guarda en el teléfono: ni SQLite, ni almacenamiento
- * persistido, ni la cola sin señal. Sin conexión no se muestra nada.
+ * Solo lo ve quien tiene el perfil «costos»: ni admin ni vendedor, y solo en la
+ * pantalla del aviso de costos (nunca al crear, editar o ver un negocio). Se
+ * pide siempre al servidor (`cost_get_negocio`) y NUNCA se guarda en el
+ * teléfono: ni SQLite, ni almacenamiento persistido, ni la cola sin señal. Sin
+ * conexión no se muestra nada.
  *
  * Este módulo es puro (sin React ni Supabase): lee las respuestas jsonb con
  * tolerancia y decide la alerta de cada línea.
@@ -44,8 +45,6 @@ export type NegocioCostResult = {
   totals: NegocioCostTotals | null;
 };
 
-export type CostPreviewItem = { product_id: string; quantity: number; unit_price: number };
-
 const num = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
@@ -79,7 +78,7 @@ function parseLine(raw: unknown): NegocioCostLine | null {
   };
 }
 
-/** Lee la respuesta de `cost_preview_lines` o `cost_get_negocio`. Nunca lanza. */
+/** Lee la respuesta de `cost_get_negocio`. Nunca lanza. */
 export function parseNegocioCostResult(data: unknown): NegocioCostResult | null {
   const root = asObject(data);
   if (!root || !Array.isArray(root.lines)) return null;
@@ -121,22 +120,4 @@ export function costAlertText(line: NegocioCostLine, minMarginPct: number | null
     return minMarginPct === null ? 'Margen bajo' : `Margen bajo (mínimo ${formatMarginPct(minMarginPct)})`;
   }
   return null;
-}
-
-/**
- * Líneas para la vista previa: solo las que tienen producto, cantidad y precio
- * (las demás no tienen margen que calcular). Conserva el orden: la respuesta
- * llega en el mismo orden que la entrada.
- */
-export function buildCostPreviewItems(
-  items: readonly { product_id: string; quantity: number; unit_price: number }[]
-): CostPreviewItem[] {
-  return items
-    .filter((item) => Boolean(item.product_id) && item.quantity > 0 && item.unit_price > 0)
-    .map((item) => ({ product_id: item.product_id, quantity: item.quantity, unit_price: item.unit_price }));
-}
-
-/** Clave estable de la vista previa: si no cambia, no se vuelve a pedir. */
-export function costPreviewKey(items: readonly CostPreviewItem[]): string {
-  return items.map((item) => `${item.product_id}:${item.quantity}:${item.unit_price}`).join('|');
 }

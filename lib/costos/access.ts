@@ -24,16 +24,38 @@ export function isCostosOnlyUser(roleNames: readonly string[]): boolean {
 export type NegocioDetailView = 'costos' | 'completo';
 
 /**
- * Qué detalle de negocio se muestra. El aviso de venta bajo costo llega a todo
- * el que tenga el perfil «costos», aunque tenga otro rol: si ese otro rol no
- * deja leer el negocio (vendedor de otro negocio, bodeguero), se muestra solo
- * el costo y el margen en vez de «No se encontró el negocio».
+ * Qué muestra `/negocio/[id]`. El detalle del negocio NUNCA muestra costos ni
+ * margen, aunque el usuario tenga el perfil «costos»: eso vive en la pantalla
+ * del aviso (`/costos/aviso/[negocioId]`).
+ *
+ * Solo dos casos caen a la vista de costos:
+ * - quien tiene SOLO el perfil «costos» (no puede leer el negocio);
+ * - un enlace viejo `/negocio/[id]?view=costos` de quien tiene el perfil.
  */
 export function negocioDetailViewFor(
   roleNames: readonly string[],
-  { negocioNotReadable }: { negocioNotReadable: boolean }
+  { requestedView }: { requestedView?: unknown } = {}
 ): NegocioDetailView {
   if (isCostosOnlyUser(roleNames)) return 'costos';
-  if (negocioNotReadable && hasCostosRole(roleNames)) return 'costos';
+  if (requestedView === 'costos' && hasCostosRole(roleNames)) return 'costos';
   return 'completo';
+}
+
+/** Ruta de la pantalla del aviso de venta bajo costo o bajo margen. */
+export function costAlertRoute(negocioId: string): string {
+  return `/costos/aviso/${encodeURIComponent(negocioId)}`;
+}
+
+export type CostAlertAccess = 'cargando' | 'sin_acceso' | 'permitido';
+
+/**
+ * Quién abre la pantalla del aviso: solo el perfil «costos» (el servidor
+ * tampoco le respondería a otro). Mientras los perfiles cargan no se decide.
+ */
+export function costAlertAccessFor(
+  roleNames: readonly string[],
+  { rolesLoading }: { rolesLoading: boolean }
+): CostAlertAccess {
+  if (hasCostosRole(roleNames)) return 'permitido';
+  return rolesLoading ? 'cargando' : 'sin_acceso';
 }
