@@ -205,6 +205,7 @@ describe('órdenes llevadas en el teléfono · armado sin señal', () => {
   });
 
   it('los grupos de una remisión llevada leen la foto y lo pendiente local', async () => {
+    (listLocalOfflineOrders as jest.Mock).mockResolvedValue([remission]);
     (getLocalOfflineOrderLines as jest.Mock).mockResolvedValue(remissionLines);
     (pendingLocalQuantitiesByOrigin as jest.Mock).mockResolvedValue(
       new Map([[pendingOriginKey('rem-1', 'cama', 'w1'), 5]])
@@ -214,6 +215,50 @@ describe('órdenes llevadas en el teléfono · armado sin señal', () => {
 
     expect(getLocalOfflineOrderLines).toHaveBeenCalledWith('rem-1');
     expect(groups[0].items.map((i) => i.product_id)).toEqual(['nevera']);
+  });
+
+  it('una remisión que ya no sirve no da grupos aunque sus productos estén guardados para verlos', async () => {
+    (listLocalOfflineOrders as jest.Mock).mockResolvedValue([
+      { ...remission, usable: false, unusableReason: 'La remisión está cancelada' },
+    ]);
+    (getLocalOfflineOrderLines as jest.Mock).mockResolvedValue(remissionLines);
+    (pendingLocalQuantitiesByOrigin as jest.Mock).mockResolvedValue(new Map());
+
+    await expect(fetchLocalRemissionOriginGroups('rem-1')).resolves.toEqual([]);
+  });
+
+  it('una OE ya ligada a un negocio, guardada con sus productos, sigue sin ofrecerse como origen', async () => {
+    const linked: LocalOfflineOrder = {
+      ...remission,
+      id: 'oe-5',
+      orderNumber: 'OE-0005',
+      orderType: 'customer',
+      customerName: 'LUZ',
+      usable: false,
+      unusableReason: 'La orden ya está vinculada a un negocio',
+    };
+    // 20261231770000: bajan para verlas, con disponible 0.
+    const linkedLines = [
+      line({ orderId: 'oe-5', groupKind: 'self', sourceOrderId: 'oe-5', sourceHasNegocio: true, availableQuantity: 0 }),
+    ];
+    const option = buildLocalOrderOption(linked, linkedLines, new Map());
+    expect(option.unusable_reason).toBe('La orden ya está vinculada a un negocio');
+    expect(option.items).toEqual([]);
+
+    // Aunque la foto trajera disponible (servidor raro), el motivo manda.
+    const withStock = buildLocalOrderOption(linked, [{ ...linkedLines[0], availableQuantity: 3 }], new Map());
+    expect(withStock.unusable_reason).toBe('La orden ya está vinculada a un negocio');
+
+    (listLocalOfflineOrders as jest.Mock).mockResolvedValue([linked, remission]);
+    (pendingLocalQuantitiesByOrigin as jest.Mock).mockResolvedValue(new Map());
+    (getLocalOfflineOrderLines as jest.Mock).mockImplementation(async (id: string) =>
+      id === 'oe-5' ? linkedLines : remissionLines
+    );
+    const found = await searchLocalOfflineOrders('');
+    expect(found.orders.map((o) => [o.id, o.unusable_reason])).toEqual([
+      ['rem-1', null],
+      ['oe-5', 'La orden ya está vinculada a un negocio'],
+    ]);
   });
 
   it('la lista ligera de remisiones pendientes tiene la forma de la de con señal', async () => {

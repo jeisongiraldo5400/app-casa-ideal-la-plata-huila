@@ -168,12 +168,19 @@ export async function searchLocalOfflineOrders(query = ''): Promise<LocalOrdersR
   return { orders: options, snapshotAt };
 }
 
-/** Grupos (propios / OE hijas) de una remisión llevada, restando lo pendiente local. */
+/**
+ * Grupos (propios / OE hijas) de una remisión llevada, restando lo pendiente
+ * local. Una remisión que según la foto ya no sirve (cancelada, sin saldo…)
+ * no da grupos: sus líneas están en el teléfono sólo para verlas.
+ */
 export async function fetchLocalRemissionOriginGroups(remissionId: string): Promise<RemissionOriginGroup[]> {
-  const [lines, pending] = await Promise.all([
+  const [orders, lines, pending] = await Promise.all([
+    listLocalOfflineOrders(),
     getLocalOfflineOrderLines(remissionId),
     pendingLocalQuantitiesByOrigin(),
   ]);
+  const order = orders.find((row) => row.id === remissionId);
+  if (order?.usable === false) return [];
   return buildLocalRemissionGroups(remissionId, lines, pending);
 }
 

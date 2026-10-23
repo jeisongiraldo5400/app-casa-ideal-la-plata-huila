@@ -477,6 +477,13 @@ export type PullOfflineOrder = {
   usable: boolean;
   unusable_reason?: string | null;
   lines?: PullOfflineOrderLine[] | null;
+  /**
+   * Servidor 20261231770000: líneas de una orden que ya NO sirve como origen
+   * (ligada a un negocio, en remisión, cancelada…), sólo para verlas sin
+   * señal; llegan con `available_quantity` 0. En las que sirven viene `[]`
+   * (sus líneas van en `lines`). Un servidor anterior no lo manda.
+   */
+  display_lines?: PullOfflineOrderLine[] | null;
 };
 
 /**

@@ -103,7 +103,8 @@ const CUSTOMER_ORDER: LocalOfflineOrder = {
   notes: null,
 };
 
-// Ya vinculada a un negocio: baja la cabecera pero el servidor no manda líneas.
+// Ya vinculada a un negocio y sin líneas en el teléfono (servidor anterior a
+// 20261231770000, o cancelada): sólo la cabecera.
 const LINKED_ORDER: LocalOfflineOrder = {
   ...CUSTOMER_ORDER,
   id: 'oe-8',
@@ -115,7 +116,24 @@ const LINKED_ORDER: LocalOfflineOrder = {
   unusableReason: 'La orden ya está vinculada a un negocio',
 };
 
+// Ya vinculada a un negocio, con sus productos (20261231770000: display_lines).
+const LINKED_WITH_LINES: LocalOfflineOrder = {
+  ...LINKED_ORDER,
+  id: 'oe-10',
+  orderNumber: 'OE-2026-0010',
+  customerName: 'LUZ',
+  createdAt: '2026-10-18T10:00:00Z',
+};
+
 const LINES: Record<string, LocalOfflineOrderLine[]> = {
+  'oe-10': [
+    {
+      orderId: 'oe-10', groupKind: 'self', sourceOrderId: 'oe-10', sourceOrderNumber: 'OE-2026-0010',
+      sourceCustomerId: 'cust-1', sourceCustomerName: 'LUZ', sourceHasNegocio: true,
+      productId: 'p-colchon', productName: 'COLCHÓN DOBLE', productSku: 'COL-2',
+      warehouseId: 'w1', warehouseName: 'La Argentina', quantity: 2, availableQuantity: 0,
+    },
+  ],
   'rem-1': [
     {
       orderId: 'rem-1', groupKind: 'own', sourceOrderId: 'rem-1', sourceOrderNumber: 'REM-0042',
@@ -141,13 +159,14 @@ const LINES: Record<string, LocalOfflineOrderLine[]> = {
 };
 
 jest.mock('@/lib/offline/repositories/deliveryOrdersRepository', () => ({
-  listLocalOfflineOrders: jest.fn(async () => [mockRemission(), mockCustomerOrder(), mockLinkedOrder()]),
+  listLocalOfflineOrders: jest.fn(async () => [mockRemission(), mockCustomerOrder(), mockLinkedOrder(), mockLinkedWithLines()]),
   getLocalOfflineOrderLines: jest.fn(async (id: string) => mockLines()[id] ?? []),
 }));
 // Los fixtures se declaran arriba; jest.mock se eleva, así que se leen tarde.
 function mockRemission() { return REMISSION; }
 function mockCustomerOrder() { return CUSTOMER_ORDER; }
 function mockLinkedOrder() { return LINKED_ORDER; }
+function mockLinkedWithLines() { return LINKED_WITH_LINES; }
 function mockLines() { return LINES; }
 
 jest.mock('@/lib/offline/repositories/catalogRepository', () => ({
@@ -188,7 +207,7 @@ describe('Todas las órdenes · sin señal', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBeNull();
     expect(result.current.fromLocal).toBe(true);
-    expect(result.current.orders.map((order) => order.order_number)).toEqual(['OE-2026-0007', 'REM-0042', 'OE-2026-0008']);
+    expect(result.current.orders.map((order) => order.order_number)).toEqual(['OE-2026-0007', 'REM-0042', 'OE-2026-0008', 'OE-2026-0010']);
     expect(result.current.hasMore).toBe(false);
     const oe = result.current.orders[0];
     expect(oe.from_local).toBe(true);
@@ -260,7 +279,23 @@ describe('Productos de la orden · sin señal', () => {
     useSyncStore.setState({ online: false });
     const screen = renderModal('oe-8', jest.fn());
 
-    await waitFor(() => expect(screen.getByText(/ya está vinculada a un negocio: sus productos no se guardan/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/ya está vinculada a un negocio: no hay productos de esta orden guardados/)).toBeTruthy()
+    );
+    expect(screen.queryByText('Reintentar')).toBeNull();
+  });
+
+  it('una orden ya vinculada con sus productos guardados los muestra completos, sin «Disponible»', async () => {
+    useSyncStore.setState({ online: false });
+    const loadItems = jest.fn();
+    const screen = renderModal('oe-10', loadItems);
+
+    await waitFor(() => expect(screen.getByText('COLCHÓN DOBLE')).toBeTruthy());
+    expect(loadItems).not.toHaveBeenCalled();
+    expect(screen.getByText(/ya está vinculada a un negocio: sus productos se muestran solo para consulta/)).toBeTruthy();
+    expect(screen.queryByText(/no hay productos de esta orden guardados/)).toBeNull();
+    expect(screen.getByText('En orden')).toBeTruthy();
+    expect(screen.queryByText('Disponible')).toBeNull();
     expect(screen.queryByText('Reintentar')).toBeNull();
   });
 

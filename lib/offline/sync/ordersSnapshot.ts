@@ -48,6 +48,22 @@ function lineSourceOrderId(line: PullOfflineOrderLine): string | null {
 }
 
 /**
+ * Líneas a guardar de una orden de la foto.
+ *
+ * La que sirve como origen trae sus líneas en `lines`. La que ya no sirve
+ * (p. ej. ligada a un negocio) llega con `lines` vacío —así las apps
+ * anteriores no la ofrecen— y, desde 20261231770000, con sus productos en
+ * `display_lines` sólo para verlos sin señal. Se guardan igual pero con
+ * disponible 0: aunque algo las leyera como origen, no ofrecería ni una unidad
+ * (el asistente de negocio, además, descarta las órdenes no utilizables).
+ */
+export function orderLinesToStore(order: PullOfflineOrder): PullOfflineOrderLine[] {
+  if (order.usable !== false) return order.lines || [];
+  const lines = order.lines?.length ? order.lines : order.display_lines || [];
+  return lines.map((line) => ({ ...line, available_quantity: 0 }));
+}
+
+/**
  * Qué reemplazar con este paquete: la lista a guardar (vacía = borrar lo local)
  * o `null` para dejar lo que había.
  *
@@ -162,7 +178,7 @@ export async function applyOrdersSnapshot(
           record.snapshotAt = at;
         },
       });
-      (order.lines || []).forEach((line, index) => {
+      orderLinesToStore(order).forEach((line, index) => {
         if (!line?.product_id || !line.warehouse_id) return;
         lineRows.push({
           id: `${order.id}:${index}`,
