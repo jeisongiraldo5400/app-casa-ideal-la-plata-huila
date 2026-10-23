@@ -2,6 +2,7 @@ import { useTheme } from '@/components/theme';
 import { Typography, getColors } from '@/constants/theme';
 import React from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { HelpHint } from './HelpHint';
 
 type Tone = 'default' | 'primary' | 'success' | 'warning' | 'error';
 
@@ -14,10 +15,12 @@ interface MetricProps {
   inverse?: boolean;
   size?: 'sm' | 'md';
   style?: StyleProp<ViewStyle>;
+  /** Ayuda corta «?» junto a la etiqueta (frase llana del término). */
+  help?: string;
 }
 
 /** Par etiqueta/valor para tarjetas y héroes (VALOR $120.000). */
-export function Metric({ label, value, tone = 'default', align = 'left', inverse, size = 'sm', style }: MetricProps) {
+export function Metric({ label, value, tone = 'default', align = 'left', inverse, size = 'sm', style, help }: MetricProps) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
 
@@ -33,7 +36,14 @@ export function Metric({ label, value, tone = 'default', align = 'left', inverse
 
   return (
     <View style={[styles.container, align === 'right' && styles.right, align === 'center' && styles.center, style]}>
-      <Text style={[styles.label, { color: labelColor, textAlign }]} numberOfLines={1}>{label}</Text>
+      {help ? (
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, { color: labelColor, textAlign }]} numberOfLines={1}>{label}</Text>
+          <HelpHint term={label} text={help} size={13} />
+        </View>
+      ) : (
+        <Text style={[styles.label, { color: labelColor, textAlign }]} numberOfLines={1}>{label}</Text>
+      )}
       <Text style={[size === 'md' ? styles.valueMd : styles.valueSm, { color: valueColor, textAlign }]} numberOfLines={1}>
         {value}
       </Text>
@@ -46,6 +56,7 @@ const styles = StyleSheet.create({
   right: { alignItems: 'flex-end' },
   center: { alignItems: 'center' },
   label: { ...Typography.label },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   valueSm: { ...Typography.bodySmallStrong, fontWeight: '800' },
   valueMd: { ...Typography.bodyStrong, fontWeight: '800' },
 });

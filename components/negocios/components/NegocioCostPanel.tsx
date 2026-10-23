@@ -1,11 +1,11 @@
 import { useTheme } from '@/components/theme';
-import { ListCard, Metric, SectionHeader } from '@/components/ui';
+import { HelpHint, ListCard, Metric, SectionHeader } from '@/components/ui';
 import { Radius, Spacing, Typography, getColors } from '@/constants/theme';
 import { formatCOP } from '@/lib/creditCalculator';
+import { COST_HELP, profitPctOfCosted, profitView } from '@/lib/costos/costHelp';
 import {
   costAlertLevel,
   costAlertText,
-  formatMarginPct,
   type NegocioCostResult,
 } from '@/lib/negocios/negocioCosts';
 import React from 'react';
@@ -22,7 +22,7 @@ type Props = {
 const money = (value: number | null) => (value === null ? '—' : formatCOP(value));
 
 /**
- * Costo y margen por línea. Solo se monta para el perfil «costos» con
+ * Costo y ganancia por línea («Ganancia» o «Pérdida» con su %). Solo se monta para el perfil «costos» con
  * conexión; quien no tiene el perfil nunca lo ve (y el servidor tampoco le
  * respondería).
  */
@@ -33,18 +33,27 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
 
   const snapshot = result.lines.some((line) => !line.live);
   const hint = snapshot ? 'Costo fijado al activar' : 'Costo de hoy';
+  const totalProfit = profitView(
+    result.totals?.marginAmount ?? null,
+    profitPctOfCosted(result.totals?.cost ?? null, result.totals?.marginAmount ?? null)
+  );
 
   return (
     <View style={styles.root} testID="negocio-cost-panel">
-      <SectionHeader title="Costos y margen" hint={hint} />
-      <Text style={[styles.note, { color: colors.text.secondary }]}>
-        Solo lo ve el perfil Costos. El margen se calcula con el costo promedio.
-      </Text>
+      <SectionHeader title="Costos y ganancia" hint={hint} />
+      <View style={styles.noteRow}>
+        <Text style={[styles.note, styles.noteText, { color: colors.text.secondary }]}>
+          Solo lo ve el perfil Costos. La ganancia se calcula con el costo promedio.
+          {snapshot ? ' El costo quedó fijado al activar el negocio.' : ''}
+        </Text>
+        {snapshot ? <HelpHint term="Costo fijado" text={COST_HELP.costo_fijado} /> : null}
+      </View>
       {result.lines.map((line, index) => {
         const level = costAlertLevel(line);
         const alert = costAlertText(line, result.minMarginPct);
         const tone = level === 'bajo_costo' ? 'error' : level === 'bajo_margen' ? 'warning' : 'default';
         const name = line.productName || productNames?.[line.productId] || 'Producto';
+        const profit = profitView(line.marginAmount, line.marginPct);
         return (
           <ListCard key={`${line.productId}-${index}`}>
             <Text style={[styles.name, { color: colors.text.primary }]} numberOfLines={2}>
@@ -57,12 +66,16 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
             ) : (
               <>
                 <View style={styles.row}>
-                  <Metric label="Último costo" value={money(line.lastUnitCost)} />
-                  <Metric label="Costo promedio" value={money(line.avgUnitCost)} align="right" />
+                  <Metric label="Último costo" value={money(line.lastUnitCost)} help={COST_HELP.ultimo_costo} />
+                  <Metric label="Costo promedio" value={money(line.avgUnitCost)} align="right" help={COST_HELP.costo_promedio} />
                 </View>
                 <View style={styles.row}>
-                  <Metric label="Margen" value={money(line.marginAmount)} tone={tone} />
-                  <Metric label="Margen %" value={formatMarginPct(line.marginPct)} tone={tone} align="right" />
+                  <Metric
+                    label={profit.label ?? 'Ganancia'}
+                    value={profit.value}
+                    tone={profit.negative ? 'error' : tone}
+                    help={COST_HELP.ganancia}
+                  />
                 </View>
               </>
             )}
@@ -93,9 +106,9 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
           <View style={styles.row}>
             <Metric label="Costo total" value={money(result.totals.cost)} />
             <Metric
-              label="Margen total"
-              value={money(result.totals.marginAmount)}
-              tone={(result.totals.marginAmount ?? 0) < 0 ? 'error' : 'default'}
+              label={`${totalProfit.label ?? 'Ganancia'} total`}
+              value={totalProfit.value}
+              tone={totalProfit.negative ? 'error' : 'default'}
               align="right"
             />
           </View>
@@ -115,6 +128,8 @@ export function NegocioCostPanel({ result, productNames, showTotals }: Props) {
 const styles = StyleSheet.create({
   root: { gap: Spacing.sm },
   note: { ...Typography.metadata, fontWeight: '400' },
+  noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  noteText: { flexShrink: 1 },
   name: { ...Typography.bodySmallStrong, marginBottom: Spacing.xs },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.xs },
   alert: { marginTop: Spacing.sm, borderRadius: Radius.control, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
