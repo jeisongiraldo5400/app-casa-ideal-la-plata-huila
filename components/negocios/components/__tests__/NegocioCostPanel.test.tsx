@@ -42,4 +42,20 @@ describe('NegocioCostPanel (móvil): ganancia, pérdida y ayudas', () => {
     expect(screen.queryByText(COST_HELP.costo_promedio)).toBeNull();
     expect(screen.getByLabelText('Qué es: Costo fijado')).toBeTruthy();
   });
+
+  it('con costo fijado al activar lo dice; con costo de hoy, el promedio', () => {
+    const view = render(<NegocioCostPanel result={result} showTotals />);
+    expect(screen.getByText(/La ganancia se calcula con el costo fijado al activar\./)).toBeTruthy();
+    expect(screen.queryByText(/costo promedio\./)).toBeNull();
+
+    const live = parseNegocioCostResult({
+      lines: [{ product_id: 'p3', product_name: 'Estufa', quantity: 1, unit_price: 500, unit_cost: 400, last_unit_cost: 400,
+        avg_unit_cost: 400, cost_total: 400, margin_amount: 100, margin_pct: 25, below_cost: false, below_margin: false, live: true }],
+      totals: null,
+    })!;
+    view.unmount();
+    render(<NegocioCostPanel result={live} />);
+    expect(screen.getByText(/La ganancia se calcula con el costo promedio\./)).toBeTruthy();
+    expect(screen.queryByText(/fijado al activar/)).toBeNull();
+  });
 });

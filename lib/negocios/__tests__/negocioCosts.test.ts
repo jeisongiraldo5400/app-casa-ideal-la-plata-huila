@@ -1,8 +1,6 @@
 import {
-  buildCostPreviewItems,
   costAlertLevel,
   costAlertText,
-  costPreviewKey,
   formatMarginPct,
   parseNegocioCostResult,
 } from '../negocioCosts';
@@ -23,7 +21,7 @@ const line = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('parseNegocioCostResult', () => {
-  it('lee la vista previa (sin live ni totales: costo de hoy)', () => {
+  it('sin live ni totales: costo de hoy', () => {
     const result = parseNegocioCostResult({ min_margin_pct: 10, lines: [line()] });
     expect(result?.minMarginPct).toBe(10);
     expect(result?.totals).toBeNull();
@@ -79,23 +77,5 @@ describe('alertas', () => {
     expect(formatMarginPct(4.76)).toBe('4,8 %');
     expect(formatMarginPct(-11.11)).toBe('-11,1 %');
     expect(formatMarginPct(20)).toBe('20 %');
-  });
-});
-
-describe('vista previa', () => {
-  it('solo manda líneas con producto, cantidad y precio', () => {
-    const items = buildCostPreviewItems([
-      { product_id: 'a', quantity: 1, unit_price: 100 },
-      { product_id: 'b', quantity: 1, unit_price: 0 },
-      { product_id: '', quantity: 1, unit_price: 5 },
-      { product_id: 'c', quantity: 0, unit_price: 5 },
-    ]);
-    expect(items).toEqual([{ product_id: 'a', quantity: 1, unit_price: 100 }]);
-  });
-
-  it('la clave cambia solo si cambian producto, cantidad o precio', () => {
-    const a = costPreviewKey([{ product_id: 'a', quantity: 1, unit_price: 100 }]);
-    expect(costPreviewKey([{ product_id: 'a', quantity: 1, unit_price: 100 }])).toBe(a);
-    expect(costPreviewKey([{ product_id: 'a', quantity: 2, unit_price: 100 }])).not.toBe(a);
   });
 });
