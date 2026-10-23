@@ -7,7 +7,6 @@ import type { PrintCopyInfo } from '@/lib/printCopy';
  */
 
 export type NegocioPrintDocument = 'contrato' | 'recibo';
-export type NegocioPrintFormat = 'pdf' | 'ticket';
 
 export type NegocioPrintEvent = {
   id: string;
@@ -113,13 +112,13 @@ export function summarizeContractPrints(events: NegocioPrintEvent[]): ContractPr
 }
 
 /**
- * Qué saldrá en la próxima impresión del contrato (mismo criterio que el botón
- * de la web): «original» la primera vez, «COPIA N.º X» después.
+ * Qué saldrá en la próxima impresión en papel del contrato (ticket Bluetooth o
+ * «Imprimir» de la web; el PDF compartido no cuenta): «original» la primera vez, «COPIA N.º X» después.
  */
 export function labelNextContractPrint(summary: ContractPrintSummary): string {
   return summary.count > 0
-    ? `La próxima impresión sale como COPIA N.º ${summary.count + 1}`
-    : 'La próxima impresión sale como original';
+    ? `La próxima impresión en papel sale como COPIA N.º ${summary.count + 1}`
+    : 'La próxima impresión en papel sale como original';
 }
 
 /** «Contrato impreso 2 veces · última 30/09/2026 10:15 a. m. por Ana» o «Contrato sin imprimir». */

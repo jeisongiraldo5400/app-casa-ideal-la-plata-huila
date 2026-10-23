@@ -11,11 +11,7 @@ import {
 import { errorMessage } from '@/lib/errorMessage';
 import { LETTER_PDF_SIZE, pdfPrintOptions } from '@/lib/pdfPrintOptions';
 import { sharePdf } from '@/lib/sharing/sharePdf';
-import {
-  DeliveryOrderPrintOfflineError,
-  fetchDeliveryOrderPrintData,
-  registerDeliveryOrderPrint,
-} from '../services/deliveryOrderPrintService';
+import { DeliveryOrderPrintOfflineError, fetchDeliveryOrderPrintData } from '../services/deliveryOrderPrintService';
 
 /** Una remisión con clientes deja elegir entre el documento completo y una hoja por cliente. */
 export function offersClientSheets(data: Pick<DeliveryOrderPrintData, 'orderType' | 'children'>): boolean {
@@ -40,9 +36,10 @@ function askLayout(data: DeliveryOrderPrintData): Promise<DeliveryOrderPrintLayo
 }
 
 /**
- * Imprime una orden de entrega o remisión como PDF carta y abre la hoja de
- * compartir (WhatsApp, impresora, guardar). Cada impresión queda registrada y
- * desde la segunda sale «COPIA N.º X». Requiere conexión.
+ * Genera la orden de entrega o remisión como PDF carta y abre la hoja de
+ * compartir (WhatsApp, impresora, guardar). Requiere conexión. No suma copia
+ * ni lleva «COPIA N.º X»: solo cuenta lo impreso en papel (en la web). Una
+ * orden anulada sigue saliendo con la marca ANULADA.
  */
 export function useDeliveryOrderPrint() {
   const [printing, setPrinting] = useState(false);
@@ -53,13 +50,7 @@ export function useDeliveryOrderPrint() {
       const data = await fetchDeliveryOrderPrintData(orderId);
       const layout = await askLayout(data);
       if (!layout) return;
-      const registration = await registerDeliveryOrderPrint(orderId, layout);
-      const html = buildDeliveryOrderPrintHtml(data, {
-        layout,
-        copy: registration.copy,
-        copiesByOrderId: registration.copiesByOrderId,
-        printedAt: registration.printedAt,
-      });
+      const html = buildDeliveryOrderPrintHtml(data, { layout, printedAt: new Date().toISOString() });
       const { uri } = await Print.printToFileAsync(pdfPrintOptions(html, LETTER_PDF_SIZE));
       const outcome = await sharePdf({
         uri,

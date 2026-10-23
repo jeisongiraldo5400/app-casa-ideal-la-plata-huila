@@ -14,8 +14,8 @@ type Props = {
 
 /**
  * «Imprimir / compartir PDF» de una orden de entrega o remisión. PDF carta por
- * la hoja de compartir; cada impresión queda registrada y las siguientes salen
- * «COPIA N.º X». Sin señal avisa en vez de imprimir datos viejos.
+ * la hoja de compartir; no suma copia (solo cuenta el papel impreso desde la
+ * web). Sin señal avisa en vez de imprimir datos viejos.
  */
 export function DeliveryOrderPrintButton({ orderId, orderNumber, style }: Props) {
   const { isDark } = useTheme();
