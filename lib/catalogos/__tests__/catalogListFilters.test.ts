@@ -2,7 +2,7 @@ import {
   catalogFilterItems,
   catalogStatusGroup,
   catalogTabItems,
-  defaultCatalogTab,
+  DEFAULT_CATALOG_TAB,
   formatCatalogStatusSummary,
   isGlobalCatalog,
   matchesCatalogListFilter,
@@ -159,16 +159,8 @@ describe('catalogTabItems', () => {
   });
 });
 
-describe('defaultCatalogTab', () => {
-  it('abre en «Globales» si hay alguno', () => {
-    expect(defaultCatalogTab({ globals: 3, loading: false })).toBe('globals');
-  });
-
-  it('mientras carga por primera vez se queda en «Globales»', () => {
-    expect(defaultCatalogTab({ globals: 0, loading: true })).toBe('globals');
-  });
-
-  it('sin globales abre en «Mis catálogos» para no mostrar una lista vacía', () => {
-    expect(defaultCatalogTab({ globals: 0, loading: false })).toBe('mine');
+describe('DEFAULT_CATALOG_TAB', () => {
+  it('Catálogos abre siempre en «Globales», aunque esté vacía', () => {
+    expect(DEFAULT_CATALOG_TAB).toBe('globals');
   });
 });

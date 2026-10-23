@@ -21,13 +21,10 @@ export function catalogTabItems(counts: { mine: number; globals: number }): { va
 }
 
 /**
- * Pestaña con la que abre Catálogos mientras la persona no elija otra:
- * «Globales» primero; si ya cargó y no hay ninguno, «Mis catálogos» para no
- * abrir en una lista vacía. Mientras carga se queda en «Globales».
+ * Pestaña con la que abre Catálogos mientras la persona no elija otra: siempre
+ * «Globales», aunque esté vacía (pedido del usuario, 2026-10-23).
  */
-export function defaultCatalogTab(input: { globals: number; loading: boolean }): CatalogTab {
-  return input.globals > 0 || input.loading ? 'globals' : 'mine';
-}
+export const DEFAULT_CATALOG_TAB: CatalogTab = 'globals';
 
 /** Filtro por estado de «Mis catálogos». */
 export type CatalogListFilter = 'all' | 'draft' | 'published' | 'expired';
