@@ -336,6 +336,36 @@ describe('CarteraPagosView (Cartera › Pagos)', () => {
       expect(screen.getAllByText(/Registró Gestor Dos$/)).toHaveLength(2);
     });
 
+    it('«Solo los que registré» a la vista: filtra por quien consulta y se quita con «Todos»', async () => {
+      mockGestor = true;
+      mockRecaudador = false;
+      mockedFetch.mockResolvedValue(CARTERA_PAGE);
+      renderScreen();
+      await waitFor(() => expect(screen.getByText('Solo los que registré')).toBeTruthy());
+
+      fireEvent.press(screen.getByText('Solo los que registré'));
+      await waitFor(() =>
+        expect(mockedFetch).toHaveBeenLastCalledWith(
+          expect.objectContaining({ filters: expect.objectContaining({ createdBy: expect.objectContaining({ id: 'u1' }) }) })
+        )
+      );
+      expect(screen.getByTestId('pagos-alcance').props.children).toBe('Pagos que registraste');
+
+      // El primer «Todos» es el de este selector; el segundo, el de estado.
+      fireEvent.press(screen.getAllByText('Todos')[0]);
+      await waitFor(() =>
+        expect(mockedFetch).toHaveBeenLastCalledWith(
+          expect.objectContaining({ filters: expect.objectContaining({ createdBy: null }) })
+        )
+      );
+    });
+
+    it('recaudador puro: no ve el selector (solo ve lo suyo)', async () => {
+      renderScreen();
+      await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('Solo los que registré')).toBeNull();
+    });
+
     it('admin: todos los pagos de la empresa', async () => {
       mockAdmin = true;
       mockedFetch.mockResolvedValue({ ...CARTERA_PAGE, scope: 'todos' });

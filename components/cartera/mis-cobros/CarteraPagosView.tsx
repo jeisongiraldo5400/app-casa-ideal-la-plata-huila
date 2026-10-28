@@ -46,6 +46,11 @@ const STATUS_SEGMENTS: { value: MisCobrosStatus; label: string }[] = [
   { value: 'anulados', label: 'Anulados' },
 ];
 
+const REGISTERED_BY_SEGMENTS: { value: 'all' | 'mine'; label: string }[] = [
+  { value: 'all', label: 'Todos' },
+  { value: 'mine', label: 'Solo los que registré' },
+];
+
 function rangeLabel(filters: MisCobrosFilters): string | null {
   if (!filters.from && !filters.to) return null;
   if (filters.from && filters.from === filters.to) return formatPaymentDateTime(filters.from);
@@ -229,6 +234,7 @@ export function CarteraPagosView() {
   const collectorOptions: PagosCollector[] = showRegisteredBy
     ? [me, ...collectors.filter((item) => item.id !== userId).map((item) => ({ id: item.id, name: item.full_name }))]
     : [];
+  const mineOnly = filters.createdBy?.id === userId;
   const activeFilters = countActiveMisCobrosFilters(filters);
   const range = rangeLabel(filters);
   const selectedMethodNames = paymentMethods
@@ -245,8 +251,21 @@ export function CarteraPagosView() {
   const header = (
     <View style={styles.header}>
       <Text style={[styles.scopeTitle, { color: colors.text.secondary }]} testID="pagos-alcance">
-        {pagosScopeTitle(scope)}
+        {mineOnly ? 'Pagos que registraste' : pagosScopeTitle(scope)}
       </Text>
+
+      {/*
+        «Solo los que registré» a la vista (2026-10-28): antes estaba solo en
+        Filtros → «Registrado por» → «Yo» y nadie lo encontraba. Es el mismo
+        filtro; quien solo ve lo suyo (recaudador) no lo necesita.
+      */}
+      {showRegisteredBy ? (
+        <SegmentedControl
+          items={REGISTERED_BY_SEGMENTS}
+          value={mineOnly ? 'mine' : 'all'}
+          onChange={(value) => setFilters((current) => ({ ...current, createdBy: value === 'mine' ? me : null }))}
+        />
+      ) : null}
 
       {fromCache ? (
         <View style={[styles.notice, { backgroundColor: `${colors.warning.main}14`, borderColor: colors.warning.main }]}>
