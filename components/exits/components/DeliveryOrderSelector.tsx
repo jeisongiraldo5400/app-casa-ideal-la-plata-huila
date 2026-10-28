@@ -150,6 +150,7 @@ export function DeliveryOrderSelector() {
             disabled={loading || selectingOrderId !== null}
             selecting={selectingOrderId === order.id}
             colors={Colors}
+            isRemissionMode={isRemissionMode}
             onPress={() => void handleSelectOrder(order)}
           />
         ))}
@@ -178,16 +179,36 @@ type OrderRowProps = {
   disabled: boolean;
   selecting: boolean;
   colors: ReturnType<typeof getColors>;
+  /** Remisión (a un usuario): cada orden puede ser de otro cliente. */
+  isRemissionMode: boolean;
   onPress: () => void;
 };
 
-function OrderRow({ order, selected, selecting, isLast, disabled, colors, onPress }: OrderRowProps) {
+/** Número que identifica la orden; sin él, el inicio del id. */
+export function deliveryOrderLabel(order: Pick<DeliveryOrder, 'order_number' | 'id'>): string {
+  return order.order_number?.trim() || `#${order.id.slice(0, 8)}`;
+}
+
+/**
+ * Una orden de la lista. El número va primero: el destinatario ya se eligió
+ * y es el mismo en todas las filas, así que antes el número quedaba cortado
+ * al final de la línea y había que abrir orden por orden para saber cuál era
+ * (2026-10-28). Debajo, lo que distingue una de otra: fecha, productos, el
+ * cliente (en remisión) o la dirección, y las notas.
+ */
+function OrderRow({ order, selected, selecting, isLast, disabled, colors, isRemissionMode, onPress }: OrderRowProps) {
   const total = asQuantity(order.total_quantity);
   const delivered = Math.min(total, asQuantity(order.delivered_quantity));
   const pending = Math.max(0, total - delivered);
   const progress = total > 0 ? Math.round((delivered / total) * 100) : 0;
   const partial = delivered > 0;
   const destination = order.customer_name || order.assigned_to_user_name || 'Destinatario';
+  const label = deliveryOrderLabel(order);
+  const products = asQuantity(order.total_items);
+  // En remisión cada orden puede ser de otro cliente; con cliente elegido, la
+  // dirección es lo que cambia de una orden a otra.
+  const detail = isRemissionMode ? order.customer_name?.trim() : order.delivery_address?.trim();
+  const notes = order.notes?.trim();
 
   return (
     <TouchableOpacity
@@ -195,7 +216,7 @@ function OrderRow({ order, selected, selecting, isLast, disabled, colors, onPres
       disabled={disabled}
       accessibilityRole="radio"
       accessibilityState={{ checked: selected, disabled }}
-      accessibilityLabel={`${destination}, ${pending} unidades pendientes`}
+      accessibilityLabel={`Orden ${label}, ${destination}, ${pending} unidades pendientes`}
       style={[
         styles.row,
         !isLast && { borderBottomColor: colors.divider, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -203,14 +224,20 @@ function OrderRow({ order, selected, selecting, isLast, disabled, colors, onPres
       ]}>
       <View style={styles.rowMain}>
         <View style={styles.rowTitleLine}>
-          <Text style={[styles.destination, { color: colors.text.primary }]} numberOfLines={1}>{destination}</Text>
+          <Text style={[styles.destination, { color: colors.text.primary }]} numberOfLines={1} selectable>{label}</Text>
           <View style={[styles.status, { backgroundColor: partial ? `${colors.warning.main}18` : `${colors.primary.main}14` }]}>
             <Text style={[styles.statusText, { color: partial ? colors.warning.main : colors.primary.main }]}>{partial ? 'Parcial' : 'Pendiente'}</Text>
           </View>
         </View>
         <Text style={[styles.meta, { color: colors.text.secondary }]} numberOfLines={1}>
-          {formatDate(order.created_at)} · {asQuantity(order.total_items)} productos · #{order.order_number || order.id.slice(0, 8)}
+          {formatDate(order.created_at)} · {products} {products === 1 ? 'producto' : 'productos'}
         </Text>
+        {detail ? (
+          <Text style={[styles.meta, styles.detail, { color: colors.text.primary }]} numberOfLines={2}>{detail}</Text>
+        ) : null}
+        {notes ? (
+          <Text style={[styles.meta, styles.detail, { color: colors.text.secondary }]} numberOfLines={2}>Notas: {notes}</Text>
+        ) : null}
         {partial && (
           <View style={styles.progressRow}>
             <View style={[styles.progressTrack, { backgroundColor: colors.divider }]}>
@@ -248,10 +275,11 @@ const styles = StyleSheet.create({
   row: { alignItems: 'center', flexDirection: 'row', minHeight: 74, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   rowMain: { flex: 1, minWidth: 0 },
   rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs },
-  destination: { ...Typography.bodySmallStrong, flex: 1 },
+  destination: { ...Typography.bodyStrong, flex: 1 },
   status: { borderRadius: Radius.chip, paddingHorizontal: Spacing.xs, paddingVertical: 3 },
   statusText: { ...Typography.label, fontSize: 10, letterSpacing: 0.2 },
   meta: { ...Typography.metadata, fontSize: 11, marginTop: Spacing.xs },
+  detail: { marginTop: 2 },
   pendingColumn: { alignItems: 'center', marginLeft: Spacing.sm, width: 48 },
   pendingQuantity: { ...Typography.bodyStrong, fontSize: 17, lineHeight: 22 },
   unitsLabel: { ...Typography.metadata, fontSize: 10 },
