@@ -30,6 +30,12 @@ export type NegocioReceiptData = {
   discountAmount?: number | null;
   /** Motivo del descuento (opcional); sin motivo no se muestra la fila. */
   discountReason?: string | null;
+  /**
+   * Notas del pago (`negocio_pagos.notes`): las observaciones escritas al
+   * registrarlo. La línea «Anulado: …» que agrega la anulación no se imprime
+   * como observación. Sin texto no sale la fila.
+   */
+  notes?: string | null;
   /** Pendiente total que se liquidó; si falta se deriva de `amount + discountAmount`. */
   expectedTotal?: number | null;
   /**
@@ -207,6 +213,7 @@ body { margin: 0; padding: 24px 16px; background: #eef2f7; font-family: Arial, H
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin-top: 14px; }
 .field { min-width: 0; padding: 9px 0; border-bottom: 1px dashed #d5dfeb; }
 .field.wide { grid-column: 1 / -1; }
+.field.wide strong { white-space: pre-line; }
 .field span { display: block; color: #5f6b7a; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
 .field strong { display: block; margin-top: 2px; color: #17243b; font-size: 13.5px; overflow-wrap: anywhere; }
 .products { margin-top: 12px; }
@@ -308,6 +315,16 @@ function receiptStatus(status: string) {
   return { label: text.charAt(0).toUpperCase() + text.slice(1), tone: 'pending' };
 }
 
+/**
+ * Observaciones del recibo: las notas del pago sin la línea «Anulado: …» que
+ * agrega `void_negocio_pago` (el recibo anulado ya lo dice en su banda).
+ * Igual que en la web.
+ */
+export function receiptObservations(data: Pick<NegocioReceiptData, 'notes'>): string | null {
+  const text = String(data.notes ?? '').replace(/(?:^|\n)Anulado:[^\n]*\s*$/, '');
+  return text.trim() || null;
+}
+
 /** `value` ya viene escapado. */
 const field = (label: string, value: string, wide = false) =>
   `<div class="field${wide ? ' wide' : ''}"><span>${label}</span><strong>${value}</strong></div>`;
@@ -331,6 +348,9 @@ export function buildNegocioReceiptHtml(data: NegocioReceiptData) {
   const customerIdNumber = receiptCustomerIdNumber(data);
   const customerIdField = customerIdNumber ? `
   ${field('C.C.', esc(customerIdNumber), true)}` : '';
+  const observations = receiptObservations(data);
+  const observationsField = observations ? `
+  ${field('Observaciones', esc(observations), true)}` : '';
   const pendingConfirmation = isPendingConfirmationReceipt(data);
   const copyLabel = printCopyLabel(data.copy);
   // Aviso de pago sin confirmar. Reutiliza `.balance` (recuadro ya existente):
@@ -364,7 +384,7 @@ ${pendingBanner}
   ${field('Método de pago', esc(data.paymentMethodName) || 'No registrado')}
   ${field('Sitio de pago', esc(data.paymentSiteName) || 'No registrado')}
   ${field('Recibo físico', esc(data.physicalReceiptNumber) || 'No aplica')}
-  ${field('Registrado por', esc(receiptRegisteredBy(data)))}
+  ${field('Registrado por', esc(receiptRegisteredBy(data)))}${observationsField}
 </section>
 ${receiptProductsHtml(data)}<section class="balance"><span>Saldo pendiente</span><strong>${formatCOP(remainingBalance)}</strong></section>
 <footer class="foot">${pendingConfirmation ? `${esc(PENDING_CONFIRMATION_RECEIPT_NOTE)}<br />` : ''}${prontoPago && !isVoided ? `${esc(PRONTO_PAGO_RECEIPT_LEGEND)}<br />` : ''}${esc(COMPANY.name)} · ${esc(COMPANY.tagline)}<br />Comprobante generado por el Sistema de Gestión de Inventario.</footer>

@@ -38,5 +38,6 @@ export function cobroReceiptData(row: MisCobroRow): NegocioReceiptData | null {
     discountAmount: row.discount_amount ?? null,
     discountReason: row.discount_reason ?? null,
     expectedTotal: row.expected_total ?? null,
+    notes: row.notes ?? null,
   };
 }

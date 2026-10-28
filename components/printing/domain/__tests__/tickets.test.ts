@@ -77,6 +77,19 @@ describe('sanitizeForEscPos', () => {
 });
 
 describe('buildPaymentTicket', () => {
+  it('imprime las observaciones del pago en una línea y sin el motivo de anulación', () => {
+    const textOf = (data: NegocioReceiptData) =>
+      buildPaymentTicket(data)
+        .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')
+        .map((line) => line.text)
+        .join(' ')
+        .replace(/\s+/g, ' ');
+
+    expect(textOf({ ...receipt, notes: 'Pago de la hija\nTrae recibo' })).toContain('Observaciones: Pago de la hija / Trae recibo');
+    expect(textOf({ ...receipt, status: 'anulado', notes: 'Anulado: Duplicado' })).not.toContain('Observaciones');
+    expect(textOf(receipt)).not.toContain('Observaciones');
+  });
+
   it('incluye los campos del recibo actual', () => {
     const texts = buildPaymentTicket(receipt)
       .filter((line): line is Extract<typeof line, { type: 'text' }> => line.type === 'text')

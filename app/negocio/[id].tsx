@@ -749,6 +749,8 @@ function NegocioDetailScreenInner() {
     amount: number;
     physicalReceiptNumber: string | null;
     paymentMethodName: string | null;
+    /** Observaciones escritas al registrar el pago. */
+    notes?: string | null;
     /** Pronto pago: el saldo queda en 0 y el ticket lleva pendiente y descuento. */
     prontoPago?: { discountAmount: number; discountReason: string | null; expectedTotal: number };
     /** El pago salió de la cola sin conexión: el recibo lleva la leyenda. */
@@ -783,6 +785,7 @@ function NegocioDetailScreenInner() {
       paymentMethodName: input.paymentMethodName,
       // Este recibo se emite justo después de cobrar desde la app.
       paymentSiteName: paymentSiteLabel(MOBILE_PAYMENT_SITE),
+      notes: input.notes ?? null,
       remainingBalance: input.prontoPago ? 0 : Math.max(pendingBalance - input.amount, 0),
       products: receiptProducts,
       ...(input.prontoPago
@@ -1015,6 +1018,7 @@ function NegocioDetailScreenInner() {
           amount,
           physicalReceiptNumber,
           paymentMethodName: paymentMethodLabel,
+          notes: payNotes.trim() || null,
           pagoId: pagoId || null,
         });
 
@@ -1068,6 +1072,7 @@ function NegocioDetailScreenInner() {
           amount,
           physicalReceiptNumber: payReceipt || null,
           paymentMethodName: paymentMethodLabel,
+          notes: payNotes.trim() || null,
           // El recibo sale con la leyenda «PENDIENTE DE CONFIRMACIÓN».
           pendingConfirmation: true,
           pendingPago: { idempotencyKey: offlineResult.idempotencyKey, lane: offlineResult.lane },
@@ -1166,6 +1171,7 @@ function NegocioDetailScreenInner() {
     discountAmount: pago.discount_amount == null ? null : Number(pago.discount_amount),
     discountReason: pago.discount_reason ?? null,
     expectedTotal: pago.expected_total == null ? null : Number(pago.expected_total),
+    notes: pago.notes ?? null,
     // Solo lo traen las filas locales todavía en la cola; los pagos que vienen
     // del servidor ya están confirmados y reimprimen sin leyenda.
     pendingConfirmation: Boolean(pago.pending_confirmation),

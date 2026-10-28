@@ -241,3 +241,16 @@ describe('logo del recibo', () => {
     expect(html).not.toMatch(/\.logo \{[^}]*height: \d+px/);
   });
 });
+
+describe('buildNegocioReceiptHtml: observaciones del pago', () => {
+  it('imprime las observaciones; sin texto no sale la fila', () => {
+    expect(buildNegocioReceiptHtml({ ...sample, notes: 'Pagó la hija' })).toContain('<span>Observaciones</span><strong>Pagó la hija</strong>');
+    expect(buildNegocioReceiptHtml(sample)).not.toContain('Observaciones');
+  });
+
+  it('en un recibo anulado no repite el motivo de anulación como observación', () => {
+    const html = buildNegocioReceiptHtml({ ...sample, status: 'anulado', notes: 'Pagó la hija\nAnulado: Duplicado' });
+    expect(html).toContain('<strong>Pagó la hija</strong>');
+    expect(html).not.toContain('Duplicado');
+  });
+});

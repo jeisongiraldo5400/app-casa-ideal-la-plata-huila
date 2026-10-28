@@ -7,6 +7,7 @@ import {
   isProntoPagoReceipt,
   prontoPagoReceiptAmounts,
   receiptCustomerIdNumber,
+  receiptObservations,
   receiptProducts,
   receiptProductsHavePrices,
   receiptProductsTotal,
@@ -32,6 +33,8 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
   const discountReason = String(data.discountReason ?? '').trim();
   // Sin cédula registrada se omite la línea (igual que el recibo PDF).
   const customerIdNumber = receiptCustomerIdNumber(data);
+  // Observaciones escritas al registrar el pago (sin el motivo de anulación).
+  const observations = receiptObservations(data);
   const lines: TicketLine[] = [
     { type: 'text', text: 'CASA IDEAL', align: 'center', bold: true, size: 2 },
     { type: 'text', text: prontoPago ? 'Recibo de pago - Pronto pago' : 'Recibo de pago', align: 'center' },
@@ -66,6 +69,8 @@ export function buildPaymentTicket(data: NegocioReceiptData): TicketLine[] {
     ...textLines(`Sitio de pago: ${data.paymentSiteName || 'No registrado'}`),
     ...textLines(`Registrado por: ${receiptRegisteredBy(data)}`),
     ...(prontoPago && discountReason ? textLines(`Motivo descuento: ${discountReason}`) : []),
+    // Observaciones del pago en una sola tira (el papel no respeta saltos de línea).
+    ...(observations ? textLines(`Observaciones: ${observations.replace(/\s*\n\s*/g, ' / ')}`) : []),
     { type: 'separator' },
   );
   // Productos del negocio, como en el ticket del negocio: «2x Nombre» con el

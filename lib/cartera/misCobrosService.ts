@@ -121,6 +121,7 @@ function mapServerRow(row: Record<string, unknown>): MisCobroRow {
     discount_amount: toNullableNumber(row.discount_amount),
     discount_reason: (row.discount_reason as string | null) ?? null,
     expected_total: toNullableNumber(row.expected_total),
+    notes: (row.notes as string | null) ?? null,
   };
 }
 

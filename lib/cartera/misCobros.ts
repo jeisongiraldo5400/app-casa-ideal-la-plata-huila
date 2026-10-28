@@ -125,6 +125,8 @@ export type MisCobroRow = {
   discount_amount?: number | null;
   discount_reason?: string | null;
   expected_total?: number | null;
+  /** Observaciones del pago (con «Anulado: …» si se anuló); van en el recibo. */
+  notes?: string | null;
 };
 
 /**
