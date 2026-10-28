@@ -8,6 +8,8 @@ import { StyleSheet, Text, View } from 'react-native';
 
 type Props = {
   customerName: string;
+  /** Cédula del cliente, justo debajo del nombre (2026-10-28). */
+  customerIdNumber?: string | null;
   address: string;
   status: string;
   totalCredit: number;
@@ -21,7 +23,7 @@ type Props = {
 };
 
 /** Cabecera de marca del detalle: cliente, estado y las cifras del crédito (con el descuento por pronto pago aparte). */
-export function NegocioHero({ customerName, address, status, totalCredit, totalPaid, totalDiscount = 0, pendingBalance, planLabel }: Props) {
+export function NegocioHero({ customerName, customerIdNumber, address, status, totalCredit, totalPaid, totalDiscount = 0, pendingBalance, planLabel }: Props) {
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   // En oscuro `primary.main` es #3b82f6 y el texto blanco no alcanza AA: se usa
@@ -31,12 +33,15 @@ export function NegocioHero({ customerName, address, status, totalCredit, totalP
   return (
     <View
       accessible
-      accessibilityLabel={`${customerName}. ${labelNegocioStatus(status)}. Crédito ${formatCOP(totalCredit)}, pagado ${formatCOP(totalPaid)}${totalDiscount > 0 ? `, descuento pronto pago ${formatCOP(totalDiscount)}` : ''}, saldo ${formatCOP(pendingBalance)}`}
+      accessibilityLabel={`${customerName}${customerIdNumber ? `, cédula ${customerIdNumber}` : ''}. ${labelNegocioStatus(status)}. Crédito ${formatCOP(totalCredit)}, pagado ${formatCOP(totalPaid)}${totalDiscount > 0 ? `, descuento pronto pago ${formatCOP(totalDiscount)}` : ''}, saldo ${formatCOP(pendingBalance)}`}
       style={[styles.hero, { backgroundColor: background }]}>
       <View style={styles.top}>
         <View style={styles.copy}>
           <Text style={[styles.eyebrow, { color: colors.onPrimary.textMuted }]}>Cliente</Text>
           <Text style={[styles.customer, { color: colors.onPrimary.text }]} numberOfLines={2}>{customerName}</Text>
+          {customerIdNumber ? (
+            <Text style={[styles.idNumber, { color: colors.onPrimary.text }]} selectable>C.C. {customerIdNumber}</Text>
+          ) : null}
           <Text style={[styles.address, { color: colors.onPrimary.textMuted }]} numberOfLines={2}>{address}</Text>
         </View>
         <View style={[styles.status, { backgroundColor: colors.onPrimary.chipBg }]}>
@@ -64,6 +69,7 @@ const styles = StyleSheet.create({
   copy: { flex: 1, gap: 2 },
   eyebrow: { ...Typography.label },
   customer: { ...Typography.headline },
+  idNumber: { ...Typography.label },
   address: { ...Typography.caption },
   status: { borderRadius: Radius.chip, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
   statusText: { ...Typography.label },

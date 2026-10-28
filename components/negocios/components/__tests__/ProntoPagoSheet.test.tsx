@@ -146,7 +146,8 @@ describe('ProntoPagoSheet', () => {
       ],
       pickSupport,
     });
-    expect(utils.getByText('Adjuntar soporte (opcional)')).toBeTruthy();
+    // En efectivo no se adjunta soporte: el selector ni aparece.
+    expect(utils.queryByText(/Adjuntar soporte/)).toBeNull();
     chooseMethod(utils, 'Consignación');
 
     expect(utils.getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();

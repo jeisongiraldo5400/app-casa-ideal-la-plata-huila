@@ -50,9 +50,9 @@ describe('MisCobroAttachSupport', () => {
     await waitFor(() => expect(getByLabelText('Adjuntar soporte obligatorio del pago')).toBeTruthy());
   });
 
-  it('método opcional: acceso normal', () => {
-    const { getByLabelText } = render(<MisCobroAttachSupport row={{ ...row, payment_method_id: 'pm-ef' }} />);
-    expect(getByLabelText('Adjuntar soporte del pago')).toBeTruthy();
+  it('efectivo (método sin soporte): no se ofrece adjuntar', () => {
+    const { queryByLabelText } = render(<MisCobroAttachSupport row={{ ...row, payment_method_id: 'pm-ef' }} />);
+    expect(queryByLabelText(/Adjuntar soporte/)).toBeNull();
   });
 
   it('no se ofrece con soporte, anulado, fila del teléfono (sin el dato) o pendiente de enviar', () => {

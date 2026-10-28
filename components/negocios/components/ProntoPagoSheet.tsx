@@ -143,7 +143,7 @@ export function ProntoPagoSheet({
       paymentMethodId: methodId,
       receiptNumber: receipt.trim() || null,
       netAmount: validation.netAmount,
-      supportFile,
+      supportFile: supportRequired ? supportFile : null,
       supportRequired,
     });
   };
@@ -300,14 +300,17 @@ export function ProntoPagoSheet({
               containerStyle={styles.field}
               accessibilityLabel="Número de recibo físico"
             />
-            <PagoSupportPicker
-              visible={visible}
-              supportRequired={supportRequired}
-              supportFile={supportFile}
-              onPickSupport={chooseSupport}
-              onRemoveSupport={() => setSupportFile(null)}
-              disabled={saving}
-            />
+            {/* Solo los métodos que exigen soporte lo piden; en efectivo no se adjunta. */}
+            {supportRequired ? (
+              <PagoSupportPicker
+                visible={visible}
+                supportRequired={supportRequired}
+                supportFile={supportFile}
+                onPickSupport={chooseSupport}
+                onRemoveSupport={() => setSupportFile(null)}
+                disabled={saving}
+              />
+            ) : null}
             {attempted && validation.pendingError ? (
               <Text style={[styles.fieldHint, { color: colors.error.main }]}>{validation.pendingError}</Text>
             ) : null}

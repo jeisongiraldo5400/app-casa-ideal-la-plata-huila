@@ -1650,8 +1650,9 @@ function NegocioDetailScreenInner() {
       methods: supportMethods,
     });
     const pagoIsLocal = supportLocal.localPagoIds.has(pago.id);
+    // Solo los métodos que exigen soporte: en efectivo no se adjunta (2026-10-28).
     const canAttach =
-      (supportState === 'missing' || supportState === 'required_missing') &&
+      supportState === 'required_missing' &&
       pago.receipt_status !== 'anulado' &&
       canAttachPagoSupport({
         userId: user?.id,
@@ -1750,6 +1751,7 @@ function NegocioDetailScreenInner() {
 
         <NegocioHero
           customerName={customerName || 'Cliente'}
+          customerIdNumber={customerMeta.id_number ?? null}
           address={address}
           status={negocio.status}
           totalCredit={Number(negocio.total_credit)}
@@ -2259,6 +2261,8 @@ function NegocioDetailScreenInner() {
           paymentIdempotencyKey.current = null;
           paymentPaidAt.current = null;
           setPayMethodId(value);
+          // En efectivo no se adjunta soporte (2026-10-28): se suelta el elegido.
+          if (!paymentMethodRequiresSupport(paymentMethods, value)) setPaySupportFile(null);
         }}
         paymentMethodsLoading={paymentMethodsLoading}
         supportRequired={paymentMethodRequiresSupport(paymentMethods, payMethodId)}

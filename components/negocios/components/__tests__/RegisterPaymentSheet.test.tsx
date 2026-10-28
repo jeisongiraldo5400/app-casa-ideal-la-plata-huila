@@ -52,10 +52,15 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof RegisterPaym
 }
 
 describe('RegisterPaymentSheet', () => {
-  it('muestra las opciones de soporte dentro de la hoja y permite cancelarlas', () => {
-    const { getByText, getByLabelText, queryByText, props } = renderSheet();
+  it('en efectivo no se adjunta soporte: el selector no aparece', () => {
+    const { queryByText } = renderSheet();
+    expect(queryByText(/Adjuntar soporte/)).toBeNull();
+  });
 
-    fireEvent.press(getByText('Adjuntar soporte (opcional)'));
+  it('muestra las opciones de soporte dentro de la hoja y permite cancelarlas', () => {
+    const { getByText, getByLabelText, queryByText, props } = renderSheet({ paymentMethodId: 'pm-2', supportRequired: true });
+
+    fireEvent.press(getByText('Adjuntar soporte (obligatorio)'));
     expect(getByText('Tomar foto')).toBeTruthy();
     expect(getByText('Galería')).toBeTruthy();
     expect(getByText('Archivo / PDF')).toBeTruthy();
@@ -63,15 +68,15 @@ describe('RegisterPaymentSheet', () => {
 
     fireEvent.press(getByLabelText('Cancelar selección de soporte'));
     expect(queryByText('Tomar foto')).toBeNull();
-    expect(getByText('Adjuntar soporte (opcional)')).toBeTruthy();
+    expect(getByText('Adjuntar soporte (obligatorio)')).toBeTruthy();
     expect(props.onPickSupport).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
   });
 
   it('notifica el origen elegido y vuelve al estado inicial', () => {
-    const { getByText, queryByText, props } = renderSheet();
+    const { getByText, queryByText, props } = renderSheet({ paymentMethodId: 'pm-2', supportRequired: true });
 
-    fireEvent.press(getByText('Adjuntar soporte (opcional)'));
+    fireEvent.press(getByText('Adjuntar soporte (obligatorio)'));
     fireEvent.press(getByText('Galería'));
 
     expect(props.onPickSupport).toHaveBeenCalledWith('gallery');
@@ -80,6 +85,8 @@ describe('RegisterPaymentSheet', () => {
 
   it('permite quitar un soporte ya adjunto', () => {
     const { getByText, props } = renderSheet({
+      paymentMethodId: 'pm-2',
+      supportRequired: true,
       supportFile: { uri: 'file:///tmp/soporte.jpg', mimeType: 'image/jpeg', name: 'soporte.jpg' },
     });
 

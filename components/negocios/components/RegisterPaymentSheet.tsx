@@ -141,14 +141,17 @@ export function RegisterPaymentSheet({
           </Text>
         ) : null}
       </View>
-      <PagoSupportPicker
-        visible={visible}
-        supportRequired={supportRequired}
-        supportFile={supportFile}
-        onPickSupport={onPickSupport}
-        onRemoveSupport={onRemoveSupport}
-        disabled={saving}
-      />
+      {/* Solo los métodos que exigen soporte lo piden; en efectivo no se adjunta. */}
+      {supportRequired ? (
+        <PagoSupportPicker
+          visible={visible}
+          supportRequired={supportRequired}
+          supportFile={supportFile}
+          onPickSupport={onPickSupport}
+          onRemoveSupport={onRemoveSupport}
+          disabled={saving}
+        />
+      ) : null}
     </ModalSheet>
   );
 }

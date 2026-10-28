@@ -19,7 +19,8 @@ import { Pressable } from 'react-native';
  * anuladas ni pendientes/rechazadas. Quien ve la fila ya puede adjuntar según
  * `attach_negocio_pago_support`: la registró él («Realizados»), es el gestor
  * asignado («De mi cartera») o es admin; el servidor vuelve a validar.
- * En rojo si su método exige soporte, como «Adjuntar» en la web.
+ * Solo si su método exige soporte (en rojo, como «Adjuntar» en la web): en
+ * efectivo no se adjunta (2026-10-28).
  */
 export function MisCobroAttachSupport({ row }: { row: MisCobroRow }) {
   const { isDark } = useTheme();
@@ -47,6 +48,8 @@ export function MisCobroAttachSupport({ row }: { row: MisCobroRow }) {
       queuedPagoIds: new Set(),
       methods,
     }) === 'required_missing';
+  // En efectivo no se adjunta soporte (2026-10-28): solo si el método lo exige.
+  if (!required) return null;
 
   return (
     <>
