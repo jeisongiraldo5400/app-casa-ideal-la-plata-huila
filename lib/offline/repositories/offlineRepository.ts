@@ -941,6 +941,8 @@ export async function registerPagoOffline(input: {
   amount: number;
   paidAt: string;
   receiptNumber: string | null;
+  /** Observaciones opcionales del pago. */
+  notes?: string | null;
   /** Método de pago elegido en la pantalla de cobro. */
   paymentMethodId: string;
   paymentMethodName?: string | null;
@@ -1020,7 +1022,7 @@ export async function registerPagoOffline(input: {
     amount,
     paidAt: input.paidAt,
     receiptNumber: input.receiptNumber,
-    notes: null,
+    notes: input.notes?.trim() || null,
     routeStopId,
     routeId: stop?.routeId || null,
     snapshot,
@@ -1054,7 +1056,7 @@ export async function registerPagoOffline(input: {
         record.receiptNumber = input.receiptNumber;
         record.virtualReceiptNumber = null;
         record.receiptStatus = 'emitido';
-        record.notes = null;
+        record.notes = input.notes?.trim() || null;
         record.createdByName = input.registeredBy || null;
         record.paymentMethodId = input.paymentMethodId;
         record.paymentMethodName = input.paymentMethodName || null;

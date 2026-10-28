@@ -191,6 +191,14 @@ describe('registerPagoOffline', () => {
     expect(mockRunSync).toHaveBeenCalledWith('mutation');
   });
 
+  it('guarda y envía las observaciones del pago (sin espacios sobrantes)', async () => {
+    await registerPagoOffline({ ...baseInput, notes: '  Pagó la hija  ' });
+
+    const ops = mockBatch.mock.calls[0] as Op[];
+    expect(ops.find((op) => op.table === 'negocio_pagos')?.changes).toMatchObject({ notes: 'Pagó la hija' });
+    expect(mockPrepareOutboxRecord.mock.calls[0][2]).toMatchObject({ notes: 'Pagó la hija' });
+  });
+
   it('sin clave de la pantalla genera una propia para el outbox', async () => {
     await registerPagoOffline(baseInput);
 

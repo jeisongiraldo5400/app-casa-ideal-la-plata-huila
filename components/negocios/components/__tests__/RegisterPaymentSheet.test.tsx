@@ -98,6 +98,15 @@ describe('RegisterPaymentSheet', () => {
   });
 });
 
+describe('RegisterPaymentSheet · observaciones', () => {
+  it('el campo opcional de observaciones avisa cada cambio', () => {
+    const onChangeNotes = jest.fn();
+    const { getByLabelText } = renderSheet({ notes: '', onChangeNotes });
+    fireEvent.changeText(getByLabelText('Observaciones del pago'), 'Pagó la hija');
+    expect(onChangeNotes).toHaveBeenCalledWith('Pagó la hija');
+  });
+});
+
 describe('RegisterPaymentSheet · método de pago', () => {
   it('bloquea el guardado mientras no se elige un método', () => {
     const { getByText, props } = renderSheet({ paymentMethodId: '' });

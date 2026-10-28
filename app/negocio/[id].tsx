@@ -289,6 +289,8 @@ function NegocioDetailScreenInner() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(false);
   const [paySupportFile, setPaySupportFile] = useState<PagoSupportLocalFile | null>(null);
+  /** Observaciones opcionales del pago (negocio_pagos.notes). */
+  const [payNotes, setPayNotes] = useState('');
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [installmentPage, setInstallmentPage] = useState(0);
   const [paymentPage, setPaymentPage] = useState(0);
@@ -927,7 +929,7 @@ function NegocioDetailScreenInner() {
             amount,
             paidAt,
             receiptNumber: payReceipt || null,
-            notes: null,
+            notes: payNotes.trim() || null,
             idempotencyKey,
             // Obligatorio en el servidor desde 20261018130000: sin él, el RPC rechaza el cobro.
             paymentMethodId: payMethodId,
@@ -974,6 +976,7 @@ function NegocioDetailScreenInner() {
         const hadSupport = Boolean(paySupportFile) && !supportWarning;
         setPayAmount('');
         setPayReceipt('');
+        setPayNotes('');
         setPayMethodId('');
         setPaySupportFile(null);
         setPayModalOpen(false);
@@ -1035,6 +1038,7 @@ function NegocioDetailScreenInner() {
           amount,
           paidAt,
           receiptNumber: payReceipt || null,
+          notes: payNotes.trim() || null,
           paymentMethodId: payMethodId,
           paymentMethodName: paymentMethodLabel,
           idempotencyKey,
@@ -1049,6 +1053,7 @@ function NegocioDetailScreenInner() {
         void pagoForm.remember(payMethodId);
         setPayAmount('');
         setPayReceipt('');
+        setPayNotes('');
         setPayMethodId('');
         setPaySupportFile(null);
         setPayModalOpen(false);
@@ -2254,6 +2259,13 @@ function NegocioDetailScreenInner() {
           paymentIdempotencyKey.current = null;
           paymentPaidAt.current = null;
           setPayReceipt(value);
+        }}
+        notes={payNotes}
+        onChangeNotes={(value) => {
+          // Las observaciones van en la huella del cobro: otra nota es otro pago.
+          paymentIdempotencyKey.current = null;
+          paymentPaidAt.current = null;
+          setPayNotes(value);
         }}
         paymentMethods={paymentMethods}
         paymentMethodId={payMethodId}

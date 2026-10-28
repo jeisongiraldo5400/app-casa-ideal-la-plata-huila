@@ -11,6 +11,9 @@ import { StyleSheet, Text, View } from 'react-native';
 
 export type { PagoSupportSource };
 
+/** Largo máximo de las observaciones de un pago (el mismo en la web). */
+const PAGO_NOTES_MAX = 500;
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -29,6 +32,9 @@ type Props = {
   amountAccessory?: React.ReactNode;
   receipt: string;
   onChangeReceipt: (value: string) => void;
+  /** Observaciones opcionales del pago; sin `onChangeNotes` no se pinta el campo. */
+  notes?: string;
+  onChangeNotes?: (value: string) => void;
   /** Métodos de pago disponibles; la selección es obligatoria. */
   paymentMethods: { id: string; name: string }[];
   paymentMethodId: string;
@@ -57,6 +63,8 @@ export function RegisterPaymentSheet({
   amountDecimalPlaces = MAX_MONEY_DECIMALS,
   amountAccessory,
   receipt,
+  notes,
+  onChangeNotes,
   onChangeReceipt,
   paymentMethods,
   paymentMethodId,
@@ -141,6 +149,19 @@ export function RegisterPaymentSheet({
           </Text>
         ) : null}
       </View>
+      {onChangeNotes ? (
+        <Input
+          label="Observaciones (opcional)"
+          placeholder="Algo que deba quedar anotado del pago"
+          value={notes ?? ''}
+          onChangeText={onChangeNotes}
+          editable={!saving}
+          multiline
+          maxLength={PAGO_NOTES_MAX}
+          containerStyle={styles.field}
+          accessibilityLabel="Observaciones del pago"
+        />
+      ) : null}
       {/* Solo los métodos que exigen soporte lo piden; en efectivo no se adjunta. */}
       {supportRequired ? (
         <PagoSupportPicker

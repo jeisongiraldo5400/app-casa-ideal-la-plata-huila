@@ -73,6 +73,7 @@ export function PaymentCard({
   const prontoPago = isProntoPago(pago);
   const discount = pagoDiscount(pago);
   const voidNote = voided ? voidReasonFromNotes(pago.notes) : null;
+  const observations = pagoObservations(pago.notes, voided);
   // Igual que el «Adjuntar» en rojo de la web: el método exige soporte y falta.
   const supportMissingRequired = !voided && supportState === 'required_missing';
   const supportText = pago.support_path
@@ -137,6 +138,9 @@ export function PaymentCard({
             <Text style={[styles.meta, { color: colors.text.secondary }]}>
               {pago.cierre_numero ? `En cierre de recaudo ${pago.cierre_numero}` : 'En cierre de recaudo'} · solo un administrador puede anularlo
             </Text>
+          ) : null}
+          {observations ? (
+            <Text style={[styles.meta, { color: colors.text.secondary }]}>Observaciones: {observations}</Text>
           ) : null}
           {voidNote ? (
             <Text style={[styles.meta, { color: colors.error.main }]}>Motivo de anulación: {voidNote}</Text>
@@ -206,6 +210,16 @@ export function PaymentCard({
 export function voidReasonFromNotes(notes: string | null | undefined): string | null {
   const match = String(notes ?? '').match(/(?:^|\n)Anulado:\s*([^\n]*)\s*$/);
   return match?.[1]?.trim() || null;
+}
+
+/**
+ * Observaciones escritas al registrar el pago: las notas sin la línea
+ * «Anulado: …» que agrega la anulación (esa se muestra aparte).
+ */
+export function pagoObservations(notes: string | null | undefined, voided: boolean): string | null {
+  const text = String(notes ?? '');
+  const withoutVoid = voided ? text.replace(/(?:^|\n)Anulado:[^\n]*\s*$/, '') : text;
+  return withoutVoid.trim() || null;
 }
 
 const styles = StyleSheet.create({

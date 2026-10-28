@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { PaymentCard, voidReasonFromNotes, type PaymentRow } from '../PaymentCard';
+import { PaymentCard, pagoObservations, voidReasonFromNotes, type PaymentRow } from '../PaymentCard';
 import { formatCOP } from '@/lib/creditCalculator';
 
 jest.mock('@expo/vector-icons', () => {
@@ -130,5 +130,18 @@ describe('PaymentCard · adjuntar soporte después', () => {
       expect(queryByLabelText(/Adjuntar soporte/)).toBeNull();
       unmount();
     }
+  });
+});
+
+describe('PaymentCard · observaciones', () => {
+  it('muestra las observaciones escritas al registrar el pago', () => {
+    const { getByText } = renderCard({ ...abono, notes: 'Pagó la hija' });
+    expect(getByText('Observaciones: Pagó la hija')).toBeTruthy();
+  });
+
+  it('separa las observaciones del motivo de anulación', () => {
+    expect(pagoObservations('Pagó la hija\nAnulado: Duplicado', true)).toBe('Pagó la hija');
+    expect(pagoObservations('Anulado: Duplicado', true)).toBeNull();
+    expect(pagoObservations(null, false)).toBeNull();
   });
 });
